@@ -601,7 +601,9 @@ function GhostLink({
 }
 
 /** A permission ask's two answers: 48 px and sharing the row on the phone, the wide card's
- *  40 px beside the title. */
+ *  40 px: beside the title in a card of 40 rem (600 px) or more, sharing a row of their own under
+ *  it in a narrower one (the tablet's 460 px item box). The card is the container, so the
+ *  viewport does not decide. */
 function BarActions({
   buttons,
   run,
@@ -612,13 +614,13 @@ function BarActions({
   wide: boolean;
 }): JSX.Element {
   return (
-    <div class={`flex gap-3 ${wide ? "shrink-0" : ""}`}>
+    <div class={`flex gap-3 ${wide ? "@[40rem]:shrink-0" : ""}`}>
       {buttons.map((button) => (
         <ActionButton
           key={button.id}
           button={button}
           size={wide ? "md" : "lg"}
-          fill={wide ? undefined : "flex-1"}
+          fill={wide ? "flex-1 @[40rem]:flex-none" : "flex-1"}
           run={run}
         />
       ))}
@@ -672,8 +674,8 @@ function AskCard({
       data-block="ask"
       data-needs-bar=""
       aria-label={label}
-      class={`flex max-h-[60dvh] shrink-0 flex-col overflow-y-auto rounded-[var(--ui-radius)] bg-[var(--ui-surface)] text-[var(--ui-text)] shadow-[var(--ui-shadow-1)] ${
-        wide ? "mx-6 mt-2.5 gap-3 px-5 pt-3 pb-2" : "mx-4 mt-2 gap-2 px-4 py-3"
+      class={`@container flex max-h-[60dvh] shrink-0 flex-col overflow-y-auto rounded-[var(--ui-radius)] bg-[var(--ui-surface)] text-[var(--ui-text)] shadow-[var(--ui-shadow-1)] ${
+        wide ? "mt-2.5 gap-3 px-5 pt-3 pb-2" : "mx-4 mt-2 gap-2 px-4 py-3"
       }`}
     >
       {children}
@@ -701,7 +703,7 @@ function AskHead({
       </span>
       <div class="flex min-w-0 flex-col">
         <h2 class="m-0 text-lg font-semibold leading-[1.3]">{title}</h2>
-        {meta === "" ? null : <span class={`text-sm ${MUTED}`}>{meta}</span>}
+        {meta === "" ? null : <span class={`truncate text-sm ${MUTED}`}>{meta}</span>}
       </div>
     </div>
   );
@@ -807,7 +809,10 @@ function PermissionBody({
   }
   return (
     <>
-      <div class="flex flex-wrap items-center gap-x-4 gap-y-2">
+      <div
+        class="flex flex-col gap-3 @[40rem]:flex-row @[40rem]:flex-wrap @[40rem]:items-center @[40rem]:gap-x-4 @[40rem]:gap-y-2"
+        data-ask-head=""
+      >
         {head}
         {buttons}
       </div>

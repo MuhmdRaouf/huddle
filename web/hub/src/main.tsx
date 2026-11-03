@@ -15,6 +15,7 @@ import { boot } from "./boot.ts";
 import { App, NoChannel } from "./app/App.tsx";
 import { browserNotifications } from "./app/browser-notify.ts";
 import { Landing } from "./app/Landing.tsx";
+import { openSessionOf } from "./app/open-session.ts";
 import {
   createAct,
   createCopy,
@@ -253,7 +254,7 @@ async function syncChannel(): Promise<void> {
   const route = parseHash(location.hash, (k, fb) => readPref(localStorage, k, fb));
   for (const [k, v] of Object.entries(route.prefs)) writePref(localStorage, k, v);
   // the session the sessions tab names loads before anything channel-shaped runs (or returns early)
-  registry.setOpenId(route.tab === "sessions" ? (route.sub[0] ?? null) : null);
+  registry.setOpenId(openSessionOf(route));
   const ch = route.ch;
   failedCh = null;
   if (ch === store.getState().ch) return;

@@ -359,7 +359,7 @@ describe("the Session screen", () => {
     for (const layout of ["phone", "tablet", "desktop"] as const) {
       cleanup();
       mountSession(layout, {}, [needItem()]);
-      const screenEl = document.querySelector("[data-session]") as HTMLElement;
+      const screenEl = document.querySelector("[data-item-content]") as HTMLElement;
       const kids = Array.from(screenEl.children);
       expect(kids[0]?.tagName, layout).toBe("HEADER");
       expect(kids[1]?.getAttribute("data-block"), layout).toBe("ask");

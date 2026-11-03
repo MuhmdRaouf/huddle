@@ -584,9 +584,9 @@ test("a finished turn's box quotes its digest line and offers Reply, Mark read a
     last_event_at: new Date().toISOString(),
   });
   await signIn(page);
-  // signIn already lands on the sessions tab (the shell rewrites the empty home onto it), and the
-  // desk has opened this very row: a tab click here would rewind the address and drop the sheet
-  await page.locator(`a[href='#/sessions/${session}']`).first().click();
+  // signIn lands on Home, whose list holds this turn's row: the row opens the session in Home's
+  // own pane, and a tab click here would rewind the address and drop the sheet
+  await page.locator(`a[href='#/home/${session}']`).first().click();
 
   const sheet = page.locator("[data-block='ask']");
   await expect(sheet.getByRole("heading", { name: "Finished, waiting for you" })).toBeVisible();

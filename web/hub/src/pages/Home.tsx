@@ -23,7 +23,7 @@ export function NeedsChip({ n }: { n: number }): JSX.Element | null {
 function NeedRow({ item, session }: { item: NeedItem; session: RegistrySession | undefined }): JSX.Element {
   return (
     <a
-      href={`#/sessions/${encodeURIComponent(item.session)}`}
+      href={`#/home/${encodeURIComponent(item.session)}`}
       data-item=""
       class="flex min-h-[var(--ui-tap)] items-center gap-3 rounded-[var(--ui-radius)] bg-[var(--ui-surface)] px-4 py-2 shadow-[var(--ui-shadow-1)] outline-none focus-visible:ring-2 focus-visible:ring-[var(--ui-accent)]"
     >

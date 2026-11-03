@@ -28,9 +28,10 @@ import type { HuddleState } from "../store.ts";
 import { AccountMenu } from "./AccountMenu.tsx";
 import { useHuddle } from "./context.tsx";
 import { IntroCtx } from "./intro.tsx";
-import { type Layout, useLayout } from "./layout.ts";
+import { type Layout, panesOf, useLayout } from "./layout.ts";
 import { BottomNav, type NeedsBadge, needsBadge, TabBadge } from "./Nav.tsx";
-import { NowContext, SessionScreen } from "./Now.tsx";
+import { type Back, NowContext, SessionScreen } from "./Now.tsx";
+import { openSessionOf, SESSION_TABS } from "./open-session.ts";
 import { Pair } from "./Pair.tsx";
 import { deskRows, NoSessionsWelcome, SessionsPane } from "./Sessions.tsx";
 import { Rail } from "./Rail.tsx";
@@ -618,21 +619,21 @@ export function App({
     history.replaceState(null, "", route.replace);
   }, [route.replace, route.key]);
 
-  // a session is always open on the desk: with no session picked, the row the list would draw
-  // first (needs you, then working, then idle) opens by replacing the address, so Back leaves
-  // Sessions instead of bouncing back to the bare list. The registry's answer can land after the
+  // a session is always open beside the list, on the tablet and the desk: with no session picked,
+  // the row the list would draw first (needs you, then working, then idle) opens by replacing the
+  // address, so Back leaves Sessions or Home instead of bouncing back to the bare list. The registry's answer can land after the
   // first paint, so the effect follows its two lists; the guard keeps a move that lands between
   // the render and this effect in charge of the address.
   const deskRowsKey = registry.getState().sessions;
   const deskNeedsKey = registry.getState().needs;
   useLayoutEffect(() => {
-    if (route.tab !== "sessions" || route.sub[0] || layout !== "desktop") return;
+    if (!SESSION_TABS.has(route.tab) || route.sub[0] || panesOf(layout) === "one") return;
     const st = registry.getState();
     const first = deskRows((st.sessions ?? []).map((s) => ({ ...s, state: shownState(s, st.needs) })))[0];
     if (!first) return;
     const now = parseHash(location.hash, (k, fb) => readPref(localStorage, k, fb));
     if (now.key !== route.key) return;
-    const href = `#/sessions/${first.session_id}`;
+    const href = `#/${route.tab}/${first.session_id}`;
     history.replaceState(null, "", href);
     setHash(href);
     // a replaced address fires no hashchange, so the page-level move that names the open session
@@ -718,7 +719,10 @@ export function App({
   // context pane where a screen carries one (the sessions tab's session screen: the linked
   // sessions and the session's facts). The sessions list carries the set-up row; the checklist
   // opens in its sheet.
-  const nowId = route.tab === "sessions" ? (route.sub[0] ?? null) : null;
+  const nowId = openSessionOf(route);
+  const panes = panesOf(layout);
+  const back: Back =
+    route.tab === "home" ? { href: "#/home", label: "Home" } : { href: "#/sessions", label: "Sessions" };
   const reg = registry.getState();
   // the registry read answered and holds nothing: no session ever reported, so the main pane
   // leads with the welcome (the list beside it drops its copy of the card)
@@ -728,34 +732,44 @@ export function App({
     setPairing(true);
   };
   const list =
-    route.tab === "channels" && ch && layout !== "phone" ? (
+    route.tab === "channels" && ch && panes === "two" ? (
       <Rail onHelp={onHelp} />
-    ) : route.tab === "sessions" && layout !== "phone" ? (
+    ) : route.tab === "sessions" && panes === "two" ? (
       <SessionsPane layout={layout} openId={nowId ?? undefined} onPairToken={onPairToken} />
+    ) : route.tab === "home" && panes === "two" ? (
+      <aside class="flex min-h-0 min-w-0 flex-col overflow-y-auto bg-[var(--ui-surface)]" data-home-pane="">
+        <Home />
+      </aside>
     ) : null;
   const context: ComponentChildren =
     route.tab === "sessions" && layout === "desktop" && nowId ? <NowContext /> : null;
 
-  const detail: ComponentChildren =
+  // the phone's list, drawn as the pane itself when no session is picked
+  const phoneList =
     route.tab === "home" ? (
       <div class="min-h-0 flex-1 overflow-y-auto">
         <Home />
       </div>
-    ) : route.tab === "sessions" ? (
+    ) : (
+      <div class="flex min-h-0 flex-1 flex-col">
+        <SessionsPane layout="phone" onPairToken={onPairToken} />
+      </div>
+    );
+
+  const detail: ComponentChildren =
+    route.tab === "home" || route.tab === "sessions" ? (
       nowId ? (
-        <SessionScreen id={nowId} layout={layout} />
-      ) : layout === "phone" ? (
-        <div class="flex min-h-0 flex-1 flex-col">
-          <SessionsPane layout="phone" onPairToken={onPairToken} />
-        </div>
-      ) : noSessions ? (
+        <SessionScreen id={nowId} layout={layout} back={back} />
+      ) : panes === "one" ? (
+        phoneList
+      ) : route.tab === "sessions" && noSessions ? (
         <div class="min-h-0 flex-1 overflow-y-auto px-4 py-5">
           <div class="mx-auto max-w-lg">
             <NoSessionsWelcome />
           </div>
         </div>
       ) : (
-        // the tablet's quiet middle until a pick: the desk has already opened the list's first row
+        // nothing to open: no session is listed, so the pane beside the list stays quiet
         <div class="min-h-0 flex-1" />
       )
     ) : route.tab === "radar" ? (
@@ -809,7 +823,7 @@ export function App({
   const passkeyAsk = <PasskeyAsk />;
   if (layout === "phone") {
     return (
-      <div class="ui-shell ui-shell-phone">
+      <div class="ui-shell ui-shell-phone" data-panes={panes}>
         {passkeyAsk}
         {nowId ? null : (
           <header class="flex shrink-0 items-center justify-between gap-3 px-5 pt-[22px] pb-3">
@@ -841,17 +855,17 @@ export function App({
   // the tablet and the desktop: the top bar over the list, the detail and, on the desktop, the
   // context pane
   return (
-    <div class="ui-shell">
+    <div class="ui-shell" data-panes={panes}>
       {passkeyAsk}
       <TopBar tab={route.tab} needs={needs} healthy={healthy} />
       <div
         class={`grid min-h-0 min-w-0 flex-1 ${
           list && context
-            ? "grid-cols-[320px_minmax(0,1fr)_300px]"
+            ? "grid-cols-[360px_minmax(0,1fr)_300px]"
             : list
               ? layout === "tablet"
-                ? "grid-cols-[360px_minmax(0,1fr)]"
-                : "grid-cols-[320px_minmax(0,1fr)]"
+                ? "grid-cols-[320px_minmax(0,1fr)]"
+                : "grid-cols-[360px_minmax(0,1fr)]"
               : "grid-cols-1"
         }`}
       >

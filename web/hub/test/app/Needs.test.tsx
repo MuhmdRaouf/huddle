@@ -266,6 +266,28 @@ describe("the permission bar", () => {
     expect(screen.getByRole("button", { name: /Allow once/ }).textContent?.trim()).toBe("Allow once");
   });
 
+  it("stacks the wide card's answers under the title in a narrow card and keeps them beside it in a roomy one", () => {
+    mountBar({ layout: "tablet" });
+    const card = document.querySelector("[data-block='ask']") as HTMLElement;
+    // the card is the container the row's width is asked of, not the viewport
+    expect(card.className).toContain("@container");
+    const row = card.querySelector("[data-ask-head]") as HTMLElement;
+    // narrow: the title over the answers, each answer sharing the row
+    expect(row.className).toContain("flex-col");
+    for (const act of ["deny", "allow"]) {
+      expect((card.querySelector(`[data-act='${act}']`) as HTMLElement).className).toContain("flex-1");
+    }
+    // roomy: the title and the answers on one row, the answers at their own width
+    expect(row.className).toContain("@[40rem]:flex-row");
+    expect((card.querySelector("[data-act='deny']") as HTMLElement).className).toContain(
+      "@[40rem]:flex-none",
+    );
+    // the meta line stays on one line
+    expect(screen.getByText("Bash · runs in port/KBN-E2E on laptop · waiting 30 s").className).toContain(
+      "truncate",
+    );
+  });
+
   it("posts deny at once and drops the item", async () => {
     const h = mountBar();
     await act(async () => {

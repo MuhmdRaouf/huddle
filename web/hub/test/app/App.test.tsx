@@ -237,7 +237,7 @@ describe("the three layouts", () => {
     }
   });
 
-  it("splits the desk into the 320 px list, the open session and the 300 px rail, with no pane between", () => {
+  it("splits the desk into the 360 px list, the open session and the 300 px rail, with no pane between", () => {
     stubMedia(DESKTOP);
     nav("#/sessions");
     const row: RegistrySession = {
@@ -256,7 +256,7 @@ describe("the three layouts", () => {
     expect(document.querySelector("[data-session]")).not.toBeNull();
     // the three columns: the list, the session in the middle, the rail — no vertical borders
     const grid = document.querySelector("[data-now-context]")?.parentElement;
-    expect(grid?.className).toContain("grid-cols-[320px_minmax(0,1fr)_300px]");
+    expect(grid?.className).toContain("grid-cols-[360px_minmax(0,1fr)_300px]");
     expect(document.querySelector("[data-now-context]")?.className).not.toContain("border-l");
     expect(screen.queryByText("No session open")).toBeNull();
   });
@@ -317,6 +317,90 @@ describe("routes and panes", () => {
     expect(location.hash).toBe("#/sessions/s-2");
     // replaced, not pushed: Back leaves Sessions instead of bouncing back to the bare list
     expect(history.length).toBe(before);
+  });
+
+  it("opens Home's first row on the desk and draws Home's list beside the session in 360 px", () => {
+    stubMedia(DESKTOP);
+    nav("#/home");
+    const row = (session_id: string, state: string): RegistrySession => ({
+      session_id,
+      state,
+      last_event: state === "needs-you" ? "PermissionRequest" : "UserPromptSubmit",
+      last_event_at: "2026-10-08T11:00:00Z",
+    });
+    const open: RegistryDetail = { ...row("s-2", "needs-you"), events: [] };
+    const before = history.length;
+    renderIn(
+      <App pages={{}} />,
+      makeCtx(makeState(), {
+        registry: makeRegistry({
+          sessions: [row("s-1", "working"), row("s-2", "needs-you")],
+          open,
+          openId: "s-2",
+        }),
+      }),
+    );
+    expect(location.hash).toBe("#/home/s-2");
+    expect(history.length).toBe(before);
+    expect(document.querySelector("[data-panes]")?.getAttribute("data-panes")).toBe("two");
+    const pane = document.querySelector("[data-home-pane]");
+    expect(pane).not.toBeNull();
+    expect(pane?.parentElement?.className).toContain("grid-cols-[360px_minmax(0,1fr)]");
+    expect(document.querySelector("[data-session]")).not.toBeNull();
+  });
+
+  it("draws Home's list at 320 px beside the session on the tablet, with the first row open", () => {
+    stubMedia(TABLET);
+    nav("#/home");
+    const row: RegistrySession = {
+      session_id: "s-1",
+      state: "working",
+      last_event: "UserPromptSubmit",
+      last_event_at: "2026-10-08T11:00:00Z",
+    };
+    const open: RegistryDetail = { ...row, events: [] };
+    renderIn(
+      <App pages={{}} />,
+      makeCtx(makeState(), { registry: makeRegistry({ sessions: [row], open, openId: "s-1" }) }),
+    );
+    expect(location.hash).toBe("#/home/s-1");
+    expect(document.querySelector("[data-home-pane]")?.parentElement?.className).toContain(
+      "grid-cols-[320px_minmax(0,1fr)]",
+    );
+    expect(document.querySelector("[data-session]")).not.toBeNull();
+  });
+
+  it("opens Sessions' first row on the tablet too", () => {
+    stubMedia(TABLET);
+    nav("#/sessions");
+    const row: RegistrySession = {
+      session_id: "s-1",
+      state: "working",
+      last_event: "UserPromptSubmit",
+      last_event_at: "2026-10-08T11:00:00Z",
+    };
+    renderIn(<App pages={{}} />, makeCtx(makeState(), { registry: makeRegistry({ sessions: [row] }) }));
+    expect(location.hash).toBe("#/sessions/s-1");
+  });
+
+  it("draws one pane on the phone: Home's session alone, with its back link to Home", () => {
+    stubMedia(PHONE);
+    nav("#/home/s-1");
+    const row: RegistrySession = {
+      session_id: "s-1",
+      state: "working",
+      last_event: "UserPromptSubmit",
+      last_event_at: "2026-10-08T11:00:00Z",
+    };
+    const open: RegistryDetail = { ...row, events: [] };
+    renderIn(
+      <App pages={{}} />,
+      makeCtx(makeState(), { registry: makeRegistry({ sessions: [row], open, openId: "s-1" }) }),
+    );
+    expect(document.querySelector("[data-panes]")?.getAttribute("data-panes")).toBe("one");
+    expect(document.querySelector("[data-home-pane]")).toBeNull();
+    expect(document.querySelector("[data-session]")).not.toBeNull();
+    expect(screen.getByRole("link", { name: "Back to Home" }).getAttribute("href")).toBe("#/home");
   });
 
   it("leaves the phone on the list when no session is picked", () => {

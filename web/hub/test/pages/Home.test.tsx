@@ -44,7 +44,7 @@ describe("Home", () => {
       [need(1, "s-1"), need(2, "s-2", "answered")],
     );
     const links = [...document.querySelectorAll("a[data-item]")] as HTMLAnchorElement[];
-    expect(links.map((a) => a.getAttribute("href"))).toEqual(["#/sessions/s-1"]);
+    expect(links.map((a) => a.getAttribute("href"))).toEqual(["#/home/s-1"]);
     expect(links[0]?.textContent).toContain("Move the backup");
     expect(links[0]?.textContent).toContain("Wants to run a command");
   });

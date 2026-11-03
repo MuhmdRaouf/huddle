@@ -22,6 +22,12 @@ export function layoutOf(tablet: boolean, desktop: boolean): Layout {
   return desktop ? "desktop" : tablet ? "tablet" : "phone";
 }
 
+/** How many panes a tab with a list and an item draws: the phone draws one and pushes the item,
+ *  the tablet and the desktop draw the list beside the item. */
+export function panesOf(layout: Layout): "one" | "two" {
+  return layout === "phone" ? "one" : "two";
+}
+
 /** The layout the browser's viewport holds right now. */
 const read = (): Layout =>
   layoutOf(window.matchMedia(TABLET_QUERY).matches, window.matchMedia(DESKTOP_QUERY).matches);

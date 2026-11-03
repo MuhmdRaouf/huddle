@@ -2,7 +2,7 @@
 // hook that follows a viewport across them through matchMedia's change events.
 import { act } from "@testing-library/preact";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
-import { DESKTOP_QUERY, layoutOf, TABLET_QUERY, useLayout } from "../../src/app/layout.ts";
+import { DESKTOP_QUERY, layoutOf, panesOf, TABLET_QUERY, useLayout } from "../../src/app/layout.ts";
 import { renderIn, stubMedia } from "../helpers.tsx";
 
 afterEach(() => {
@@ -32,6 +32,14 @@ describe("layoutOf", () => {
     expect(layoutAt(768)).toBe("tablet");
     expect(layoutAt(1199)).toBe("tablet");
     expect(layoutAt(1200)).toBe("desktop");
+  });
+});
+
+describe("panesOf", () => {
+  it("is one on the phone and two on the tablet and the desktop", () => {
+    expect(panesOf("phone")).toBe("one");
+    expect(panesOf("tablet")).toBe("two");
+    expect(panesOf("desktop")).toBe("two");
   });
 });
 

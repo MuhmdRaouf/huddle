@@ -166,7 +166,7 @@ function StreamPane({ items, now }: { items: StreamItem[]; now: number }): JSX.E
   return (
     <div
       ref={pane}
-      class="min-h-0 flex-1 overflow-y-auto px-4 py-3.5 tablet:px-6"
+      class="min-h-0 flex-1 overflow-y-auto px-4 py-3.5 tablet:px-0"
       tabIndex={0}
       aria-label="Transcript"
       data-stream=""
@@ -531,6 +531,12 @@ function StatusLine({
 /** The permission mode that runs every call without asking. */
 const BYPASS_MODE = "bypassPermissions";
 
+/** Where the phone's back link goes: the tab's address and its name. */
+export type Back = { href: string; label: string };
+
+/** The Sessions tab, where a session opened from the list goes back to. */
+const BACK_TO_SESSIONS: Back = { href: "#/sessions", label: "Sessions" };
+
 /** The session's header block: the title with its where line (the phone's carries the accent
  *  back link and the hooks-stale chip), the status line and the Now card. */
 function SessionHeader({
@@ -539,12 +545,14 @@ function SessionHeader({
   role,
   ask,
   layout,
+  back,
 }: {
   d: RegistryDetail;
   state: string;
   role: StateRole;
   ask: NeedItem | undefined;
   layout: Layout;
+  back: Back;
 }): JSX.Element {
   const { now } = useHuddle();
   const turn = useTurn(d.session_id, state);
@@ -560,12 +568,12 @@ function SessionHeader({
     </div>
   );
   return (
-    <header data-block="header" class={`shrink-0 ${layout === "desktop" ? "px-6 pt-4" : "px-4 pt-3.5"} pb-1`}>
+    <header data-block="header" class="shrink-0 px-4 pt-3.5 pb-1 tablet:px-0 desk:pt-4">
       <div class="flex min-w-0 items-center gap-1 tablet:gap-4">
         {layout === "phone" ? (
           <a
-            href="#/sessions"
-            aria-label="Back to Sessions"
+            href={back.href}
+            aria-label={`Back to ${back.label}`}
             class="-ml-2 flex size-[var(--ui-tap)] shrink-0 items-center justify-center rounded-[var(--ui-radius)] text-[var(--ui-accent)] outline-none focus-visible:ring-2 focus-visible:ring-[var(--ui-accent)]"
           >
             <Icon name="left" class="size-[22px]" />
@@ -593,11 +601,22 @@ function SessionBody({ d }: { d: RegistryDetail }): JSX.Element {
   return <StreamPane items={streamItems(d.events ?? [])} now={now} />;
 }
 
-/** The Session screen: the header block, the ask its open needs-you item carries (the page's
+/** The Session screen. Beside the list, its content sits in one box of at most 760 px,
+ *  centred in the pane between 20 px (tablet) and 24 px (desktop) gutters, and every block fills
+ *  that box: the header block, the ask its open needs-you item carries (the page's
  *  second block on every layout), the line that says how to restart a session whose hooks
  *  stopped reporting, and the session's transcript. The phone paints the accent back link in
- *  the title's row; the desktop leads with the title alone and the actions at its right. */
-export function SessionScreen({ id, layout }: { id: string; layout: Layout }): JSX.Element {
+ *  the title's row, to the tab the session opened from; the desktop leads with the title alone and
+ *  the actions at its right. */
+export function SessionScreen({
+  id,
+  layout,
+  back = BACK_TO_SESSIONS,
+}: {
+  id: string;
+  layout: Layout;
+  back?: Back;
+}): JSX.Element {
   const { registry } = useHuddle();
   const st = registry.getState();
   const d = st.open;
@@ -615,16 +634,18 @@ export function SessionScreen({ id, layout }: { id: string; layout: Layout }): J
   const role = stateRole(state, ask);
 
   return (
-    <div class="flex min-h-0 min-w-0 flex-1 flex-col" data-session="">
-      <SessionHeader d={d} state={state} role={role} ask={ask} layout={layout} />
-      {ask ? <NeedsBar item={ask} session={d} layout={layout} /> : null}
-      {d.hooks_stale ? (
-        <p data-resume="" class={`shrink-0 border-b ${LINE} px-4 py-2.5 text-sm tablet:px-6`}>
-          Hooks stopped reporting: restart this session with{" "}
-          <code class="ui-mono">claude --resume {d.session_id}</code>
-        </p>
-      ) : null}
-      <SessionBody key={d.session_id} d={d} />
+    <div class="flex min-h-0 min-w-0 flex-1 flex-col tablet:px-5 desk:px-6" data-session="">
+      <div class="mx-auto flex min-h-0 w-full max-w-190 flex-1 flex-col" data-item-content="">
+        <SessionHeader d={d} state={state} role={role} ask={ask} layout={layout} back={back} />
+        {ask ? <NeedsBar item={ask} session={d} layout={layout} /> : null}
+        {d.hooks_stale ? (
+          <p data-resume="" class={`shrink-0 border-b ${LINE} px-4 py-2.5 text-sm tablet:px-0`}>
+            Hooks stopped reporting: restart this session with{" "}
+            <code class="ui-mono">claude --resume {d.session_id}</code>
+          </p>
+        ) : null}
+        <SessionBody key={d.session_id} d={d} />
+      </div>
     </div>
   );
 }

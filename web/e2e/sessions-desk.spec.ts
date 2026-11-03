@@ -1,6 +1,6 @@
 // sessions-desk.spec.ts — the desk's three columns on #/sessions: at 1440 and 2000 px the tab
 // lands on the row the list draws first (the address is replaced, so Back leaves Sessions), the
-// 320 px list, the open session in the middle and the 300 px rail stand with no pane between and
+// 360 px list, the open session in the middle and the 300 px rail stand with no pane between and
 // no vertical borders, the list and the rail paint the surface token while the middle keeps the
 // background one, the chat column stays within 820 px, and no element reads "No session open".
 // At phone width the list stands alone and Back from a session returns to it. Axe finds nothing
@@ -61,7 +61,7 @@ test("at desk widths Sessions lands on the list's first row in three columns, wi
     await expect(page.locator("[data-session]")).toBeVisible();
     expect(new URL(page.url()).hash).toBe(first);
 
-    // the three columns: 320 px of list, the rest to the session, 300 px of rail
+    // the three columns: 360 px of list, the rest to the session, 300 px of rail
     await expect(page.locator("[data-now-context]")).toBeVisible();
     const list = await pane.boundingBox();
     const rail = await page.locator("[data-now-context]").boundingBox();
@@ -69,7 +69,7 @@ test("at desk widths Sessions lands on the list's first row in three columns, wi
     expect(list).not.toBeNull();
     expect(rail).not.toBeNull();
     expect(main).not.toBeNull();
-    expect(Math.abs(list!.width - 320)).toBeLessThanOrEqual(1);
+    expect(Math.abs(list!.width - 360)).toBeLessThanOrEqual(1);
     expect(Math.abs(rail!.width - 300)).toBeLessThanOrEqual(1);
     expect(Math.abs(list!.x + list!.width - main!.x)).toBeLessThanOrEqual(1);
     expect(Math.abs(main!.x + main!.width - rail!.x)).toBeLessThanOrEqual(1);
