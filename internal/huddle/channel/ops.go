@@ -218,7 +218,7 @@ type NextDone struct {
 
 // opsOrder lists the operation table in the order the tool list shows.
 var opsOrder = []string{
-	"join", "status", "leave", "remove", "sessions", "state", "publish", "send", "reply", "inbox", "events",
+	"join", "status", "leave", "remove", "sessions", "state", "message", "ask", "reply", "inbox", "events",
 	"wait", "ack", "gate", "pause", "resume", "turn", "pass", "take", "next", "task", "map",
 	"tasks", "task_create", "task_update", "task_status", "wait_task", "note",
 	"start", "finish", "depend", "handoff", "ask_wait", "ask_close",
@@ -281,31 +281,30 @@ var ops = map[string]opDef{
 		desc: "Every session and subagent: state, task, pause, unread, open asks, who holds the turn.",
 		run:  func(ctx context.Context, c opCall, a *jsfmt.Value) (any, error) { return c.ch.Sessions(ctx) },
 	},
-	"publish": {
-		desc: "Publish an event on the channel (to everyone, or to one session with `to`). Durable; wakes whoever waits on the topic. key makes a retry idempotent.",
-		props: jsfmt.Object([]string{"topic", "msg", "to", "ref", "data", "ask", "key"}, []*jsfmt.Value{
-			sProp("e.g. finding.ready, build.ready"), sProp(""), sProp("one session; omit for everyone"),
-			sProp("file or id the event is about"), oProp(),
-			bProp("needs a reply: lands in the recipient's inbox"), sProp("idempotency key"),
-		}),
-		required: []string{"topic", "msg"},
-		run: func(ctx context.Context, c opCall, a *jsfmt.Value) (any, error) {
-			return c.ch.Publish(ctx, c.me, PublishArgs{
-				Topic: argStr(a, "topic"), Msg: argStr(a, "msg"), To: argStrPtr(a, "to"),
-				Ref: argStrPtr(a, "ref"), Data: argOf(a, "data"),
-				NeedsReply: jsTruthy(argOf(a, "ask")), Key: argStrPtr(a, "key"),
-			})
-		},
-	},
-	"send": {
-		desc: "Message one session (to) or everyone. ask=true needs a reply: it sits in their inbox and wakes their wait until they answer.",
-		props: jsfmt.Object([]string{"to", "msg", "ask", "task", "key"}, []*jsfmt.Value{
-			sProp("session name; omit for everyone"), sProp(""), bProp(""), sProp("task id it is about"), sProp(""),
+	"message": {
+		desc: "Message sessions: to is their names or all (omit it for everyone). Durable. With a topic (a dotted word such as finding.ready) the message wakes whoever waits on that topic. ask=true needs a reply: it sits in their inbox and wakes their wait until they answer. key makes a retry idempotent.",
+		props: jsfmt.Object([]string{"to", "msg", "topic", "ask", "task", "ref", "data", "key"}, []*jsfmt.Value{
+			toProp(), sProp(""), sProp("e.g. finding.ready, build.ready; omit it for a plain message"),
+			bProp("needs a reply"), sProp("task id it is about"),
+			sProp("file or id the message is about"), oProp(), sProp("idempotency key"),
 		}),
 		required: []string{"msg"},
 		run: func(ctx context.Context, c opCall, a *jsfmt.Value) (any, error) {
 			return c.ch.Send(ctx, c.me, argRecipients(a), argStr(a, "msg"), SendOpts{
 				Ask: jsTruthy(argOf(a, "ask")), Task: argStrPtr(a, "task"), Key: argStrPtr(a, "key"),
+				Topic: argStrPtr(a, "topic"), Ref: argStrPtr(a, "ref"), Data: argOf(a, "data"),
+			})
+		},
+	},
+	"ask": {
+		desc: "Ask sessions a question (to: their names or all; omit it for everyone) and return at once. It sits in each inbox and wakes their wait until they reply; use ask_wait to block for the replies.",
+		props: jsfmt.Object([]string{"to", "msg", "task", "key"}, []*jsfmt.Value{
+			toProp(), sProp(""), sProp("task id it is about"), sProp("idempotency key"),
+		}),
+		required: []string{"msg"},
+		run: func(ctx context.Context, c opCall, a *jsfmt.Value) (any, error) {
+			return c.ch.Send(ctx, c.me, argRecipients(a), argStr(a, "msg"), SendOpts{
+				Ask: true, Task: argStrPtr(a, "task"), Key: argStrPtr(a, "key"),
 			})
 		},
 	},
@@ -357,7 +356,7 @@ var ops = map[string]opDef{
 		},
 	},
 	"gate": {
-		desc:   "Check the pause. block=true (default) waits until you are resumed. Call before any action that changes things; while paused, publish/task changes are refused.",
+		desc:   "Check the pause. block=true (default) waits until you are resumed. Call before any action that changes things; while paused, messages on a topic and task changes are refused; plain messages, asks and replies still go through.",
 		props:  jsfmt.Object([]string{"block", "timeout"}, []*jsfmt.Value{bProp(""), iProp("")}),
 		blocks: true,
 		run: func(ctx context.Context, c opCall, a *jsfmt.Value) (any, error) {
@@ -1227,6 +1226,15 @@ func arrProp(desc string) *jsfmt.Value {
 		fields = append(fields, jstr(desc))
 	}
 	return jsfmt.Object(keys, fields)
+}
+
+// toProp is the recipients argument: one session name or all, or a list of names.
+func toProp() *jsfmt.Value {
+	return jsfmt.Object([]string{"type", "items", "description"}, []*jsfmt.Value{
+		jsfmt.Array([]*jsfmt.Value{jstr("string"), jstr("array")}),
+		jsfmt.Object([]string{"type"}, []*jsfmt.Value{jstr("string")}),
+		jstr("session names, or all; omit it for everyone"),
+	})
 }
 
 func enProp(vals []string, desc string) *jsfmt.Value {

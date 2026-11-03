@@ -69,7 +69,7 @@ describe("the chat composer", () => {
     const box = screen.getByRole("textbox", { name: "Message" }) as HTMLTextAreaElement;
     fireEvent.input(box, { target: { value: "  stand by  " } });
     fireEvent.click(screen.getByRole("button", { name: "Send" }));
-    await waitFor(() => expect(act).toHaveBeenCalledWith("send", { msg: "stand by" }));
+    await waitFor(() => expect(act).toHaveBeenCalledWith("message", { msg: "stand by" }));
     await waitFor(() => expect(box.value).toBe(""));
   });
 
@@ -80,7 +80,7 @@ describe("the chat composer", () => {
     fireEvent.change(to, { target: { value: "delta" } });
     fireEvent.input(screen.getByRole("textbox", { name: "Message" }), { target: { value: "hi" } });
     fireEvent.click(screen.getByRole("button", { name: "Send" }));
-    await waitFor(() => expect(act).toHaveBeenCalledWith("send", { to: "delta", msg: "hi" }));
+    await waitFor(() => expect(act).toHaveBeenCalledWith("message", { to: "delta", msg: "hi" }));
   });
 
   it("keeps the words when the send fails, and sends nothing blank", async () => {
@@ -91,7 +91,7 @@ describe("the chat composer", () => {
     expect(act).not.toHaveBeenCalled();
     fireEvent.input(box, { target: { value: "hello" } });
     fireEvent.keyDown(box, { key: "Enter" });
-    await waitFor(() => expect(act).toHaveBeenCalledWith("send", { msg: "hello" }));
+    await waitFor(() => expect(act).toHaveBeenCalledWith("message", { msg: "hello" }));
     expect(box.value).toBe("hello");
   });
 });

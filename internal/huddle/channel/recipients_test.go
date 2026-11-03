@@ -225,12 +225,12 @@ func TestAMessageToTwoSessionsReachesOnlyThem(t *testing.T) {
 	t.Run("the send op takes to as a name or a list", func(t *testing.T) {
 		for _, body := range []string{`{"to": ["a", "b"], "msg": "m"}`, `{"to": "a", "msg": "m"}`, `{"to": "all", "msg": "m"}`, `{"msg": "m"}`} {
 			ch := threeMembers(t)
-			if _, err := RunOp(bg, "send", ch, "c", vv(t, body)); err != nil {
+			if _, err := RunOp(bg, "message", ch, "c", vv(t, body)); err != nil {
 				t.Errorf("send %s: %v", body, err)
 			}
 		}
 		ch := threeMembers(t)
-		if _, err := RunOp(bg, "send", ch, "c", vv(t, `{"to": ["a", "b"], "msg": "m"}`)); err != nil {
+		if _, err := RunOp(bg, "message", ch, "c", vv(t, `{"to": ["a", "b"], "msg": "m"}`)); err != nil {
 			t.Fatal(err)
 		}
 		evs, _ := ch.Events(bg, EventsFilter{Topic: "msg"})

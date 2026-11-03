@@ -43,7 +43,7 @@ func TaskCreated(ctx context.Context, w *cli.World, in io.Reader, out io.Writer)
 		if err != nil {
 			return err
 		}
-		callURL := fmt.Sprintf("%s/api/c/%s/op/send?as=%s", id.URL, url.PathEscape(id.Channel), url.QueryEscape(id.As))
+		callURL := fmt.Sprintf("%s/api/c/%s/op/message?as=%s", id.URL, url.PathEscape(id.Channel), url.QueryEscape(id.As))
 		resp, err := cli.HFetch(ctx, w, http.MethodPost, callURL,
 			map[string]string{"content-type": "application/json"}, body,
 			time.Duration(taskSendMS)*time.Millisecond, input.SessionID)
@@ -53,7 +53,7 @@ func TaskCreated(ctx context.Context, w *cli.World, in io.Reader, out io.Writer)
 		defer resp.Body.Close()
 		_, _ = io.Copy(io.Discard, resp.Body)
 		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-			return fmt.Errorf("send the task to %s: %d", id.Channel, resp.StatusCode)
+			return fmt.Errorf("message the task to %s: %d", id.Channel, resp.StatusCode)
 		}
 		return nil
 	})

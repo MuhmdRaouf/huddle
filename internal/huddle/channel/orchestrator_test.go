@@ -27,7 +27,7 @@ func TestOrchestrator(t *testing.T) {
 	t.Run("a fresh join skips the backlog but keeps open asks; sync replays it", func(t *testing.T) {
 		ch := newChannel(t)
 		for i := range 5 {
-			if _, err := ch.Publish(bg, "web", PublishArgs{Topic: "note.x", Msg: "n" + string(rune('0'+i))}); err != nil {
+			if _, err := ch.Send(bg, "web", nil, "n"+string(rune('0'+i)), SendOpts{Topic: sp("note.x")}); err != nil {
 				t.Fatal(err)
 			}
 		}
@@ -56,7 +56,7 @@ func TestOrchestrator(t *testing.T) {
 		if msgs := inboxMsgs(f.Brief.Asks); !slices.Equal(msgs, []string{"which port?"}) {
 			t.Fatalf("brief asks = %v, want which port?", msgs)
 		}
-		if _, err := ch.Publish(bg, "web", PublishArgs{Topic: "note.y", Msg: "later"}); err != nil {
+		if _, err := ch.Send(bg, "web", nil, "later", SendOpts{Topic: sp("note.y")}); err != nil {
 			t.Fatal(err)
 		}
 		s, err := ch.Join(bg, "api", JoinOpts{Context: sp("sync")})
@@ -79,7 +79,7 @@ func TestOrchestrator(t *testing.T) {
 
 	t.Run("defaults: a first join and a subagent are fresh; a return is sync unless assign says fresh", func(t *testing.T) {
 		ch := newChannel(t)
-		if _, err := ch.Publish(bg, "web", PublishArgs{Topic: "note.x", Msg: "before"}); err != nil {
+		if _, err := ch.Send(bg, "web", nil, "before", SendOpts{Topic: sp("note.x")}); err != nil {
 			t.Fatal(err)
 		}
 		contextOf := func(s Snapshot) string {

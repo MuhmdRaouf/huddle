@@ -1281,7 +1281,7 @@ test("the team page keeps its roster, its filters and its drawer inside the view
 }, info) => {
   const ch = await freshChannel(info.project.name, ["alpha", "beta"]);
   // a feed of more than one kind: a message, a remembered note and a task that finished
-  await api(`/api/c/${ch}/op/send?as=alpha`, { to: "beta", msg: "team layers ping" });
+  await api(`/api/c/${ch}/op/message?as=alpha`, { to: "beta", msg: "team layers ping" });
   await api(`/api/c/${ch}/op/remember?as=beta`, {
     kind: "fact",
     title: `Team page (${ch})`,
@@ -1416,7 +1416,7 @@ test("the inbox page keeps its cards, its note row and its toast inside the view
 }, info) => {
   const ch = await freshChannel(info.project.name, ["greta"]);
   // one question and one gated task wait on the owner: the two need kinds the page answers
-  await api(`/api/c/${ch}/op/send?as=greta`, {
+  await api(`/api/c/${ch}/op/message?as=greta`, {
     to: "owner",
     msg: "Which database should the service use?",
     ask: true,
@@ -1547,7 +1547,7 @@ test("the channel tab strip stays opaque above scrolled content on every channel
   test.skip(info.project.name !== "desktop", "the 2000 px desk is the desktop project's");
   const ch = await freshChannel(info.project.name, ["gamma", "delta"]);
   for (let i = 0; i < 40; i += 1)
-    await api(`/api/c/${ch}/op/send?as=gamma`, { to: "delta", msg: `scrolled message ${i}` });
+    await api(`/api/c/${ch}/op/message?as=gamma`, { to: "delta", msg: `scrolled message ${i}` });
   for (let i = 0; i < 30; i += 1)
     await api(`/api/c/${ch}/op/task_create?as=gamma`, { id: `bleed-${i}`, title: `Bleed task ${i}`, phase: 1 });
   await page.addInitScript(() => localStorage.setItem("huddle:totp-later", "true"));

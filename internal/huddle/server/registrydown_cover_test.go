@@ -97,7 +97,7 @@ func TestAPairingCeremonyWithoutItsStoreSaysSo(t *testing.T) {
 	if code, out := srv.op(t, "solo", "join", "me", "{}"); code != 200 {
 		t.Fatalf("join: %d %v", code, out)
 	}
-	if code, out := srv.op(t, "solo", "send", "me", `{"to":"me","msg":"still here"}`); code != 200 {
+	if code, out := srv.op(t, "solo", "message", "me", `{"to":"me","msg":"still here"}`); code != 200 {
 		t.Fatalf("send: %d %v", code, out)
 	}
 }

@@ -451,9 +451,9 @@ func TestE2EEventsAMessageAnAskThatWakesALongPollTheReply(t *testing.T) {
 		t.Fatalf("start wait: %v", err)
 	}
 	time.Sleep(500 * time.Millisecond)
-	if code, _, errOut := srv.cli(t, "alpha", "nodeleg", nil, "send", "beta", "ready for the schema?", "--ask"); code != 0 {
+	if code, _, errOut := srv.cli(t, "alpha", "nodeleg", nil, "message", "beta", "ready for the schema?", "--ask"); code != 0 {
 		_ = wait.Process.Kill()
-		t.Fatalf("send: %d %s", code, errOut)
+		t.Fatalf("message: %d %s", code, errOut)
 	}
 	exited := make(chan error, 1)
 	go func() { exited <- wait.Wait() }()
@@ -479,12 +479,12 @@ func TestE2EEventsAMessageAnAskThatWakesALongPollTheReply(t *testing.T) {
 	if code, _, errOut := srv.cli(t, "beta", "nodeleg", nil, "reply", strconv.FormatInt(event.Seq, 10), "yes"); code != 0 {
 		t.Fatalf("reply: %s", errOut)
 	}
-	if code, _, errOut := srv.cli(t, "alpha", "nodeleg", nil, "pub", "build.ready", "api", "green"); code != 0 {
-		t.Fatalf("pub: %s", errOut)
+	if code, _, errOut := srv.cli(t, "alpha", "nodeleg", nil, "message", "--topic", "build.ready", "--ref", "api", "green"); code != 0 {
+		t.Fatalf("message: %s", errOut)
 	}
 	_, raw := srv.api(t, http.MethodGet, "/api/c/nodeleg/timeline?after=0", "")
 	if !strings.Contains(raw, `"topic":"build.ready"`) || !strings.Contains(raw, `"from":"alpha"`) {
-		t.Errorf("the timeline holds the pub: %s", raw)
+		t.Errorf("the timeline holds the message: %s", raw)
 	}
 	code, _, _ := srv.cli(t, "beta", "nodeleg", nil, "wait", "nothing.*", "--timeout", "1")
 	if code != 124 {
@@ -713,8 +713,8 @@ func TestE2EALiveStreamStreamsEventsAndADroppedLongPollFreesItsWaiter(t *testing
 		defer carried.Unlock()
 		return buf
 	}
-	if code, _, errOut := srv.cli(t, "alpha", "nodeleg", nil, "pub", "deploy.done", "prod", "shipped over sse"); code != 0 {
-		t.Fatalf("pub: %s", errOut)
+	if code, _, errOut := srv.cli(t, "alpha", "nodeleg", nil, "message", "--topic", "deploy.done", "--ref", "prod", "shipped over sse"); code != 0 {
+		t.Fatalf("message: %s", errOut)
 	}
 	until(t, 8*time.Second, func() bool { return strings.Contains(said(), "shipped over sse") },
 		"the stream to carry the event (it carried "+said()+")")
@@ -894,17 +894,17 @@ func TestE2EAProjectsCredentialTheNextSessionIsInTooAndTheInvitesChannelWins(t *
 		t.Errorf("status said %q", status)
 	}
 	next := sess(projA, "a-2")
-	if code, _, errOut := e2eRun(t, huddleBin, next, "send", "a new session, still in"); code != 0 {
-		t.Fatalf("a-2 send: %d %s", code, errOut)
+	if code, _, errOut := e2eRun(t, huddleBin, next, "message", "a new session, still in"); code != 0 {
+		t.Fatalf("a-2 message: %d %s", code, errOut)
 	}
 	_, status, _ = e2eRun(t, huddleBin, next, "status")
 	if !strings.Contains(status, "you are web") {
 		t.Errorf("a-2 status said %q", status)
 	}
 	other := sess(projB, "b-1")
-	code, _, errOut = e2eRun(t, huddleBin, other, "send", "me too?")
+	code, _, errOut = e2eRun(t, huddleBin, other, "message", "me too?")
 	if code != 2 || !strings.Contains(errOut, "/huddle:invite") {
-		t.Errorf("b-1 send = %d %q, want 2 with a way back in", code, errOut)
+		t.Errorf("b-1 message = %d %q, want 2 with a way back in", code, errOut)
 	}
 }
 
@@ -966,7 +966,7 @@ func TestE2EABlockedTaskNeverBuildsTheNotifyApplet(t *testing.T) {
 func TestE2EListenStreamsEveryMessageFromTheOthersAndReplaysFromAfter(t *testing.T) {
 	srv := startE2EServer(t, huddleBin, e2eBase(t))
 	srv.inviteJoin(t, "l1", "a", "b", "c")
-	before := seqOf(t, srv.op(t, "l1", "send", "a", `{"to":"b","msg":"earlier"}`))
+	before := seqOf(t, srv.op(t, "l1", "message", "a", `{"to":"b","msg":"earlier"}`))
 	listenEnv := e2eEnv(srv.base, map[string]string{
 		"HUDDLE_URL":     srv.url,
 		"HUDDLE_CHANNEL": "l1",
@@ -977,9 +977,9 @@ func TestE2EListenStreamsEveryMessageFromTheOthersAndReplaysFromAfter(t *testing
 	if got := l.next(t, 8*time.Second); got["msg"] != "earlier" {
 		t.Fatalf("the replay gave %v", got)
 	}
-	srv.op(t, "l1", "send", "a", `{"to":"c","msg":"for c"}`)
-	srv.op(t, "l1", "publish", "b", `{"topic":"mine.x","msg":"own"}`)
-	srv.op(t, "l1", "send", "c", `{"to":"b","msg":"for b","ask":true}`)
+	srv.op(t, "l1", "message", "a", `{"to":"c","msg":"for c"}`)
+	srv.op(t, "l1", "message", "b", `{"topic":"mine.x","msg":"own"}`)
+	srv.op(t, "l1", "message", "c", `{"to":"b","msg":"for b","ask":true}`)
 	second := l.next(t, 8*time.Second)
 	third := l.next(t, 8*time.Second)
 	if second["msg"] != "for c" || second["from"] != "a" || second["to"] != "c" {
@@ -996,7 +996,7 @@ func TestE2EListenStreamsEveryMessageFromTheOthersAndReplaysFromAfter(t *testing
 	}
 	l.stop()
 	if extra := l.quiet(); len(extra) != 0 {
-		t.Errorf("the own publish leaked: %v", extra)
+		t.Errorf("the own message leaked: %v", extra)
 	}
 }
 
@@ -1016,8 +1016,8 @@ func TestE2EListenFollowsTheChannelAndItsListenChannelsTogether(t *testing.T) {
 	l := startE2eListen(t, huddleBin, listenEnv)
 	defer l.stop()
 	time.Sleep(1500 * time.Millisecond) // both streams connect
-	srv.op(t, "m1", "send", "a", `{"msg":"in m1"}`)
-	srv.op(t, "m2", "send", "a", `{"msg":"in m2"}`)
+	srv.op(t, "m1", "message", "a", `{"msg":"in m1"}`)
+	srv.op(t, "m2", "message", "a", `{"msg":"in m2"}`)
 	first := l.next(t, 8*time.Second)
 	second := l.next(t, 8*time.Second)
 	pair := [][2]string{{first["channel"].(string), first["msg"].(string)}, {second["channel"].(string), second["msg"].(string)}}
@@ -1040,7 +1040,7 @@ func TestE2EListenStateResumesWhereTheLastListenStopped(t *testing.T) {
 		"HUDDLE_LISTEN":  "",
 	})
 	state := filepath.Join(t.TempDir(), "lanes.json")
-	first := seqOf(t, srv.op(t, "r1", "send", "a", `{"msg":"one"}`))
+	first := seqOf(t, srv.op(t, "r1", "message", "a", `{"msg":"one"}`))
 	listen := func(until int) []string {
 		l := startE2eListen(t, huddleBin, listenEnv, "--after", strconv.FormatInt(first-1, 10), "--state", state)
 		var got []string
@@ -1053,7 +1053,7 @@ func TestE2EListenStateResumesWhereTheLastListenStopped(t *testing.T) {
 	if got := listen(1); len(got) != 1 || got[0] != "one" {
 		t.Fatalf("the first listen gave %v", got)
 	}
-	srv.op(t, "r1", "send", "a", `{"msg":"two, while nobody listens"}`)
+	srv.op(t, "r1", "message", "a", `{"msg":"two, while nobody listens"}`)
 	if got := listen(1); len(got) != 1 || got[0] != "two, while nobody listens" {
 		t.Fatalf("the second listen gave %v, want only what it missed", got)
 	}

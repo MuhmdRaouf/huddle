@@ -70,7 +70,7 @@ export function Chat({ events, now, reservations }: ChatProps): JSX.Element {
     registry.getState().sessions?.find((s) => s.channel === state.ch && s.member === member)?.delivery_route;
 
   const send = async (to: string, msg: string): Promise<boolean> =>
-    (await act("send", to ? { to, msg } : { msg })) !== null;
+    (await act("message", to ? { to, msg } : { msg })) !== null;
 
   const remove = async (name: string): Promise<boolean> => {
     if ((await act("remove", { target: name })) === null) return false;

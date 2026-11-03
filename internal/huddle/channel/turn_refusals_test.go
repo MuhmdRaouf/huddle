@@ -38,8 +38,8 @@ func TestTurnRefusalsAndReplay(t *testing.T) {
 		if _, err := ch.TakeTurn(bg, "b", ""); err != nil {
 			t.Fatalf("take: %v", err)
 		}
-		if _, err := ch.Publish(bg, "b", PublishArgs{Topic: "build.done", Msg: "up"}); err != nil {
-			t.Fatalf("publish: %v", err)
+		if _, err := ch.Send(bg, "b", nil, "up", SendOpts{Topic: sp("build.done")}); err != nil {
+			t.Fatalf("message: %v", err)
 		}
 		turn, err := ch.Turn(bg)
 		if err != nil {

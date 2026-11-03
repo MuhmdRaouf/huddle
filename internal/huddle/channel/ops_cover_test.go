@@ -194,7 +194,7 @@ func TestAGateThatIsNotPausedOpensAtOnceWhateverTheTimeout(t *testing.T) {
 
 func TestAWaitWithNoTopicsWakesForAnyUnreadEvent(t *testing.T) {
 	ch := joinedChannel(t)
-	callOp(t, ch, "publish", "a", `{"topic":"build.ready","msg":"done"}`)
+	callOp(t, ch, "message", "a", `{"topic":"build.ready","msg":"done"}`)
 	if got := jsonField(t, callOp(t, ch, "wait", "b", `{"timeout":5}`).Result, "kind"); got != "event" {
 		t.Errorf("wait kind = %q, want event", got)
 	}

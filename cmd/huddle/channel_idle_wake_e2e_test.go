@@ -248,7 +248,7 @@ func TestE2EIdleWakeAnAskFromTheOtherRepoWakesTheWaiter(t *testing.T) {
 	waiter := w.startWaiter("homelab", w.stopHookInput("homelab"))
 	w.waitUntilListening("homelab")
 
-	w.run("proxbeam", "send", "homelab", "PING 1", "--ask")
+	w.run("proxbeam", "message", "homelab", "PING 1", "--ask")
 
 	ended, code := waiter.exited(3 * time.Second)
 	_, stderr := waiter.output()
@@ -295,7 +295,7 @@ func TestE2EIdleWakeAMessageToTheWholeChannelWakesTheWaiter(t *testing.T) {
 	waiter := w.startWaiter("homelab", w.stopHookInput("homelab"))
 	w.waitUntilListening("homelab")
 
-	w.run("proxbeam", "send", "build is green")
+	w.run("proxbeam", "message", "build is green")
 
 	ended, code := waiter.exited(3 * time.Second)
 	_, stderr := waiter.output()
@@ -309,7 +309,7 @@ func TestE2EIdleWakeOverheardChatterNeverWakesTheWaiter(t *testing.T) {
 	waiter := w.startWaiter("homelab", w.stopHookInput("homelab"))
 	w.waitUntilListening("homelab")
 
-	w.run("proxbeam", "send", "nas", "the pool is mounted")
+	w.run("proxbeam", "message", "nas", "the pool is mounted")
 	w.run("proxbeam", "remember", "fact", "NAS VLAN", "the NAS is on VLAN 20")
 
 	if ended, code := waiter.exited(3 * time.Second); ended {
@@ -339,7 +339,7 @@ func TestE2EIdleWakeAHubRestartMidWaitStillWakes(t *testing.T) {
 	w.run("homelab", "up")
 	until(t, 20*time.Second, func() bool { return argvHealthy(w.hubURL) }, "the hub to come back")
 
-	w.run("proxbeam", "send", "homelab", "PING after restart", "--ask")
+	w.run("proxbeam", "message", "homelab", "PING after restart", "--ask")
 
 	ended, code := waiter.exited(30 * time.Second)
 	_, stderr := waiter.output()
@@ -355,7 +355,7 @@ func TestE2EIdleWakeASessionStartedAndNeverPromptedStillWakes(t *testing.T) {
 	waiter := w.startWaiter("homelab", input)
 	w.waitUntilListening("homelab")
 
-	w.run("proxbeam", "send", "homelab", "PING for a session nobody prompted", "--ask")
+	w.run("proxbeam", "message", "homelab", "PING for a session nobody prompted", "--ask")
 
 	ended, code := waiter.exited(3 * time.Second)
 	_, stderr := waiter.output()
@@ -410,7 +410,7 @@ func TestE2EIdleWakeAnIdleSessionKeepsListeningPastOneFullCycle(t *testing.T) {
 
 	// the session answers the keepalive, its turn ends, the Stop hook starts the next waiter;
 	// a message sent in the gap between the two is still delivered
-	w.run("proxbeam", "send", "homelab", "PING sent in the gap", "--ask")
+	w.run("proxbeam", "message", "homelab", "PING sent in the gap", "--ask")
 	second := w.startWaiter("homelab", w.stopHookInput("homelab"), short)
 	ended, code = second.exited(3 * time.Second)
 	_, stderr = second.output()
@@ -422,7 +422,7 @@ func TestE2EIdleWakeAnIdleSessionKeepsListeningPastOneFullCycle(t *testing.T) {
 	// must not repeat the gap message, and wakes on the next one
 	third := w.startWaiter("homelab", w.stopHookInput("homelab"))
 	w.waitUntilListening("homelab")
-	w.run("proxbeam", "send", "homelab", "PING after the cycle", "--ask")
+	w.run("proxbeam", "message", "homelab", "PING after the cycle", "--ask")
 	ended, code = third.exited(3 * time.Second)
 	_, stderr = third.output()
 	if !ended || code != 2 || !strings.Contains(stderr, "proxbeam asks: PING after the cycle") || strings.Contains(stderr, "sent in the gap") {

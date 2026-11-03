@@ -27,7 +27,7 @@ func TestHubRemove(t *testing.T) {
 		if _, err := ch.Join(bg, "a", JoinOpts{}); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := ch.Publish(bg, "a", PublishArgs{Topic: "n.x", Msg: "hello"}); err != nil {
+		if _, err := ch.Send(bg, "a", nil, "hello", SendOpts{Topic: sp("n.x")}); err != nil {
 			t.Fatal(err)
 		}
 		kept, err := h.Remove(bg, "shop", rmNow)

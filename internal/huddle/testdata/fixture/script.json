@@ -94,9 +94,9 @@
       "args": { "kind": "fact", "title": "Ports outlive pids", "body": "A saved port is the address; the pid only says who held it once.", "tags": ["router", "testing"], "supersedes": 2 }
     },
     { "op": "share", "as": "owner", "args": { "id": 1 } },
-    { "op": "publish", "as": "scout", "args": { "topic": "finding.ready", "msg": "the fixture is loaded", "ref": "testdata/fixture/script.json" } },
-    { "op": "send", "as": "lead", "args": { "to": "scout", "msg": "how does the plan look?", "ask": true, "task": "t-write" } },
-    { "op": "send", "as": "scout", "args": { "to": "lead", "msg": "who owns t-doc?", "ask": true } },
+    { "op": "message", "as": "scout", "args": { "topic": "finding.ready", "msg": "the fixture is loaded", "ref": "testdata/fixture/script.json" } },
+    { "op": "message", "as": "lead", "args": { "to": "scout", "msg": "how does the plan look?", "ask": true, "task": "t-write" } },
+    { "op": "message", "as": "scout", "args": { "to": "lead", "msg": "who owns t-doc?", "ask": true } },
     { "op": "reply", "as": "lead", "args": { "seq": 17, "msg": "nobody yet; take it if you want it" } },
     { "op": "ack", "as": "scout", "args": { "seq": 15 } },
     { "op": "state", "as": "scout", "args": { "state": "waiting", "task": "waiting on the design review" } },
@@ -127,6 +127,6 @@
     { "name": "digest", "as": "scout", "arguments": {} },
     { "name": "gate", "as": "scout", "arguments": { "block": false } },
     { "name": "nope", "as": "scout", "arguments": {} },
-    { "name": "send", "as": "scout", "arguments": {} }
+    { "name": "message", "as": "scout", "arguments": {} }
   ]
 }

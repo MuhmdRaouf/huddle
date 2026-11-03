@@ -138,7 +138,7 @@ func TestHub(t *testing.T) {
 		if _, err := shop.Join(bg, "a", JoinOpts{}); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := shop.Publish(bg, "a", PublishArgs{Topic: "n.x", Msg: "hello"}); err != nil {
+		if _, err := shop.Send(bg, "a", nil, "hello", SendOpts{Topic: sp("n.x")}); err != nil {
 			t.Fatal(err)
 		}
 		beta, err := h.Get(bg, "beta")

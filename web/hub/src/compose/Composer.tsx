@@ -31,7 +31,7 @@ import {
 } from "./drafts.ts";
 
 /** The ops a composer sends (compose.js send). */
-export type ComposeOp = "reply" | "task_create" | "send";
+export type ComposeOp = "reply" | "task_create" | "message";
 
 /** What a send does once it succeeded: the app refills what shows it (data.js's attChanged, and
  *  boardChanged for a task — the caller switches on the op name). */
@@ -339,7 +339,7 @@ export function Composer(props: ComposerProps): JSX.Element {
       if (r) toast(createdText(r, d));
       return ["task_create", r];
     }
-    return ["send", await runOp("send", msgArgs(d, msg), sendOkText(d))];
+    return ["message", await runOp("message", msgArgs(d, msg), sendOkText(d))];
   };
 
   const send = async (): Promise<void> => {

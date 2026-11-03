@@ -459,6 +459,6 @@ func reservedText(r any, _ opCall) string {
 	if deref(res.Note) != "" {
 		note = fmt.Sprintf(" (%s)", deref(res.Note))
 	}
-	return fmt.Sprintf("%s is reserved by %s until %s%s. Coordinate with them (huddle send %s …) before changing it.",
+	return fmt.Sprintf("%s is reserved by %s until %s%s. Coordinate with them (huddle message %s …) before changing it.",
 		res.Path, holder, deref(res.Until), note, holder)
 }

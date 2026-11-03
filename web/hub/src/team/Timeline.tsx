@@ -475,7 +475,7 @@ export function Timeline({
             <b class="text-base">{everything ? "No activity yet" : "Nothing matches"}</b>
             <span class="max-w-sm text-sm text-[var(--ui-muted)]">
               {everything
-                ? "Events show up here the moment a session publishes them."
+                ? "Events show up here the moment a session sends them."
                 : "Pick another filter or Everyone."}
             </span>
           </div>

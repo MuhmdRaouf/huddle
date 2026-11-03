@@ -10,6 +10,7 @@ import (
 
 	"github.com/MuhmdRaouf/huddle/internal/huddle/channel"
 	"github.com/MuhmdRaouf/huddle/internal/huddle/hub"
+	"github.com/MuhmdRaouf/huddle/internal/jsfmt"
 	"github.com/MuhmdRaouf/huddle/internal/jsscalar"
 )
 
@@ -77,5 +78,42 @@ func TestAReplyToTheOwnerPushesOnce(t *testing.T) {
 	}
 	if items, _ = s.registry.Items(ctx, pushClock); len(items) != 0 {
 		t.Fatalf("items after the dismiss = %+v, want none", items)
+	}
+}
+
+// The words an agent uses for it, ask and reply, reach the same item.
+func TestAReplyToAnOwnerAskMadeWithTheToolsGrowsOneItem(t *testing.T) {
+	ctx := context.Background()
+	service := newFakePush(t)
+	s := pushServerForTest(t, service.srv.URL, func() time.Time { return pushClock })
+	s.watchChannels(ctx)
+	if err := s.registry.Report(ctx, hub.Report{
+		SessionID: "s-alice", Channel: "team", Member: "alice",
+		LastEvent: "SessionStart", LastEventAt: jsscalar.ISOTime(pushClock),
+	}); err != nil {
+		t.Fatalf("report alice: %v", err)
+	}
+	ch, err := s.hub.Get(ctx, "team")
+	if err != nil {
+		t.Fatalf("open the channel: %v", err)
+	}
+	if _, err := ch.Join(ctx, "alice", channel.JoinOpts{}); err != nil {
+		t.Fatalf("join alice: %v", err)
+	}
+	asked, err := channel.RunOp(ctx, "ask", ch, channel.Owner, jsfmt.Object([]string{"to", "msg"},
+		[]*jsfmt.Value{jsfmt.String("alice"), jsfmt.String("ship it?")}))
+	if err != nil {
+		t.Fatalf("the owner asks: %v", err)
+	}
+	if _, err := channel.RunOp(ctx, "reply", ch, "alice", jsfmt.Object([]string{"seq", "msg"},
+		[]*jsfmt.Value{jsfmt.Number(float64(asked.Result.(channel.Ev).Seq)), jsfmt.String("yes")})); err != nil {
+		t.Fatalf("alice replies: %v", err)
+	}
+	items, err := s.registry.Items(ctx, pushClock)
+	if err != nil {
+		t.Fatalf("items: %v", err)
+	}
+	if len(items) != 1 || items[0].Kind != hub.KindReply || items[0].Summary != "yes" {
+		t.Fatalf("items = %+v, want one reply item saying yes", items)
 	}
 }

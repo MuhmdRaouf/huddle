@@ -79,7 +79,7 @@ func TestTheReserveHookWarnsWhenAnotherLiveSessionHoldsThePath(t *testing.T) {
 		t.Errorf("context = %q, want the holder line", ctx)
 	}
 	if !strings.Contains(ctx, "(rewriting the cart)") ||
-		!strings.Contains(ctx, "Coordinate with them (huddle send a …) before changing it.") {
+		!strings.Contains(ctx, "Coordinate with them (huddle message a …) before changing it.") {
 		t.Errorf("context = %q, want the note and the way to coordinate", ctx)
 	}
 	// a subagent of the holder is the holder: its parent's reservation draws no warning

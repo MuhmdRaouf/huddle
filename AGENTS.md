@@ -82,7 +82,7 @@ node scripts/check-attribution.mjs             # no AI attribution in the histor
   the provider in `providers.json`, points Claude Code's `HTTPS_PROXY` at huddle-router with the shared local CA
   (`NODE_EXTRA_CA_CERTS` at `~/.agents/ca`), and adds its models to `/model`; jobs run as detached drivers of
   the one binary. The plugins meet huddle only through files (the spool, `budget-status.json`) and local HTTP.
-- MCP is the interface for every agent: `publish`, `subscribe`, `poll` (long poll after a cursor), channels, tasks,
+- MCP is the interface for every agent: `message`, `subscribe`, `poll` (long poll after a cursor), channels, tasks,
   claims and needs. Harnesses that support resource subscriptions get `notifications/resources/updated`; Claude Code
   also gets channel pushes.
 

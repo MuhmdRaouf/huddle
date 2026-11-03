@@ -13,16 +13,16 @@ import (
 func TestChannel(t *testing.T) {
 	t.Run("every member sees every event but its own, also those addressed to another session", func(t *testing.T) {
 		ch := joinedChannel(t)
-		if _, err := ch.Publish(bg, "a", PublishArgs{Topic: "x.all", Msg: "1"}); err != nil {
+		if _, err := ch.Send(bg, "a", nil, "1", SendOpts{Topic: sp("x.all")}); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := ch.Publish(bg, "a", PublishArgs{Topic: "x.b", Msg: "2", To: sp("b")}); err != nil {
+		if _, err := ch.Send(bg, "a", []string{"b"}, "2", SendOpts{Topic: sp("x.b")}); err != nil {
 			t.Fatal(err)
 		}
 		if _, err := ch.Join(bg, "c", JoinOpts{}); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := ch.Publish(bg, "a", PublishArgs{Topic: "x.c", Msg: "3", To: sp("c")}); err != nil {
+		if _, err := ch.Send(bg, "a", []string{"c"}, "3", SendOpts{Topic: sp("x.c")}); err != nil {
 			t.Fatal(err)
 		}
 		// b joined fresh (a first join), after a's session.joined: it reads on from there
@@ -101,7 +101,7 @@ func TestChannel(t *testing.T) {
 		}
 	})
 
-	t.Run("wait returns the first match with the skipped events, wakes on publish, and ack never moves back", func(t *testing.T) {
+	t.Run("wait returns the first match with the skipped events, wakes on a message, and ack never moves back", func(t *testing.T) {
 		ch := joinedChannel(t)
 		last, err := ch.LastSeq(bg)
 		if err != nil {
@@ -117,10 +117,10 @@ func TestChannel(t *testing.T) {
 		res := make(chan hit, 1)
 		go func() { h, err := ch.Wait(bg, "b", []string{"build.*"}, 5); res <- hit{h, err} }()
 		until(t, "b waiting", waiting(t, ch, "b"))
-		if _, err := ch.Publish(bg, "a", PublishArgs{Topic: "note.x", Msg: "skip me"}); err != nil {
+		if _, err := ch.Send(bg, "a", nil, "skip me", SendOpts{Topic: sp("note.x")}); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := ch.Publish(bg, "a", PublishArgs{Topic: "build.ready", Msg: "go"}); err != nil {
+		if _, err := ch.Send(bg, "a", nil, "go", SendOpts{Topic: sp("build.ready")}); err != nil {
 			t.Fatal(err)
 		}
 		o := <-res
@@ -325,8 +325,8 @@ func TestChannel(t *testing.T) {
 		if _, err := ch.Control(bg, "b", "a", "pause", "hold on"); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := ch.Publish(bg, "a", PublishArgs{Topic: "x.y", Msg: "m"}); errStatus(err) != 423 {
-			t.Fatalf("paused publish status = %d (%v), want 423", errStatus(err), err)
+		if _, err := ch.Send(bg, "a", nil, "m", SendOpts{Topic: sp("x.y")}); errStatus(err) != 423 {
+			t.Fatalf("paused message status = %d (%v), want 423", errStatus(err), err)
 		}
 		type gate struct {
 			r   GateResult
@@ -353,12 +353,12 @@ func TestChannel(t *testing.T) {
 		if g.r.Control != "run" {
 			t.Errorf("gate = %+v, want run", g.r)
 		}
-		ev, err := ch.Publish(bg, "a", PublishArgs{Topic: "x.y", Msg: "m"})
+		ev, err := ch.Send(bg, "a", nil, "m", SendOpts{Topic: sp("x.y")})
 		if err != nil {
 			t.Fatal(err)
 		}
 		if ev.Topic != "x.y" {
-			t.Errorf("publish topic = %s", ev.Topic)
+			t.Errorf("message topic = %s", ev.Topic)
 		}
 	})
 
@@ -387,13 +387,13 @@ func TestChannel(t *testing.T) {
 			}
 			return *turn.Holder
 		}
-		if _, err := ch.Publish(bg, "a", PublishArgs{Topic: "finding.ready", Msg: "f"}); err != nil {
+		if _, err := ch.Send(bg, "a", nil, "f", SendOpts{Topic: sp("finding.ready")}); err != nil {
 			t.Fatal(err)
 		}
 		if h := holder(); h != "b" {
 			t.Errorf("holder after handover topic = %q, want b", h)
 		}
-		if _, err := ch.Publish(bg, "b", PublishArgs{Topic: "note.x", Msg: "n"}); err != nil {
+		if _, err := ch.Send(bg, "b", nil, "n", SendOpts{Topic: sp("note.x")}); err != nil {
 			t.Fatal(err)
 		}
 		if h := holder(); h != "b" {
@@ -414,14 +414,14 @@ func TestChannel(t *testing.T) {
 		}
 	})
 
-	t.Run("idempotency keys make a retried publish return the first event, also when retried concurrently", func(t *testing.T) {
+	t.Run("idempotency keys make a retried message return the first event, also when retried concurrently", func(t *testing.T) {
 		ch := joinedChannel(t)
 		key := sp("k1")
-		e1, err := ch.Publish(bg, "a", PublishArgs{Topic: "x.y", Msg: "m", Key: key})
+		e1, err := ch.Send(bg, "a", nil, "m", SendOpts{Topic: sp("x.y"), Key: key})
 		if err != nil {
 			t.Fatal(err)
 		}
-		e2, err := ch.Publish(bg, "a", PublishArgs{Topic: "x.y", Msg: "m", Key: key})
+		e2, err := ch.Send(bg, "a", nil, "m", SendOpts{Topic: sp("x.y"), Key: key})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -434,7 +434,7 @@ func TestChannel(t *testing.T) {
 		errs := make(chan error, n)
 		for range n {
 			go func() {
-				e, err := ch.Publish(bg, "a", PublishArgs{Topic: "x.z", Msg: "m", Key: key2})
+				e, err := ch.Send(bg, "a", nil, "m", SendOpts{Topic: sp("x.z"), Key: key2})
 				if err == nil {
 					seqs <- e.Seq
 				} else {
@@ -465,7 +465,7 @@ func TestChannel(t *testing.T) {
 
 	t.Run("subagents: join under a joined parent, start at the present, and only the parent may act as them", func(t *testing.T) {
 		ch := joinedChannel(t)
-		if _, err := ch.Publish(bg, "a", PublishArgs{Topic: "old.news", Msg: "before"}); err != nil {
+		if _, err := ch.Send(bg, "a", nil, "before", SendOpts{Topic: sp("old.news")}); err != nil {
 			t.Fatal(err)
 		}
 		if _, err := ch.Join(bg, "zz.sub", JoinOpts{}); err == nil || !strings.Contains(err.Error(), "must join") {

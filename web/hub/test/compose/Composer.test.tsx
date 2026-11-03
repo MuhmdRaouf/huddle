@@ -447,9 +447,9 @@ describe("Composer sends", () => {
     type("check the board");
     fireEvent.click(sendBtn());
     await waitFor(() => expect(op).toHaveBeenCalled());
-    expect(op).toHaveBeenCalledWith("lab", "send", { msg: "check the board" });
+    expect(op).toHaveBeenCalledWith("lab", "message", { msg: "check the board" });
     expect(toast).toHaveBeenCalledWith("Sent to everyone");
-    expect(onSent).toHaveBeenCalledWith("send");
+    expect(onSent).toHaveBeenCalledWith("message");
     expect(msgBox().value).toBe("");
     expect(screen.getByRole("button", { name: "Message" }).getAttribute("aria-pressed")).toBe("true");
   });
@@ -461,7 +461,7 @@ describe("Composer sends", () => {
     fireEvent.click(sendBtn());
     await waitFor(() => expect(op).toHaveBeenCalled());
     expect(toast).toHaveBeenCalledWith("Sent to everyone");
-    expect(onSent).toHaveBeenCalledWith("send");
+    expect(onSent).toHaveBeenCalledWith("message");
     expect(msgBox().value).toBe("");
   });
 
@@ -471,7 +471,7 @@ describe("Composer sends", () => {
     type("look at this");
     fireEvent.click(sendBtn());
     await waitFor(() => expect(op).toHaveBeenCalled());
-    expect(op).toHaveBeenCalledWith("lab", "send", { to: "scan.agent", msg: "look at this" });
+    expect(op).toHaveBeenCalledWith("lab", "message", { to: "scan.agent", msg: "look at this" });
     expect(toast).toHaveBeenCalledWith("Sent to scan.agent");
   });
 
@@ -482,7 +482,7 @@ describe("Composer sends", () => {
     type("is the build green?");
     fireEvent.click(sendBtn());
     await waitFor(() => expect(op).toHaveBeenCalled());
-    expect(op).toHaveBeenCalledWith("lab", "send", {
+    expect(op).toHaveBeenCalledWith("lab", "message", {
       to: "fix.agent",
       msg: "is the build green?",
       ask: true,
@@ -506,7 +506,7 @@ describe("Composer sends", () => {
     expect(screen.getByRole("button", { name: "Remove t1" })).toBeTruthy();
     fireEvent.click(sendBtn());
     await waitFor(() => expect(op).toHaveBeenCalled());
-    expect(op).toHaveBeenCalledWith("lab", "send", { msg: "see this one", task: "t1" });
+    expect(op).toHaveBeenCalledWith("lab", "message", { msg: "see this one", task: "t1" });
   });
 
   it("creates a task with its owner, waits-on and details, and toasts the creation", async () => {
@@ -602,7 +602,7 @@ describe("Composer sends", () => {
     type("done");
     fireEvent.click(sendBtn());
     await waitFor(() => expect(onCancel).toHaveBeenCalledTimes(1));
-    expect(onSent).toHaveBeenCalledWith("send");
+    expect(onSent).toHaveBeenCalledWith("message");
   });
 
   it("disables the send while the op is in flight and re-enables it after", async () => {
@@ -702,14 +702,14 @@ describe("Composer keyboard and wiring", () => {
     fireEvent.keyDown(msgBox(), { key: "Enter" });
     expect(op).not.toHaveBeenCalled();
     fireEvent.keyDown(msgBox(), { key: "Enter", metaKey: true });
-    await waitFor(() => expect(op).toHaveBeenCalledWith("lab", "send", { msg: "quick one" }));
+    await waitFor(() => expect(op).toHaveBeenCalledWith("lab", "message", { msg: "quick one" }));
   });
 
   it("Ctrl+Enter sends too", async () => {
     const { op } = setup();
     type("ctrl one");
     fireEvent.keyDown(msgBox(), { key: "Enter", ctrlKey: true });
-    await waitFor(() => expect(op).toHaveBeenCalledWith("lab", "send", { msg: "ctrl one" }));
+    await waitFor(() => expect(op).toHaveBeenCalledWith("lab", "message", { msg: "ctrl one" }));
   });
 
   it("tells the host about the draft after every repaint it makes", () => {

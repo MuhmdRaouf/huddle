@@ -349,7 +349,7 @@ func TestStdioBridge(t *testing.T) {
 		if text := mcpContentText(status); !strings.Contains(text, "you are b") {
 			t.Errorf("status = %q, want it to say who b is", text)
 		}
-		mcpOp(t, u, "c6", "send", "a", `{"to":"b","msg":"are you there?","ask":true}`, mcpRootToken)
+		mcpOp(t, u, "c6", "message", "a", `{"to":"b","msg":"are you there?","ask":true}`, mcpRootToken)
 		push := b.until(8000, isPushWith("are you there?"))
 		if push == nil {
 			t.Fatal("the ask never arrived as a claude/channel notification")
@@ -363,12 +363,12 @@ func TestStdioBridge(t *testing.T) {
 		u := startMcpHuddle(t, mcpRootToken)
 		mcpOp(t, u, "c8", "join", "a", "{}", mcpRootToken)
 		mcpOp(t, u, "c8", "join", "b", "{}", mcpRootToken)
-		mcpOp(t, u, "c8", "send", "a", `{"to":"b","msg":"asked while you were away","ask":true}`, mcpRootToken)
+		mcpOp(t, u, "c8", "message", "a", `{"to":"b","msg":"asked while you were away","ask":true}`, mcpRootToken)
 		b := runMcpBridge(t, "", map[string]string{
 			"HUDDLE_URL": u, "HUDDLE_CHANNEL": "c8", "HUDDLE_AS": "b", "HUDDLE_TOKEN": mcpRootToken,
 		})
 		push := b.until(8000, isPushWith("while you were away"))
-		mcpOp(t, u, "c8", "send", "a", `{"to":"b","msg":"and one more","ask":true}`, mcpRootToken)
+		mcpOp(t, u, "c8", "message", "a", `{"to":"b","msg":"and one more","ask":true}`, mcpRootToken)
 		if got := b.until(8000, isPushWith("one more")); got == nil {
 			t.Fatal("the second ask never arrived")
 		}
@@ -541,7 +541,7 @@ func TestTheStdioBridgeTranscriptMatchesTheRecording(t *testing.T) {
 	if b.until(8000, mcpIDIs("2")) == nil {
 		t.Fatal("no tools/list answer")
 	}
-	b.send(`{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"send","arguments":{"to":"a","msg":"hi"}}}`)
+	b.send(`{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"message","arguments":{"to":"a","msg":"hi"}}}`)
 	if b.until(8000, mcpIDIs("3")) == nil {
 		t.Fatal("no tools/call answer")
 	}
@@ -847,17 +847,17 @@ func TestStdioBridgePushes(t *testing.T) {
 		})
 		// an ask reaches the session on either path (live, or the inbox catch-up on connect):
 		// waiting for it proves the stream is up, so the events below ride it
-		mcpOp(t, u, "c9", "send", "a", `{"to":"b","msg":"are you with us?","ask":true}`, mcpRootToken)
+		mcpOp(t, u, "c9", "message", "a", `{"to":"b","msg":"are you with us?","ask":true}`, mcpRootToken)
 		if b.until(8000, isPushWith("are you with us?")) == nil {
 			t.Fatal("the first ask never arrived")
 		}
-		mcpOp(t, u, "c9", "publish", "a", `{"topic":"note.ready","msg":"with a ref","to":"b","ref":"src/x.go"}`, mcpRootToken)
+		mcpOp(t, u, "c9", "message", "a", `{"topic":"note.ready","msg":"with a ref","to":"b","ref":"src/x.go"}`, mcpRootToken)
 		if push := b.until(8000, isPushWith("with a ref")); push == nil {
 			t.Fatal("the referenced event never arrived")
 		} else if !strings.Contains(pushContent(push), "(src/x.go)") {
 			t.Errorf("push = %q, want the ref in it", pushContent(push))
 		}
-		mcpOp(t, u, "c9", "send", "a", `{"to":"c","msg":"between others"}`, mcpRootToken)
+		mcpOp(t, u, "c9", "message", "a", `{"to":"c","msg":"between others"}`, mcpRootToken)
 		over := b.until(8000, isPushWith("between others"))
 		if over == nil {
 			t.Fatal("the overheard message never arrived")
@@ -865,7 +865,7 @@ func TestStdioBridgePushes(t *testing.T) {
 		if !strings.Contains(pushContent(over), "(overheard: between other sessions, for your knowledge)") {
 			t.Errorf("overheard push = %q, want the overheard note", pushContent(over))
 		}
-		mcpOp(t, u, "c9", "publish", "a", `{"topic":"turn.pass","msg":"the turn is yours"}`, mcpRootToken)
+		mcpOp(t, u, "c9", "message", "a", `{"topic":"turn.pass","msg":"the turn is yours"}`, mcpRootToken)
 		topiced := b.until(8000, isPushWith("the turn is yours"))
 		if topiced == nil {
 			t.Fatal("the pushed topic never arrived")
@@ -1045,8 +1045,8 @@ func TestResourcesListNamesTheChannelTopics(t *testing.T) {
 	u := startMcpHuddle(t, mcpRootToken)
 	mcpOp(t, u, "cr", "join", "a", "{}", mcpRootToken)
 	mcpOp(t, u, "cr", "join", "b", "{}", mcpRootToken)
-	mcpOp(t, u, "cr", "publish", "a", `{"topic":"note.ready","msg":"one"}`, mcpRootToken)
-	mcpOp(t, u, "cr", "publish", "a", `{"topic":"build.done","msg":"two"}`, mcpRootToken)
+	mcpOp(t, u, "cr", "message", "a", `{"topic":"note.ready","msg":"one"}`, mcpRootToken)
+	mcpOp(t, u, "cr", "message", "a", `{"topic":"build.done","msg":"two"}`, mcpRootToken)
 	b := runMcpBridge(t, "", map[string]string{
 		"HUDDLE_URL": u, "HUDDLE_CHANNEL": "cr", "HUDDLE_AS": "b", "HUDDLE_TOKEN": mcpRootToken,
 		"HUDDLE_PUSH": "off",
@@ -1196,8 +1196,8 @@ func TestInsightsResourceServesTheSessionTips(t *testing.T) {
 		u := startMcpHuddle(t, mcpRootToken)
 		mcpOp(t, u, "ci", "join", "a", "{}", mcpRootToken)
 		mcpOp(t, u, "ci", "join", "b", "{}", mcpRootToken)
-		mcpOp(t, u, "ci", "publish", "a", `{"topic":"note.ready","msg":"one"}`, mcpRootToken)
-		mcpOp(t, u, "ci", "publish", "a", `{"topic":"build.done","msg":"two"}`, mcpRootToken)
+		mcpOp(t, u, "ci", "message", "a", `{"topic":"note.ready","msg":"one"}`, mcpRootToken)
+		mcpOp(t, u, "ci", "message", "a", `{"topic":"build.done","msg":"two"}`, mcpRootToken)
 		home := t.TempDir()
 		turnTipsOn(t, home)
 		b := runMcpBridge(t, "", map[string]string{
@@ -1260,10 +1260,10 @@ func TestResourcesReadReturnsEventsAfterCursor(t *testing.T) {
 	u := startMcpHuddle(t, mcpRootToken)
 	mcpOp(t, u, "cd", "join", "a", "{}", mcpRootToken)
 	mcpOp(t, u, "cd", "join", "b", "{}", mcpRootToken)
-	mcpOp(t, u, "cd", "publish", "a", `{"topic":"ev.one","msg":"first"}`, mcpRootToken)
-	mcpOp(t, u, "cd", "publish", "a", `{"topic":"ev.two","msg":"second"}`, mcpRootToken)
+	mcpOp(t, u, "cd", "message", "a", `{"topic":"ev.one","msg":"first"}`, mcpRootToken)
+	mcpOp(t, u, "cd", "message", "a", `{"topic":"ev.two","msg":"second"}`, mcpRootToken)
 	seq := mcpLastSeq(t, u, "cd", mcpRootToken)
-	mcpOp(t, u, "cd", "publish", "a", `{"topic":"ev.three","msg":"third"}`, mcpRootToken)
+	mcpOp(t, u, "cd", "message", "a", `{"topic":"ev.three","msg":"third"}`, mcpRootToken)
 	b := runMcpBridge(t, "", map[string]string{
 		"HUDDLE_URL": u, "HUDDLE_CHANNEL": "cd", "HUDDLE_AS": "b", "HUDDLE_TOKEN": mcpRootToken,
 		"HUDDLE_PUSH": "off",
@@ -1297,7 +1297,7 @@ func TestResourcesReadReturnsEventsAfterCursor(t *testing.T) {
 	}
 	// a read answers at most 100 events
 	for i := 0; i < 105; i++ {
-		mcpOp(t, u, "cd", "publish", "a", fmt.Sprintf(`{"topic":"ev.bulk","msg":"n%d"}`, i), mcpRootToken)
+		mcpOp(t, u, "cd", "message", "a", fmt.Sprintf(`{"topic":"ev.bulk","msg":"n%d"}`, i), mcpRootToken)
 	}
 	b.send(fmt.Sprintf(`{"jsonrpc":"2.0","id":3,"method":"resources/read","params":{"uri":%q}}`, uri))
 	capped := b.until(8000, mcpIDIs("3"))
@@ -1329,9 +1329,9 @@ func TestSubscribeSendsUpdatedOnAMatchingEvent(t *testing.T) {
 	if ack := b.until(8000, mcpIDIs("2")); ack == nil {
 		t.Fatal("no answer to the subscribe")
 	}
-	mcpOp(t, u, "cs", "publish", "a", `{"topic":"note.ready","msg":"for the subscriber"}`, mcpRootToken)
+	mcpOp(t, u, "cs", "message", "a", `{"topic":"note.ready","msg":"for the subscriber"}`, mcpRootToken)
 	if updated := b.until(2000, isUpdatedWith(uri)); updated == nil {
-		t.Fatal("no resources/updated within 2 s of the publish")
+		t.Fatal("no resources/updated within 2 s of the message")
 	}
 }
 
@@ -1347,7 +1347,7 @@ func TestUnsubscribeStops(t *testing.T) {
 	if ack := b.until(8000, mcpIDIs("2")); ack == nil {
 		t.Fatal("no answer to the subscribe")
 	}
-	mcpOp(t, u, "cu", "publish", "a", `{"topic":"note.ready","msg":"while subscribed"}`, mcpRootToken)
+	mcpOp(t, u, "cu", "message", "a", `{"topic":"note.ready","msg":"while subscribed"}`, mcpRootToken)
 	if b.until(8000, isUpdatedWith(uri)) == nil {
 		t.Fatal("no resources/updated while subscribed")
 	}
@@ -1355,7 +1355,7 @@ func TestUnsubscribeStops(t *testing.T) {
 	if ack := b.until(8000, mcpIDIs("3")); ack == nil {
 		t.Fatal("no answer to the unsubscribe")
 	}
-	mcpOp(t, u, "cu", "publish", "a", `{"topic":"note.ready","msg":"after unsubscribing"}`, mcpRootToken)
+	mcpOp(t, u, "cu", "message", "a", `{"topic":"note.ready","msg":"after unsubscribing"}`, mcpRootToken)
 	deadline := time.Now().Add(1500 * time.Millisecond)
 	for time.Now().Before(deadline) {
 		if got := len(b.out.findAll(isUpdatedWith(uri))); got != 1 {
@@ -1401,7 +1401,7 @@ func TestSubscribeBeforeTheStreamStillGetsTheUpdate(t *testing.T) {
 	if ack := b.until(8000, mcpIDIs("2")); ack == nil {
 		t.Fatal("no answer to the subscribe")
 	}
-	mcpOp(t, u, "cw", "publish", "a", `{"topic":"note.ready","msg":"before the stream was up"}`, mcpRootToken)
+	mcpOp(t, u, "cw", "message", "a", `{"topic":"note.ready","msg":"before the stream was up"}`, mcpRootToken)
 	if updated := b.until(8000, isUpdatedWith(uri)); updated == nil {
 		t.Fatal("no resources/updated for the event published before the stream was up")
 	}
@@ -1411,9 +1411,9 @@ func TestPollToolReturnsAfterCursorOrTimesOut(t *testing.T) {
 	u := startMcpHuddle(t, mcpRootToken)
 	mcpOp(t, u, "cpl", "join", "a", "{}", mcpRootToken)
 	mcpOp(t, u, "cpl", "join", "b", "{}", mcpRootToken)
-	mcpOp(t, u, "cpl", "publish", "a", `{"topic":"poll.one","msg":"early"}`, mcpRootToken)
+	mcpOp(t, u, "cpl", "message", "a", `{"topic":"poll.one","msg":"early"}`, mcpRootToken)
 	seq := mcpLastSeq(t, u, "cpl", mcpRootToken)
-	mcpOp(t, u, "cpl", "publish", "a", `{"topic":"poll.two","msg":"later"}`, mcpRootToken)
+	mcpOp(t, u, "cpl", "message", "a", `{"topic":"poll.two","msg":"later"}`, mcpRootToken)
 	b := runMcpBridge(t, "", map[string]string{
 		"HUDDLE_URL": u, "HUDDLE_CHANNEL": "cpl", "HUDDLE_AS": "b", "HUDDLE_TOKEN": mcpRootToken,
 		"HUDDLE_PUSH": "off",
@@ -1453,7 +1453,7 @@ func TestPollToolReturnsAfterCursorOrTimesOut(t *testing.T) {
 	}
 }
 
-func TestSessionWithoutClaudeJoinsAndPublishes(t *testing.T) {
+func TestSessionWithoutClaudeJoinsAndMessages(t *testing.T) {
 	u := startMcpHuddle(t, mcpRootToken)
 	state := t.TempDir()
 	b := runMcpBridge(t, "", map[string]string{
@@ -1473,18 +1473,18 @@ func TestSessionWithoutClaudeJoinsAndPublishes(t *testing.T) {
 	if text := mcpContentText(joined); !strings.Contains(text, "as agentx") || mcpErrorOf(joined) {
 		t.Fatalf("join = %q, want it to name agentx without an error", text)
 	}
-	b.send(`{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"publish","arguments":{"topic":"agent.ready","msg":"published without Claude"}}}`)
+	b.send(`{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"message","arguments":{"topic":"agent.ready","msg":"sent without Claude"}}}`)
 	pub := b.until(8000, mcpIDIs("3"))
 	if pub == nil {
-		t.Fatal("no answer to the publish")
+		t.Fatal("no answer to the message")
 	}
 	if mcpErrorOf(pub) {
-		t.Fatalf("publish = %q, want no error", mcpContentText(pub))
+		t.Fatalf("message = %q, want no error", mcpContentText(pub))
 	}
 	answer := mcpOpJSON(t, u, "cagent", "events", "a", `{"topic":"agent.ready"}`, mcpRootToken)
 	result := mcpField(answer, "result")
 	if result == nil || result.Kind() != jsfmt.KindArray || len(result.Items()) == 0 {
-		t.Fatalf("the published event never reached the channel: %s", answer.EncodeJSON())
+		t.Fatalf("the sent event never reached the channel: %s", answer.EncodeJSON())
 	}
 	if from := mcpText(result.Items()[len(result.Items())-1], "from"); from != "agentx" {
 		t.Errorf("the event is from %q, want agentx", from)

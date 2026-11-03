@@ -170,7 +170,7 @@ describe("Overview stats", () => {
     expect(screen.getByText("Questions for you")).not.toBeNull();
     expect(screen.getByText("Waiting in your Inbox")).not.toBeNull();
     expect(screen.getByText("Entries the sessions share")).not.toBeNull();
-    expect(screen.getByText("Published in this channel")).not.toBeNull();
+    expect(screen.getByText("Sent in this channel")).not.toBeNull();
   });
 
   it("names the empty roster and the answered questions", () => {

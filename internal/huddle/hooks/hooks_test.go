@@ -773,7 +773,7 @@ func TestTheStopHookBlocksExactlyWhileAsksAwaitAReply(t *testing.T) {
 			t.Fatalf("join %s: %d %s", name, code, body)
 		}
 	}
-	if code, body := op(t, s, "hooks", "send", "senior", `{"to":"me","msg":"did you finish the migration?","ask":true}`); code != 200 {
+	if code, body := op(t, s, "hooks", "message", "senior", `{"to":"me","msg":"did you finish the migration?","ask":true}`); code != 200 {
 		t.Fatalf("send: %d %s", code, body)
 	}
 	stdout, elapsed, _ := runHook(t, "stop", "{}",
@@ -803,7 +803,7 @@ func TestTheStopHookBlocksOncePerAskNeverAgainAndNeverForAStaleOne(t *testing.T)
 			t.Fatalf("join %s: %d %s", name, code, body)
 		}
 	}
-	if code, body := op(t, s, "hooks", "send", "senior", `{"to":"twice","msg":"still there?","ask":true}`); code != 200 {
+	if code, body := op(t, s, "hooks", "message", "senior", `{"to":"twice","msg":"still there?","ask":true}`); code != 200 {
 		t.Fatalf("send: %d %s", code, body)
 	}
 	home := t.TempDir() // one Huddle home across the runs, like one project
@@ -819,7 +819,7 @@ func TestTheStopHookBlocksOncePerAskNeverAgainAndNeverForAStaleOne(t *testing.T)
 	if again != "" { // the asker may be gone: one reminder is enough
 		t.Errorf("second stop output %q, want silence", again)
 	}
-	if code, body := op(t, s, "hooks", "send", "senior", `{"to":"twice","msg":"and this one?","ask":true}`); code != 200 {
+	if code, body := op(t, s, "hooks", "message", "senior", `{"to":"twice","msg":"and this one?","ask":true}`); code != 200 {
 		t.Fatalf("send again: %d %s", code, body)
 	}
 	next, _, _ := runHook(t, "stop", "{}", env)
@@ -838,7 +838,7 @@ func TestTheStopHookBlocksOncePerAskNeverAgainAndNeverForAStaleOne(t *testing.T)
 	if strings.Contains(n.Reason, "still there?") {
 		t.Errorf("reason = %q, the raised ask must not come back", n.Reason)
 	}
-	if code, body := op(t, s, "hooks", "send", "senior", `{"to":"twice","msg":"an old one","ask":true}`); code != 200 {
+	if code, body := op(t, s, "hooks", "message", "senior", `{"to":"twice","msg":"an old one","ask":true}`); code != 200 {
 		t.Fatalf("send the old one: %d %s", code, body)
 	}
 	time.Sleep(50 * time.Millisecond)
@@ -858,7 +858,7 @@ func TestTheStopHookNeverBlocks(t *testing.T) {
 			t.Fatalf("join %s: %d %s", name, code, body)
 		}
 	}
-	if code, body := op(t, s, "hooks", "send", "senior", `{"to":"me","msg":"still open?","ask":true}`); code != 200 {
+	if code, body := op(t, s, "hooks", "message", "senior", `{"to":"me","msg":"still open?","ask":true}`); code != 200 {
 		t.Fatalf("send: %d %s", code, body)
 	}
 	open := map[string]string{"HUDDLE_URL": s.base, "HUDDLE_CHANNEL": "hooks", "HUDDLE_AS": "me"}
@@ -895,7 +895,7 @@ func TestASessionWithoutACredentialStaysOutside(t *testing.T) {
 	if code, body := op(t, s, "hooks", "join", "senior", "{}"); code != 200 {
 		t.Fatalf("join senior: %d %s", code, body)
 	}
-	_, _ = op(t, s, "hooks", "send", "senior", `{"to":"stranger","msg":"psst","ask":true}`)
+	_, _ = op(t, s, "hooks", "message", "senior", `{"to":"stranger","msg":"psst","ask":true}`)
 	// no credential anywhere: this session holds nothing for the server
 	env := map[string]string{
 		"HUDDLE_URL": s.base, "HUDDLE_CHANNEL": "hooks", "HUDDLE_AS": "stranger",
@@ -1272,7 +1272,7 @@ func TestTheStopHookSurvivesItsOwnOddStates(t *testing.T) {
 			t.Fatalf("join %s: %d %s", name, code, body)
 		}
 	}
-	if code, body := op(t, s, "hooks", "send", "senior", `{"to":"odd","msg":"an age that is not a number","ask":true}`); code != 200 {
+	if code, body := op(t, s, "hooks", "message", "senior", `{"to":"odd","msg":"an age that is not a number","ask":true}`); code != 200 {
 		t.Fatalf("send: %d %s", code, body)
 	}
 	notNumber, _, _ := runHook(t, "stop", "{}", map[string]string{

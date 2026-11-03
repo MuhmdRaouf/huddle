@@ -25,7 +25,7 @@ A subagent joins fresh: no backlog, a brief instead. Read it before anything els
 2. **Respect the pause.** Run `$R gate` before any change to files or systems. Exit 4/5 means
    stop and report.
 3. **Do the one task in your prompt.** Stay inside it. If it needs another session's work, do
-   not do that work: `$R send <session> "<what you need>" --ask` and report that you are blocked.
+   not do that work: `$R message <session> "<what you need>" --ask` and report that you are blocked.
 4. **Remember what others need**, as you learn it, not only at the end:
    `$R remember context "<title>" "<summary; paths in refs>" --refs path1,path2 --tags t1,t2`
    (kinds: fact, lesson, decision, context, result, howto). Keep each body short: answer first,

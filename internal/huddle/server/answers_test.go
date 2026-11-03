@@ -14,7 +14,7 @@ import (
 // TestShortLineShapes walks the one-line answers' own edges: the shapes an op never returns over
 // HTTP (a zero seq, a missing task) and the rich finishes and waits.
 func TestShortLineShapes(t *testing.T) {
-	if got := shortLine("send", channel.Ev{}); got != "" {
+	if got := shortLine("message", channel.Ev{}); got != "" {
 		t.Fatalf("a send without a seq = %q", got)
 	}
 	if got := shortLine("remember", channel.KBShape{}); got != "" {

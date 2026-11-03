@@ -1,0 +1,12 @@
+{
+  "seq": 68,
+  "kind": "mcp",
+  "name": "mcp-call-message",
+  "method": "POST",
+  "path": "/mcp/golden?as=scout",
+  "auth": "root",
+  "sent": "{\"jsonrpc\":\"2.0\",\"id\":27,\"method\":\"tools/call\",\"params\":{\"name\":\"message\",\"arguments\":{}}}",
+  "status": 200,
+  "contentType": "application/json",
+  "body": "{\"jsonrpc\":\"2.0\",\"id\":27,\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"huddle: message: missing msg\"}],\"isError\":true}}"
+}

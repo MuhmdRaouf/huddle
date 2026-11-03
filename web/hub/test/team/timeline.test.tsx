@@ -419,7 +419,7 @@ describe("Timeline", () => {
   it("shows the empty states", () => {
     const { container, unmount } = feed([]);
     expect(screen.getByText("No activity yet")).not.toBeNull();
-    expect(screen.getByText("Events show up here the moment a session publishes them.")).not.toBeNull();
+    expect(screen.getByText("Events show up here the moment a session sends them.")).not.toBeNull();
     expect(container.querySelector("[data-empty]")).not.toBeNull();
     unmount();
     const none = feed([ev(1, "kb.added")], { filter: { family: "task", session: "" } });

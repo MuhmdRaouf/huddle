@@ -261,7 +261,7 @@ describe("SessionDrawer", () => {
       target: { value: "carry on" },
     });
     fireEvent.click(screen.getByText("Send to api"));
-    await waitFor(() => expect(api.op).toHaveBeenCalledWith("ch", "send", { to: "api", msg: "carry on" }));
+    await waitFor(() => expect(api.op).toHaveBeenCalledWith("ch", "message", { to: "api", msg: "carry on" }));
   });
 
   it("clears ?s= from the address when it closes", () => {

@@ -437,7 +437,7 @@ func TestHTTPSuite(t *testing.T) {
 		}
 	})
 
-	t.Run("a long-poll wait is woken by another client's publish in milliseconds", func(t *testing.T) {
+	t.Run("a long-poll wait is woken by another client's message in milliseconds", func(t *testing.T) {
 		shared.op(t, "c2", "join", "a", "{}")
 		shared.op(t, "c2", "join", "b", "{}")
 		shared.op(t, "c2", "ack", "b", `{"seq": 1000}`)
@@ -452,7 +452,7 @@ func TestHTTPSuite(t *testing.T) {
 			}
 		}()
 		time.Sleep(50 * time.Millisecond)
-		shared.op(t, "c2", "publish", "a", `{"topic": "go.now", "msg": "x"}`)
+		shared.op(t, "c2", "message", "a", `{"topic": "go.now", "msg": "x"}`)
 		select {
 		case out := <-answer:
 			result, _ := out["result"].(map[string]any)
@@ -595,9 +595,9 @@ func TestHTTPSuite(t *testing.T) {
 			}
 		}()
 		time.Sleep(150 * time.Millisecond)
-		shared.op(t, "c5", "send", "a", `{"to": "c", "msg": "private to c"}`)
-		shared.op(t, "c5", "send", "a", `{"to": "b", "msg": "for b"}`)
-		shared.op(t, "c5", "publish", "b", `{"topic": "mine.x", "msg": "own"}`)
+		shared.op(t, "c5", "message", "a", `{"to": "c", "msg": "private to c"}`)
+		shared.op(t, "c5", "message", "a", `{"to": "b", "msg": "for b"}`)
+		shared.op(t, "c5", "message", "b", `{"topic": "mine.x", "msg": "own"}`)
 		var msgs []string
 		deadline := time.After(5 * time.Second)
 	collect:
@@ -648,7 +648,7 @@ func TestHTTPSuite(t *testing.T) {
 			t.Helper()
 			return callAs("a", params)
 		}
-		if text := call(`{"name": "send", "arguments": {"to": "b", "msg": "hi", "ask": true}}`); !regexp.MustCompile(`^#\d+ sent to b \(an ask`).MatchString(text) {
+		if text := call(`{"name": "message", "arguments": {"to": "b", "msg": "hi", "ask": true}}`); !regexp.MustCompile(`^#\d+ sent to b \(an ask`).MatchString(text) {
 			t.Fatalf("send text = %q", text)
 		}
 		if text := call(`{"name": "remember", "arguments": {"kind": "fact", "title": "short answers", "body": "one line each"}}`); !regexp.MustCompile(`^#\d+ remembered: short answers$`).MatchString(text) {
@@ -660,10 +660,10 @@ func TestHTTPSuite(t *testing.T) {
 		if text := call(`{"name": "finish", "arguments": {"id": "ship", "note": "done by a"}}`); !regexp.MustCompile(`^done ship; released: none; next: `).MatchString(text) {
 			t.Fatalf("finish text = %q", text)
 		}
-		if text := call(`{"name": "publish", "arguments": {"topic": "t.x", "msg": "note"}}`); !regexp.MustCompile(`^#\d+ published \(t\.x\) to everyone$`).MatchString(text) {
-			t.Fatalf("publish text = %q", text)
+		if text := call(`{"name": "message", "arguments": {"topic": "t.x", "msg": "note"}}`); !regexp.MustCompile(`^#\d+ sent \(t\.x\) to everyone$`).MatchString(text) {
+			t.Fatalf("message text = %q", text)
 		}
-		ask := callAs("b", `{"name": "send", "arguments": {"to": "a", "msg": "need it", "ask": true}}`)
+		ask := callAs("b", `{"name": "message", "arguments": {"to": "a", "msg": "need it", "ask": true}}`)
 		seq := regexp.MustCompile(`^#(\d+) sent`).FindStringSubmatch(ask)
 		if seq == nil {
 			t.Fatalf("ask text = %q", ask)
@@ -683,7 +683,7 @@ func TestHTTPSuite(t *testing.T) {
 		if text := call(`{"name": "finish", "arguments": {"id": "first", "note": "done by a"}}`); !regexp.MustCompile(`^done first; released: tail→b; next: `).MatchString(text) {
 			t.Fatalf("finish with released text = %q", text)
 		}
-		full := call(`{"name": "send", "arguments": {"to": "b", "msg": "full", "json": true}}`)
+		full := call(`{"name": "message", "arguments": {"to": "b", "msg": "full", "json": true}}`)
 		var parsed map[string]any
 		if err := json.Unmarshal([]byte(full), &parsed); err != nil {
 			t.Fatalf("json: true text = %q", full)
@@ -711,7 +711,7 @@ func TestAuthBoundary(t *testing.T) {
 	}{
 		{method: "GET", path: "/api/channels", rightCode: 200},
 		{method: "GET", path: "/api/c/team/board", rightCode: 200},
-		{method: "POST", path: "/api/c/team/op/send?as=owner", body: `{"msg": "hi"}`, write: true, rightCode: 200},
+		{method: "POST", path: "/api/c/team/op/message?as=owner", body: `{"msg": "hi"}`, write: true, rightCode: 200},
 		{method: "GET", path: "/api/tokens", rightCode: 200},
 		{method: "GET", path: "/api/members", rightCode: 200},
 		{method: "GET", path: "/api/settings", rightCode: 200},
@@ -832,7 +832,7 @@ func TestInvites(t *testing.T) {
 			t.Fatalf("the member's invite list = %d, want 403", code)
 		}
 		// what reached the channel carries no secret
-		if code, out := srv.op(t, "team", "send", "dev", fmt.Sprintf(`{"msg": "the join line was %s and my credential %s"}`, token, cred)); code != 200 {
+		if code, out := srv.op(t, "team", "message", "dev", fmt.Sprintf(`{"msg": "the join line was %s and my credential %s"}`, token, cred)); code != 200 {
 			t.Fatalf("send = %d %s", code, out)
 		}
 		_, _, timeline := srv.get(t, "/api/c/team/timeline", root)
@@ -860,7 +860,7 @@ func TestInvites(t *testing.T) {
 		if response.StatusCode != 200 || !strings.Contains(string(body), "dev") {
 			t.Fatalf("kick = %d %s", response.StatusCode, body)
 		}
-		if code, _, body, _ := srv.request(context.Background(), http.MethodPost, "/api/c/team/op/send?as=dev", `{"msg": "still here?"}`, dev); code != 401 {
+		if code, _, body, _ := srv.request(context.Background(), http.MethodPost, "/api/c/team/op/message?as=dev", `{"msg": "still here?"}`, dev); code != 401 {
 			t.Fatalf("the kicked member = %d %s, want 401", code, body)
 		}
 		request, _ = http.NewRequest(http.MethodDelete, srv.base+"/api/tokens/"+id, nil)
@@ -983,11 +983,11 @@ func TestInvites(t *testing.T) {
 		if code, _, _, _ := srv.request(context.Background(), http.MethodGet, "/api/c/team2/board", "", C); code != 200 {
 			t.Fatalf("the browser's board = %d", code)
 		}
-		if code, _, _, _ := srv.request(context.Background(), http.MethodPost, "/api/c/team2/op/send?as=owner", `{"to": "dev", "msg": "from the dashboard"}`, C); code != 200 {
+		if code, _, _, _ := srv.request(context.Background(), http.MethodPost, "/api/c/team2/op/message?as=owner", `{"to": "dev", "msg": "from the dashboard"}`, C); code != 200 {
 			t.Fatalf("the dashboard's send as owner = %d", code)
 		}
 		// not a session, and none of the creator's: invites, members, kicks, more browsers
-		if code, _, _, _ := srv.request(context.Background(), http.MethodPost, "/api/c/team2/op/send?as=lead", `{"msg": "x"}`, C); code != 403 {
+		if code, _, _, _ := srv.request(context.Background(), http.MethodPost, "/api/c/team2/op/message?as=lead", `{"msg": "x"}`, C); code != 403 {
 			t.Fatalf("the dashboard's send as lead = %d, want 403", code)
 		}
 		for _, call := range []struct {
@@ -1159,10 +1159,10 @@ func TestRestart(t *testing.T) {
 
 	again := startServer(t, map[string]string{"HUDDLE_DATA": data, "HUDDLE_TOKEN": srv.token, "PORT": strconv.Itoa(port)})
 	root["content-type"] = "application/json"
-	if code, _, _, _ := again.request(context.Background(), http.MethodPost, "/api/c/reset/op/send?as=lead", `{"msg": "after"}`, root); code != 200 {
+	if code, _, _, _ := again.request(context.Background(), http.MethodPost, "/api/c/reset/op/message?as=lead", `{"msg": "after"}`, root); code != 200 {
 		t.Fatalf("the creator after the restart = %d", code)
 	}
-	if code, _, _, _ := again.request(context.Background(), http.MethodPost, "/api/c/reset/op/send?as=dev", `{"msg": "after"}`, map[string]string{"x-huddle-token": cred, "content-type": "application/json"}); code != 200 {
+	if code, _, _, _ := again.request(context.Background(), http.MethodPost, "/api/c/reset/op/message?as=dev", `{"msg": "after"}`, map[string]string{"x-huddle-token": cred, "content-type": "application/json"}); code != 200 {
 		t.Fatalf("a member after the restart = %d", code)
 	}
 	if code, _, _, _ := again.request(context.Background(), http.MethodGet, "/api/channels", "", map[string]string{"Cookie": cookie}); code != 200 {
@@ -1184,12 +1184,12 @@ func TestRestart(t *testing.T) {
 	}
 	_, _ = io.Copy(io.Discard, response.Body)
 	_ = response.Body.Close()
-	if code, _, _, _ := again.request(context.Background(), http.MethodPost, "/api/c/reset/op/send?as=dev", `{"msg": "still?"}`, map[string]string{"x-huddle-token": cred, "content-type": "application/json"}); code != 401 {
+	if code, _, _, _ := again.request(context.Background(), http.MethodPost, "/api/c/reset/op/message?as=dev", `{"msg": "still?"}`, map[string]string{"x-huddle-token": cred, "content-type": "application/json"}); code != 401 {
 		t.Fatalf("the kicked member = %d, want 401", code)
 	}
 	again.kill()
 	third := startServer(t, map[string]string{"HUDDLE_DATA": data, "HUDDLE_TOKEN": srv.token, "PORT": strconv.Itoa(port)})
-	if code, _, _, _ := third.request(context.Background(), http.MethodPost, "/api/c/reset/op/send?as=dev", `{"msg": "after the kick"}`, map[string]string{"x-huddle-token": cred, "content-type": "application/json"}); code != 401 {
+	if code, _, _, _ := third.request(context.Background(), http.MethodPost, "/api/c/reset/op/message?as=dev", `{"msg": "after the kick"}`, map[string]string{"x-huddle-token": cred, "content-type": "application/json"}); code != 401 {
 		t.Fatalf("the kicked member after a restart = %d, want 401", code)
 	}
 }
@@ -1216,7 +1216,7 @@ func TestReadRoutes(t *testing.T) {
 	if _, out := srv.op(t, "docs", "remember", "a", `{"kind": "fact", "title": "the fact", "body": "x"}`); true {
 		_ = out
 	}
-	srv.op(t, "docs", "send", "b", `{"to": "owner", "msg": "may I?", "ask": true}`)
+	srv.op(t, "docs", "message", "b", `{"to": "owner", "msg": "may I?", "ask": true}`)
 
 	reads := []struct {
 		path  string
@@ -1430,7 +1430,7 @@ func TestReadRoutes(t *testing.T) {
 	})
 
 	t.Run("MCP: a wait that already has its event answers at once, in one line", func(t *testing.T) {
-		srv.op(t, "docs", "publish", "a", `{"topic": "go.now", "msg": "the signal"}`)
+		srv.op(t, "docs", "message", "a", `{"topic": "go.now", "msg": "the signal"}`)
 		reply := srv.rpc(t, "docs", "b", "tools/call", `{"name": "wait", "arguments": {"topics": ["go.*"], "timeout": 5}}`, 30)
 		result, _ := reply["result"].(map[string]any)
 		content, _ := result["content"].([]any)

@@ -290,14 +290,14 @@ fi
 # ── step 7: ping-pong, both sessions live at once ────────────────────────────
 CC_N=$((CC_N + 1))
 (
-	cc proj-b "Use the huddle wait tool to wait (timeout 180 seconds) for a message. When the message 'ping' arrives, use the huddle reply or send tool to answer its sender with exactly 'pong'. Then stop." \
+	cc proj-b "Use the huddle wait tool to wait (timeout 180 seconds) for a message. When the message 'ping' arrives, use the huddle reply or message tool to answer its sender with exactly 'pong'. Then stop." \
 		--resume "$SID_B" >"$T/log/sid-b3.txt" 2>&1
 ) &
 pid_b=$!
 sleep 5
 CC_N=$((CC_N + 1))
 (
-	cc proj-a "Use the huddle send tool to send exactly 'ping' to the session proj-b. Then use the huddle wait tool (timeout 180 seconds) until proj-b answers, and print the answer." \
+	cc proj-a "Use the huddle message tool to send exactly 'ping' to the session proj-b. Then use the huddle wait tool (timeout 180 seconds) until proj-b answers, and print the answer." \
 		--resume "$SID_A" >"$T/log/sid-a2.txt" 2>&1
 ) &
 pid_a=$!
@@ -404,11 +404,11 @@ else
 fi
 
 # ── step 12: ping-pong, the opencode agent and the Claude session live at once
-oc proj-oc "Use the huddle send tool to send exactly 'ping' to the session proj-a. Then use the huddle wait tool with timeout 90 seconds. Until a message from proj-a whose text is exactly 'pong' arrives, ignore every other event and call the huddle wait tool again. When the pong arrives, print exactly: pong received" run &
+oc proj-oc "Use the huddle message tool to send exactly 'ping' to the session proj-a. Then use the huddle wait tool with timeout 90 seconds. Until a message from proj-a whose text is exactly 'pong' arrives, ignore every other event and call the huddle wait tool again. When the pong arrives, print exactly: pong received" run &
 pid_oc=$!
 sleep 5
 (
-	cc proj-a "Use the huddle wait tool to wait (timeout 180 seconds) for a message from the session oc. Until a message whose text is exactly 'ping' arrives from oc, ignore join notices and every other event and call the huddle wait tool again. When it arrives, use the huddle reply or send tool to answer oc with exactly 'pong'. Then stop." \
+	cc proj-a "Use the huddle wait tool to wait (timeout 180 seconds) for a message from the session oc. Until a message whose text is exactly 'ping' arrives from oc, ignore join notices and every other event and call the huddle wait tool again. When it arrives, use the huddle reply or message tool to answer oc with exactly 'pong'. Then stop." \
 		--resume "$SID_A" >"$T/log/sid-a3.txt" 2>&1
 ) &
 pid_a2=$!

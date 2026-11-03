@@ -28,7 +28,7 @@ Protocol (the huddle skill has the full version):
 2. recall before reading files or re-deriving anything; remember what you learn (fact, lesson, decision, context, result, howto).
 3. gate before any change (paused = stop). Answer every inbox message with reply.
 4. Work: start (takes your next task, or the id you name) → do it → finish "<command + result>" (releases what waited on it, names your next). When start says the task waits on another session's: wait with topics ["task.ready"] (or wait_task) instead of polling or guessing.
-5. Need someone else: send (ask=true for a reply), or task_create with owner and after. Ping-pong work: only the turn holder acts; pass the turn when done.
+5. Need someone else: message (ask for a reply), or task_create with owner and after. Ping-pong work: only the turn holder acts; pass the turn when done.
 6. Idle or blocked on others: wait (it returns kind message | event | timeout; on event, handle it and its skipped list, then ack its seq; on timeout, wait again).
 7. Subagents you start: they join as "%s.<role>" (pass as), share results with remember, and leave when done.`, me, name, me)
 }
@@ -104,7 +104,7 @@ func evLine(e channel.Ev) string {
 // shortLine is one op's one-line answer; "" means the whole JSON object is the answer.
 func shortLine(name string, result any) string {
 	switch name {
-	case "send", "publish", "reply":
+	case "message", "ask", "reply":
 		e, ok := result.(channel.Ev)
 		if !ok || e.Seq == 0 {
 			return ""
@@ -114,14 +114,15 @@ func shortLine(name string, result any) string {
 			to = *e.To
 		}
 		switch name {
-		case "send":
+		case "message", "ask":
 			ask := ""
 			if e.NeedsReply {
 				ask = " (an ask: it waits for a reply)"
 			}
+			if e.Topic != "msg" && e.Topic != "ask" {
+				return fmt.Sprintf("#%d sent (%s) to %s%s", e.Seq, e.Topic, to, ask)
+			}
 			return fmt.Sprintf("#%d sent to %s%s", e.Seq, to, ask)
-		case "publish":
-			return fmt.Sprintf("#%d published (%s) to %s", e.Seq, e.Topic, to)
 		default:
 			return fmt.Sprintf("#%d replied", e.Seq)
 		}

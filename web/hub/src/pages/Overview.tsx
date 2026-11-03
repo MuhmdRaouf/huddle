@@ -627,7 +627,7 @@ export function Overview({ onCompose, prefs = localStorage, store }: OverviewPro
         />
         <Stat icon="ask" tint="c-mauve" label="Questions for you" value={v.asks} sub={t.asksub} />
         <Stat icon="book" tint="c-info" label="Knowledge" value={v.kb} sub="Entries the sessions share" />
-        <Stat icon="activity" tint="c-peach" label="Events" value={v.ev} sub="Published in this channel" />
+        <Stat icon="activity" tint="c-peach" label="Events" value={v.ev} sub="Sent in this channel" />
       </section>
       {ext?.obs?.available ? <CostCard obs={ext.obs} ch={ch} api={api} /> : null}
       {conflicts.length > 0 ? <ConflictsCard conf={conf} now={now} /> : null}

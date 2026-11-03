@@ -254,7 +254,7 @@ func TestHFetchSendsTheCredentialAndRetriesOnceOn401(t *testing.T) {
 	if err := SaveCred(ctx, stale, Cred{URL: srv.URL, Credential: "stale"}, ""); err != nil {
 		t.Fatal(err)
 	}
-	resp, err := HFetch(ctx, stale, http.MethodPost, srv.URL+"/api/c/shop/op/send?as=a", map[string]string{"content-type": "application/json"}, []byte(`{"msg":"hi"}`), 0, "")
+	resp, err := HFetch(ctx, stale, http.MethodPost, srv.URL+"/api/c/shop/op/message?as=a", map[string]string{"content-type": "application/json"}, []byte(`{"msg":"hi"}`), 0, "")
 	if err != nil {
 		t.Fatal(err)
 	}

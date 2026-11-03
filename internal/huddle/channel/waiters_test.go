@@ -61,7 +61,7 @@ func TestWaiters(t *testing.T) {
 				if i%2 == 1 {
 					time.Sleep(time.Millisecond)
 				}
-				if _, err := ch.Publish(bg, "pub", PublishArgs{Topic: "go.r" + strconv.Itoa(r), Msg: strconv.Itoa(i), To: sp("w" + strconv.Itoa(i))}); err != nil {
+				if _, err := ch.Send(bg, "pub", []string{"w" + strconv.Itoa(i)}, strconv.Itoa(i), SendOpts{Topic: sp("go.r" + strconv.Itoa(r))}); err != nil {
 					t.Fatal(err)
 				}
 			}
@@ -176,7 +176,7 @@ func TestWaiterRaces(t *testing.T) {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				if _, err := ch.Publish(bg, "a", PublishArgs{Topic: "burst.x", Msg: strconv.Itoa(i)}); err != nil {
+				if _, err := ch.Send(bg, "a", nil, strconv.Itoa(i), SendOpts{Topic: sp("burst.x")}); err != nil {
 					t.Error(err)
 				}
 			}()

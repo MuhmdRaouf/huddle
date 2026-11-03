@@ -74,7 +74,7 @@ func watchedServerWithUser(t *testing.T) (*childServer, string) {
 		srv.kill()
 		t.Fatalf("join = %d %s", code, out)
 	}
-	if code, out := srv.op(t, "shop", "send", "a", `{"msg": "are you still there?"}`); code != 200 {
+	if code, out := srv.op(t, "shop", "message", "a", `{"msg": "are you still there?"}`); code != 200 {
 		srv.kill()
 		t.Fatalf("send = %d %s", code, out)
 	}

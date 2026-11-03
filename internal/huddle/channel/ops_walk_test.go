@@ -42,9 +42,9 @@ func TestOpsWalk(t *testing.T) {
 	runOp(t, ch, "take", "b", `{}`)
 	runOp(t, ch, "pause", "a", `{"target": "b", "why": "waiting on the owner"}`)
 	runOp(t, ch, "resume", "a", `{"target": "b"}`)
-	ask := runOp(t, ch, "send", "a", `{"to": "b", "msg": "which port?", "ask": true}`)
+	ask := runOp(t, ch, "message", "a", `{"to": "b", "msg": "which port?", "ask": true}`)
 	seq := jsonField(t, ask, "seq")
-	runOp(t, ch, "publish", "a", `{"topic": "build.ready", "msg": "done", "ref": "run/7"}`)
+	runOp(t, ch, "message", "a", `{"topic": "build.ready", "msg": "done", "ref": "run/7"}`)
 	runOp(t, ch, "reply", "b", `{"seq": `+seq+`, "msg": "17787"}`)
 	if inbox := runOp(t, ch, "inbox", "b", ""); strings.Contains(mustJSONT(t, inbox), "which port?") {
 		t.Fatalf("the answered ask still waits: %#v", inbox)
@@ -167,7 +167,7 @@ func TestBlockingOpsAreTheTablesFact(t *testing.T) {
 			t.Errorf("Blocks(%q) = false, want true", name)
 		}
 	}
-	for _, name := range []string{"publish", "status", "join"} {
+	for _, name := range []string{"message", "status", "join"} {
 		if Blocks(name) {
 			t.Errorf("Blocks(%q) = true, want false", name)
 		}

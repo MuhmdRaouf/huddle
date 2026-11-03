@@ -232,7 +232,7 @@ var twoReposSent = regexp.MustCompile(`^#(\d+) sent to (\S+)`)
 // channel will list it.
 func (b *twoReposBridge) send(to, text string) twoReposEvent {
 	b.t.Helper()
-	answer := b.tool("send", map[string]any{"to": to, "msg": text})
+	answer := b.tool("message", map[string]any{"to": to, "msg": text})
 	match := twoReposSent.FindStringSubmatch(answer)
 	if match == nil || match[2] != to {
 		b.t.Fatalf("the %s bridge's send to %s answered %q, want %q", b.name, to, answer, "#<seq> sent to "+to)

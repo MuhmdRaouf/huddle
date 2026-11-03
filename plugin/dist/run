@@ -43,9 +43,8 @@ case "$command" in
   wait-task) entry=wait-task ;;
   gate) entry=gate ;;
   ack) entry=ack ;;
-  send) entry=send ;;
+  message) entry=message ;;
   reply) entry=reply ;;
-  pub) entry=pub ;;
   doing) entry=doing ;;
   done) entry=done ;;
   blocked) entry=blocked ;;

@@ -153,7 +153,7 @@ func TestHuddleWhoamiPrintsTheIdentityCompact(t *testing.T) {
 // A session with no channel, or with no url, is told how to get into one.
 func TestHuddleAGuardNamesWhatIsMissing(t *testing.T) {
 	w := world(t, t.TempDir(), map[string]string{"HUDDLE_URL": "http://127.0.0.1:1"})
-	code, _, errOut := runH(t, w, "send", "hi")
+	code, _, errOut := runH(t, w, "message", "hi")
 	if code != 2 || !strings.HasPrefix(errOut, "huddle: not in a huddle: ") {
 		t.Fatalf("no channel: %d %q", code, errOut)
 	}
@@ -161,7 +161,7 @@ func TestHuddleAGuardNamesWhatIsMissing(t *testing.T) {
 		t.Errorf("the guard gives no way in: %q", errOut)
 	}
 	w2 := world(t, t.TempDir(), map[string]string{"HUDDLE_CHANNEL": "c", "HUDDLE_AS": "a"})
-	code, _, errOut = runH(t, w2, "send", "hi")
+	code, _, errOut = runH(t, w2, "message", "hi")
 	if code != 5 || !strings.Contains(errOut, "Huddle has no port here yet: start it with huddle up") {
 		t.Fatalf("no url: %d %q", code, errOut)
 	}
@@ -434,14 +434,14 @@ func TestHuddleOpCommandsBuildTheirBodies(t *testing.T) {
 		{"assign default", []string{"assign", "s"}, "assign", `{"session":"s","context":null}`},
 		{"brief", []string{"brief", "s", "the text"}, "brief", `{"session":"s","msg":"the text"}`},
 		{"ack", []string{"ack", "7"}, "ack", `{"seq":7}`},
-		{"send to one", []string{"send", "beta", "hi", "--ask"}, "send", `{"to":"beta","msg":"hi","ask":true}`},
-		{"send to everyone", []string{"send", "hi"}, "send", `{"msg":"hi","ask":false}`},
-		{"send with --all keeps the name in the message", []string{"send", "beta", "hi", "--all"}, "send", `{"msg":"beta hi","ask":false}`},
-		{"send --to wins", []string{"send", "beta", "hi", "--to", "gamma"}, "send", `{"to":"gamma","msg":"hi","ask":false}`},
-		{"send --task", []string{"send", "hi", "--task", "t1"}, "send", `{"msg":"hi","ask":false,"task":"t1"}`},
+		{"message to one", []string{"message", "beta", "hi", "--ask"}, "message", `{"to":"beta","msg":"hi","ask":true}`},
+		{"message to everyone", []string{"message", "hi"}, "message", `{"msg":"hi","ask":false}`},
+		{"message with --all keeps the name in the message", []string{"message", "beta", "hi", "--all"}, "message", `{"msg":"beta hi","ask":false}`},
+		{"message --to wins", []string{"message", "beta", "hi", "--to", "gamma"}, "message", `{"to":"gamma","msg":"hi","ask":false}`},
+		{"message --task", []string{"message", "hi", "--task", "t1"}, "message", `{"msg":"hi","ask":false,"task":"t1"}`},
 		{"reply", []string{"reply", "5", "yes"}, "reply", `{"seq":5,"msg":"yes"}`},
 		{"reply defaults to ack", []string{"reply", "5"}, "reply", `{"seq":5,"msg":"ack"}`},
-		{"pub", []string{"pub", "build.ready", "api", "all green"}, "publish", `{"topic":"build.ready","ref":"api","msg":"all green","ask":false}`},
+		{"message with a topic and a ref", []string{"message", "all green", "--topic", "build.ready", "--ref", "api"}, "message", `{"msg":"all green","ask":false,"topic":"build.ready","ref":"api"}`},
 		{"doing with a note", []string{"doing", "t1", "started"}, "task_status", `{"id":"t1","status":"doing","note":"started"}`},
 		{"done bare", []string{"done", "t1"}, "task_status", `{"id":"t1","status":"done","note":""}`},
 		{"new", []string{"new", "Ship it", "--owner", "b", "--after", "a,b"}, "task_create", `{"title":"Ship it","owner":"b","after":["a","b"]}`},
@@ -520,8 +520,8 @@ func TestHuddleAsRunsTheOperationAsAnotherSession(t *testing.T) {
 		return okJSON("fine")
 	})
 	w := huddleWorld(t, fake.server.URL, nil)
-	if code, _, errOut := runH(t, w, "send", "hi", "--as", "parent.role"); code != 0 || errOut != "" {
-		t.Fatalf("send --as: %q", errOut)
+	if code, _, errOut := runH(t, w, "message", "hi", "--as", "parent.role"); code != 0 || errOut != "" {
+		t.Fatalf("message --as: %q", errOut)
 	}
 	if body != `{"msg":"hi","ask":false,"as":"parent.role"}` {
 		t.Errorf("body %q", body)
@@ -639,7 +639,6 @@ func TestHuddleMissingArgumentsAreUsageErrors(t *testing.T) {
 		{[]string{"brief", "s"}, "huddle: brief <session> <text>"},
 		{[]string{"wait-task"}, "huddle: wait-task <id>"},
 		{[]string{"ack"}, "huddle: ack <seq>"},
-		{[]string{"pub", "t", "r"}, "huddle: pub <topic> <ref> <msg>"},
 		{[]string{"doing"}, "huddle: doing <task id> [note]"},
 		{[]string{"finish"}, "huddle: finish <evidence>"},
 		{[]string{"depend"}, "huddle: depend <session> <title>"},
@@ -675,14 +674,14 @@ func TestHuddleMissingArgumentsAreUsageErrors(t *testing.T) {
 // ops lists the server's tools, the name padded.
 func TestHuddleOpsListsTheTools(t *testing.T) {
 	fake := startFakeHuddle(t, func(call fakeCall) (int, string) {
-		return 200, `{"result":{"tools":[{"name":"send","description":"Send a message"},{"name":"task_create","description":"Create a task"}]}}`
+		return 200, `{"result":{"tools":[{"name":"message","description":"Send a message"},{"name":"task_create","description":"Create a task"}]}}`
 	})
 	w := huddleWorld(t, fake.server.URL, nil)
 	code, out, errOut := runH(t, w, "ops")
 	if code != 0 || errOut != "" {
 		t.Fatalf("ops: %d %q", code, errOut)
 	}
-	if out != "send         Send a message\ntask_create  Create a task\n" {
+	if out != "message      Send a message\ntask_create  Create a task\n" {
 		t.Errorf("ops said %q", out)
 	}
 	if last := fake.lastCall(); last.Path != "/mcp/c" || !strings.Contains(last.Body, `"method":"tools/list"`) {
@@ -776,7 +775,7 @@ func TestHuddleNoCommandOrOperationComesFromTheServer(t *testing.T) {
 		return 404, `{"error":"unknown operation other"}`
 	})
 	w2 := huddleWorld(t, refuses.server.URL, nil)
-	code, _, errOut = runH(t, w2, "send", "hi")
+	code, _, errOut = runH(t, w2, "message", "hi")
 	if code != 4 || errOut != "huddle: paused\n" {
 		t.Fatalf("paused: %d %q", code, errOut)
 	}
@@ -790,7 +789,7 @@ func TestHuddleNoCommandOrOperationComesFromTheServer(t *testing.T) {
 func TestHuddleUnreachableIsFive(t *testing.T) {
 	w := huddleWorld(t, "http://127.0.0.1:1", nil)
 	for _, args := range [][]string{
-		{"send", "hi"}, {"members"}, {"token", "list"}, {"status"},
+		{"message", "hi"}, {"members"}, {"token", "list"}, {"status"},
 	} {
 		code, _, errOut := runH(t, w, args...)
 		if code != 5 {

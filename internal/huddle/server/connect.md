@@ -45,8 +45,8 @@ Both usually come from `.agents/huddle/huddle.json` in your repo (`{"channel": "
    Verified entries come first; a hit marked "may be stale" (old, or its files changed) is a
    lead to check, not a fact: once checked, `verify <id>` it, or `remember` the fix with `supersedes`.
 3. **Gate before you change anything.** `gate` blocks while you are paused (the owner or another
-   session pauses you; publishing, task changes and turn moves are then refused with 423, while
-   messages and replies still go through). Never work around a pause.
+   session pauses you; topic messages, task changes and turn moves are then refused with 423, while
+   messages, asks and replies still go through). Never work around a pause.
 4. **Answer the inbox first.** Every `ask` (and owner directive) waits for your `reply`; it keeps
    waking your `wait` until you do. Reply even if only "on it, done by X".
 5. **Work the plan.** `start` takes your next task (yours or unowned; or the id you name), marks it
@@ -56,7 +56,7 @@ Both usually come from `.agents/huddle/huddle.json` in your repo (`{"channel": "
 6. **Remember what others would need.** After learning something non-obvious, `remember` it
    (see below). After finishing a task, `remember` a `result` if its output feeds another task.
 7. **Hand over, then listen.** When your part is done or you are blocked on someone:
-   publish/pass/send what they need, then `wait` (below). Do not end your turn silently while
+   message or pass what they need, then `wait` (below). Do not end your turn silently while
    another session waits on you.
 
 ## Fresh context or sync
@@ -106,6 +106,7 @@ Reach for these first; each one does the bookkeeping the loop above describes.
   `["task.ready"]`, or `wait_task <id>` for one specific task. Huddle sends `task.ready` to the
   owner of a task the moment everything it waits on is done or skipped.
 - **On an event:** `wait` with topic globs, e.g. `["build.*","review.done","turn.pass"]`.
+  A session wakes them with `message` and a `topic` such as `build.ready`.
 - `wait` returns `kind`:
   - `message` → an ask for you: handle it, `reply`, wait again;
   - `event` → handle it **and its `skipped` list** (unread events before it), then `ack <seq>`;
@@ -113,7 +114,7 @@ Reach for these first; each one does the bookkeeping the loop above describes.
     as long as the transport allows (about 25 minutes through the plugin), and each short wait
     costs you a turn.
 - `ack` only after handling: delivery is at-least-once; make handlers safe to repeat. A
-  `publish` with `key` is idempotent.
+  `message` with `key` is idempotent.
 - With pushes on (`claude --dangerously-load-development-channels server:plugin:huddle:huddle`), a
   `<channel source="huddle">` message can wake you while idle: treat it exactly like a `wait`
   result, then `ack`.
@@ -125,18 +126,18 @@ Reach for these first; each one does the bookkeeping the loop above describes.
 ## Working together
 
 - **In parallel** (no turn holder): each session takes tasks it owns; dependencies order them.
-- **Ping-pong** (channel `start` + `handover` configured): only the turn holder acts. Publishing
-  a handover topic passes the turn; `pass <to> "<what next>"` passes it explicitly; `turn` shows
+- **Ping-pong** (channel `start` + `handover` configured): only the turn holder acts. A `message`
+  with a handover topic passes the turn; `pass <to> "<what next>"` passes it explicitly; `turn` shows
   who holds it. Off turn: listen, answer asks, prepare, but do not change shared things.
 - **Ask another session for work:** `task_create` with `owner` (and `after` if it must wait on
   something). They get `task.created` now and `task.ready` when it can start. For a question,
-  `send` with `ask=true`.
+  `ask`.
 - **Stop someone:** `pause <session> "<why>"` (e.g. they are about to touch what you are
   changing); `resume` when safe. Tell them why; they see it in their timeline.
-- **Never** edit another session's repo or files to "help": create a task for it or send it.
+- **Never** edit another session's repo or files to "help": create a task for it or message it.
 - **Same file, two sessions:** when you edit a file another session edited in the last 30
   minutes, one line in your context says who ("payments edited src/cart.ts 4 min ago").
-  Nothing is locked: `send` it (or `ask`) what it is changing before you go on.
+  Nothing is locked: `message` it (or `ask`) what it is changing before you go on.
 
 ## Subagents in the channel
 
@@ -187,7 +188,7 @@ Never store secrets.
 
 ## Quick reference
 
-`join` `status` `sessions` `state` · `publish` `send` `reply` `inbox` `events` · `wait` `ack`
+`join` `status` `sessions` `state` · `message` `ask` `reply` `inbox` `events` · `wait` `ack`
 `gate` `pause` `resume` · `turn` `pass` `take` · `next` `map` `task` `tasks` `task_create`
 `task_update` `task_status` `wait_task` `note` · `start` `finish` `depend` `handoff` `ask_wait` ·
 `remember` `recall` `kb` `verify` `share` · `digest` · `leave` · owner or orchestrator: `import_plan` `configure` `approve`

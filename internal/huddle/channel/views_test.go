@@ -102,7 +102,7 @@ func TestChannelViews(t *testing.T) {
 	t.Run("events filters by after, before, from, limit and topic", func(t *testing.T) {
 		ch := joinedChannel(t)
 		for _, topic := range []string{"n.1", "n.2", "n.3"} {
-			if _, err := ch.Publish(bg, "a", PublishArgs{Topic: topic, Msg: "m"}); err != nil {
+			if _, err := ch.Send(bg, "a", nil, "m", SendOpts{Topic: &topic}); err != nil {
 				t.Fatal(err)
 			}
 		}

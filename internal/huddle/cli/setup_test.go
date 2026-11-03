@@ -382,7 +382,7 @@ func TestSetupInASecondProjectJoinsTheHuddleThisUserAlreadyRuns(t *testing.T) {
 	if noted := Servers(context.Background(), A); len(noted) != 1 {
 		t.Errorf("a second server was started: %v", noted)
 	}
-	if code, _, errOut := runH(t, W, "send", "hello from web"); code != 0 {
+	if code, _, errOut := runH(t, W, "message", "hello from web"); code != 0 {
 		t.Fatalf("web send: %s", errOut)
 	}
 	next := sess(web, "s-web-2")

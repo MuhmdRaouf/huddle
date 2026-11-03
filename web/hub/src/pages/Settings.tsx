@@ -279,7 +279,7 @@ function TurnForm({
         </textarea>
         <p class={HINT}>
           JSON: <code>{`{"api": {"to": "web", "topics": ["build.ready"]}}`}</code> passes the turn from api to
-          web when api publishes build.ready.
+          web when api sends build.ready.
         </p>
       </div>
       <OrchField info={info} options={orchOptions} current={c.orchestrator} />

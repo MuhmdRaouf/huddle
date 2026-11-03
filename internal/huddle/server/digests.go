@@ -64,10 +64,9 @@ func (s *server) shareDigest(ctx context.Context, rep hub.Report) {
 	if err != nil {
 		return // a registry row may name a channel that is gone; the links already heard it
 	}
-	if _, err := ch.Publish(ctx, row.Member, channel.PublishArgs{
-		Topic: "digest." + rep.SessionID, Msg: rep.Digest,
-	}); err != nil {
-		fmt.Fprintf(s.o.Stdout, "digest: the publish for %s is not written: %v\n", rep.SessionID, err)
+	topic := "digest." + rep.SessionID
+	if _, err := ch.Send(ctx, row.Member, nil, rep.Digest, channel.SendOpts{Topic: &topic}); err != nil {
+		fmt.Fprintf(s.o.Stdout, "digest: the message for %s is not written: %v\n", rep.SessionID, err)
 	}
 }
 

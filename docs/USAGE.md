@@ -198,7 +198,7 @@ keeps only how many events of each kind a session reported on each day.
    a deny settles it once. Claude's questions open as cards; pick or type each answer and send
    them, or answer in the terminal. Snooze from the app for 15 minutes, an hour, or tomorrow at nine.
 
-Messages (`huddle send`, `reply`), shared knowledge (`huddle remember`, `recall`) and the whole
+Messages (`huddle message`, `reply`), shared knowledge (`huddle remember`, `recall`) and the whole
 surface live in the huddle skill and `huddle help`.
 
 The dashboard's Insights card reads the hub's own tips and each session's. "Tips to my sessions"
@@ -324,7 +324,7 @@ huddle release internal/huddle/cli            # one path, or no paths for all of
 - The MCP tools are the same words: `reserve`, `release`, `reservations` (paths absolute).
 - When a session reaches for a reserved path — a directory reservation covers everything under
   it — one line in its context names the holder and the moment the hold lapses. Nothing is
-  refused; the line says `huddle send <session>` first.
+  refused; the line says `huddle message <session>` first.
 - Leaving releases your reservations. A reservation that outlives its session expires on its own.
 - Matching is on absolute paths. When both sessions report the same repository (its normalised
   origin), the path inside the repository decides, so another checkout or another machine of the
@@ -418,7 +418,7 @@ by `remove`.
 Any other MCP client, by hand:
 
 1. Over HTTP, POST JSON-RPC to the channel's endpoint — `http://127.0.0.1:<port>/mcp/<channel>?as=<session>` —
-   for the channel's tools: `join`, `send`, `publish`, `reply`, `start`, `finish`, `wait`, the
+   for the channel's tools: `join`, `message`, `ask`, `reply`, `start`, `finish`, `wait`, the
    task and knowledge operations.
 
 2. Over stdio, run `huddle mcp`. The bridge adds the pub/sub surface:

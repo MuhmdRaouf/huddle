@@ -464,7 +464,7 @@ func TestTheSendRouteWritesOneRowPerSession(t *testing.T) {
 	if code, out := srv.post(t, "/api/send", `{"sessions":["s-1","s-3"],"text":"run the release"}`, nil); code != 200 {
 		t.Fatalf("send = %d %s", code, out)
 	}
-	rows := auditRowsOf(t, srv, "send")
+	rows := auditRowsOf(t, srv, "message")
 	if len(rows) != 2 {
 		t.Fatalf("the audit holds %d send rows, want exactly one per session: %v", len(rows), rows)
 	}

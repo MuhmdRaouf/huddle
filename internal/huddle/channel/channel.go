@@ -604,22 +604,16 @@ type AckResult struct {
 	Cursor int64 `json:"cursor"`
 }
 
-// PublishArgs is one published event.
-type PublishArgs struct {
-	Topic      string
-	Msg        string
-	To         *string
-	Ref        *string
-	Data       *jsfmt.Value
-	NeedsReply bool
-	Key        *string
-}
-
-// SendOpts is how a message is sent.
+// SendOpts is how a message is sent. Topic names the event for waits and polls on a glob; with none
+// the event is a plain message (topic msg) or an ask (topic ask). Ref names the file or id the
+// event is about, and Data is an object of extra fields.
 type SendOpts struct {
-	Ask  bool
-	Task *string
-	Key  *string
+	Ask   bool
+	Task  *string
+	Key   *string
+	Topic *string
+	Ref   *string
+	Data  *jsfmt.Value
 }
 
 // EventsFilter reads the channel history. Reader is the member reading: set, an owner's message
@@ -2462,46 +2456,14 @@ func (c *Channel) append(ctx context.Context, from string, e evIn) (Ev, error) {
 	return ev, err
 }
 
-// Publish puts an event on a topic of the channel (to everyone, or to one session).
-func (c *Channel) Publish(ctx context.Context, from string, a PublishArgs) (Ev, error) {
+// Send messages the sessions named in to, or everyone when to is empty or ["all"]; an ask lands
+// in each recipient's inbox until they reply. Several recipients get one event each (recipients.go).
+// A paused sender may still message and ask, but not send on a topic.
+func (c *Channel) Send(ctx context.Context, from string, to []string, msg string, o SendOpts) (Ev, error) {
 	var ev Ev
 	err := c.serial(ctx, func(ctx context.Context) error {
 		me, err := c.need(ctx, from)
 		if err != nil {
-			return err
-		}
-		if !TopicRe.MatchString(a.Topic) || strings.Contains(a.Topic, "*") {
-			return bad(fmt.Sprintf("topic must match %s without *", topicReSrc))
-		}
-		if reservedTopicRe.MatchString(a.Topic) || a.Topic == "reply" {
-			return bad(fmt.Sprintf("topic %s is reserved; use the matching tool", a.Topic))
-		}
-		if a.Msg == "" {
-			return bad("need msg")
-		}
-		if a.To != nil && *a.To != Owner {
-			if _, err := c.need(ctx, *a.To); err != nil {
-				return err
-			}
-		}
-		if err := c.mustRun(me, "publish"); err != nil {
-			return err
-		}
-		ev, err = c.append(ctx, from, evIn{
-			topic: a.Topic, to: a.To, ref: a.Ref, msg: sp(utf16Cut(a.Msg, 20000)), data: a.Data,
-			needsReply: a.NeedsReply, key: a.Key,
-		})
-		return err
-	})
-	return ev, err
-}
-
-// Send messages the sessions named in to, or everyone when to is empty or ["all"]; an ask lands
-// in each recipient's inbox until they reply. Several recipients get one event each (recipients.go).
-func (c *Channel) Send(ctx context.Context, from string, to []string, msg string, o SendOpts) (Ev, error) {
-	var ev Ev
-	err := c.serial(ctx, func(ctx context.Context) error {
-		if _, err := c.need(ctx, from); err != nil {
 			return err
 		}
 		names, err := resolveRecipients(to)
@@ -2516,20 +2478,59 @@ func (c *Channel) Send(ctx context.Context, from string, to []string, msg string
 		if msg == "" {
 			return bad("need msg")
 		}
-		topic := "msg"
-		if o.Ask {
-			topic = "ask"
+		topic, err := messageTopic(o)
+		if err != nil {
+			return err
 		}
-		var data *jsfmt.Value
-		if o.Task != nil {
-			data = jsfmt.Object([]string{"task"}, []*jsfmt.Value{jstr(*o.Task)})
+		data, err := messageData(o)
+		if err != nil {
+			return err
+		}
+		if o.Topic != nil && *o.Topic != "" {
+			if err := c.mustRun(me, "message on a topic"); err != nil {
+				return err
+			}
 		}
 		ev, err = c.sendFanOut(ctx, from, names, evIn{
-			topic: topic, msg: sp(utf16Cut(msg, 20000)), data: data, needsReply: o.Ask, key: o.Key,
+			topic: topic, ref: o.Ref, msg: sp(utf16Cut(msg, 20000)), data: data, needsReply: o.Ask, key: o.Key,
 		})
 		return err
 	})
 	return ev, err
+}
+
+// messageTopic is the topic a message is written under: the one the sender named, which must be a
+// plain dotted word outside the topics the tools own, else msg, or ask for an ask.
+func messageTopic(o SendOpts) (string, error) {
+	if o.Topic == nil || *o.Topic == "" {
+		if o.Ask {
+			return "ask", nil
+		}
+		return "msg", nil
+	}
+	topic := *o.Topic
+	if !TopicRe.MatchString(topic) || strings.Contains(topic, "*") {
+		return "", bad(fmt.Sprintf("topic must match %s without *", topicReSrc))
+	}
+	if reservedTopicRe.MatchString(topic) || topic == "reply" {
+		return "", bad(fmt.Sprintf("topic %s is reserved; use the matching tool", topic))
+	}
+	return topic, nil
+}
+
+// messageData is the event's data: the sender's object, plus the task the message is about.
+func messageData(o SendOpts) (*jsfmt.Value, error) {
+	data := o.Data
+	if data != nil && data.Kind() == jsfmt.KindNull {
+		data = nil
+	}
+	if data != nil && data.Kind() != jsfmt.KindObject {
+		return nil, bad("data must be an object")
+	}
+	if o.Task != nil {
+		data = withField(data, "task", jstr(*o.Task))
+	}
+	return data, nil
 }
 
 // Reply answers a message by its seq.

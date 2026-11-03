@@ -165,7 +165,7 @@ func TestSplitCommand(t *testing.T) {
 		{"the plain word after a flag's flag is that flag's value", []string{"--pretty", "--json", "map"}, "help", nil},
 		{"a lone flag leaves no subcommand", []string{"--state", "f"}, "help", nil},
 		{"-h is a plain word, not a flag", []string{"-h"}, "-h", nil},
-		{"plain words after the subcommand are its arguments", []string{"send", "boss", "hi"}, "send", []string{"boss", "hi"}},
+		{"plain words after the subcommand are its arguments", []string{"message", "boss", "hi"}, "message", []string{"boss", "hi"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

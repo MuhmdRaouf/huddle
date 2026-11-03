@@ -177,8 +177,8 @@ func TestOverhearCarriesEveryBroadcastToLinkedSessions(t *testing.T) {
 		t.Fatalf("the link = %d %s", code, out)
 	}
 	// a broadcast reaches the linked sessions that are not the speaker
-	if code, out := srv.op(t, "kanban-release", "publish", "api", `{"topic":"build.ready","msg":"the build is green"}`); code != 200 {
-		t.Fatalf("publish = %d %s", code, out)
+	if code, out := srv.op(t, "kanban-release", "message", "api", `{"topic":"build.ready","msg":"the build is green"}`); code != 200 {
+		t.Fatalf("message = %d %s", code, out)
 	}
 	rows := linkedRows(t, srv)
 	if len(rows) != 2 {
@@ -202,7 +202,7 @@ func TestOverhearCarriesEveryBroadcastToLinkedSessions(t *testing.T) {
 		t.Errorf("the speaker's take carried its own post: %s", body)
 	}
 	// a send addressed to one session is no broadcast: no linked session overhears it
-	if code, out := srv.op(t, "kanban-release", "send", "api", `{"to":"web","msg":"just for web"}`); code != 200 {
+	if code, out := srv.op(t, "kanban-release", "message", "api", `{"to":"web","msg":"just for web"}`); code != 200 {
 		t.Fatalf("send = %d %s", code, out)
 	}
 	if rows = linkedRows(t, srv); len(rows) != 2 {
@@ -223,19 +223,40 @@ func TestOverhearTreatsAllAsABroadcastAndANameListAsAddressed(t *testing.T) {
 		t.Fatalf("the link = %d %s", code, out)
 	}
 	// a send to two members is addressed: the linked session does not overhear it
-	if code, out := srv.op(t, "kanban-release", "send", "api", `{"to":["web","ops"],"msg":"just for you two"}`); code != 200 {
+	if code, out := srv.op(t, "kanban-release", "message", "api", `{"to":["web","ops"],"msg":"just for you two"}`); code != 200 {
 		t.Fatalf("send to a list = %d %s", code, out)
 	}
 	if rows := linkedRows(t, srv); len(rows) != 0 {
 		t.Fatalf("a send to two members reached a linked session: %v", rows)
 	}
 	// a send to all is a broadcast, like a send that names no one
-	if code, out := srv.op(t, "kanban-release", "send", "api", `{"to":["all"],"msg":"all hands"}`); code != 200 {
+	if code, out := srv.op(t, "kanban-release", "message", "api", `{"to":["all"],"msg":"all hands"}`); code != 200 {
 		t.Fatalf("send to all = %d %s", code, out)
 	}
 	rows := linkedRows(t, srv)
 	if len(rows) != 1 || rows[0]["session_id"] != "s-b" {
 		t.Fatalf("a send to all reached %v, want s-b alone", rows)
+	}
+}
+
+func TestATopicMessageToOneNameIsOverheardLikeAnyTopicMessage(t *testing.T) {
+	srv := startServer(t, nil)
+	reportSession(t, srv, "s-a", "kanban-release", "api", "UserPromptSubmit")
+	reportSession(t, srv, "s-b", "kanban-release", "web", "UserPromptSubmit")
+	for _, member := range []string{"api", "web", "ops"} {
+		if code, out := srv.op(t, "kanban-release", "join", member, "{}"); code != 200 {
+			t.Fatalf("join %s = %d %s", member, code, out)
+		}
+	}
+	if code, out := srv.post(t, "/api/links", `{"sessions":["s-a","s-b"],"channel":"kanban-release","level":"overhear"}`, nil); code != 200 {
+		t.Fatalf("the link = %d %s", code, out)
+	}
+	if code, out := srv.op(t, "kanban-release", "message", "api", `{"to":"ops","topic":"build.ready","msg":"green for ops"}`); code != 200 {
+		t.Fatalf("topic message = %d %s", code, out)
+	}
+	rows := linkedRows(t, srv)
+	if len(rows) != 1 || rows[0]["session_id"] != "s-b" {
+		t.Fatalf("a topic message to one name reached %v, want s-b alone", rows)
 	}
 }
 
@@ -260,8 +281,8 @@ func TestDigestAndOnRequestLinksHearNoPosts(t *testing.T) {
 			t.Fatalf("the %s link = %d %s", link.level, code, out)
 		}
 	}
-	if code, out := srv.op(t, "kanban-release", "publish", "api", `{"topic":"build.ready","msg":"green"}`); code != 200 {
-		t.Fatalf("publish = %d %s", code, out)
+	if code, out := srv.op(t, "kanban-release", "message", "api", `{"topic":"build.ready","msg":"green"}`); code != 200 {
+		t.Fatalf("message = %d %s", code, out)
 	}
 	// the overhear link heard it; the digest and on-request links heard nothing
 	rows := linkedRows(t, srv)
@@ -280,8 +301,8 @@ func TestUnlinkStopsDeliveryAtOnce(t *testing.T) {
 	if code, out := srv.post(t, "/api/links", `{"sessions":["s-a","s-b"],"channel":"kanban-release","level":"overhear"}`, nil); code != 200 {
 		t.Fatalf("the link = %d %s", code, out)
 	}
-	if code, out := srv.op(t, "kanban-release", "publish", "api", `{"topic":"build.ready","msg":"first"}`); code != 200 {
-		t.Fatalf("publish = %d %s", code, out)
+	if code, out := srv.op(t, "kanban-release", "message", "api", `{"topic":"build.ready","msg":"first"}`); code != 200 {
+		t.Fatalf("message = %d %s", code, out)
 	}
 	if rows := linkedRows(t, srv); len(rows) != 1 || rows[0]["session_id"] != "s-b" {
 		t.Fatalf("the first post reached %v, want s-b", rows)
@@ -292,8 +313,8 @@ func TestUnlinkStopsDeliveryAtOnce(t *testing.T) {
 	if err != nil || code != 200 || !strings.Contains(out, `"ok":true`) {
 		t.Fatalf("the unlink = %d %s (%v)", code, out, err)
 	}
-	if code, out := srv.op(t, "kanban-release", "publish", "api", `{"topic":"build.ready","msg":"second"}`); code != 200 {
-		t.Fatalf("publish = %d %s", code, out)
+	if code, out := srv.op(t, "kanban-release", "message", "api", `{"topic":"build.ready","msg":"second"}`); code != 200 {
+		t.Fatalf("message = %d %s", code, out)
 	}
 	if rows := linkedRows(t, srv); len(rows) != 1 {
 		t.Fatalf("after the unlink the post reached %v, want nothing new", rows)

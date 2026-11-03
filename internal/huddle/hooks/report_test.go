@@ -374,7 +374,7 @@ func TestTheReportCarriesTheToolName(t *testing.T) {
 		{"edit", "PostToolUse", "Edit", `{"file_path":"/repo/src/cart.ts","old_string":"a","new_string":"SECRET"}`, "/repo/src/cart.ts"},
 		{"write", "PreToolUse", "Write", `{"file_path":"/repo/.env","content":"TOKEN=hunter2"}`, "/repo/.env"},
 		{"notebook", "PostToolUse", "NotebookEdit", `{"notebook_path":"/repo/a.ipynb","new_source":"x"}`, "/repo/a.ipynb"},
-		{"mcp", "PreToolUse", "mcp__huddle__publish", `{"channel":"c","text":"private words"}`, "publish"},
+		{"mcp", "PreToolUse", "mcp__huddle__message", `{"channel":"c","text":"private words"}`, "message"},
 		{"other", "PostToolUse", "Glob", `{"pattern":"**/*.go"}`, ""},
 	}
 	for _, c := range cases {

@@ -92,9 +92,9 @@ func TestReadingAnUnknownKnowledgeEntryIsA404(t *testing.T) {
 	}
 }
 
-func TestPublishRefusesATopicWithAWildcard(t *testing.T) {
+func TestAMessageRefusesATopicWithAWildcard(t *testing.T) {
 	ch := joinedChannel(t)
-	if _, err := ch.Publish(bg, "a", PublishArgs{Topic: "build.*", Msg: "x"}); errStatus(err) != 400 {
+	if _, err := ch.Send(bg, "a", nil, "x", SendOpts{Topic: sp("build.*")}); errStatus(err) != 400 {
 		t.Errorf("a wildcard topic = %v, want a 400", err)
 	}
 }

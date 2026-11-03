@@ -243,7 +243,7 @@ func (s *server) sendRoute(w http.ResponseWriter, r *http.Request, me auth.Who) 
 			return err
 		}
 		// one row per session: a send the log cannot record is answered as an error, never silent
-		if _, err := s.audit(ctx, auditActor(me), "send", id, nil); err != nil {
+		if _, err := s.audit(ctx, auditActor(me), "message", id, nil); err != nil {
 			return err
 		}
 		sent = append(sent, sentRoute{Session: id, Route: took.Route, Arrival: took.Arrival})

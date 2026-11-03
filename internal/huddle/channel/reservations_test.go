@@ -307,7 +307,7 @@ func TestReservedLookup(t *testing.T) {
 		}
 		if text := deref(file.Text); !strings.HasPrefix(text, "/r/shop/src/cart.ts is reserved by a until ") ||
 			!strings.Contains(text, "(the cart is mine)") ||
-			!strings.Contains(text, "Coordinate with them (huddle send a …) before changing it.") {
+			!strings.Contains(text, "Coordinate with them (huddle message a …) before changing it.") {
 			t.Errorf("lookup text = %q", text)
 		}
 		deep, err := RunOp(bg, "reserved", ch, "b", vv(t, `{"path": "/r/dir/under/deep.ts"}`))
@@ -448,8 +448,8 @@ func TestReserveEvents(t *testing.T) {
 	if len(again) != 1 {
 		t.Errorf("a taken path published a claim: %+v", again)
 	}
-	// the topics are the channel's alone: publish cannot fake them
-	if _, err := RunOp(bg, "publish", ch, "b", vv(t, `{"topic": "reserve.claim", "msg": "fake"}`)); err == nil || errStatus(err) != 400 {
-		t.Errorf("publish reserve.claim error = %v, want 400", err)
+	// the topics are the channel's alone: a message cannot fake them
+	if _, err := RunOp(bg, "message", ch, "b", vv(t, `{"topic": "reserve.claim", "msg": "fake"}`)); err == nil || errStatus(err) != 400 {
+		t.Errorf("message reserve.claim error = %v, want 400", err)
 	}
 }

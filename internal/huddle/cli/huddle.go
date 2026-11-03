@@ -39,9 +39,8 @@ var helpLines = []string{
 	"                                           line per event from the others, also between other sessions",
 	"                                           (--state: resume where the last listen stopped; --all: presence too)",
 	"  huddle gate [--no-block]                 wait while paused (4 = paused, with --no-block)",
-	"  huddle send [<to>] <msg…> [--ask]        message one session (or everyone)",
+	"  huddle message [<to>] <msg…> [--ask] [--topic t] [--ref r]   message one session (or everyone); a topic wakes waits on it",
 	"  huddle reply <seq> <msg…>                answer an ask",
-	"  huddle pub <topic> <ref> <msg…> [--to s] publish an event",
 	"  huddle next | task <id> | tasks [--owner s]",
 	"  huddle doing|done|blocked|skipped <id> [note…]",
 	"  huddle new <title…> [--owner s] [--after a,b]   create a task (for another session too)",
@@ -455,7 +454,7 @@ func Huddle(ctx context.Context, w *World, argv []string, stdout, stderr io.Writ
 			return c.die("ack <seq>", 2)
 		}
 		return c.op(ctx, "ack", newBody().raw("seq", jsNumberOrNull(seq)))
-	case "send":
+	case "message":
 		to := ""
 		if len(c.pos) > 1 && sessionName.MatchString(c.pos[0]) && !c.opt.has("all") {
 			to, _ = c.shift()
@@ -468,7 +467,10 @@ func Huddle(ctx context.Context, w *World, argv []string, stdout, stderr io.Writ
 		}
 		args.textAlways("msg", c.rest()).bool("ask", c.opt.has("ask"))
 		args.flagText(c.opt, "task")
-		return c.op(ctx, "send", args)
+		args.flagText(c.opt, "topic")
+		args.flagText(c.opt, "ref")
+		args.flagText(c.opt, "key")
+		return c.op(ctx, "message", args)
 	case "reply":
 		seq, ok := c.shift()
 		if !ok {
@@ -479,17 +481,6 @@ func Huddle(ctx context.Context, w *World, argv []string, stdout, stderr io.Writ
 			msg = "ack"
 		}
 		return c.op(ctx, "reply", newBody().raw("seq", jsNumberOrNull(seq)).textAlways("msg", msg))
-	case "pub":
-		topic, topicOK := c.shift()
-		ref, refOK := c.shift()
-		if !topicOK || !refOK || len(c.pos) == 0 {
-			return c.die("pub <topic> <ref> <msg>", 2)
-		}
-		args := newBody().textAlways("topic", topic).textAlways("ref", ref).textAlways("msg", strings.Join(c.pos, " "))
-		args.flagText(c.opt, "to")
-		args.bool("ask", c.opt.has("ask"))
-		args.flagText(c.opt, "key")
-		return c.op(ctx, "publish", args)
 	case "doing", "done", "blocked", "skipped", "todo":
 		idArg, ok := c.shift()
 		if !ok {

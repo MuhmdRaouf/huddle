@@ -422,8 +422,8 @@ async function seedRegistry(port: number, token: string, boardDir: string): Prom
   );
   await channelOp(port, token, "join", "alpha", {});
   await channelOp(port, token, "join", "beta", {});
-  await channelOp(port, token, "send", "alpha", { to: "beta", msg: "ping" });
-  await channelOp(port, token, "send", "beta", { to: "alpha", msg: "pong" });
+  await channelOp(port, token, "message", "alpha", { to: "beta", msg: "ping" });
+  await channelOp(port, token, "message", "beta", { to: "alpha", msg: "pong" });
 }
 
 /** One channel operation as one named session: the same op endpoint the agents' clients call. */

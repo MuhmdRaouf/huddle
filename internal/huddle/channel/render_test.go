@@ -52,7 +52,7 @@ func TestChannelRenders(t *testing.T) {
 		var got []Live
 		cancel := ch.Subscribe(func(m Live) { got = append(got, m) })
 		ch.Subscribe(func(Live) { panic("a broken bridge") })
-		if _, err := ch.Publish(bg, "a", PublishArgs{Topic: "n.x", Msg: "m"}); err != nil {
+		if _, err := ch.Send(bg, "a", nil, "m", SendOpts{Topic: sp("n.x")}); err != nil {
 			t.Fatal(err)
 		}
 		if _, err := ch.Ack(bg, "b", 1); err != nil {
@@ -73,10 +73,10 @@ func TestChannelRenders(t *testing.T) {
 				t.Errorf("live kinds = %v, want %s among them", kinds, want)
 			}
 		}
-		// the cancelled listener is gone: a later publish reaches no one
+		// the cancelled listener is gone: a later message reaches no one
 		cancel()
 		got = nil
-		if _, err := ch.Publish(bg, "a", PublishArgs{Topic: "n.y", Msg: "m"}); err != nil {
+		if _, err := ch.Send(bg, "a", nil, "m", SendOpts{Topic: sp("n.y")}); err != nil {
 			t.Fatal(err)
 		}
 		if len(got) != 0 {
@@ -331,16 +331,16 @@ func TestChannelRenders(t *testing.T) {
 		if _, err := ch.Control(bg, "a", Owner, "pause", ""); errStatus(err) != 400 {
 			t.Errorf("pausing the owner = %d (%v), want 400", errStatus(err), err)
 		}
-		if _, err := ch.Publish(bg, "stranger", PublishArgs{Topic: "x.y", Msg: "m"}); errStatus(err) != 404 {
-			t.Errorf("stranger publish = %d (%v), want 404", errStatus(err), err)
+		if _, err := ch.Send(bg, "stranger", nil, "m", SendOpts{Topic: sp("x.y")}); errStatus(err) != 404 {
+			t.Errorf("stranger message = %d (%v), want 404", errStatus(err), err)
 		}
-		if _, err := ch.Publish(bg, "a", PublishArgs{Topic: "task.done", Msg: "m"}); errStatus(err) != 400 {
+		if _, err := ch.Send(bg, "a", nil, "m", SendOpts{Topic: sp("task.done")}); errStatus(err) != 400 {
 			t.Errorf("reserved topic = %d (%v), want 400", errStatus(err), err)
 		}
-		if _, err := ch.Publish(bg, "a", PublishArgs{Topic: "x.y", Msg: ""}); errStatus(err) != 400 {
+		if _, err := ch.Send(bg, "a", nil, "", SendOpts{Topic: sp("x.y")}); errStatus(err) != 400 {
 			t.Errorf("empty msg = %d (%v), want 400", errStatus(err), err)
 		}
-		if _, err := ch.Publish(bg, "a", PublishArgs{Topic: "x.y", Msg: "m", To: sp("stranger")}); errStatus(err) != 404 {
+		if _, err := ch.Send(bg, "a", []string{"stranger"}, "m", SendOpts{Topic: sp("x.y")}); errStatus(err) != 404 {
 			t.Errorf("unknown recipient = %d (%v), want 404", errStatus(err), err)
 		}
 		if _, err := ch.Send(bg, "a", []string{"stranger"}, "m", SendOpts{}); errStatus(err) != 404 {
