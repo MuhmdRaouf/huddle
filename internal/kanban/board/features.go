@@ -6,9 +6,17 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/MuhmdRaouf/huddle/internal/kanban/ticket"
 )
+
+// archiveAfter is how long a board whose cards are all done waits after its
+// latest finish before it archives.
+const archiveAfter = 24 * time.Hour
+
+// systemActor is the actor an archive closes a feature as.
+const systemActor = "system"
 
 // ClosedFeature is one feature a board closed: who closed it and when. Closing
 // moves no card; it only records the name here.
@@ -144,4 +152,101 @@ func (b Board) writeFeatures(ctx context.Context, closed []ClosedFeature) error 
 		return err
 	}
 	return b.fs().writeFile(ctx, b.featuresPath(), append(data, '\n'))
+}
+
+// ArchiveDue closes every open board whose cards are all done and whose latest
+// finished_at is 24 hours old or older, as the system actor, and answers the
+// names it closed. A board with no card, a card outside done or a done card
+// with no readable finished_at stays open. It runs on the reads the caller
+// already makes and keeps no timer; a pass with nothing due writes nothing.
+func (b Board) ArchiveDue(ctx context.Context) ([]string, error) {
+	if len(b.archiveCandidates()) == 0 {
+		return nil, nil
+	}
+	var archived []string
+	_, err := b.atomic(ctx, func(b Board) ([]string, error) {
+		// the candidates are read again under the write's hold
+		for _, name := range b.archiveCandidates() {
+			if _, err := b.closeFeature(ctx, Args{Actor: systemActor, ID: name}); err != nil {
+				return nil, err
+			}
+			archived = append(archived, name)
+		}
+		return nil, nil
+	})
+	return archived, err
+}
+
+// archiveCandidates answers the open boards due to archive now, sorted by name.
+func (b Board) archiveCandidates() []string {
+	closed := b.closedSet()
+	var cards []Card
+	for _, col := range Columns {
+		for _, fname := range b.names(col) {
+			t, _ := b.loadCard(col, strings.TrimSuffix(fname, ".md"))
+			cards = append(cards, Card{
+				Column: col, Cluster: t.Cluster, FeatureClosed: closed[t.Cluster],
+				FinishedAt: t.Fields["finished_at"],
+			})
+		}
+	}
+	return DueToArchive(cards, b.now())
+}
+
+// DueToArchive answers the boards due to archive at now, sorted by name: every
+// card of the board is in done with a readable finish time, and the latest
+// finish is 24 hours old or older. Cards of a closed feature, and cards with
+// no cluster, count for no board. It reads only the cards it is handed, so a
+// caller holding a board's snapshot decides without touching a file.
+func DueToArchive(cards []Card, now time.Time) []string {
+	type progress struct {
+		allDone  bool
+		finished time.Time
+	}
+	seen := map[string]*progress{}
+	for _, c := range cards {
+		if c.Cluster == "" || c.FeatureClosed {
+			continue
+		}
+		p := seen[c.Cluster]
+		if p == nil {
+			p = &progress{allDone: true}
+			seen[c.Cluster] = p
+		}
+		when, ok := stampTime(c.FinishedAt)
+		if c.Column != "done" || !ok {
+			p.allDone = false
+			continue
+		}
+		if when.After(p.finished) {
+			p.finished = when
+		}
+	}
+	var due []string
+	for name, p := range seen {
+		if p.allDone && now.Sub(p.finished) >= archiveAfter {
+			due = append(due, name)
+		}
+	}
+	slices.Sort(due)
+	return due
+}
+
+// stampTime parses a ticket's time field in the board's stamp layout or RFC 3339.
+func stampTime(stamp string) (time.Time, bool) {
+	for _, layout := range []string{stampLayout, time.RFC3339} {
+		if when, err := time.Parse(layout, stamp); err == nil {
+			return when, true
+		}
+	}
+	return time.Time{}, false
+}
+
+// reopenIfClosed reopens the feature when the board closed it, and answers the
+// reopen line; an open feature answers nothing and writes nothing.
+func (b Board) reopenIfClosed(ctx context.Context, name, actor string) ([]string, error) {
+	if !b.closedSet()[name] {
+		return nil, nil
+	}
+	return b.reopenFeature(ctx, Args{Actor: actor, ID: name})
 }

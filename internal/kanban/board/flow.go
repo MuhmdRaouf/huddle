@@ -998,6 +998,11 @@ func (b Board) new(ctx context.Context, n NewTicket) ([]string, error) {
 			return nil, barRefusal(cid, failures)
 		}
 	}
+	reopened, err := b.reopenIfClosed(ctx, strings.ToLower(collapse(n.Cluster)), n.Actor)
+	if err != nil {
+		return nil, err
+	}
+	warnings = append(warnings, reopened...)
 	if err := b.fs().mkdirAll(filepath.Join(b.Root, dest)); err != nil {
 		return nil, err
 	}

@@ -63,6 +63,7 @@ type Options struct {
 // close that ends the board's own store binding with them.
 type entry struct {
 	app    *server.App
+	board  board.Board
 	cancel context.CancelFunc
 	close  func() error
 }
@@ -80,6 +81,8 @@ type Tab struct {
 	relay     func(ctx context.Context, key string, body []byte) (int, []byte, bool)
 	readRelay func(ctx context.Context, key, path string) (*http.Response, bool)
 	health    HealthReport
+	// archive runs the due archive on one board; Mount sets Board.ArchiveDue
+	archive func(ctx context.Context, b board.Board) ([]string, error)
 
 	mu       sync.Mutex
 	apps     map[string]*entry
@@ -113,6 +116,7 @@ func Mount(ctx context.Context, opts Options) *Tab {
 		relay:     opts.Relay,
 		readRelay: opts.ReadRelay,
 		health:    opts.Health,
+		archive:   func(ctx context.Context, b board.Board) ([]string, error) { return b.ArchiveDue(ctx) },
 		apps:      map[string]*entry{},
 		origins:   map[string]string{},
 	}
@@ -187,6 +191,9 @@ func (t *Tab) serveBoard(w http.ResponseWriter, r *http.Request, tail string) {
 		writeJSON(w, http.StatusNotFound, errorAnswer{Error: "no board " + key})
 		return
 	}
+	if r.Method == http.MethodGet && rest == "api/board" {
+		t.archiveDue(r.Context(), key)
+	}
 	forwarded := r.Clone(r.Context())
 	forwarded.URL.Path = "/" + rest
 	forwarded.URL.RawPath = ""
@@ -259,7 +266,7 @@ func (t *Tab) appFor(ctx context.Context, key string) *server.App {
 		app := server.NewApp(server.Options{Board: b, Version: t.version, Now: t.now})
 		runCtx, cancel := context.WithCancel(t.ctx)
 		app.Run(runCtx)
-		e := &entry{app: app, cancel: cancel, close: closeBoard}
+		e := &entry{app: app, board: b, cancel: cancel, close: closeBoard}
 		t.apps[key] = e
 		return e.app
 	}

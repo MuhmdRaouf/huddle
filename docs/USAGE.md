@@ -622,7 +622,9 @@ the hub (starting the hub when the huddle home is set up), and the live page sho
 change within half a second. The owner closes and reopens a feature from the tab's picker;
 `POST /api/kanban/b/<key>/feature` is owner-only — any other identity gets 403 and the board
 stays as it was. On the command line, `huddle kanban feature close|reopen <feature>` closes a
-merged feature (its cards leave every column and count) or reopens it. A second machine works the
+merged feature (its cards leave every column and count) or reopens it. A board whose cards are all
+done archives itself 24 hours after the latest finish, the next time the board is read, and a new
+card in it reopens it. A second machine works the
 same board through the satellite relay —
 see [Another machine](#another-machine).
 

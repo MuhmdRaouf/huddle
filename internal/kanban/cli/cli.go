@@ -567,6 +567,9 @@ func Run(ctx context.Context, w World, argv []string, stdout, stderr io.Writer) 
 		fmt.Fprint(stdout, sh.Text)
 		return 0
 	case "status":
+		// the read archives a board done for 24 hours; a failed archive leaves
+		// the board open for the next read, so it never fails the status
+		_, _ = b.ArchiveDue(ctx)
 		st, err := b.Status(ctx)
 		if err != nil {
 			fmt.Fprintf(stderr, "kanban: %v\n", err)

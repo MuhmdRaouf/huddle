@@ -142,6 +142,9 @@ func (a *App) SetPort(port int) {
 	a.URL = fmt.Sprintf("http://127.0.0.1:%d", port)
 }
 
+// Snapshot answers the board's current snapshot, as the watcher last scanned it.
+func (a *App) Snapshot() watch.Snapshot { return a.watcher.Snapshot() }
+
 // publish hands one watcher delta to every open page.
 func (a *App) publish(delta watch.Delta) {
 	a.hub.publish(sseFrame{name: "delta", data: string(encodeCompact(delta))})

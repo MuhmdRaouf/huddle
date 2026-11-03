@@ -87,6 +87,11 @@ kanban feature close swr --actor lead     # the swr cards leave every column and
 kanban feature reopen swr --actor lead    # the swr cards read as they did
 ```
 
+A board archives itself: once every card of a feature is in `done` and the latest `finished_at` is 24 hours old,
+the next `kanban status` (or the hub's read of the board) closes it as actor `system`. A board with no cards, or
+with any card outside `done`, never archives. `kanban new --cluster <feature>` into a closed feature reopens it
+first and prints the reopen line; `kanban feature reopen` does the same by hand.
+
 ## Refusals and what to do
 
 Exit 1 always names the ticket's real column and the next step. Common ones:
