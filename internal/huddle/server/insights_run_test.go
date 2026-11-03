@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"syscall"
 	"testing"
 	"time"
@@ -138,8 +139,9 @@ func TestInsightsRunsRouteListsTheRunsNewestFirstForTheOwner(t *testing.T) {
 	fix := newPreviewFixture(t, "zai")
 	runs := fix.runs()
 	t0 := time.Date(2026, 11, 1, 12, 0, 0, 0, time.UTC)
+	doneReport := report.Report{Sections: []report.Section{{Title: report.SectionTitles[0], Body: "done text"}}, Tips: []string{"split it, 7 days"}}
 	for _, r := range []report.Run{
-		{ID: "20261101T120000Z-aaaa", Status: report.RunDone, Answer: "done text", StartedAt: t0},
+		{ID: "20261101T120000Z-aaaa", Status: report.RunDone, Report: &doneReport, StartedAt: t0},
 		{ID: "20261102T120000Z-bbbb", Status: report.RunRunning, Step: report.StepAsking, StartedAt: t0.Add(24 * time.Hour)},
 	} {
 		if err := runs.Save(r); err != nil {
@@ -156,8 +158,8 @@ func TestInsightsRunsRouteListsTheRunsNewestFirstForTheOwner(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
 		t.Fatalf("decode %s: %v", rec.Body.String(), err)
 	}
-	if len(out.Runs) != 2 || out.Runs[0].ID != "20261102T120000Z-bbbb" || out.Runs[0].Step != report.StepAsking || out.Runs[1].Answer != "done text" {
-		t.Errorf("runs = %+v, want the running run first with its step, then the done run with its answer", out.Runs)
+	if len(out.Runs) != 2 || out.Runs[0].ID != "20261102T120000Z-bbbb" || out.Runs[0].Step != report.StepAsking || !reflect.DeepEqual(out.Runs[1].Report, &doneReport) {
+		t.Errorf("runs = %+v, want the running run first with its step, then the done run with its report", out.Runs)
 	}
 	err := fix.srv.insightsRunsRoute(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/api/insights/runs", nil), auth.Who{Name: "worker-1", Kind: auth.KindMember})
 	var herr *channel.HuddleError
@@ -225,12 +227,12 @@ func TestSettleRunFailsARunWhoseProcessEndedWithoutFinishing(t *testing.T) {
 func TestSettleRunLeavesAFinishedRunAlone(t *testing.T) {
 	fix := newPreviewFixture(t, "zai")
 	runs := fix.runs()
-	done := report.Run{ID: "20261101T120000Z-bbbb", Status: report.RunDone, Answer: "text"}
+	done := report.Run{ID: "20261101T120000Z-bbbb", Status: report.RunDone, Report: &report.Report{Tips: []string{"a, 7 days"}}}
 	if err := runs.Save(done); err != nil {
 		t.Fatal(err)
 	}
 	fix.srv.settleRun(done.ID, exitedWith(t, "3"))
-	if got, _ := runs.Load(done.ID); got != done {
+	if got, _ := runs.Load(done.ID); !reflect.DeepEqual(got, done) {
 		t.Errorf("run = %+v, want the done run untouched", got)
 	}
 }
