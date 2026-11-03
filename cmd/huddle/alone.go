@@ -279,6 +279,7 @@ var aloneHelpLines = []string{
 	"  huddle router start      make sure one huddle-router serves every enabled provider; prints its address",
 	"  huddle router status     how the huddle-router daemon is (--json for scripts); exit 6 when it is not running",
 	"  huddle mcp               the stdio MCP bridge a Claude session runs",
+	"  huddle insights run      build the Insights report once and keep it in the home (the hub starts it)",
 	"  huddle hook <name>       one plugin hook entry: session-start, approve, listen, permit, stop",
 	"  huddle help              this list (also -h)",
 	"",
