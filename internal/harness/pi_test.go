@@ -165,3 +165,11 @@ func TestPiWithoutARouterWritesNoRouting(t *testing.T) {
 		t.Errorf("install wrote a models.json with no gateway to name: %v", err)
 	}
 }
+
+func TestPiRoutingTreatsAProviderWithFieldsHuddleNeverWritesAsTheUsers(t *testing.T) {
+	mine := `{"providers":{"anthropic":{"baseUrl":"https://my.gateway","apiKey":"ANTHROPIC_API_KEY","headers":{"X-Huddle-Harness":"pi"}}}}`
+
+	if _, err := piRouting.Install([]byte(mine), piTestEntry()); !errors.Is(err, ErrProviderTaken) {
+		t.Errorf("install = %v, want ErrProviderTaken", err)
+	}
+}

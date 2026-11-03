@@ -172,6 +172,131 @@ func TestEnsureApplet(t *testing.T) {
 	})
 }
 
+func TestAFailedBuildStepStopsTheBuildAndLeavesNothingReady(t *testing.T) {
+	steps := []string{"osacompile", "plutil (bundle id)", "plutil (bundle name)", "codesign", "lsregister"}
+	for failing, step := range steps {
+		t.Run("a failing "+step, func(t *testing.T) {
+			home := t.TempDir()
+			var rec recordingRunner
+			ran := 0
+			run := func(ctx context.Context, name string, args ...string) error {
+				ran++
+				if ran-1 == failing {
+					return fmt.Errorf("%s: refused", name)
+				}
+				return rec.run(ctx, name, args...)
+			}
+
+			stub, err := EnsureApplet(context.Background(), home, run)
+			if err == nil {
+				t.Fatalf("EnsureApplet = %q, want the failing step's error", stub)
+			}
+			if !strings.Contains(err.Error(), "refused") {
+				t.Errorf("error = %v, want the runner's own error", err)
+			}
+			if ran != failing+1 {
+				t.Errorf("ran %d commands, want the build to stop at command %d", ran, failing+1)
+			}
+			if _, err := os.Stat(AppletDigestPath(home)); !errors.Is(err, os.ErrNotExist) {
+				t.Errorf("the digest file: %v, want it missing", err)
+			}
+			if _, ok := AppletReady(home); ok {
+				t.Error("AppletReady = true after a failed build, want false")
+			}
+		})
+	}
+}
+
+func TestABundleWithoutResourcesFailsTheBuildBeforeSigning(t *testing.T) {
+	home := t.TempDir()
+	var calls []string
+	run := func(ctx context.Context, name string, args ...string) error {
+		calls = append(calls, name)
+		return nil // osacompile that writes no Contents/Resources folder
+	}
+
+	if stub, err := EnsureApplet(context.Background(), home, run); err == nil {
+		t.Fatalf("EnsureApplet = %q, want an error for a bundle with no Resources folder", stub)
+	}
+	if slices.Contains(calls, "codesign") {
+		t.Errorf("ran %v, want the build to stop before codesign", calls)
+	}
+	if _, ok := AppletReady(home); ok {
+		t.Error("AppletReady = true after a failed build, want false")
+	}
+}
+
+func TestAHomeWhoseHuddleFolderCannotBeMadeFailsBeforeRunningAnyTool(t *testing.T) {
+	home := t.TempDir()
+	if err := os.WriteFile(filepath.Join(home, ".agents"), []byte("a file, not a folder"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var rec recordingRunner
+
+	if stub, err := EnsureApplet(context.Background(), home, rec.run); err == nil {
+		t.Fatalf("EnsureApplet = %q, want an error", stub)
+	}
+	if len(rec.calls) != 0 {
+		t.Errorf("ran %v, want nothing", rec.calls)
+	}
+}
+
+func TestADigestThatCannotBeWrittenLeavesTheAppletNotReady(t *testing.T) {
+	home := t.TempDir()
+	// A folder where the digest file belongs: the file cannot be written, and it does not
+	// read as the current digest.
+	if err := os.MkdirAll(filepath.Join(AppletDigestPath(home), "in-the-way"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	var rec recordingRunner
+
+	if stub, err := EnsureApplet(context.Background(), home, rec.run); err == nil {
+		t.Fatalf("EnsureApplet = %q, want the digest write's error", stub)
+	}
+	if _, ok := AppletReady(home); ok {
+		t.Error("AppletReady = true with no digest written, want false")
+	}
+}
+
+func TestExecRunner(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("a command that succeeds answers nil", func(t *testing.T) {
+		if err := ExecRunner(ctx, "sh", "-c", "exit 0"); err != nil {
+			t.Errorf("ExecRunner of a succeeding command = %v, want nil", err)
+		}
+	})
+
+	t.Run("a command that fails answers its name, its exit status and its output", func(t *testing.T) {
+		err := ExecRunner(ctx, "sh", "-c", "echo plist is locked >&2; exit 3")
+		if err == nil {
+			t.Fatal("ExecRunner of a failing command = nil, want an error")
+		}
+		for _, want := range []string{"sh", "exit status 3", "plist is locked"} {
+			if !strings.Contains(err.Error(), want) {
+				t.Errorf("error %q does not contain %q", err, want)
+			}
+		}
+	})
+
+	t.Run("a command that fails in silence answers its name and its exit status", func(t *testing.T) {
+		err := ExecRunner(ctx, "sh", "-c", "exit 4")
+		if err == nil {
+			t.Fatal("ExecRunner of a failing command = nil, want an error")
+		}
+		if got, want := err.Error(), "sh: exit status 4"; got != want {
+			t.Errorf("error = %q, want %q", got, want)
+		}
+	})
+
+	t.Run("a command that does not exist answers an error naming it", func(t *testing.T) {
+		err := ExecRunner(ctx, "huddle-no-such-tool")
+		if err == nil || !strings.Contains(err.Error(), "huddle-no-such-tool") {
+			t.Errorf("ExecRunner of a missing command = %v, want an error naming it", err)
+		}
+	})
+}
+
 // TestEnsureAppletRealTools builds the applet with the machine's own osacompile, plutil and
 // codesign, answering lsregister without running it, so the machine's Launch Services database
 // is never touched and no banner is ever shown.

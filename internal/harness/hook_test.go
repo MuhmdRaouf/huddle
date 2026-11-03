@@ -739,3 +739,48 @@ func TestJSONHookEditLeavesAUserEntryAheadOfOurs(t *testing.T) {
 		t.Errorf("remove did not give the bytes back:\nwant %q\ngot  %q", before, out)
 	}
 }
+
+func TestPluginHookEditRemoveWithoutAPluginMemberIsAChangedEntry(t *testing.T) {
+	oc := hookFor("opencode").(pluginHooks)
+	cfg := []byte("{\"theme\":\"dark\"}\n")
+
+	out, err := oc.remove(cfg, "", "opencode", "/home/.config/huddle/harness/opencode-hook.js")
+	if !errors.Is(err, ErrEntryChanged) {
+		t.Fatalf("remove = %v, want ErrEntryChanged", err)
+	}
+	if !bytes.Equal(out, cfg) {
+		t.Errorf("remove answered %q, want the bytes back untouched", out)
+	}
+}
+
+func TestPluginHookEditContainsFindsTheExactShimAndNothingInAMalformedMember(t *testing.T) {
+	oc := hookFor("opencode").(pluginHooks)
+	shim := "/home/.config/huddle/harness/opencode-hook.js"
+
+	if !oc.contains([]byte(`{"plugin":["file://`+shim+`"]}`), "", "opencode", shim) {
+		t.Error("contains missed the exact shim URL")
+	}
+	for _, cfg := range []string{`{"plugin": 3}`, `{"plugin": "file://` + shim + `"}`, `{}`} {
+		if oc.contains([]byte(cfg), "", "opencode", shim) {
+			t.Errorf("contains claimed a shim in %s", cfg)
+		}
+	}
+}
+
+func TestJSONHookEditLeavesAGroupWithoutAHooksArrayAlone(t *testing.T) {
+	gemini := hookFor("gemini").(jsonHooks)
+	bin := "/bin/huddle"
+	for _, cfg := range []string{
+		`{"hooks":{"SessionStart":[{"matcher":"startup"}]}}`,
+		`{"hooks":{"SessionStart":[{"hooks":[]}]}}`,
+		`{"hooks":{"SessionStart":["a string"]}}`,
+		`{"hooks":{"SessionStart":[{"hooks":"nope"}]}}`,
+	} {
+		if gemini.contains([]byte(cfg), bin, "gemini", "") {
+			t.Errorf("contains claimed huddle's entry in %s", cfg)
+		}
+		if _, err := gemini.remove([]byte(cfg), bin, "gemini", ""); !errors.Is(err, ErrEntryChanged) {
+			t.Errorf("remove of %s = %v, want ErrEntryChanged", cfg, err)
+		}
+	}
+}

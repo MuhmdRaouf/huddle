@@ -256,3 +256,101 @@ func TestPostRefusesAnEmptyText(t *testing.T) {
 		t.Errorf("Invalid.Field = %q, want %q", invalid.Field, "SessionID")
 	}
 }
+
+func TestPostErrorsNameWhatWentWrong(t *testing.T) {
+	cases := []struct {
+		name string
+		err  error
+		want []string
+	}{
+		{"no socket", &NoSocket{Path: "/run/cc/s1.sock"}, []string{"no inbox socket", "/run/cc/s1.sock"}},
+		{"text too long", &TooLong{Bytes: MaxTextBytes + 5}, []string{"over the", "1048581"}},
+		{"empty field", &Invalid{Field: "Text"}, []string{"non-empty", "Text"}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			for _, want := range c.want {
+				if !strings.Contains(c.err.Error(), want) {
+					t.Errorf("error %q does not contain %q", c.err, want)
+				}
+			}
+		})
+	}
+}
+
+func TestANoSocketErrorUnwrapsToTheDialError(t *testing.T) {
+	dir := tempSocketDir(t)
+
+	err := Post(context.Background(), filepath.Join(dir, "missing.sock"), Message{SessionID: "s1", Text: "hello"})
+	if !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("Post to a missing socket = %v, want an error matching os.ErrNotExist", err)
+	}
+}
+
+func TestPostWithACancelledContextReportsTheCancellationNotNoSocket(t *testing.T) {
+	dir := tempSocketDir(t)
+	path, _ := listen(t, dir, "cncl.sock")
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	err := Post(ctx, path, Message{SessionID: "s1", Text: "hello"})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("Post with a cancelled context = %v, want an error matching context.Canceled", err)
+	}
+	var noSocket *NoSocket
+	if errors.As(err, &noSocket) {
+		t.Errorf("Post answered %v, a *NoSocket, for a socket that is listening", err)
+	}
+}
+
+// hangUp accepts one connection and closes it without reading; before closing it runs
+// beforeClose.
+func hangUp(t *testing.T, ln net.Listener, beforeClose func()) {
+	t.Helper()
+	go func() {
+		conn, err := ln.Accept()
+		if err != nil {
+			return
+		}
+		if beforeClose != nil {
+			beforeClose()
+		}
+		conn.Close()
+	}()
+}
+
+func TestPostReportsAWriteTheSessionDroppedMidTurn(t *testing.T) {
+	dir := tempSocketDir(t)
+	path, ln := listen(t, dir, "drop.sock")
+	hangUp(t, ln, nil)
+
+	// A turn at the size limit does not fit the socket buffer, so the write is still going
+	// when the session hangs up.
+	err := Post(context.Background(), path, Message{SessionID: "s1", Text: strings.Repeat("x", MaxTextBytes)})
+	if err == nil {
+		t.Fatal("Post to a session that hung up mid-write = nil, want an error")
+	}
+	if !strings.Contains(err.Error(), path) {
+		t.Errorf("error %q does not name the socket %q", err, path)
+	}
+	var noSocket *NoSocket
+	if errors.As(err, &noSocket) {
+		t.Errorf("Post answered a *NoSocket for a socket that accepted the connection: %v", err)
+	}
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		t.Errorf("Post blamed the context for a peer that hung up: %v", err)
+	}
+}
+
+func TestPostBlamesACancelledContextForAWriteThatFailsAfterIt(t *testing.T) {
+	dir := tempSocketDir(t)
+	path, ln := listen(t, dir, "cmid.sock")
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	hangUp(t, ln, cancel)
+
+	err := Post(ctx, path, Message{SessionID: "s1", Text: strings.Repeat("x", MaxTextBytes)})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("Post cancelled before the write failed = %v, want an error matching context.Canceled", err)
+	}
+}

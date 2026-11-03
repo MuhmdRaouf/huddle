@@ -204,3 +204,96 @@ func TestZcodeRoutingAddsTheRulesArrayItLacks(t *testing.T) {
 		}
 	}
 }
+
+func TestZcodeRoutingPointsItsRulesAtTheGatewayOfTheLatestInstall(t *testing.T) {
+	older := zcodeTestEntry()
+	older.Gateway = "http://127.0.0.1:28000/gateway"
+	first, err := zcodeRouting.Install([]byte(zcodeOwnFile), older)
+	if err != nil {
+		t.Fatalf("install: %v", err)
+	}
+
+	second, err := zcodeRouting.Install(first, zcodeTestEntry())
+	if err != nil {
+		t.Fatalf("install on another gateway: %v", err)
+	}
+	if strings.Contains(string(second), "28000") || !strings.Contains(string(second), zcodeOverrides) {
+		t.Errorf("install on another gateway gave:\n%s\nwant both rules on the new gateway only", second)
+	}
+	if err := jsonCheck(second); err != nil {
+		t.Errorf("the re-pointed file does not parse: %v", err)
+	}
+	back, err := zcodeRouting.Remove(second, zcodeTestEntry())
+	if err != nil {
+		t.Fatalf("remove: %v", err)
+	}
+	if string(back) != zcodeOwnFile {
+		t.Errorf("remove left %q, want the user's file %q back", back, zcodeOwnFile)
+	}
+}
+
+func TestZcodeRoutingTreatsARuleWithAnotherHeaderAsTheUsers(t *testing.T) {
+	theirs := strings.Replace(zcodeOwnFile, `"providerRules": []`,
+		`"providerRules": [{"providerId":"account:zai-individual-coding-plan","config":{"api":{"baseUrl":"http://127.0.0.1:28786/gateway","headers":{"X-Huddle-Harness":"omp"}}}}]`, 1)
+
+	if _, err := zcodeRouting.Install([]byte(theirs), zcodeTestEntry()); !errors.Is(err, ErrZcodeProviderTaken) {
+		t.Errorf("install over a rule naming another harness = %v, want ErrZcodeProviderTaken", err)
+	}
+}
+
+func TestZcodeRoutingRefusesAProviderRulesMemberThatIsNotAnArray(t *testing.T) {
+	cfg := []byte(`{"config":{"providerConfigRules":{"providerRules":{"providerId":"x"}}}}`)
+
+	if out, err := zcodeRouting.Install(cfg, zcodeTestEntry()); err == nil {
+		t.Errorf("install over a providerRules object = %s, want an error", out)
+	}
+	if out, err := zcodeRouting.Remove(cfg, zcodeTestEntry()); err == nil {
+		t.Errorf("remove over a providerRules object = %s, want an error", out)
+	}
+}
+
+func TestZcodeRoutingRefusesBytesThatAreNotJSON(t *testing.T) {
+	bad := []byte("{\"config\": ")
+
+	if out, err := zcodeRouting.Install(bad, zcodeTestEntry()); err == nil {
+		t.Errorf("install over broken JSON = %s, want an error", out)
+	}
+	if out, err := zcodeRouting.Remove(bad, zcodeTestEntry()); err == nil {
+		t.Errorf("remove over broken JSON = %s, want an error", out)
+	}
+}
+
+func TestZcodeRoutingRemoveWithoutARulesArrayIsAChangedEntry(t *testing.T) {
+	cfg := []byte("{\"schemaVersion\": 1}\n")
+
+	out, err := zcodeRouting.Remove(cfg, zcodeTestEntry())
+	if !errors.Is(err, ErrEntryChanged) {
+		t.Fatalf("remove from a file with no rules = %v, want ErrEntryChanged", err)
+	}
+	if string(out) != string(cfg) {
+		t.Errorf("remove answered %q, want the bytes back untouched", out)
+	}
+}
+
+func TestZcodeRoutingFileFollowsItsEnvironmentVariable(t *testing.T) {
+	env := Env{Lookup: func(key string) string {
+		if key == "ZCODE_PERSONAL_PROVIDER_CONFIG_FILE" {
+			return "/work/zcode/personal.json"
+		}
+		return ""
+	}}
+
+	if got := zcodeRouting.ConfigPath(env); got != "/work/zcode/personal.json" {
+		t.Errorf("ConfigPath = %q, want the variable's file", got)
+	}
+}
+
+func TestZcodeServerEntryAlwaysCarriesAnEnvObject(t *testing.T) {
+	raw, err := zcodeBuild(Entry{Command: "/bin/huddle", Args: []string{"mcp"}})
+	if err != nil {
+		t.Fatalf("zcodeBuild: %v", err)
+	}
+	if !strings.Contains(string(raw), `"env":{}`) {
+		t.Errorf("entry = %s, want an empty env object, never null", raw)
+	}
+}

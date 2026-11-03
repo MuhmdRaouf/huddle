@@ -2,6 +2,7 @@ package notifyicon
 
 import (
 	"bytes"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -119,6 +120,51 @@ func TestEnsurePNG(t *testing.T) {
 				names[i] = entry.Name()
 			}
 			t.Errorf("the icon dir holds %v, want only huddle.png", names)
+		}
+	})
+
+	t.Run("a home whose huddle folder cannot be made is an error", func(t *testing.T) {
+		home := t.TempDir()
+		if err := os.WriteFile(filepath.Join(home, ".agents"), []byte("a file, not a folder"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if path, err := EnsurePNG(home); err == nil {
+			t.Fatalf("EnsurePNG = %q, want an error", path)
+		}
+	})
+
+	t.Run("a temp file that cannot be written is an error and the icon is not touched", func(t *testing.T) {
+		home := t.TempDir()
+		// A folder where this process's temp file belongs.
+		tmp := fmt.Sprintf("%s.%d.tmp", PNGPath(home), os.Getpid())
+		if err := os.MkdirAll(tmp, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if path, err := EnsurePNG(home); err == nil {
+			t.Fatalf("EnsurePNG = %q, want an error", path)
+		}
+		if _, err := os.Stat(PNGPath(home)); !os.IsNotExist(err) {
+			t.Errorf("the icon after a failed write: %v, want it missing", err)
+		}
+	})
+
+	t.Run("an icon path that cannot be replaced is an error and no temp file is left", func(t *testing.T) {
+		home := t.TempDir()
+		// A folder holding a file where the icon belongs: a file cannot be renamed over it.
+		if err := os.MkdirAll(filepath.Join(PNGPath(home), "in-the-way"), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if path, err := EnsurePNG(home); err == nil {
+			t.Fatalf("EnsurePNG = %q, want an error", path)
+		}
+		entries, err := os.ReadDir(Dir(home))
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, entry := range entries {
+			if entry.Name() != "huddle.png" {
+				t.Errorf("the icon dir holds %q after a failed replace, want only huddle.png", entry.Name())
+			}
 		}
 	})
 }

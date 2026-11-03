@@ -155,3 +155,11 @@ func TestOpencodeWithoutARouterWritesNoRouting(t *testing.T) {
 		t.Errorf("routing = %q, want none:\n%s", got.Routing, readConfig(t, got.Path))
 	}
 }
+
+func TestOpencodeRoutingTreatsAProviderWithFieldsHuddleNeverWritesAsTheUsers(t *testing.T) {
+	mine := `{"provider":{"anthropic":{"npm":"@ai-sdk/anthropic","options":{"baseURL":"https://my.gateway/v1","headers":{"X-Huddle-Harness":"opencode"}}}}}`
+
+	if _, err := openCodeRouting.Install([]byte(mine), openCodeTestEntry("/users/home")); !errors.Is(err, ErrProviderTaken) {
+		t.Errorf("install = %v, want ErrProviderTaken", err)
+	}
+}

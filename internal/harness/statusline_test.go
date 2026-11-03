@@ -253,3 +253,140 @@ func TestStatusLineChainWithoutALedger(t *testing.T) {
 		t.Fatalf("StatusLineChain over a command-less statusline = %q, want empty", chain)
 	}
 }
+
+// installedWithLostLedger installs the statusline over body, then deletes the huddle home's
+// ledger, the state remove meets after the ledger file is lost.
+func installedWithLostLedger(t *testing.T, body string) (Env, string, string) {
+	t.Helper()
+	env, home, hud := statuslineEnv(t)
+	writeConfig(t, statuslineSettings(home), body)
+	if _, err := InstallStatusLine(hud, env, filepath.Join(home, "bin", "huddle")); err != nil {
+		t.Fatalf("install: %v", err)
+	}
+	if err := os.Remove(ledgerPath(hud)); err != nil {
+		t.Fatalf("drop the ledger: %v", err)
+	}
+	return env, home, hud
+}
+
+func TestStatusLineRemoveWithALostLedgerTakesOurOwnEntryOut(t *testing.T) {
+	env, home, hud := installedWithLostLedger(t, "{\n  \"model\": \"opus\"\n}\n")
+
+	got, err := RemoveStatusLine(hud, env)
+	if err != nil {
+		t.Fatalf("remove: %v", err)
+	}
+	if !got.Removed {
+		t.Fatalf("remove = %+v, want removed", got)
+	}
+	after := readFile(t, statuslineSettings(home))
+	if strings.Contains(after, "statusLine") || !strings.Contains(after, `"model": "opus"`) {
+		t.Errorf("settings after remove = %q, want the model kept and no statusLine", after)
+	}
+}
+
+func TestStatusLineRemoveWithALostLedgerLeavesAStatusLineThatIsNotOurs(t *testing.T) {
+	cases := map[string]string{
+		"a command that does not run the statusline word": `{"statusLine":{"type":"command","command":"my own line"}}`,
+		"a statusline that is not a command":              `{"statusLine":{"type":"static","command":"huddle statusline"}}`,
+		"a statusline with no command":                    `{"statusLine":{"type":"command"}}`,
+		"a statusline whose command is not text":          `{"statusLine":{"type":"command","command":7}}`,
+		"a statusline that is not an object":              `{"statusLine":"huddle statusline"}`,
+	}
+	for name, body := range cases {
+		t.Run(name, func(t *testing.T) {
+			env, home, hud := statuslineEnv(t)
+			writeConfig(t, statuslineSettings(home), body+"\n")
+
+			got, err := RemoveStatusLine(hud, env)
+			if err != nil {
+				t.Fatalf("remove: %v", err)
+			}
+			if !got.NotThere || got.Removed {
+				t.Errorf("remove = %+v, want not-there", got)
+			}
+			if after := readFile(t, statuslineSettings(home)); after != body+"\n" {
+				t.Errorf("remove rewrote the user's settings: %q", after)
+			}
+		})
+	}
+}
+
+func TestStatusLineInstallOverItsOwnEntryWithALostLedgerRecordsItAgain(t *testing.T) {
+	env, home, hud := installedWithLostLedger(t, "{\"model\":\"opus\"}\n")
+	before := readFile(t, statuslineSettings(home))
+
+	got, err := InstallStatusLine(hud, env, filepath.Join(home, "bin", "huddle"))
+	if err != nil {
+		t.Fatalf("install again: %v", err)
+	}
+	if !got.Already || got.Changed {
+		t.Fatalf("install again = %+v, want already", got)
+	}
+	if after := readFile(t, statuslineSettings(home)); after != before {
+		t.Errorf("install again rewrote the file: %q", after)
+	}
+	ledger := readLedger(ledgerPath(hud))
+	if _, has := ledger.named(statuslineLedgerName); !has {
+		t.Error("install again left the ledger without the statusline record")
+	}
+}
+
+func TestStatusLineRemoveDropsTheRecordOfASettingsFileThatIsGone(t *testing.T) {
+	env, home, hud := statuslineEnv(t)
+	if _, err := InstallStatusLine(hud, env, filepath.Join(home, "bin", "huddle")); err != nil {
+		t.Fatalf("install: %v", err)
+	}
+	if err := os.Remove(statuslineSettings(home)); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := RemoveStatusLine(hud, env)
+	if err != nil {
+		t.Fatalf("remove: %v", err)
+	}
+	if !got.NotThere {
+		t.Errorf("remove = %+v, want not-there", got)
+	}
+	ledger := readLedger(ledgerPath(hud))
+	if _, has := ledger.named(statuslineLedgerName); has {
+		t.Error("the statusline record outlived the settings file it described")
+	}
+}
+
+func TestStatusLineInstallAndRemoveRefuseASettingsPathThatCannotBeRead(t *testing.T) {
+	env, home, hud := statuslineEnv(t)
+	if err := os.MkdirAll(statuslineSettings(home), 0o700); err != nil { // a folder where the file belongs
+		t.Fatal(err)
+	}
+
+	if got, err := InstallStatusLine(hud, env, "/opt/huddle"); err == nil {
+		t.Errorf("install over an unreadable settings path = %+v, want an error", got)
+	}
+	if got, err := RemoveStatusLine(hud, env); err == nil {
+		t.Errorf("remove over an unreadable settings path = %+v, want an error", got)
+	}
+	if _, err := os.Stat(ledgerPath(hud)); !os.IsNotExist(err) {
+		t.Errorf("a failed install left a ledger: %v", err)
+	}
+}
+
+func TestStatusLineChainIsEmptyForARecordedValueThatIsNotJSON(t *testing.T) {
+	hud := t.TempDir()
+	if err := recordLedger(hud, ledgerEntry{Harness: statuslineLedgerName, Path: "/x/settings.json", Before: "{not json"}); err != nil {
+		t.Fatal(err)
+	}
+	if chain := StatusLineChain(hud); chain != "" {
+		t.Errorf("StatusLineChain over an unparsable record = %q, want empty", chain)
+	}
+}
+
+func TestStatusLineChainIsEmptyForACommandThatIsNotText(t *testing.T) {
+	hud := t.TempDir()
+	if err := recordLedger(hud, ledgerEntry{Harness: statuslineLedgerName, Path: "/x/settings.json", Before: `{"type":"command","command":["a"]}`}); err != nil {
+		t.Fatal(err)
+	}
+	if chain := StatusLineChain(hud); chain != "" {
+		t.Errorf("StatusLineChain over a non-text command = %q, want empty", chain)
+	}
+}

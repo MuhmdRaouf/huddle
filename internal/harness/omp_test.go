@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"gopkg.in/yaml.v3"
@@ -160,5 +161,82 @@ func TestOmpWithoutARouterWritesNoRouting(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(home, ".omp", "agent", "models.yml")); !os.IsNotExist(err) {
 		t.Errorf("install wrote a models.yml with no gateway to name: %v", err)
+	}
+}
+
+func TestOmpRoutingPointsItsBlockAtTheGatewayOfTheLatestInstall(t *testing.T) {
+	mine := "theme: dark\n"
+	older := ompTestEntry()
+	older.Gateway = "http://127.0.0.1:28000/gateway"
+	first, err := ompRouting.Install([]byte(mine), older)
+	if err != nil {
+		t.Fatalf("install: %v", err)
+	}
+
+	second, err := ompRouting.Install(first, ompTestEntry())
+	if err != nil {
+		t.Fatalf("install on another gateway: %v", err)
+	}
+	if strings.Contains(string(second), "28000") || !strings.Contains(string(second), ompTestEntry().Gateway) {
+		t.Errorf("install on another gateway gave:\n%s\nwant the block on the new gateway only", second)
+	}
+	back, err := ompRouting.Remove(second, ompTestEntry())
+	if err != nil {
+		t.Fatalf("remove: %v", err)
+	}
+	if string(back) != mine {
+		t.Errorf("remove left %q, want the user's file %q back", back, mine)
+	}
+}
+
+func TestOmpRoutingNestsUnderAProvidersKeyThatEndsTheFileWithoutANewline(t *testing.T) {
+	out, err := ompRouting.Install([]byte("providers:"), ompTestEntry())
+	if err != nil {
+		t.Fatalf("install: %v", err)
+	}
+	var doc struct {
+		Providers map[string]struct {
+			BaseURL string `yaml:"baseUrl"`
+		} `yaml:"providers"`
+	}
+	if err := yaml.Unmarshal(out, &doc); err != nil || doc.Providers["anthropic"].BaseURL != ompTestEntry().Gateway {
+		t.Errorf("install gave %+v, %v:\n%s", doc, err, out)
+	}
+}
+
+func TestOmpRoutingRefusesAModelsFileThatIsNotYAML(t *testing.T) {
+	out, err := ompRouting.Install([]byte("providers: [unclosed\n"), ompTestEntry())
+	if err == nil {
+		t.Errorf("install over broken YAML = %q, want an error", out)
+	}
+	if out != nil {
+		t.Errorf("install over broken YAML answered %q, want no bytes", out)
+	}
+}
+
+func TestOmpRoutingRemoveWithoutOurBlockIsAChangedEntry(t *testing.T) {
+	mine := []byte("theme: dark\n")
+
+	out, err := ompRouting.Remove(mine, ompTestEntry())
+	if !errors.Is(err, ErrEntryChanged) {
+		t.Fatalf("remove from a file with no block = %v, want ErrEntryChanged", err)
+	}
+	if string(out) != string(mine) {
+		t.Errorf("remove answered %q, want the bytes back untouched", out)
+	}
+}
+
+func TestAServerEntryWithNoEnvironmentCarriesAnEmptyEnvObject(t *testing.T) {
+	builders := map[string]func(Entry) ([]byte, error){"omp": ompBuild, "pi": piBuild}
+	for name, build := range builders {
+		t.Run(name, func(t *testing.T) {
+			raw, err := build(Entry{Command: "/bin/huddle", Args: []string{"mcp"}})
+			if err != nil {
+				t.Fatalf("build: %v", err)
+			}
+			if !strings.Contains(string(raw), `"env":{}`) {
+				t.Errorf("entry = %s, want an empty env object, never null", raw)
+			}
+		})
 	}
 }

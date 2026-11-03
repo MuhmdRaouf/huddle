@@ -185,3 +185,45 @@ func TestJSONSpanHelpersRefuseBytesThatDoNotHold(t *testing.T) {
 		t.Error("jsonFind read a config that does not parse")
 	}
 }
+
+func TestProviderEditRefusesBytesItCannotReadOnTheWayInAndOut(t *testing.T) {
+	cases := []struct {
+		label string
+		edit  providerEdit
+		entry Entry
+		cfg   string
+		want  string
+	}{
+		{"opencode, not JSON", openCodeRouting, openCodeTestEntry("/users/home"), "{", "not valid JSON"},
+		{"opencode, provider is not an object", openCodeRouting, openCodeTestEntry("/users/home"), `{"provider":3}`, "provider member is not a JSON object"},
+		{"pi, not JSON", piRouting, piTestEntry(), "{", "not valid JSON"},
+		{"pi, providers is not an object", piRouting, piTestEntry(), `{"providers":[1]}`, "providers member is not a JSON object"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.label, func(t *testing.T) {
+			if out, err := tc.edit.Install([]byte(tc.cfg), tc.entry); err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Errorf("install = %q, %v, want an error naming %q", out, err, tc.want)
+			}
+			if out, err := tc.edit.Remove([]byte(tc.cfg), tc.entry); err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Errorf("remove = %q, %v, want an error naming %q", out, err, tc.want)
+			}
+		})
+	}
+}
+
+func TestJSONEqualIsFalseForBytesThatAreNotJSON(t *testing.T) {
+	if jsonEqual([]byte(`{"a":1}`), []byte(`{"a":`)) || jsonEqual([]byte(`{"a":`), []byte(`{"a":1}`)) {
+		t.Error("jsonEqual called broken JSON equal to a whole value")
+	}
+	if !jsonEqual([]byte(`{"a": 1, "b": [2]}`), []byte(`{"a":1,"b":[2]}`)) {
+		t.Error("jsonEqual told apart two spellings of one value")
+	}
+}
+
+func TestJSONMembersRefuseObjectsThatAreCutOrMalformed(t *testing.T) {
+	for _, bad := range []string{`{"a" 1}`, `{"a":}`, `{"a":1`, `{1:2}`, `{"a":1,`, `[1]`} {
+		if members, closeOff, err := jsonMembers([]byte(bad), 0); err == nil {
+			t.Errorf("jsonMembers(%s) = %v, %d, want an error", bad, members, closeOff)
+		}
+	}
+}
