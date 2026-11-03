@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"time"
 
+	"github.com/MuhmdRaouf/huddle/internal/huddle/store"
 	"github.com/MuhmdRaouf/huddle/internal/jsscalar"
 )
 
@@ -20,6 +21,16 @@ type ItemRecord struct {
 	Decision  string // a permission ask's answer as stored, "allow" or "deny"; "" otherwise
 	CreatedAt time.Time
 	DecidedAt time.Time // zero while the item still waits for its answer
+}
+
+// OpenReader opens the registry's file for reading by another process: the file must exist, it is
+// not migrated, and every write is refused. Only the read methods of the history answer on it.
+func OpenReader(ctx context.Context, file string) (*DB, error) {
+	st, err := store.OpenReadOnly(ctx, file)
+	if err != nil {
+		return nil, err
+	}
+	return &DB{st: st}, nil
 }
 
 // ItemHistory answers every item created at or after since, oldest first. Read-only: readers

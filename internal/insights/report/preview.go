@@ -14,10 +14,6 @@ const DefaultProvider = "zai"
 // NoProviderNote is the one line a preview carries when no provider is enabled.
 const NoProviderNote = "No provider is enabled, so there is nothing to run Insights on. Set one up first, like /zai:setup."
 
-// bytesPerToken is how many bytes of the payload's JSON one token covers. Keys and numbers
-// split into short tokens, so the figure runs low and the estimate errs high.
-const bytesPerToken = 3
-
 // ProviderChoice is one enabled provider and the models a run may use on it; the first model is
 // its default.
 type ProviderChoice struct {
@@ -78,7 +74,7 @@ func NewPreview(s Structure, labels *Labels, choices []ProviderChoice, provider,
 	if err != nil {
 		return Preview{}, fmt.Errorf("size the payload: %w", err)
 	}
-	tokens := int64((len(payload) + bytesPerToken - 1) / bytesPerToken)
+	tokens := EstimateTokens(payload)
 	return Preview{
 		Provider:     picked.Provider,
 		Model:        model,

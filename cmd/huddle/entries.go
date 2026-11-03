@@ -30,6 +30,8 @@ var entries = map[string]entry{
 	// The MCP server and the HTTP server.
 	"mcp":   mcpEntry,
 	"serve": serveEntry,
+	// One insights run, a short process the hub starts (`huddle insights run`).
+	"insights": insightsEntry,
 	// The decision hooks, still their own lines (approve for Bash, permit for the prompt): each
 	// stays silent and returns 0 whatever happens.
 	"hook approve": hookEntry(hooks.Approve),

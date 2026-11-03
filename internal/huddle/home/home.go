@@ -66,6 +66,9 @@ func (h Home) Config() string { return filepath.Join(h.Root, "config.toml") }
 // HubDB is the hub's own database: the registry, the needs-you list, devices and audit.
 func (h Home) HubDB() string { return filepath.Join(h.Root, "hub.db") }
 
+// InsightsRuns is the directory of the insights runs, one JSON file each.
+func (h Home) InsightsRuns() string { return filepath.Join(h.Root, "insights", "runs") }
+
 // Channels is the directory of one SQLite file per channel.
 func (h Home) Channels() string { return filepath.Join(h.Root, "channels") }
 

@@ -137,6 +137,17 @@ func Open(ctx context.Context, file string) (*Store, error) {
 	return newStore(db), nil
 }
 
+// OpenReadOnly opens an existing SQLite file for reading only: it never creates the file, runs
+// no pragma that writes, and refuses every write on its connection. A reader in another process
+// waits out the writer's lock instead of failing.
+func OpenReadOnly(ctx context.Context, file string) (*Store, error) {
+	db, err := SQLite(ctx, "file:"+file+"?mode=rw&_pragma=query_only(1)&_pragma=busy_timeout(5000)")
+	if err != nil {
+		return nil, err
+	}
+	return newStore(db), nil
+}
+
 func (s *Store) All(ctx context.Context, query string, params ...any) ([]Row, error) {
 	s.txMu.Lock()
 	defer s.txMu.Unlock()

@@ -283,6 +283,8 @@ type server struct {
 	// exe is this serving process's executable, symlinks resolved: the health answer names it,
 	// and up from a newer binary reads it to give an older hub way.
 	exe string
+	// startRun starts the process of one insights run; nil starts `huddle insights run` from exe.
+	startRun func(id, provider, model string) error
 	// hubSrv serves the TLS listener a hub role adds on hub.listen (roles.go); nil in every
 	// other role and whenever it could not start, in which case the loopback listener above
 	// carries the server alone.
@@ -1372,6 +1374,10 @@ func (s *server) route(w http.ResponseWriter, r *http.Request, path string, quer
 		return s.insightsRoute(w, r)
 	case credentialed && path == "/api/insights/preview" && r.Method == http.MethodGet:
 		return s.insightsPreviewRoute(w, r, me)
+	case credentialed && path == "/api/insights/run" && r.Method == http.MethodPost:
+		return s.insightsRunRoute(w, r, me)
+	case credentialed && path == "/api/insights/runs" && r.Method == http.MethodGet:
+		return s.insightsRunsRoute(w, r, me)
 	case credentialed && path == "/api/insights/settings" && (r.Method == http.MethodGet || r.Method == http.MethodPut):
 		return s.insightsSettingsRoute(w, r, me)
 	case credentialed && path == "/api/insights/mute" && r.Method == http.MethodPost:

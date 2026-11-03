@@ -11,7 +11,8 @@ import (
 )
 
 // Build reads every source for the window and returns the payload with the local label map. The
-// first source error stops the build. The sources return only rows inside the window.
+// first source error stops the build. The sources return only rows inside the window. A payload
+// too large for MaxInputTokens comes back folded into per-day summaries (see fold).
 func Build(ctx context.Context, src Sources, w Window) (Structure, *Labels, error) {
 	rows, err := readAll(ctx, src, w)
 	if err != nil {
@@ -31,6 +32,9 @@ func Build(ctx context.Context, src Sources, w Window) (Structure, *Labels, erro
 	s.Totals = totals(rows.requests, len(s.Sessions))
 	s.Blocked = blocked(rows, labels)
 	s.Waste = waste(rows)
+	if overCap(s) {
+		s = fold(s, rows, labels, repoOf)
+	}
 	return s, labels, nil
 }
 

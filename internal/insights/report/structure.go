@@ -2,7 +2,9 @@ package report
 
 // Structure is the payload an insights run sends to the model: numbers and short labels about
 // where tokens went, what blocked the owner and what was wasted. It holds no prompt, response or
-// tool text and no path; every repo and session is a label from Labels.
+// tool text and no path; every repo and session is a label from Labels. A window whose sessions
+// would not fit under MaxInputTokens is folded: Sessions is empty and Days holds each day's
+// totals and busiest sessions.
 type Structure struct {
 	Window    WindowView   `json:"window"`
 	Totals    Totals       `json:"totals"`
@@ -13,6 +15,7 @@ type Structure struct {
 	Blocked   Blocked      `json:"blocked"`
 	Waste     Waste        `json:"waste"`
 	Subagents Subagents    `json:"subagents"`
+	Days      []DaySummary `json:"days,omitempty"`
 }
 
 // WindowView names the window: Days for a time window, Session (a label) for one session.

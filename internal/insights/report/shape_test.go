@@ -18,6 +18,7 @@ func TestStructureCarriesNoFreeTextFields(t *testing.T) {
 		"ModelRow.Provider":           true, // a lane id
 		"ToolRow.Name":                true, // a tool name
 		"AskStats.LongestWaitSession": true, // a session label
+		"DaySummary.Day":              true, // a date
 	}
 	var found []string
 	seen := map[reflect.Type]bool{}

@@ -214,6 +214,11 @@ adds one `spinnerTipsOverride` entry to Claude Code's settings.json, naming
 and Claude Code reads it at its next start. With the switch off the file is empty. Removing or
 disabling the plugin takes the entry and the file away.
 
+`huddle insights run [--run-id ID] [--provider NAME] [--model ID]` builds the Insights report from the
+last 7 days of the ledger and transcript history, asks one enabled provider once through
+huddle-router, and keeps the run under `<huddle home>/insights/runs/`. The provider defaults to
+GLM; a Claude model is refused. The hub starts it; run it by hand to try it.
+
 The tips:
 
 - You allowed one prompt five times in a week and waited for it each time; an allow rule would
