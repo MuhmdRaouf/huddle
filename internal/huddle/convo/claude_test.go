@@ -573,3 +573,243 @@ func TestASuccessNeverCarriesAnExitCode(t *testing.T) {
 		{ID: "c1:0", Kind: KindToolResult, At: "2026-10-26T10:00:01.000Z", ToolUseID: "toolu_1", Text: "Exit code 3\ndone"},
 	})
 }
+
+// idleNotification answers a user line whose content is a task notification's wrapper, the shape
+// a session writes while it is idle.
+func idleNotification(uuid, origin, wrapper string) string {
+	return fmt.Sprintf(`{"type":"user","uuid":%q,"timestamp":"2026-10-26T10:00:01.000Z",%s"message":{"role":"user","content":%q}}`, uuid, origin, wrapper)
+}
+
+// queuedNotification answers a queued_command attachment whose prompt is a task notification's
+// wrapper, the shape a session writes while a turn runs.
+func queuedNotification(uuid, wrapper string) string {
+	return fmt.Sprintf(`{"type":"attachment","uuid":%q,"timestamp":"2026-10-26T10:00:01.000Z","attachment":{"type":"queued_command","prompt":%q}}`, uuid, wrapper)
+}
+
+const (
+	taskOrigin     = `"origin":{"kind":"task-notification"},`
+	endedWrapper   = "<task-notification>\n<task-id>bg1</task-id>\n<tool-use-id>toolu_9</tool-use-id>\n<output-file>/srv/fixture/s1/tasks/bg1.output</output-file>\n<status>completed</status>\n<summary>Background command \"Build\" completed (exit code 3)</summary>\n</task-notification>"
+	eventWrapper   = "<task-notification>\n<task-id>mon1</task-id>\n<event>the watcher saw a change</event>\n<status>running</status>\n</task-notification>"
+	endedNotifItem = `Background command "Build" completed (exit code 3)`
+)
+
+// readItems answers the items of a transcript of the given lines.
+func readItems(t *testing.T, lines ...string) []Item {
+	t.Helper()
+	page, err := Read(context.Background(), writeTranscript(t, lines...), 0)
+	if err != nil {
+		t.Fatalf("read the transcript: %v", err)
+	}
+	return page.Items
+}
+
+func TestANotificationIsNeverAPrompt(t *testing.T) {
+	items := readItems(t,
+		idleNotification("n1", taskOrigin, endedWrapper),
+		idleNotification("n2", "", endedWrapper), // no origin: the wrapper's opening tag decides
+	)
+	want := Item{Kind: KindNotification, At: "2026-10-26T10:00:01.000Z", Text: endedNotifItem, Origin: "task-notification",
+		ToolUseID: "toolu_9", Status: "completed", Result: &ToolFacts{ExitCode: intPtr(3)}}
+	first, second := want, want
+	first.ID, second.ID = "n1:0", "n2:0"
+	checkItems(t, items, []Item{first, second})
+}
+
+func TestACompactionSummaryIsNoItem(t *testing.T) {
+	items := readItems(t,
+		`{"type":"user","uuid":"c1","timestamp":"2026-10-26T10:00:01.000Z","isCompactSummary":true,"message":{"role":"user","content":"This session is being continued. Summary: invented."}}`,
+		`{"type":"user","uuid":"c2","timestamp":"2026-10-26T10:00:02.000Z","isVisibleInTranscriptOnly":true,"message":{"role":"user","content":"This session is being continued. Summary: invented."}}`,
+	)
+	checkItems(t, items, []Item{})
+}
+
+func TestAMonitorEventIsAnItem(t *testing.T) {
+	items := readItems(t, idleNotification("m1", taskOrigin, eventWrapper))
+	checkItems(t, items, []Item{
+		{ID: "m1:0", Kind: KindMonitorEvent, At: "2026-10-26T10:00:01.000Z", Text: "the watcher saw a change", Origin: "task-notification"},
+	})
+}
+
+func TestAHumanPromptStaysAPrompt(t *testing.T) {
+	items := readItems(t,
+		`{"type":"user","uuid":"h1","timestamp":"2026-10-26T10:00:01.000Z","origin":{"kind":"human"},"message":{"role":"user","content":"run the tests"}}`,
+		`{"type":"user","uuid":"h2","timestamp":"2026-10-26T10:00:02.000Z","message":{"role":"user","content":"run them again"}}`,
+	)
+	checkItems(t, items, []Item{
+		{ID: "h1:0", Kind: KindUser, At: "2026-10-26T10:00:01.000Z", Text: "run the tests", Origin: "human"},
+		{ID: "h2:0", Kind: KindUser, At: "2026-10-26T10:00:02.000Z", Text: "run them again"},
+	})
+}
+
+func TestAnUnknownOriginStaysAPromptWithItsOrigin(t *testing.T) {
+	items := readItems(t,
+		`{"type":"user","uuid":"p1","timestamp":"2026-10-26T10:00:01.000Z","origin":{"kind":"peer-message","producer":"inbox"},"message":{"role":"user","content":"a line from another session"}}`,
+		// a wrapper under an origin that is not a task notification is still not hidden
+		idleNotification("p2", `"origin":{"kind":"peer-message"},`, endedWrapper),
+	)
+	checkItems(t, items, []Item{
+		{ID: "p1:0", Kind: KindUser, At: "2026-10-26T10:00:01.000Z", Text: "a line from another session", Origin: "peer-message"},
+		{ID: "p2:0", Kind: KindUser, At: "2026-10-26T10:00:01.000Z", Text: endedWrapper, Origin: "peer-message"},
+	})
+}
+
+func TestTheMidTurnCarrierGivesTheSameItem(t *testing.T) {
+	for _, wrapper := range []string{endedWrapper, eventWrapper} {
+		idle := readItems(t, idleNotification("x1", taskOrigin, wrapper))
+		queued := readItems(t, queuedNotification("x1", wrapper))
+		checkItems(t, queued, idle)
+	}
+	// a queued prompt that is not a notification is no notification
+	checkItems(t, readItems(t, queuedNotification("x2", "run the tests")), []Item{})
+}
+
+func TestANotificationNeverServesTheOutputPath(t *testing.T) {
+	for _, line := range []string{
+		idleNotification("o1", taskOrigin, endedWrapper),
+		idleNotification("o2", "", endedWrapper),
+		queuedNotification("o3", endedWrapper),
+	} {
+		served, err := json.Marshal(readItems(t, line))
+		if err != nil {
+			t.Fatalf("marshal the items: %v", err)
+		}
+		for _, leak := range []string{"/srv/fixture", "bg1.output", "output-file"} {
+			if strings.Contains(string(served), leak) {
+				t.Errorf("the items carry %q: %s", leak, served)
+			}
+		}
+	}
+}
+
+// wantNotifyItems are the items every version's notify.jsonl decodes to: the compaction summary
+// yields nothing, and the queued_command carrier gives the same row as the idle one.
+func wantNotifyItems() []Item {
+	ended := Item{Kind: KindNotification, Text: `Background command "Fixture build" completed (exit code 3)`, Origin: "task-notification", ToolUseID: "toolu_nfy1",
+		Status: "completed", Result: &ToolFacts{ExitCode: intPtr(3)}}
+	idle, queued := ended, ended
+	idle.ID, idle.At = "nu-02:0", "2026-01-01T09:00:02.000Z"
+	queued.ID, queued.At = "nat-01:0", "2026-01-01T09:00:05.000Z"
+	return []Item{
+		{ID: "nu-01:0", Kind: KindUser, At: "2026-01-01T09:00:01.000Z", Text: "Run the fixture build.", Origin: "human"},
+		idle,
+		{ID: "nu-03:0", Kind: KindMonitorEvent, At: "2026-01-01T09:00:03.000Z", Text: "fixture watcher saw a change", Origin: "task-notification"},
+		queued,
+		{ID: "nu-05:0", Kind: KindUser, At: "2026-01-01T09:00:06.000Z", Text: "A line from another session.", Origin: "peer-message"},
+		{ID: "nu-06:0", Kind: KindNotification, At: "2026-01-01T09:00:07.000Z", Text: `Background command "Fixture stop" was killed`,
+			Origin: "task-notification", ToolUseID: "toolu_nfy2", Status: "killed"},
+	}
+}
+
+func TestEveryVersionDecodesTheNotifyItems(t *testing.T) {
+	for _, version := range fixtureVersions {
+		t.Run(version, func(t *testing.T) {
+			page, err := Read(context.Background(), filepath.Join("testdata", "cc", version, "notify.jsonl"), 0)
+			if err != nil {
+				t.Fatalf("read: %v", err)
+			}
+			checkItems(t, page.Items, wantNotifyItems())
+		})
+	}
+}
+
+// repeatedNotification answers the user line that repeats a queued_command notification: it
+// hangs from the attachment line, parent, and carries the same wrapper.
+func repeatedNotification(uuid, parent, wrapper string) string {
+	return fmt.Sprintf(`{"type":"user","uuid":%q,"parentUuid":%q,"timestamp":"2026-10-26T10:00:02.000Z",%s"message":{"role":"user","content":%q}}`, uuid, parent, taskOrigin, wrapper)
+}
+
+// replyLine answers an assistant line of one short text block.
+func replyLine(uuid string) string {
+	return fmt.Sprintf(`{"type":"assistant","uuid":%q,"timestamp":"2026-10-26T10:00:03.000Z","message":{"role":"assistant","content":[{"type":"text","text":"ok"}]}}`, uuid)
+}
+
+func TestTheRepeatOfAQueuedNotificationIsNoSecondRow(t *testing.T) {
+	for _, wrapper := range []string{endedWrapper, eventWrapper} {
+		queued := readItems(t, queuedNotification("q1", wrapper))
+		if len(queued) != 1 {
+			t.Fatalf("the queued carrier gave %d items, want 1", len(queued))
+		}
+		// the repeat adds nothing, and a third line that repeats the repeat is a row of its own
+		items := readItems(t,
+			queuedNotification("q1", wrapper),
+			repeatedNotification("r1", "q1", wrapper),
+			repeatedNotification("r2", "r1", wrapper),
+		)
+		again := queued[0]
+		again.ID, again.At = "r2:0", "2026-10-26T10:00:02.000Z"
+		checkItems(t, items, []Item{queued[0], again})
+	}
+}
+
+func TestARepeatThatIsNotTheNextLineStaysARow(t *testing.T) {
+	killed := strings.Replace(endedWrapper, "<status>completed</status>", "<status>killed</status>", 1)
+	for name, lines := range map[string][]string{
+		"another line between them":     {queuedNotification("q1", endedWrapper), replyLine("a1"), repeatedNotification("r1", "q1", endedWrapper)},
+		"a parent that is not the pair": {queuedNotification("q1", endedWrapper), repeatedNotification("r1", "a1", endedWrapper)},
+		"a different status":            {queuedNotification("q1", endedWrapper), repeatedNotification("r1", "q1", killed)},
+		"a different event":             {queuedNotification("q1", eventWrapper), repeatedNotification("r1", "q1", strings.Replace(eventWrapper, "a change", "another change", 1))},
+	} {
+		t.Run(name, func(t *testing.T) {
+			rows := 0
+			for _, item := range readItems(t, lines...) {
+				if item.Kind == KindNotification || item.Kind == KindMonitorEvent {
+					rows++
+				}
+			}
+			if rows != 2 {
+				t.Errorf("got %d notification rows, want 2", rows)
+			}
+		})
+	}
+}
+
+func TestAResumedAgentCompletingAgainGivesTwoRows(t *testing.T) {
+	again := strings.Replace(endedWrapper, `Background command "Build" completed (exit code 3)`, `Background command "Build" completed (exit code 0)`, 1)
+	items := readItems(t,
+		idleNotification("n1", taskOrigin, endedWrapper),
+		replyLine("a1"),
+		idleNotification("n2", taskOrigin, again),
+	)
+	if len(items) != 3 || items[0].Text == items[2].Text || items[0].ToolUseID != items[2].ToolUseID || items[0].Status != items[2].Status {
+		t.Fatalf("want two notification rows with the same ids and status and different summaries around a reply, got %+v", items)
+	}
+}
+
+func TestAPairSplitAcrossTwoReadsGivesOneRow(t *testing.T) {
+	ctx := context.Background()
+	path := writeTranscript(t, queuedNotification("q1", endedWrapper))
+	first, err := Read(ctx, path, 0)
+	if err != nil {
+		t.Fatalf("first read: %v", err)
+	}
+	appendRaw(t, path, repeatedNotification("r1", "q1", endedWrapper)+"\n")
+	second, err := Read(ctx, path, first.Next)
+	if err != nil {
+		t.Fatalf("second read: %v", err)
+	}
+	if len(first.Items) != 1 || len(second.Items) != 0 {
+		t.Errorf("the pair gave %d + %d items across two reads, want 1 + 0", len(first.Items), len(second.Items))
+	}
+	if second.Next <= first.Next {
+		t.Errorf("the second read did not consume the repeat: next %d after %d", second.Next, first.Next)
+	}
+}
+
+func TestAQueuedNotificationLongerThanMaxReadShowsItsRepeat(t *testing.T) {
+	ctx := context.Background()
+	long := strings.Replace(eventWrapper, "the watcher saw a change", strings.Repeat("x", MaxRead), 1)
+	path := writeTranscript(t, queuedNotification("q1", long))
+	first, err := Read(ctx, path, 0)
+	if err != nil {
+		t.Fatalf("first read: %v", err)
+	}
+	appendRaw(t, path, repeatedNotification("r1", "q1", long)+"\n")
+	second, err := Read(ctx, path, first.Next)
+	if err != nil {
+		t.Fatalf("second read: %v", err)
+	}
+	// the lookbehind stops at MaxRead bytes, so a previous line longer than that is not checked
+	if len(first.Items) != 1 || len(second.Items) != 1 {
+		t.Errorf("the pair gave %d + %d items across two reads, want 1 + 1", len(first.Items), len(second.Items))
+	}
+}

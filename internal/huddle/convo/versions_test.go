@@ -28,11 +28,11 @@ func fixtureMain(version string) string {
 	return filepath.Join("testdata", "cc", version, "main.jsonl")
 }
 
-// fixtureFiles answers every file of one version that holds decoded keys: the main transcript and
-// the files in its subagents folder.
+// fixtureFiles answers every file of one version that holds decoded keys: the main transcript, the
+// notification transcript and the files in the subagents folder.
 func fixtureFiles(t *testing.T, version string) []string {
 	t.Helper()
-	files := []string{fixtureMain(version)}
+	files := []string{fixtureMain(version), filepath.Join("testdata", "cc", version, "notify.jsonl")}
 	subs, err := filepath.Glob(filepath.Join(SubagentsDir(fixtureMain(version)), "*"))
 	if err != nil {
 		t.Fatal(err)
@@ -72,6 +72,9 @@ func wantFixtureItems() []Item {
 			Text: "Command running in background with ID: bg1a2b3c. Output is being written to: " +
 				"/srv/fixture/sess-fixture-0001/tasks/bg1a2b3c.output. You will be notified when it completes.",
 			Result: &ToolFacts{BackgroundID: "bg1a2b3c"}},
+		{ID: "att-03:0", Kind: KindNotification, At: "2026-01-01T09:00:12.000Z", Origin: "task-notification",
+			Text: `Background command "A background wait" completed (exit code 0)`, ToolUseID: "toolu_bg1",
+			Status: "completed", Result: &ToolFacts{ExitCode: intPtr(0)}},
 		{ID: "a-art:0", Kind: KindToolUse, At: "2026-01-01T09:00:13.200Z", Tool: "Artifact", ToolUseID: "toolu_art1",
 			Input: `{"file_path":"/srv/fixture/report.html","icon":"chart"}`},
 		{ID: "u-art:0", Kind: KindToolResult, At: "2026-01-01T09:00:13.400Z", ToolUseID: "toolu_art1",

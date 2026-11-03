@@ -121,13 +121,42 @@ describe("sessionApi decodes well-formed answers whole", () => {
         },
         { id: "i6", kind: "file", at: "2026-10-26T10:00:06.000Z", path: "a/b.go", lines: 12 },
         { id: "i7", kind: "image", at: "2026-10-26T10:00:07.000Z", media_type: "image/png", bytes: 99 },
+        { id: "i8", kind: "user", at: "2026-10-26T10:00:08.000Z", text: "go on", origin: "human" },
+        {
+          id: "i9",
+          kind: "notification",
+          at: "2026-10-26T10:00:09.000Z",
+          text: 'Background command "Build" completed (exit code 3)',
+          origin: "task-notification",
+          tool_use_id: "tu1",
+          status: "completed",
+          result: { exit_code: 3 },
+        },
+        {
+          id: "i10",
+          kind: "monitor_event",
+          at: "2026-10-26T10:00:10.000Z",
+          text: "the watcher saw a change",
+          origin: "task-notification",
+        },
       ],
       next: 4096,
     };
     const page: ConvoPage = await sessionApi(fakeApi(answer)).conversation("s", "a");
     expect(page).toEqual(answer);
     const kinds: ConvoItem["kind"][] = page.items.map((item) => item.kind);
-    expect(kinds).toEqual(["user", "assistant", "thinking", "tool_use", "tool_result", "file", "image"]);
+    expect(kinds).toEqual([
+      "user",
+      "assistant",
+      "thinking",
+      "tool_use",
+      "tool_result",
+      "file",
+      "image",
+      "user",
+      "notification",
+      "monitor_event",
+    ]);
   });
 
   it("keeps the fields the conversation answer leaves out absent", async () => {
@@ -150,6 +179,8 @@ describe("sessionApi decodes well-formed answers whole", () => {
       "lines",
       "media_type",
       "bytes",
+      "origin",
+      "status",
     ];
     for (const key of optionalKeys) expect(key in item).toBe(false);
   });
@@ -293,7 +324,7 @@ describe("sessionApi throws on answers that fail their decode", () => {
       next: 0,
     });
     await expect(sessionApi(fake).conversation("s", "a")).rejects.toThrow(
-      "/api/sessions/s/agents/a/conversation: items[1].kind must be one of user, assistant, thinking, tool_use, tool_result, file, image",
+      "/api/sessions/s/agents/a/conversation: items[1].kind must be one of user, assistant, thinking, tool_use, tool_result, file, image, notification, monitor_event",
     );
   });
 

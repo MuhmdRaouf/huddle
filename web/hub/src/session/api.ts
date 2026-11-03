@@ -105,7 +105,17 @@ function arr(at: string, v: unknown): unknown[] {
 }
 
 /** The kinds a transcript item can have, as the wire spells them. */
-const kinds = ["user", "assistant", "thinking", "tool_use", "tool_result", "file", "image"] as const;
+const kinds = [
+  "user",
+  "assistant",
+  "thinking",
+  "tool_use",
+  "tool_result",
+  "file",
+  "image",
+  "notification",
+  "monitor_event",
+] as const;
 
 function kind(at: string, v: unknown): ConvoItem["kind"] {
   for (const k of kinds) {
@@ -166,6 +176,8 @@ function decodeItem(base: string, v: unknown): ConvoItem {
   if (o.lines !== undefined) out.lines = num(`${base}.lines`, o.lines);
   if (o.media_type !== undefined) out.media_type = str(`${base}.media_type`, o.media_type);
   if (o.bytes !== undefined) out.bytes = num(`${base}.bytes`, o.bytes);
+  if (o.origin !== undefined) out.origin = str(`${base}.origin`, o.origin);
+  if (o.status !== undefined) out.status = str(`${base}.status`, o.status);
   return out;
 }
 

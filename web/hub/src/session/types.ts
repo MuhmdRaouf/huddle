@@ -19,7 +19,16 @@ export type SessionAgent = {
  *  depends on it. */
 export type ConvoItem = {
   id: string;
-  kind: "user" | "assistant" | "thinking" | "tool_use" | "tool_result" | "file" | "image";
+  kind:
+    | "user"
+    | "assistant"
+    | "thinking"
+    | "tool_use"
+    | "tool_result"
+    | "file"
+    | "image"
+    | "notification"
+    | "monitor_event";
   at: string;
   text?: string;
   duration_ms?: number;
@@ -34,6 +43,8 @@ export type ConvoItem = {
   lines?: number;
   media_type?: string;
   bytes?: number;
+  origin?: string;
+  status?: string;
 };
 
 /** What the transcript knows about one tool call's outcome. */

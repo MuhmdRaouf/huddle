@@ -27,6 +27,9 @@ const (
 	KindToolResult = "tool_result" // what a tool call answered
 	KindFile       = "file"        // a file attached to a prompt
 	KindImage      = "image"       // an image in a prompt
+
+	KindNotification = "notification"  // a background task's end, reported by Claude Code
+	KindMonitorEvent = "monitor_event" // one event a Monitor streamed
 )
 
 // MaxText is the most bytes of one item's text or input kept; a longer one is cut on a rune
@@ -59,6 +62,8 @@ type Item struct {
 	Lines      int        `json:"lines,omitempty"`      // a file item's totalLines, else numLines
 	MediaType  string     `json:"media_type,omitempty"` // an image item's source media type
 	Bytes      int        `json:"bytes,omitempty"`      // an image item's decoded size, from the base64 length alone
+	Origin     string     `json:"origin,omitempty"`     // the line's origin.kind, on prompts and notifications
+	Status     string     `json:"status,omitempty"`     // a notification's <status>
 }
 
 // ToolFacts is what a tool call did, from the transcript's toolUseResult.
@@ -110,7 +115,16 @@ type transcriptLine struct {
 	IsMeta             bool            `json:"isMeta"`
 	ToolUseResult      json.RawMessage `json:"toolUseResult"` // what a tool did, beside its tool_result block
 	Attachment         json.RawMessage `json:"attachment"`
-	Message            struct {
+
+	// A compaction summary carries one of the two flags; Origin names who wrote a user line.
+	IsCompactSummary          bool `json:"isCompactSummary"`
+	IsVisibleInTranscriptOnly bool `json:"isVisibleInTranscriptOnly"`
+	Origin                    struct {
+		Kind     string `json:"kind"`
+		Producer string `json:"producer"`
+	} `json:"origin"`
+
+	Message struct {
 		Role    string          `json:"role"`
 		Content json.RawMessage `json:"content"`
 	} `json:"message"`
@@ -171,12 +185,14 @@ type imageSource struct {
 }
 
 // attachment is an attachment line's payload: a file attachment names the file it put in the
-// prompt and may carry the content that was read of it; other subtypes are left out.
+// prompt and may carry the content that was read of it, and a queued_command attachment carries
+// the text Claude Code queued for the turn; other subtypes are left out.
 type attachment struct {
 	Type        string          `json:"type"`
 	FileName    string          `json:"filename"`
 	DisplayPath string          `json:"displayPath"`
 	Content     json.RawMessage `json:"content"`
+	Prompt      string          `json:"prompt"` // a queued_command attachment's text
 }
 
 // attachedContent is a file attachment's content block: the read of one file.
@@ -222,14 +238,20 @@ func read(ctx context.Context, path string, after int64, keepSidechain bool) (Pa
 
 	reader := bufio.NewReader(file)
 	var consumed int64
-	for {
+	var queued *queuedNote // the previous line, when it was a queued notification
+	for first := true; ; first = false {
 		if err := ctx.Err(); err != nil {
 			return Page{Items: []Item{}}, err
 		}
 		raw, err := reader.ReadBytes('\n')
 		if len(raw) > 0 && raw[len(raw)-1] == '\n' {
 			consumed += int64(len(raw))
-			page.Items = append(page.Items, itemsOf(raw, keepSidechain)...)
+			if first && after > 0 && bytes.Contains(raw, []byte(shellMarkDone)) {
+				queued = queuedBefore(file, after, keepSidechain)
+			}
+			var items []Item
+			items, queued = itemsOf(raw, keepSidechain, queued)
+			page.Items = append(page.Items, items...)
 			if consumed > MaxRead {
 				break
 			}
@@ -245,40 +267,106 @@ func read(ctx context.Context, path string, after int64, keepSidechain bool) (Pa
 	return page, nil
 }
 
-// itemsOf decodes one complete transcript line into its items, in content order. A line that is
-// not JSON, not a user, assistant or attachment turn, or harness-injected yields nothing; a
-// subagent's sidechain line yields nothing unless keepSidechain.
-func itemsOf(raw []byte, keepSidechain bool) []Item {
+// queuedNote is a queued_command attachment's notification, kept for the line that follows it:
+// that line may be the user line repeating it.
+type queuedNote struct {
+	uuid string
+	note notification
+}
+
+// itemsOf decodes one complete transcript line into its items, in content order, and answers the
+// queued notification the line is, when it is one. A line that is not JSON, not a user,
+// assistant or attachment turn, or harness-injected yields nothing; a subagent's sidechain line
+// yields nothing unless keepSidechain. A user line that repeats the queued notification just
+// before it (prev) yields nothing, so a notification shows one row whichever carrier came first.
+func itemsOf(raw []byte, keepSidechain bool, prev *queuedNote) ([]Item, *queuedNote) {
 	var line transcriptLine
 	if err := json.Unmarshal(raw, &line); err != nil {
-		return nil
+		return nil, nil
 	}
 	if line.IsMeta || (line.IsSidechain && !keepSidechain) {
-		return nil
+		return nil, nil
 	}
 	switch line.Type {
 	case KindUser:
-		return userItems(line)
+		if repeatsQueued(line, prev) {
+			return nil, nil
+		}
+		return userItems(line), nil
 	case KindAssistant:
-		return assistantItems(line)
+		return assistantItems(line), nil
 	case "attachment":
 		return attachmentItems(line)
 	default:
+		return nil, nil
+	}
+}
+
+// repeatsQueued answers whether line is the user line that repeats the queued notification
+// before it: it hangs from that attachment and carries the same notification. Only the line
+// right after the attachment counts, so a task that reports the same ids again later, as a
+// resumed agent does, is a row of its own.
+func repeatsQueued(line transcriptLine, prev *queuedNote) bool {
+	if prev == nil || prev.uuid == "" || line.ParentUUID != prev.uuid {
+		return false
+	}
+	var text string
+	if json.Unmarshal(line.Message.Content, &text) != nil || !isNotificationLine(line, text) {
+		return false
+	}
+	note, ok := parseNotification(text)
+	return ok && note.same(prev.note)
+}
+
+// queuedBefore answers the queued notification that the line ending at byte offset end is. A
+// read that starts mid-transcript calls it for its first line alone, and only when that line
+// carries a notification's marker, so the reads that start elsewhere pay nothing. It looks back
+// over at most MaxRead bytes: a previous line longer than that is not checked and its repeat
+// shows as a row.
+func queuedBefore(file *os.File, end int64, keepSidechain bool) *queuedNote {
+	var last [1]byte
+	if _, err := file.ReadAt(last[:], end-1); err != nil || last[0] != '\n' {
 		return nil
 	}
+	lineEnd, lineStart := end-1, int64(0)
+	chunk := make([]byte, 4096)
+	for pos := lineEnd; pos > 0; {
+		if lineEnd-pos >= MaxRead {
+			return nil
+		}
+		size := min(int64(len(chunk)), pos)
+		if _, err := file.ReadAt(chunk[:size], pos-size); err != nil {
+			return nil
+		}
+		if i := bytes.LastIndexByte(chunk[:size], '\n'); i >= 0 {
+			lineStart = pos - size + int64(i) + 1
+			break
+		}
+		pos -= size
+	}
+	raw := make([]byte, lineEnd-lineStart)
+	if _, err := file.ReadAt(raw, lineStart); err != nil {
+		return nil
+	}
+	_, queued := itemsOf(raw, keepSidechain, nil)
+	return queued
 }
 
 // userItems answers a user line's items: a string content is the prompt itself, a block array
 // yields its text blocks as prompts, its image blocks as the pictures they carry and its
 // tool_result blocks as the answers they carry. A prompt that is empty but for spacing is no
-// words the person typed.
+// words the person typed, and a compaction summary is no prompt at all. Text a task notification
+// wrote is a notification item, never a prompt (see promptItem).
 func userItems(line transcriptLine) []Item {
+	if line.IsCompactSummary || line.IsVisibleInTranscriptOnly {
+		return nil
+	}
 	var prompt string
 	if err := json.Unmarshal(line.Message.Content, &prompt); err == nil {
 		if strings.TrimSpace(prompt) == "" {
 			return nil
 		}
-		return []Item{textItem(line, 0, KindUser, prompt)}
+		return []Item{promptItem(line, 0, prompt)}
 	}
 	var blocks []contentBlock
 	if err := json.Unmarshal(line.Message.Content, &blocks); err != nil {
@@ -292,7 +380,7 @@ func userItems(line transcriptLine) []Item {
 			if strings.TrimSpace(block.Text) == "" {
 				continue
 			}
-			items = append(items, textItem(line, i, KindUser, block.Text))
+			items = append(items, promptItem(line, i, block.Text))
 		case "image":
 			items = append(items, imageItem(line, i, block))
 		case "tool_result":
@@ -339,19 +427,25 @@ func assistantItems(line transcriptLine) []Item {
 
 // attachmentItems answers an attachment line's items: a file attachment yields one file item
 // naming the file, its line count and the content read into the prompt, cut to MaxText; a file
-// with no content still yields its item, and an attachment of another subtype yields nothing.
-func attachmentItems(line transcriptLine) []Item {
+// with no content still yields its item. A queued_command attachment whose prompt is a task
+// notification yields the item the idle carrier of that notification yields, and is answered as
+// the queued notification too; any other attachment yields nothing.
+func attachmentItems(line transcriptLine) ([]Item, *queuedNote) {
 	var att attachment
 	if err := json.Unmarshal(line.Attachment, &att); err != nil {
-		return nil
+		return nil, nil
+	}
+	if att.Type == "queued_command" && isNotificationText(att.Prompt) {
+		note, _ := parseNotification(att.Prompt)
+		return []Item{notificationItem(line, 0, att.Prompt, note)}, &queuedNote{uuid: line.UUID, note: note}
 	}
 	if att.Type != "file" {
-		return nil
+		return nil, nil
 	}
 	var content attachedContent
 	if len(att.Content) > 0 {
 		if err := json.Unmarshal(att.Content, &content); err != nil {
-			return nil
+			return nil, nil
 		}
 	}
 	item := Item{
@@ -363,7 +457,56 @@ func attachmentItems(line transcriptLine) []Item {
 		Lines:  fileLines(content.File),
 	}
 	item.Text, item.Cut = cut(content.File.Content)
-	return []Item{item}
+	return []Item{item}, nil
+}
+
+// originTaskNotification is the origin.kind of a line Claude Code wrote to report a background
+// task.
+const originTaskNotification = "task-notification"
+
+// isNotificationText answers whether text is a task notification's wrapper.
+func isNotificationText(text string) bool {
+	return strings.HasPrefix(strings.TrimSpace(text), "<"+shellMarkDone+">")
+}
+
+// isNotificationLine answers whether a user line's text is a task notification: its origin says
+// so, or it names no origin and the text is a notification's wrapper. A line under any other
+// origin is not, so no possible prompt of the owner is hidden.
+func isNotificationLine(line transcriptLine, text string) bool {
+	kind := line.Origin.Kind
+	return kind == originTaskNotification || (kind == "" && isNotificationText(text))
+}
+
+// promptItem answers the item of a user line's text: a notification item when the line is a
+// task notification, else a prompt that carries its origin as written.
+func promptItem(line transcriptLine, index int, text string) Item {
+	if isNotificationLine(line, text) {
+		note, _ := parseNotification(text)
+		return notificationItem(line, index, text, note)
+	}
+	item := textItem(line, index, KindUser, text)
+	item.Origin = line.Origin.Kind
+	return item
+}
+
+// notificationItem answers the item of a task notification's wrapper, whichever carrier brought
+// it. A Monitor's event is a monitor_event item holding the event's text. Any other notification
+// is a notification item holding its summary, with the call it ends, its status and its exit
+// code. The wrapper's other tags, the output file's path among them, are never served.
+func notificationItem(line transcriptLine, index int, text string, note notification) Item {
+	if note.Event != "" {
+		item := textItem(line, index, KindMonitorEvent, note.Event)
+		item.Origin = originTaskNotification
+		return item
+	}
+	item := textItem(line, index, KindNotification, notificationSummaryOf(text))
+	item.Origin = originTaskNotification
+	item.ToolUseID = note.ToolUseID
+	item.Status = note.Status
+	if note.ExitCode != nil {
+		item.Result = &ToolFacts{ExitCode: note.ExitCode}
+	}
+	return item
 }
 
 // imageItem answers an image block's item: its media type and decoded size. The size comes from

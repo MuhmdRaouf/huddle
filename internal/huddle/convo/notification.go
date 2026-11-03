@@ -27,6 +27,7 @@ var (
 	notificationStatus  = regexp.MustCompile(`<status>([^<]+)</status>`)
 	notificationEvent   = regexp.MustCompile(`(?s)<event>(.*?)</event>`)
 	notificationExit    = regexp.MustCompile(`\(exit code (\d+)\)`)
+	notificationSummary = regexp.MustCompile(`(?s)<summary>(.*?)</summary>`)
 )
 
 // notificationTag answers the text of a tag's first occurrence in text.
@@ -67,4 +68,15 @@ func notificationCode(digits string) *int {
 		return nil
 	}
 	return &code
+}
+
+// notificationSummaryOf answers a notification's one-line account of what ended, empty when the
+// text carries none.
+func notificationSummaryOf(text string) string {
+	return strings.TrimSpace(notificationTag(notificationSummary, text))
+}
+
+// same answers whether two notifications name the same task, call, status and event.
+func (n notification) same(other notification) bool {
+	return n.TaskID == other.TaskID && n.ToolUseID == other.ToolUseID && n.Status == other.Status && n.Event == other.Event
 }
