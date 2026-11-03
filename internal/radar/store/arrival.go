@@ -14,19 +14,35 @@ func (r *storedRequest) arrivalNumber() int64 { return r.seq }
 
 func (t *storedTool) arrivalNumber() int64 { return t.seq }
 
-// heldRecord is an arrived record the list can find again by identity.
+func (r *storedRequest) buried() bool { return r.gone }
+
+func (r *storedRequest) bury() { r.gone = true }
+
+func (t *storedTool) buried() bool { return t.gone }
+
+func (t *storedTool) bury() { t.gone = true }
+
+// heldRecord is an arrived record the list can find again by identity and mark as no
+// longer held by the store.
 type heldRecord interface {
 	arrived
 	comparable
+	buried() bool
+	bury()
 }
 
 // arrivalList keeps the held records in arrival order, so a reader gets the order without
 // copying the map or sorting. A live record arrives with the highest number yet and is
 // appended; a reloaded one carries the position its file wrote it at and may land below
 // the tail, which settle puts right once the load has placed its batch.
+//
+// A record the store drops is buried where it stands, so a drop costs the records dropped,
+// not the records held. The buried entries leave the slice together: when they outnumber
+// the live ones, and when a reader asks for the order.
 type arrivalList[T heldRecord] struct {
 	held   []T
 	sorted bool
+	buried int // the entries of held that are buried
 }
 
 func newArrivalList[T heldRecord]() arrivalList[T] {
@@ -61,13 +77,30 @@ func (l *arrivalList[T]) settle() {
 // inOrder is the held records in arrival order. The slice is the list's own: valid while
 // the store's lock is held and no record is added or dropped.
 func (l *arrivalList[T]) inOrder() []T {
+	l.compact()
 	return l.held
 }
 
-// keepOnly drops every record keep rejects, compacting the list in place: one pass over
-// the list, however many records go.
-func (l *arrivalList[T]) keepOnly(keep func(T) bool) {
-	l.held = slices.DeleteFunc(l.held, func(record T) bool { return !keep(record) })
+// forget buries a record the store no longer holds; burying one twice counts once.
+func (l *arrivalList[T]) forget(record T) {
+	if record.buried() {
+		return
+	}
+	record.bury()
+	l.buried++
+	if l.buried*2 > len(l.held) {
+		l.compact()
+	}
+}
+
+// compact drops the buried entries in place, one pass over the list; a list with none
+// costs nothing.
+func (l *arrivalList[T]) compact() {
+	if l.buried == 0 {
+		return
+	}
+	l.held = slices.DeleteFunc(l.held, func(record T) bool { return record.buried() })
+	l.buried = 0
 }
 
 // sortHeld puts records, all held in the list, in the order the list keeps them: a lookup of

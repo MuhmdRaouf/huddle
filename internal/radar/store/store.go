@@ -346,12 +346,14 @@ type sessionSlice struct {
 type storedRequest struct {
 	record shared.RequestRecord
 	seq    int64
+	gone   bool // the store dropped the record; requestOrder still lists it until it compacts
 }
 
 // storedTool is a tool call and its arrival number.
 type storedTool struct {
 	record shared.ToolCallRecord
 	seq    int64
+	gone   bool // the store dropped the record; toolOrder still lists it until it compacts
 }
 
 // SessionRecords is one session's requests, tool calls and events in the order they
@@ -890,13 +892,6 @@ func (s *Store) toolsInOrderLocked() []*storedTool {
 	return s.toolOrder.inOrder()
 }
 
-// forgetOrderLocked drops the requests and tool calls the maps no longer hold from the
-// arrival lists. One pass over each list per eviction or session drop.
-func (s *Store) forgetOrderLocked() {
-	s.requestOrder.keepOnly(func(held *storedRequest) bool { return s.requests[held.record.ID] == held })
-	s.toolOrder.keepOnly(func(held *storedTool) bool { return s.tools[held.record.ID] == held })
-}
-
 func (s *Store) allRequestsLocked() []*shared.RequestRecord {
 	ordered := s.requestsInOrderLocked()
 	out := make([]*shared.RequestRecord, 0, len(ordered))
@@ -922,8 +917,8 @@ func (s *Store) nextArrivalLocked() int64 {
 
 // projectionLocked groups the store's records by session (and per agent inside). The first
 // read builds it; each record a write appends afterwards joins it as it lands, an update to
-// a held record leaves the slices of its sessions for the next read to build again, and a
-// write that drops records discards the whole projection.
+// a held record, or a record dropped from a session, leaves the slices of its sessions for the
+// next read to build again, and a dropped session takes its slice with it.
 func (s *Store) projectionLocked() map[string]*sessionSlice {
 	if s.proj == nil {
 		s.proj = s.buildProjectionLocked()
@@ -1358,16 +1353,18 @@ func (s *Store) applyEvictionsLocked(picks []evictionCandidate) {
 	for _, pick := range picks {
 		switch pick.source {
 		case 0:
-			s.dropProjectionLocked()
 			if held, ok := s.requests[pick.id]; ok {
 				s.forgetCallLocked(held.record)
 				unfile(s.requestsBySession, held.record.SessionID, pick.id)
+				s.requestOrder.forget(held)
+				s.staleLocked(held.record.SessionID)
 			}
 			delete(s.requests, pick.id)
 		case 1:
-			s.dropProjectionLocked()
 			if held, ok := s.tools[pick.id]; ok {
 				unfile(s.toolsBySession, held.record.SessionID, pick.id)
+				s.toolOrder.forget(held)
+				s.staleLocked(held.record.SessionID)
 			}
 			delete(s.tools, pick.id)
 		default:
@@ -1376,7 +1373,6 @@ func (s *Store) applyEvictionsLocked(picks []evictionCandidate) {
 			gone[pick.id] = struct{}{}
 		}
 	}
-	s.forgetOrderLocked()
 	if !eventsGone {
 		return
 	}
@@ -1404,25 +1400,29 @@ func (s *Store) evictSessionsLocked() {
 
 // dropSessionLocked forgets a session and every record it owns.
 func (s *Store) dropSessionLocked(sessionID string) {
-	s.dropProjectionLocked()
+	delete(s.proj, sessionID)
+	delete(s.staleSessions, sessionID)
 	delete(s.sessions, sessionID)
 	s.sessionOrder.delete(sessionID)
 	delete(s.notices, sessionID)
 	for id := range s.requestsBySession[sessionID] {
 		if held, ok := s.requests[id]; ok {
 			s.forgetCallLocked(held.record)
+			s.requestOrder.forget(held)
 			delete(s.requests, id)
 		}
 	}
 	delete(s.requestsBySession, sessionID)
 	for id := range s.toolsBySession[sessionID] {
-		delete(s.tools, id)
+		if held, ok := s.tools[id]; ok {
+			s.toolOrder.forget(held)
+			delete(s.tools, id)
+		}
 	}
 	delete(s.toolsBySession, sessionID)
-	s.forgetOrderLocked()
 }
 
-// dropProjectionLocked discards the projection, for a write that removes records from it.
+// dropProjectionLocked discards the projection, for a write that moves records inside it.
 func (s *Store) dropProjectionLocked() {
 	s.proj, s.staleSessions = nil, nil
 }
@@ -1843,6 +1843,7 @@ func (s *Store) AddRequest(record shared.RequestRecord, content *ContentPair) {
 	if agent.model == nil {
 		agent.model = strPtr(merged.Model)
 	}
+	s.evictSessionsLocked()
 	s.evictRecordsLocked(append(restored, evictionPin{source: 0, id: merged.ID}))
 	change := Change{
 		Sessions: true,
@@ -1883,6 +1884,7 @@ func (s *Store) AddToolCall(record shared.ToolCallRecord) {
 	}
 	s.storeToolLocked(merged)
 	s.touchLocked(merged.SessionID, merged.StartedAt)
+	s.evictSessionsLocked()
 	s.evictRecordsLocked([]evictionPin{{source: 1, id: merged.ID}})
 	change := Change{
 		Sessions: true,
