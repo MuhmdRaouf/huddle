@@ -636,11 +636,6 @@ func (w *Watcher) Watch(ch *channel.Channel) {
 	})
 }
 
-// WatchHub watches every channel the hub answers.
-func (w *Watcher) WatchHub(h *channel.Hub) {
-	h.OnGet(func(ch *channel.Channel) { w.Watch(ch) })
-}
-
 // ── routes ───────────────────────────────────────────────────────────────────
 
 // OKAnswer confirms a route's action.

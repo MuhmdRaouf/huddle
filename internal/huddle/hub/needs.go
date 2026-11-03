@@ -1,7 +1,8 @@
 // The needs-you items: what waits on the owner. A question item grows from a
 // Notification that asks the owner, a turn item from a Stop nobody opened since the session's
 // last prompt, a blocked item from a channel task that waits on a task the owner owns (kept in
-// step by SyncBlocked). An item's state moves through snooze and dismiss; the session's state
+// step by SyncBlocked), a reply item from a session's answer to an ask the owner sent
+// (AddReplyItem). An item's state moves through snooze and dismiss; the session's state
 // reads needs-you while one of its items is open.
 package hub
 
@@ -23,7 +24,11 @@ const (
 	KindQuestion = "question"
 	KindTurn     = "turn"
 	KindBlocked  = "blocked"
+	KindReply    = "reply"
 )
+
+// replySummaryUnits is the length a reply item's summary is cut to, in UTF-16 units.
+const replySummaryUnits = 120
 
 // The item states. open is the waiting state; a snooze keeps it open behind a time; the other
 // three are terminal.
@@ -167,6 +172,15 @@ func (d *DB) addItem(ctx context.Context, in ItemIn, at string) error {
 		"INSERT INTO items (key, session_id, kind, summary, created_at, state) VALUES (?, ?, ?, ?, ?, 'open') "+
 			"ON CONFLICT(key) DO NOTHING",
 		in.Key, in.SessionID, in.Kind, in.Summary, at)
+}
+
+// AddReplyItem records the item for one session's reply to an ask the owner sent: the first 120
+// characters of the reply on one line. The key names the reply's event, so a replay grows
+// nothing and never reopens what the owner dismissed.
+func (d *DB) AddReplyItem(ctx context.Context, in ItemIn, at string) error {
+	in.Kind = KindReply
+	in.Summary = jsscalar.UTF16Slice(cleanSummary(in.Summary), 0, replySummaryUnits)
+	return d.addItem(ctx, in, at)
 }
 
 // lastPromptAt answers when the session's newest UserPromptSubmit arrived.

@@ -687,7 +687,7 @@ func Serve(ctx context.Context, o Options) error {
 	s.mcp.afterOp = s.overhear
 	s.setHosts()
 	s.watcher = extras.NewWatcher(s.notify)
-	s.watcher.WatchHub(s.hub)
+	s.watchChannels(pidCtx)
 	// every route, radar's included, sits behind the request guards
 	var handler http.HandlerFunc = s.serveHTTP
 	if s.registry != nil {

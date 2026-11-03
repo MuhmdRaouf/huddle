@@ -723,17 +723,18 @@ func TestExtrasRadar(t *testing.T) {
 	})
 }
 
-// Every channel the hub answers is watched, the first time it is answered.
+// A watched channel notifies once per event, however often it is watched.
 func TestWatcher(t *testing.T) {
-	t.Run("every channel the hub answers is watched", func(t *testing.T) {
+	t.Run("a channel is watched once", func(t *testing.T) {
 		notifier, log := notifyLog(t)
 		hub := channel.NewHub(t.TempDir(), true)
 		t.Cleanup(func() { _ = hub.Close(bg) })
-		NewWatcher(notifier).WatchHub(hub)
+		watcher := NewWatcher(notifier)
 		ch, err := hub.Get(bg, "shop")
 		if err != nil {
 			t.Fatal(err)
 		}
+		watcher.Watch(ch)
 		if _, err := ch.Join(bg, "web", channel.JoinOpts{}); err != nil {
 			t.Fatal(err)
 		}
@@ -751,10 +752,12 @@ func TestWatcher(t *testing.T) {
 			t.Errorf("notes after the other live messages = %d, want still one", got)
 		}
 		if again, err := hub.Get(bg, "shop"); err != nil || again != ch {
-			t.Errorf("a second get = %v (%v), want the same watched channel", again, err)
+			t.Errorf("a second get = %v (%v), want the same channel", again, err)
+		} else {
+			watcher.Watch(again)
 		}
 		if got := len(readNotes(t, log)); got != 1 {
-			t.Errorf("notes after a second get = %d, want the watch to stay one", got)
+			t.Errorf("notes after a second watch = %d, want the watch to stay one", got)
 		}
 	})
 }

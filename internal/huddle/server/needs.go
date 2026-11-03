@@ -1,7 +1,8 @@
 // The needs-you and answer routes: the items list with the channels'
 // blocked tasks kept in step, the owner's answer and send queueing one headed message per
 // session, delivery through a channel push while the session's bridge acks one and through the
-// next prompt otherwise, and pause, resume, snooze and dismiss over the channels' own controls.
+// next prompt otherwise, the reply items that a session's answer to an owner's ask grows as the
+// channel appends it, and pause, resume, snooze and dismiss over the channels' own controls.
 package server
 
 import (
@@ -10,6 +11,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/MuhmdRaouf/huddle/internal/huddle/auth"
@@ -415,6 +417,56 @@ func (s *server) syncBlocked(ctx context.Context) error {
 		}
 	}
 	return s.registry.SyncBlocked(ctx, in, jsscalar.ISOTime(s.now()))
+}
+
+// watchChannels subscribes the hub to every channel it opens, once per opened channel: the
+// channel watcher's notifications, and the reply items. Both ride the channel's own live feed, so
+// nothing scans.
+func (s *server) watchChannels(ctx context.Context) {
+	var mu sync.Mutex
+	watched := map[string]*channel.Channel{}
+	s.hub.OnGet(func(ch *channel.Channel) {
+		if s.watcher != nil {
+			s.watcher.Watch(ch)
+		}
+		if s.registry == nil {
+			return
+		}
+		mu.Lock()
+		defer mu.Unlock()
+		if watched[ch.Name] == ch {
+			return
+		}
+		watched[ch.Name] = ch
+		ch.Subscribe(func(m channel.Live) {
+			if ev, ok := m.Data.(channel.Ev); ok && m.Type == "event" {
+				s.noteOwnerReply(ctx, ch.Name, ev)
+			}
+		})
+	})
+}
+
+// noteOwnerReply grows the reply item for one event when it is a session's reply to the owner:
+// the item belongs to the session behind the replying member, and its push goes out at once. A
+// member with no reporting session has nowhere for the owner to open it, so it grows none.
+func (s *server) noteOwnerReply(ctx context.Context, channelName string, ev channel.Ev) {
+	if ev.Topic != "reply" || ev.To == nil || *ev.To != channel.Owner || ev.Msg == nil {
+		return
+	}
+	session, err := s.registry.SessionOfMember(ctx, channelName, ev.From)
+	if err != nil || session == "" {
+		return
+	}
+	in := hub.ItemIn{
+		Key:       fmt.Sprintf("reply:%s:%d", channelName, ev.Seq),
+		SessionID: session,
+		Summary:   *ev.Msg,
+	}
+	if err := s.registry.AddReplyItem(ctx, in, jsscalar.ISOTime(s.now())); err != nil {
+		return
+	}
+	s.emitRegistrySession(ctx, session)
+	s.wakePushes()
 }
 
 // messageTextErr answers why a message's text is refused, or "" when it is not.
