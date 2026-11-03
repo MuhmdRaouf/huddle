@@ -265,26 +265,27 @@ func (d *DB) SessionSteppedUp(ctx context.Context, digest string, nowMS, windowM
 	return at > 0 && nowMS-at <= windowMS, nil
 }
 
-// StepUpFinish records one step-up: the credential's fresh signature counter (the same
-// clone-tripwire a sign-in keeps) and the session's new assertion moment, in one transaction.
-// A session that died between the check and the write answers false and nothing is written.
+// StepUpFinish records one step-up: the session's new assertion moment and the credential's fresh
+// signature counter (the same clone-tripwire a sign-in keeps), in one transaction. The session is
+// stamped first and the device row is written only when a live session took the stamp, so a
+// session that died between the check and the write answers false and nothing is written.
 func (d *DB) StepUpFinish(ctx context.Context, digest string, dev Device, atMS int64) (bool, error) {
 	stamped := false
 	err := d.st.Tx(ctx, func(ctx context.Context, q store.Q) error {
-		if err := q.Run(ctx, "UPDATE devices SET credential = ?, seen = ? WHERE name = ?",
-			string(dev.CredentialJSON), atMS, dev.Name); err != nil {
-			return err
-		}
 		if err := q.Run(ctx,
 			"UPDATE device_sessions SET stepup_at = ? WHERE digest = ? AND expires > ?",
 			atMS, digest, atMS); err != nil {
 			return err
 		}
 		changed, err := changesOf(ctx, q)
-		if err != nil {
+		if err != nil || !changed {
 			return err
 		}
-		stamped = changed
+		if err := q.Run(ctx, "UPDATE devices SET credential = ?, seen = ? WHERE name = ?",
+			string(dev.CredentialJSON), atMS, dev.Name); err != nil {
+			return err
+		}
+		stamped = true
 		return nil
 	})
 	return stamped, err

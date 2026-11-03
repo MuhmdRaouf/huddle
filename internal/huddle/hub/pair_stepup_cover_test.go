@@ -6,6 +6,7 @@ package hub
 
 import (
 	"context"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -110,6 +111,64 @@ func TestStepUpFinishAnswersFalseForASessionThatIsGone(t *testing.T) {
 	if stamped, err := db.StepUpFinish(ctx, session, fresh, pairNow.Add(13*time.Hour).UnixMilli()); err != nil || stamped {
 		t.Errorf("an expired session = (%v, %v), want not stamped", stamped, err)
 	}
+}
+
+// TestStepUpFinishWritesNothingForADeadSession: a step-up whose session is expired, removed, or
+// was never there answers false and leaves the device row, its credential and its seen moment,
+// exactly as it was, so a session that dies between the check and the write moves no counter.
+func TestStepUpFinishWritesNothingForADeadSession(t *testing.T) {
+	ctx := context.Background()
+	expired := pairNow.Add(13 * time.Hour).UnixMilli()
+	live := pairNow.Add(time.Hour).UnixMilli()
+	for _, c := range []struct {
+		name   string
+		digest func(session string) string
+		kill   func(t *testing.T, db *DB, session string)
+		at     int64
+	}{
+		{"an expired session", func(s string) string { return s }, func(*testing.T, *DB, string) {}, expired},
+		{"a session at its exact expiry", func(s string) string { return s }, func(*testing.T, *DB, string) {},
+			pairNow.Add(12 * time.Hour).UnixMilli()},
+		{"a digest no session holds", func(string) string { return "no-session" }, func(*testing.T, *DB, string) {}, live},
+		{"a removed session", func(s string) string { return s }, func(t *testing.T, db *DB, s string) {
+			t.Helper()
+			if gone, err := db.SessionRemove(ctx, s); err != nil || !gone {
+				t.Fatalf("SessionRemove = (%v, %v)", gone, err)
+			}
+		}, live},
+		{"every session removed", func(s string) string { return s }, func(t *testing.T, db *DB, _ string) {
+			t.Helper()
+			if gone, err := db.SessionsRemoveAll(ctx); err != nil || gone != 1 {
+				t.Fatalf("SessionsRemoveAll = (%d, %v)", gone, err)
+			}
+		}, live},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			db := openForTest(t)
+			session := pairedDevice(t, db, "watch")
+			c.kill(t, db, session)
+			before := deviceRow(t, db, "watch")
+
+			fresh := Device{Name: "watch", CredentialJSON: []byte(`{"counter":99}`)}
+			stamped, err := db.StepUpFinish(ctx, c.digest(session), fresh, c.at)
+			if err != nil || stamped {
+				t.Fatalf("StepUpFinish = (%v, %v), want not stamped", stamped, err)
+			}
+			if after := deviceRow(t, db, "watch"); !reflect.DeepEqual(before, after) {
+				t.Errorf("the device row = %v, want it untouched: %v", after, before)
+			}
+		})
+	}
+}
+
+// deviceRow reads one device's whole row as the table holds it.
+func deviceRow(t *testing.T, db *DB, name string) map[string]any {
+	t.Helper()
+	row, err := db.st.Get(context.Background(), "SELECT * FROM devices WHERE name = ?", name)
+	if err != nil || row == nil {
+		t.Fatalf("read the %s row = (%v, %v)", name, row, err)
+	}
+	return row
 }
 
 // TestAnyDeviceEndsTheSoloWaiverOnceADeviceIsPaired: no device is paired in a fresh home, one is
