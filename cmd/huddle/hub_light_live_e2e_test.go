@@ -11,11 +11,13 @@ package main
 import (
 	"bufio"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
 	"runtime"
+	"sync"
 	"testing"
 	"time"
 
@@ -93,13 +95,15 @@ func seedHubLightLiveTemplate(t *testing.T, root string) {
 			t.Fatalf("make %s: %v", dir, err)
 		}
 	}
-	var spool hubLightSpool
 	now := time.Now()
 	lineStep := time.Duration(int64(6*time.Hour/time.Millisecond)/int64(liveSessionLines)) * time.Millisecond
-	for s := 0; s < liveActiveSessions; s++ {
+	// the transcripts are written in parallel; each busy session collects its own route lines,
+	// and the lists merge in session order so the spool is the same on every run
+	routes := make([]hubLightSpool, liveActiveSessions)
+	busy := func(s int) error {
 		session := fmt.Sprintf("light-busy-%02d", s)
 		first := now.Add(-6 * time.Hour).Add(time.Duration(s) * time.Second)
-		writeHubLightTranscript(t, filepath.Join(transcripts, session+".jsonl"), func(w *bufio.Writer) error {
+		return writeHubLightTranscriptFile(filepath.Join(transcripts, session+".jsonl"), func(w *bufio.Writer) error {
 			if s%liveBareEvery != 0 {
 				if err := writeHubLightUserLine(w, session, first.Add(-time.Second)); err != nil {
 					return err
@@ -120,12 +124,29 @@ func seedHubLightLiveTemplate(t *testing.T, root string) {
 					if err != nil {
 						return err
 					}
-					spool.add(at, route)
+					routes[s].add(at, route)
 				}
 			}
 			return nil
 		})
 	}
+	stale := func(s int) error {
+		session := fmt.Sprintf("light-stale-%04d", s)
+		at := now.Add(-time.Duration(48+s%216) * time.Hour)
+		return writeHubLightTranscriptFile(filepath.Join(transcripts, session+".jsonl"), func(w *bufio.Writer) error {
+			if s%liveBareEvery == 0 {
+				return writeHubLightAnswer(w, session, at, hubLightModels[s%len(hubLightModels)])
+			}
+			return writeHubLightTurn(w, session, at, hubLightModels[s%len(hubLightModels)])
+		})
+	}
+	var transcriptsDone sync.WaitGroup
+	var busyErr, staleErr error
+	transcriptsDone.Add(2)
+	go func() { defer transcriptsDone.Done(); busyErr = forEachBounded(liveActiveSessions, busy) }()
+	go func() { defer transcriptsDone.Done(); staleErr = forEachBounded(liveStaleSessions, stale) }()
+
+	var tools hubLightSpool
 	toolStep := time.Duration(int64(6*time.Hour/time.Millisecond)/int64(liveWindowTools)) * time.Millisecond
 	for n := 0; n < liveWindowTools; n++ {
 		at := now.Add(-6 * time.Hour).Add(time.Duration(n) * toolStep)
@@ -139,26 +160,70 @@ func seedHubLightLiveTemplate(t *testing.T, root string) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		spool.add(at, pre)
-		spool.add(at.Add(time.Second), post)
+		tools.add(at, pre)
+		tools.add(at.Add(time.Second), post)
 	}
+	transcriptsDone.Wait()
+	if err := errors.Join(busyErr, staleErr); err != nil {
+		t.Fatalf("write the transcripts: %v", err)
+	}
+	var spool hubLightSpool
+	for _, session := range routes {
+		spool.lines = append(spool.lines, session.lines...)
+	}
+	spool.lines = append(spool.lines, tools.lines...)
 	spool.write(t, paths.SpoolDir(t.Context(), domain.EnvLookup{
 		"RADAR_HOME": filepath.Join(root, "hub-radar"),
 	}))
-	for s := 0; s < liveStaleSessions; s++ {
-		session := fmt.Sprintf("light-stale-%04d", s)
-		at := now.Add(-time.Duration(48+s%216) * time.Hour)
-		writeHubLightTranscript(t, filepath.Join(transcripts, session+".jsonl"), func(w *bufio.Writer) error {
-			if s%liveBareEvery == 0 {
-				return writeHubLightAnswer(w, session, at, hubLightModels[s%len(hubLightModels)])
-			}
-			return writeHubLightTurn(w, session, at, hubLightModels[s%len(hubLightModels)])
-		})
-	}
 	if spent := time.Since(started); spent >= hubLightSeedBudget {
 		t.Fatalf("the seed took %s, want under %s", spent.Round(time.Millisecond), hubLightSeedBudget)
 	}
 	t.Logf("hub light: the live-size template seeded in %s", time.Since(started).Round(time.Millisecond))
+}
+
+// forEachBounded runs fn for 0..n-1 on as many goroutines as the process has threads and
+// answers every error it returned.
+func forEachBounded(n int, fn func(i int) error) error {
+	var (
+		wg   sync.WaitGroup
+		mu   sync.Mutex
+		errs []error
+	)
+	slots := make(chan struct{}, runtime.GOMAXPROCS(0))
+	for i := 0; i < n; i++ {
+		slots <- struct{}{}
+		wg.Add(1)
+		go func() {
+			defer func() { <-slots; wg.Done() }()
+			if err := fn(i); err != nil {
+				mu.Lock()
+				errs = append(errs, err)
+				mu.Unlock()
+			}
+		}()
+	}
+	wg.Wait()
+	return errors.Join(errs...)
+}
+
+// writeHubLightTranscriptFile creates one transcript file and fills it through a buffer that
+// holds the whole file, so it reaches the disk in one write. Unlike writeHubLightTranscript it
+// answers its error, for a goroutine that must not fail the test itself.
+func writeHubLightTranscriptFile(path string, fill func(w *bufio.Writer) error) error {
+	file, err := os.Create(path)
+	if err != nil {
+		return err
+	}
+	w := bufio.NewWriterSize(file, 256<<10)
+	if err := fill(w); err != nil {
+		file.Close()
+		return fmt.Errorf("write %s: %w", path, err)
+	}
+	if err := w.Flush(); err != nil {
+		file.Close()
+		return fmt.Errorf("flush %s: %w", path, err)
+	}
+	return file.Close()
 }
 
 // writeHubLightUserLine opens a session's transcript with the user line that carries its
