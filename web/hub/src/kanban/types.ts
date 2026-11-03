@@ -26,6 +26,16 @@ export type {
 
 export type FieldValue = string | string[] | boolean | null;
 
+/** One board of a repo from `/b/<key>/boards`: the cards in progress, and the cards in review or blocked. */
+export type BoardSummary = { name: string; archived: boolean; inProgress: number; waiting: number };
+
+export type BoardsAnswer = { boards: BoardSummary[] };
+
+/** One card a `/b/<key>/search?q=` matched; `board` is the card's cluster. */
+export type SearchHit = { id: string; title: string; column: string; board: string; archived: boolean };
+
+export type SearchAnswer = { hits: SearchHit[] };
+
 /** The export payload: a static board reads its snapshot and its ticket bodies from window.__KANBAN__. */
 export type StaticBoard = { snapshot: Snapshot; bodies: Record<string, Ticket> };
 

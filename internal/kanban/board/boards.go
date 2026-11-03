@@ -25,9 +25,9 @@ type boardsFile struct {
 
 func (b Board) boardsPath() string { return filepath.Join(b.Root, "BOARDS") }
 
-// recordedBoards answers the BOARDS record sorted by name. A missing or
+// RecordedBoards answers the BOARDS record sorted by name. A missing or
 // unreadable BOARDS reads as none, the way ClosedFeatures treats FEATURES.
-func (b Board) recordedBoards() []BoardEntry {
+func (b Board) RecordedBoards() []BoardEntry {
 	data, err := b.fs().readFile(b.boardsPath())
 	if err != nil {
 		return nil
@@ -45,7 +45,7 @@ func (b Board) recordedBoards() []BoardEntry {
 // a card's cluster names a board even when no BOARDS entry exists for it. A
 // .agents/tickets/<feature>/ folder names no board.
 func (b Board) Boards() []BoardEntry {
-	boards := b.recordedBoards()
+	boards := b.RecordedBoards()
 	known := map[string]bool{}
 	for _, e := range boards {
 		known[e.Name] = true
@@ -89,7 +89,7 @@ func (b Board) createBoard(ctx context.Context, a Args) ([]string, error) {
 	if !clusterRe.MatchString(name) {
 		return nil, refused("board name '%s': one short lowercase word or two (letters and digits)", strings.TrimSpace(a.ID))
 	}
-	recorded := b.recordedBoards()
+	recorded := b.RecordedBoards()
 	if slices.ContainsFunc(recorded, func(e BoardEntry) bool { return e.Name == name }) {
 		return []string{fmt.Sprintf("board %s already exists", name)}, nil
 	}

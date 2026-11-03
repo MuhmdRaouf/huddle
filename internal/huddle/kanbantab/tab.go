@@ -83,6 +83,8 @@ type Tab struct {
 	health    HealthReport
 	// archive runs the due archive on one board; Mount sets Board.ArchiveDue
 	archive func(ctx context.Context, b board.Board) ([]string, error)
+	// readCards reads every card file of one board for a search; Mount sets readCards
+	readCards func(b board.Board) []cardText
 
 	mu       sync.Mutex
 	apps     map[string]*entry
@@ -117,6 +119,7 @@ func Mount(ctx context.Context, opts Options) *Tab {
 		readRelay: opts.ReadRelay,
 		health:    opts.Health,
 		archive:   func(ctx context.Context, b board.Board) ([]string, error) { return b.ArchiveDue(ctx) },
+		readCards: readCards,
 		apps:      map[string]*entry{},
 		origins:   map[string]string{},
 	}
@@ -161,8 +164,9 @@ func (t *Tab) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 // serveBoard hands one request to its board's app: the key decides the board,
-// the rest of the path is the app's own to answer. The slash after the key is
-// the cut's separator, so the app's path gains its own leading slash back. A
+// the rest of the path is the app's own to answer, except the flow, feature,
+// boards and search routes, which the tab answers itself. The slash after the
+// key is the cut's separator, so the app's path gains its own leading slash back. A
 // GET read under the board's api/ asks the ReadRelay first: a board another
 // huddle hosts is that huddle's to answer, its event stream included, and
 // anything the relay does not take serves from the local app.
@@ -178,6 +182,14 @@ func (t *Tab) serveBoard(w http.ResponseWriter, r *http.Request, tail string) {
 	}
 	if rest == "feature" {
 		t.featureRoute(w, r, key)
+		return
+	}
+	if rest == "boards" {
+		t.boardsRoute(w, r, key)
+		return
+	}
+	if rest == "search" {
+		t.searchRoute(w, r, key)
 		return
 	}
 	if t.readRelay != nil && relayedRead(r.Method, rest) {
@@ -249,10 +261,19 @@ func writeRelayedRead(w http.ResponseWriter, response *http.Response) {
 // the watch and the reads see its rows, not the folder the migration archived
 // away.
 func (t *Tab) appFor(ctx context.Context, key string) *server.App {
+	if e := t.entryFor(ctx, key); e != nil {
+		return e.app
+	}
+	return nil
+}
+
+// entryFor answers the mounted board a key names, mounting it on first use; nil
+// when no board answers the key. appFor's rules hold.
+func (t *Tab) entryFor(ctx context.Context, key string) *entry {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	if e, ok := t.apps[key]; ok {
-		return e.app
+		return e
 	}
 	for _, row := range t.boardsOf(ctx) {
 		if row.Key != key {
@@ -268,7 +289,7 @@ func (t *Tab) appFor(ctx context.Context, key string) *server.App {
 		app.Run(runCtx)
 		e := &entry{app: app, board: b, cancel: cancel, close: closeBoard}
 		t.apps[key] = e
-		return e.app
+		return e
 	}
 	return nil
 }
