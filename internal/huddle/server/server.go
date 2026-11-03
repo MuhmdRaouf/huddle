@@ -1370,6 +1370,8 @@ func (s *server) route(w http.ResponseWriter, r *http.Request, path string, quer
 	// over them, and the owner's mute and forget over the rules
 	case credentialed && path == "/api/insights" && r.Method == http.MethodGet:
 		return s.insightsRoute(w, r)
+	case credentialed && path == "/api/insights/preview" && r.Method == http.MethodGet:
+		return s.insightsPreviewRoute(w, r, me)
 	case credentialed && path == "/api/insights/settings" && (r.Method == http.MethodGet || r.Method == http.MethodPut):
 		return s.insightsSettingsRoute(w, r, me)
 	case credentialed && path == "/api/insights/mute" && r.Method == http.MethodPost:

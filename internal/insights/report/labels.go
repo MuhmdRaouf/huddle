@@ -7,8 +7,8 @@ import (
 
 // LabelEntry is one row of the local label map: a short label and what it stands for.
 type LabelEntry struct {
-	Label string
-	Value string // a repo root, or a session id
+	Label string `json:"label"`
+	Value string `json:"value"` // a repo root, or a session id
 }
 
 // Labels gives repo paths and session ids short names ("repo-1", "session-2") before anything
