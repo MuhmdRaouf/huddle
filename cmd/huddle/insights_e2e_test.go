@@ -35,7 +35,14 @@ const insightsSentinel = "SENTINEL-0x42"
 type insightsLane struct {
 	mu     sync.Mutex
 	bodies [][]byte
+	answer string // the model's text
 }
+
+// insightsReport is a valid five-section answer whose tip quotes the window's 7 days, a number
+// every payload holds.
+const insightsReport = "## Where the tokens went\nOne session took most of them.\nTip: the window is 7 days, so split the busiest session.\n" +
+	"## What blocked you\nNothing stood out.\n## Waste\nNone.\n## What went well\nRequests were fast.\n" +
+	"## Change since the last run\nThere is no earlier run.\n"
 
 func (l *insightsLane) calls() int {
 	l.mu.Lock()
@@ -63,7 +70,7 @@ type insightsWorld struct {
 
 func newInsightsWorld(t *testing.T, enabled ...string) *insightsWorld {
 	t.Helper()
-	lane := &insightsLane{}
+	lane := &insightsLane{answer: insightsReport}
 	port := ports.Free(t)
 	listener, err := net.Listen("tcp", "127.0.0.1:"+strconv.Itoa(port))
 	if err != nil {
@@ -73,9 +80,14 @@ func newInsightsWorld(t *testing.T, enabled ...string) *insightsWorld {
 		body, _ := io.ReadAll(r.Body)
 		lane.mu.Lock()
 		lane.bodies = append(lane.bodies, body)
+		answer := lane.answer
 		lane.mu.Unlock()
+		reply, _ := json.Marshal(map[string]any{
+			"content": []map[string]string{{"type": "text", "text": answer}},
+			"usage":   map[string]int{"input_tokens": 4321, "output_tokens": 123},
+		})
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = io.WriteString(w, `{"content":[{"type":"text","text":"report text"}],"usage":{"input_tokens":4321,"output_tokens":123}}`)
+		_, _ = w.Write(reply)
 	}))
 	server.Listener = listener
 	server.Start()
@@ -222,9 +234,9 @@ func TestE2EInsightsRunUsesTheLane(t *testing.T) {
 			t.Errorf("model = %q, want GLM's default glm-5.3", req.Model)
 		}
 		runs := w.runs(t)
-		if len(runs) != 1 || runs[0].Status != report.RunDone || runs[0].Answer != "report text" ||
-			runs[0].Provider != "zai" || runs[0].InputTokens != 4321 || runs[0].OutputTokens != 123 {
-			t.Errorf("runs = %+v, want one done run with the lane's answer and usage", runs)
+		if len(runs) != 1 || runs[0].Status != report.RunDone || runs[0].Report == nil || len(runs[0].Report.Sections) != 5 ||
+			len(runs[0].Report.Tips) != 1 || runs[0].Provider != "zai" || runs[0].InputTokens != 4321 || runs[0].OutputTokens != 123 {
+			t.Errorf("runs = %+v, want one done run with the five-section report and the lane's usage", runs)
 		}
 	})
 
@@ -258,6 +270,22 @@ func TestE2EInsightsRunUsesTheLane(t *testing.T) {
 		}
 		if err := json.Unmarshal([]byte(req.Messages[0].Content), &payload); err != nil || payload.Totals.Sessions != sessions || len(payload.Days) != 6 {
 			t.Errorf("the payload has %d sessions and %d days (%v), want all %d in the totals and 6 days", payload.Totals.Sessions, len(payload.Days), err, sessions)
+		}
+	})
+
+	t.Run("an answer that is not a report fails the run with one reason", func(t *testing.T) {
+		w := newInsightsWorld(t, "zai")
+		w.seedFew(t)
+		w.lane.mu.Lock()
+		w.lane.answer = "I could not read the data."
+		w.lane.mu.Unlock()
+		code, _, errOut := argvRun(t, w.env, t.TempDir(), "insights", "run")
+		if code == 0 || !strings.Contains(errOut, "not a valid report") {
+			t.Errorf("exit %d, stderr %q; want a failure that says the answer is not a valid report", code, errOut)
+		}
+		runs := w.runs(t)
+		if len(runs) != 1 || runs[0].Status != report.RunFailed || runs[0].Report != nil || !strings.Contains(runs[0].Error, "not a valid report") {
+			t.Errorf("runs = %+v, want one failed run with the reason and no report", runs)
 		}
 	})
 

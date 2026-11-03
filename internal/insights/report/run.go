@@ -15,14 +15,14 @@ const WindowDays = 7
 // Instructions is the system text of a run's request. It fits instructionReserve.
 const Instructions = `You read the numbers of one developer's AI coding sessions: tokens, cost, request timing, tool calls, waits for the owner and waste. Sessions and repos appear as labels.
 
-Write a short report in plain words with exactly five sections, in this order:
-1. Where the tokens went
-2. What blocked you
-3. Waste
-4. What went well
-5. Change since the last run
+Write a short report in plain words as Markdown. It has exactly five sections, in this order, each starting with a heading line spelled exactly like this:
+## Where the tokens went
+## What blocked you
+## Waste
+## What went well
+## Change since the last run
 
-Give at most three tips in all. Tie each tip to a number from the data and quote the number. If the data holds a "days" list, the window was folded to fit: the totals, models and tools cover the whole window, and each day lists its busiest sessions. If the data holds no earlier run, say so in section 5.`
+Write nothing before the first heading and no other headings. Give at most three tips in all. Write each tip on its own line that starts with "Tip:" and quote a number from the data in it, written as the data writes it (1200 or 0.0021, not 1.2k or 0.002). If the data holds a "days" list, the window was folded to fit: the totals, models and tools cover the whole window, and each day lists its busiest sessions. If the data holds no earlier run, say so in section 5.`
 
 // Reply is a lane's answer: the model's text and the usage the lane reported.
 type Reply struct {
@@ -77,7 +77,8 @@ type ExecuteOptions struct {
 }
 
 // Execute builds the payload the preview shows, asks the lane once and keeps the run in the
-// store: running while it reads and asks, then done with the answer or failed with the reason.
+// store: running while it reads and asks, then done with the report the answer validates to, or
+// failed with the reason, which includes an answer that is not a valid report.
 // It refuses before any call when no provider is enabled or the model is a Claude model.
 func Execute(ctx context.Context, o ExecuteOptions) (Run, error) {
 	run := Run{ID: o.ID, Status: RunRunning, Step: StepReading, StartedAt: o.Now()}
@@ -121,6 +122,11 @@ func work(ctx context.Context, o ExecuteOptions, run *Run) error {
 	if err != nil {
 		return err
 	}
-	run.Answer, run.InputTokens, run.OutputTokens = reply.Text, reply.InputTokens, reply.OutputTokens
+	run.InputTokens, run.OutputTokens = reply.InputTokens, reply.OutputTokens
+	parsed, err := Validate(reply.Text, payload)
+	if err != nil {
+		return err
+	}
+	run.Report = &parsed
 	return nil
 }

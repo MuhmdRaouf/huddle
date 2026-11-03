@@ -34,7 +34,7 @@ const (
 )
 
 // Run is one insights run as its file keeps it: who it asked, what it sent, how it ended, and
-// the model's answer. It stays on this machine.
+// the report the model's answer became. It stays on this machine.
 type Run struct {
 	ID           string     `json:"id"`
 	Status       RunStatus  `json:"status"`
@@ -46,7 +46,7 @@ type Run struct {
 	FinishedAt   time.Time  `json:"finishedAt,omitzero"`
 	InputTokens  int64      `json:"inputTokens,omitempty"`
 	OutputTokens int64      `json:"outputTokens,omitempty"`
-	Answer       string     `json:"answer,omitempty"`
+	Report       *Report    `json:"report,omitempty"`
 	Error        string     `json:"error,omitempty"`
 }
 

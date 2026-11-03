@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -36,6 +37,13 @@ func (l *fakeLane) Ask(_ context.Context, model, system, user string) (Reply, er
 	return l.reply, l.err
 }
 
+// validReport is an answer that passes validation against any payload: every payload holds the
+// window's 7 days.
+var validReport = answer(
+	"The tokens went to a few sessions.\nTip: the window is 7 days, so split the busiest session.\n",
+	prose, prose, prose, prose,
+)
+
 var zaiChoices = []ProviderChoice{{Provider: "zai", Name: "GLM", Models: []string{"glm-5.3", "glm-5.3-flash"}}}
 
 func executeOptions(t *testing.T, lane *fakeLane) ExecuteOptions {
@@ -49,7 +57,7 @@ func executeOptions(t *testing.T, lane *fakeLane) ExecuteOptions {
 }
 
 func TestExecuteAsksTheLaneOnceWithThePayloadThePreviewSizes(t *testing.T) {
-	lane := &fakeLane{reply: Reply{Text: "1. Where the tokens went", InputTokens: 321, OutputTokens: 45}}
+	lane := &fakeLane{reply: Reply{Text: validReport, InputTokens: 321, OutputTokens: 45}}
 	o := executeOptions(t, lane)
 
 	run, err := Execute(context.Background(), o)
@@ -76,12 +84,16 @@ func TestExecuteAsksTheLaneOnceWithThePayloadThePreviewSizes(t *testing.T) {
 	if lane.during.Status != RunRunning || lane.during.Step != StepAsking {
 		t.Errorf("while asking the run says %s/%s, want %s/%s", lane.during.Status, lane.during.Step, RunRunning, StepAsking)
 	}
+	parsed, err := Validate(validReport, []byte(samplePayload))
+	if err != nil {
+		t.Fatalf("the test's report does not validate: %v", err)
+	}
 	want := Run{
 		ID: o.ID, Status: RunDone, Provider: "zai", Model: "glm-5.3", Window: structure.Window, StartedAt: t0, FinishedAt: t0,
-		InputTokens: 321, OutputTokens: 45, Answer: "1. Where the tokens went",
+		InputTokens: 321, OutputTokens: 45, Report: &parsed,
 	}
 	stored, err := o.Store.Load(o.ID)
-	if err != nil || run != want || stored != want {
+	if err != nil || !reflect.DeepEqual(run, want) || !reflect.DeepEqual(stored, want) {
 		t.Errorf("run = %+v, stored = %+v (%v), want %+v", run, stored, err, want)
 	}
 }
@@ -125,8 +137,34 @@ func TestExecuteSavesAFailedRunWhenTheLaneFails(t *testing.T) {
 		t.Fatalf("Execute = %v, want the lane's error", err)
 	}
 	stored, loadErr := o.Store.Load(o.ID)
-	if loadErr != nil || stored.Status != RunFailed || !strings.Contains(stored.Error, "502") || stored.Answer != "" {
+	if loadErr != nil || stored.Status != RunFailed || !strings.Contains(stored.Error, "502") || stored.Report != nil {
 		t.Errorf("stored = %+v (%v), want a failed run with the lane's error and no answer", stored, loadErr)
+	}
+}
+
+func TestExecuteFailsTheRunOnAnInvalidAnswer(t *testing.T) {
+	cases := map[string]string{
+		"not a report":    "I could not read the data.",
+		"four tips":       answer("Tip: a, 7 days.\nTip: b, 7 days.\nTip: c, 7 days.\nTip: d, 7 days.\n", prose, prose, prose, prose),
+		"a tip no number": answer("Tip: use fewer tools.\n", prose, prose, prose, prose),
+	}
+	for name, text := range cases {
+		t.Run(name, func(t *testing.T) {
+			lane := &fakeLane{reply: Reply{Text: text, InputTokens: 321, OutputTokens: 45}}
+			o := executeOptions(t, lane)
+			run, err := Execute(context.Background(), o)
+			var invalid *InvalidReportError
+			if !errors.As(err, &invalid) {
+				t.Fatalf("Execute = %v, want an InvalidReportError", err)
+			}
+			stored, loadErr := o.Store.Load(o.ID)
+			if loadErr != nil || stored.Status != RunFailed || stored.Error != err.Error() || stored.Report != nil || strings.Contains(stored.Error, "\n") {
+				t.Errorf("stored = %+v (%v), want a failed run with the one-line reason and no report", stored, loadErr)
+			}
+			if run.Status != RunFailed || lane.calls != 1 {
+				t.Errorf("run status %s after %d lane calls, want failed after 1", run.Status, lane.calls)
+			}
+		})
 	}
 }
 

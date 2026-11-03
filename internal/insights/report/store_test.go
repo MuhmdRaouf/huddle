@@ -11,7 +11,7 @@ import (
 func TestRunStoreKeepsPrivateFilesThatListNewestFirst(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "insights", "runs")
 	store := NewRunStore(dir)
-	older := Run{ID: "20261101T100000Z-aaaa", Status: RunDone, Provider: "zai", Model: "glm-5.3", Answer: "ok", StartedAt: t0}
+	older := Run{ID: "20261101T100000Z-aaaa", Status: RunDone, Provider: "zai", Model: "glm-5.3", StartedAt: t0}
 	newer := Run{ID: "20261102T100000Z-bbbb", Status: RunRunning, Step: StepAsking, StartedAt: t0.Add(24 * time.Hour)}
 	for _, r := range []Run{older, newer} {
 		if err := store.Save(r); err != nil {
