@@ -31,6 +31,7 @@ shows every change on the live board within half a second.
 | See where things stand | `kanban status`, `kanban list [column]` | §Status and rundowns; `list` shows only the board this session is pinned to, `list --all` every board |
 | Read one ticket | `kanban show ID` | the whole file, with its column and badges |
 | Create a board (a feature) | `kanban board create NAME --actor A` | `kanban new --cluster NAME` is refused until the board exists |
+| Move a ticket to another board | `kanban board move ID NAME --actor A` | the ticket keeps its column, holder, owner session and log, and gains one log line; refused for an unknown or archived board |
 | Work on one board | `kanban board suggest --actor A`, then `kanban board use NAME --actor A` | §Pin the session to a board |
 | Write tickets | `kanban new ...`, then edit the body, `kanban lint` | `references/tickets.md` |
 | Make a ticket workable | `kanban promote ID --actor A` | refused until the ticket meets the bar |

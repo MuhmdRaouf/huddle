@@ -60,6 +60,9 @@ func flowCommands() map[string]func(ctx context.Context, b board.Board, req boar
 		"move": func(ctx context.Context, b board.Board, req board.FlowRequest) ([]string, error) {
 			return b.Move(ctx, board.Args{Actor: req.Actor, ID: req.ID, Note: req.Note, Column: req.Column})
 		},
+		"move-board": func(ctx context.Context, b board.Board, req board.FlowRequest) ([]string, error) {
+			return b.MoveToBoard(ctx, board.Args{Actor: req.Actor, ID: req.ID, Board: req.Board})
+		},
 		"log": func(ctx context.Context, b board.Board, req board.FlowRequest) ([]string, error) {
 			return b.Log(ctx, board.Args{Actor: req.Actor, ID: req.ID, Note: req.Note})
 		},

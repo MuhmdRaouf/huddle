@@ -30,6 +30,7 @@ usage: kanban <command> [flags]
   log ID                 append one entry to a ticket's Log section
   feature close|reopen FEATURE  close a merged feature (its cards leave every column and count) or reopen it
   board create NAME      register a board (a feature of this repo's store); cards name it with --cluster
+  board move ID NAME     move a ticket to another board: it keeps its column, holder and owner session
   board use NAME         pin this session to a board: new defaults --cluster to it, list shows only it
   board suggest          name the board the branch (or the work tree's directory) names
   list [COLUMN]          one line per ticket: badges and dependency states

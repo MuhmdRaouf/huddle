@@ -63,6 +63,8 @@ type Args struct {
 	On                                               []string
 	Force                                            bool
 	Checks, Merge                                    string
+	// Board is the board a card moves to, in MoveToBoard.
+	Board string
 	// Session is the id of the session running the command; pull stamps it as the card's owner
 	// when the card has none.
 	Session string

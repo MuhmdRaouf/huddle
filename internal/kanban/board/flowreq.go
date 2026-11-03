@@ -18,6 +18,8 @@ type FlowRequest struct {
 	On       []string `json:"on"`
 	Pairs    []string `json:"pairs"`
 	Force    bool     `json:"force"`
+	// Board is the board a move-board request moves the card to.
+	Board string `json:"board"`
 	// Session is the id of the session running the command, "" outside one.
 	Session string `json:"session"`
 }

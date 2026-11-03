@@ -21,6 +21,7 @@ var boardVerbs = map[string]boardVerb{
 	"create": {args: 1, run: func(ctx context.Context, _ World, b board.Board, actor string, args []string) ([]string, error) {
 		return b.CreateBoard(ctx, board.Args{Actor: actor, ID: args[0]})
 	}},
+	"move":    {args: 2, run: runBoardMove},
 	"use":     {args: 1, run: runBoardUse},
 	"suggest": {args: 0, run: runBoardSuggest},
 }

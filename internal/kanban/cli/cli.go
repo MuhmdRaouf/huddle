@@ -280,9 +280,9 @@ var commands = map[string]*command{
 	},
 	"board": {
 		word: "board", use: "board VERB NAME", min: 1, max: -1,
-		short: "create a board, pin this session to one, or ask which one the branch names (verbs: create, use, suggest)",
+		short: "create a board, pin this session to one, or ask which one the branch names (verbs: create, move, use, suggest)",
 		positionals: []positional{
-			{"VERB", "create registers the board, use pins this session to it, suggest names the board of the branch (no NAME)"},
+			{"VERB", "create registers the board, move ID NAME moves a ticket to it, use pins this session to it, suggest names the board of the branch (no NAME)"},
 			{"NAME", "the board's name, one short lowercase word or two (letters and digits)"},
 		},
 		defs: []flagDef{

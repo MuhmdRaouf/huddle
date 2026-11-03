@@ -336,3 +336,28 @@ func TestFlowPullStampsTheOwnerSessionOnlyOnACardWithNone(t *testing.T) {
 		}
 	}
 }
+
+// A move-board request changes the card's board and keeps its column; the board's refusal of
+// an unregistered target is 409.
+func TestFlowMoveBoardKeepsTheColumn(t *testing.T) {
+	home := t.TempDir()
+	repo := newRepo(t, home, "alpha")
+	writeTicket(t, repo, "review", "FLW-MB")
+	b := board.Board{Root: boardRoot(repo), Now: pinnedNow}
+	if _, err := b.CreateBoard(context.Background(), board.Args{Actor: "lead", ID: "billing"}); err != nil {
+		t.Fatalf("create the billing board: %v", err)
+	}
+	tab := Mount(context.Background(), Options{Roots: staticRoots(repo), Version: "test", Now: pinnedNow})
+	key := server.KeyOf(boardRoot(repo))
+
+	flow(t, tab, key, `{"command":"move-board","actor":"lead","id":"FLW-MB","board":"billing"}`,
+		"moved to board billing from kanban")
+	if col := columnOf(t, tab, key, "FLW-MB"); col != "review" {
+		t.Fatalf("FLW-MB sits in %s after the board move, want review", col)
+	}
+
+	status, out := flowBody(t, tab, key, `{"command":"move-board","actor":"lead","id":"FLW-MB","board":"nowhere"}`)
+	if status != http.StatusConflict || !strings.Contains(out, "create it with kanban board create nowhere") {
+		t.Fatalf("move to an unregistered board = %d %s, want 409 with the create hint", status, out)
+	}
+}
