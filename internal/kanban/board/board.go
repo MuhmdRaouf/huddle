@@ -63,6 +63,9 @@ type Args struct {
 	On                                               []string
 	Force                                            bool
 	Checks, Merge                                    string
+	// Session is the id of the session running the command; pull stamps it as the card's owner
+	// when the card has none.
+	Session string
 }
 
 // NewTicket carries the new command's flags; Type, Priority and Est default
@@ -72,6 +75,8 @@ type NewTicket struct {
 	Tags, DependsOn                                                []string
 	Expedite, Ready, Force                                         bool
 	BodyFile                                                       string
+	// Session is the id of the session creating the card; it becomes the card's owner.
+	Session string
 }
 
 func refused(format string, args ...any) *Refused {

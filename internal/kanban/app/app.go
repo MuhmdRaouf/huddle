@@ -140,6 +140,12 @@ func world(version string) cli.World {
 	w.HubFlow = func(ctx context.Context, key string, req board.FlowRequest) ([]string, string, bool) {
 		return hubFlow(ctx, w.Getenv, key, req)
 	}
+	w.PinGet = func(ctx context.Context, session string) string {
+		return readPin(ctx, w.Getenv, session)
+	}
+	w.PinSet = func(ctx context.Context, session, board string) error {
+		return writePin(ctx, w.Getenv, session, board)
+	}
 	w.HubBoard = func(ctx context.Context, key string) (string, bool) {
 		return hubBoard(ctx, w.Getenv, key)
 	}

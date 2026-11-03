@@ -273,6 +273,9 @@ func (b Board) pull(ctx context.Context, a Args) ([]string, error) {
 			text = setFieldPanicFree(text, "held_by", ticket.FormatList(append(held, actor)))
 		}
 		text = setFieldPanicFree(text, "claimed_at", b.stamp())
+		if v, ok := fieldOfText(text, "owner_session"); a.Session != "" && (!ok || strings.TrimSpace(v) == "") {
+			text = setFieldPanicFree(text, "owner_session", a.Session) // the first session to take or make a card owns it
+		}
 		if a.Branch != "" {
 			text = setFieldPanicFree(text, "branch", a.Branch)
 		}
@@ -993,6 +996,9 @@ func (b Board) new(ctx context.Context, n NewTicket) ([]string, error) {
 	}
 	text = setFieldPanicFree(text, "created_at", b.stamp())
 	text = setFieldPanicFree(text, "created_by", n.Actor)
+	if n.Session != "" {
+		text = setFieldPanicFree(text, "owner_session", n.Session)
+	}
 	if !n.Force && dest == "ready" {
 		if failures := b.barText(cid+".md", text, dest, ""); len(failures) > 0 {
 			return nil, barRefusal(cid, failures)

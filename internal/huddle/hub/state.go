@@ -125,6 +125,8 @@ type SessionRow struct {
 	Pid            int     `json:"pid,omitempty"`
 	Channel        string  `json:"channel,omitempty"`
 	Member         string  `json:"member,omitempty"`
+	// Board is the kanban board the session is pinned to; absent without a pin.
+	Board string `json:"board,omitempty"`
 	// Harness names the coding agent the session runs in when it is not Claude Code.
 	Harness     string `json:"harness,omitempty"`
 	LastEvent   string `json:"last_event"`
@@ -202,7 +204,7 @@ type SessionDetail struct {
 
 // sessionColumns is what a registry read selects, in the row's own order.
 const sessionColumns = `session_id, machine, project, branch, project_key, project_name, title, task, model, context_percent,
-                        cwd, pid, channel, member, harness, last_event, last_event_at, started_at, ended_at, opened_at`
+                        cwd, pid, channel, member, board, harness, last_event, last_event_at, started_at, ended_at, opened_at`
 
 // Sessions answers every registered session that passes the filter, newest activity first,
 // each with its state computed at now.
@@ -385,6 +387,7 @@ func (d *DB) rowOfSession(ctx context.Context, row store.Row, now time.Time, wai
 		Cwd:         textOfRow(row, "cwd"),
 		Channel:     textOfRow(row, "channel"),
 		Member:      textOfRow(row, "member"),
+		Board:       textOfRow(row, "board"),
 		Harness:     textOfRow(row, "harness"),
 		LastEvent:   textOfRow(row, "last_event"),
 		LastEventAt: textOfRow(row, "last_event_at"),

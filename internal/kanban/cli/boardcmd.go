@@ -13,14 +13,16 @@ import (
 // what it runs. A verb in its own file adds its row to boardVerbs.
 type boardVerb struct {
 	args int
-	run  func(ctx context.Context, b board.Board, actor string, args []string) ([]string, error)
+	run  func(ctx context.Context, w World, b board.Board, actor string, args []string) ([]string, error)
 }
 
 // boardVerbs is the board word's verb table.
 var boardVerbs = map[string]boardVerb{
-	"create": {args: 1, run: func(ctx context.Context, b board.Board, actor string, args []string) ([]string, error) {
+	"create": {args: 1, run: func(ctx context.Context, _ World, b board.Board, actor string, args []string) ([]string, error) {
 		return b.CreateBoard(ctx, board.Args{Actor: actor, ID: args[0]})
 	}},
+	"use":     {args: 1, run: runBoardUse},
+	"suggest": {args: 0, run: runBoardSuggest},
 }
 
 // boardVerbList answers the verbs sorted, joined for a usage line.
@@ -49,6 +51,6 @@ func boardUsage(positional []string) string {
 }
 
 // runBoard runs the verb boardUsage accepted.
-func runBoard(ctx context.Context, b board.Board, actor string, positional []string) ([]string, error) {
-	return boardVerbs[positional[0]].run(ctx, b, actor, positional[1:])
+func runBoard(ctx context.Context, w World, b board.Board, actor string, positional []string) ([]string, error) {
+	return boardVerbs[positional[0]].run(ctx, w, b, actor, positional[1:])
 }

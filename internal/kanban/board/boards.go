@@ -75,6 +75,14 @@ func (b Board) RequireBoard(name string) error {
 	return refused("board %s does not exist; create it with kanban board create %s", name, name)
 }
 
+// ResolveBoard answers the stored name of a board of the store, or the RequireBoard refusal.
+func (b Board) ResolveBoard(name string) (string, error) {
+	if err := b.RequireBoard(name); err != nil {
+		return "", err
+	}
+	return boardName(name), nil
+}
+
 // CreateBoard registers a board in the store. A second create of a recorded
 // board answers the already-exists line and writes nothing.
 func (b Board) CreateBoard(ctx context.Context, a Args) ([]string, error) {

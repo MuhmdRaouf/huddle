@@ -47,6 +47,10 @@ type World struct {
 	EnsureHub func(ctx context.Context, budgetMS int) (string, bool, string)
 	// OpenBrowser opens one url; nil is the platform opener.
 	OpenBrowser func(url string)
+	// PinGet answers the board a session is pinned to, "" for none. nil means no pins.
+	PinGet func(ctx context.Context, session string) string
+	// PinSet pins a session to a board. nil means pins cannot be kept.
+	PinSet func(ctx context.Context, session, board string) error
 }
 
 // DefaultWorld is the process's world: the real environment, working directory
@@ -131,8 +135,8 @@ var commands = map[string]*command{
 		defs: []flagDef{
 			{name: "actor", kind: kindString, required: true, help: actorHelp},
 			{name: "title", kind: kindString, required: true, help: "one line, what and where (max 90 chars)"},
-			{name: "cluster", kind: kindString, required: true,
-				help: "one short lowercase word or two: the group the ticket belongs to"},
+			{name: "cluster", kind: kindString,
+				help: "the board the ticket belongs to: one short lowercase word or two (default: the session's pin, see board use)"},
 			{name: "summary", kind: kindString, required: true,
 				help: "2-4 plain sentences (min 80 chars): what changes, why, what done looks like"},
 			{name: "type", kind: kindString,
@@ -276,9 +280,9 @@ var commands = map[string]*command{
 	},
 	"board": {
 		word: "board", use: "board VERB NAME", min: 1, max: -1,
-		short: "create a board: a registered feature of this repo's store (verbs: create)",
+		short: "create a board, pin this session to one, or ask which one the branch names (verbs: create, use, suggest)",
 		positionals: []positional{
-			{"VERB", "create registers the board, so cards can name it with --cluster"},
+			{"VERB", "create registers the board, use pins this session to it, suggest names the board of the branch (no NAME)"},
 			{"NAME", "the board's name, one short lowercase word or two (letters and digits)"},
 		},
 		defs: []flagDef{
@@ -289,7 +293,10 @@ var commands = map[string]*command{
 		word: "list", use: "list [COLUMN]", min: 0, max: 1,
 		short:       "one line per ticket: badges and dependency states",
 		positionals: []positional{{"COLUMN", columnHelp}},
-		defs:        []flagDef{{name: "json", kind: kindBool, help: "print one JSON document instead of lines"}},
+		defs: []flagDef{
+			{name: "json", kind: kindBool, help: "print one JSON document instead of lines"},
+			{name: "all", kind: kindBool, help: "every board's cards, not just the board this session is pinned to"},
+		},
 	},
 	"show": {
 		word: "show", use: "show ID", min: 1, max: 1,
@@ -464,15 +471,22 @@ func Run(ctx context.Context, w World, argv []string, stdout, stderr io.Writer) 
 	defer closeBoard()
 	switch command {
 	case "board":
-		lines, err := runBoard(ctx, b, v.str("actor"), positional)
+		lines, err := runBoard(ctx, w, b, v.str("actor"), positional)
 		return answer(stdout, stderr, lines, err, false)
 	case "new":
-		if err := b.RequireBoard(v.str("cluster")); err != nil {
+		cluster := v.str("cluster")
+		if cluster == "" {
+			if cluster = pinnedBoard(ctx, w); cluster == "" {
+				usageError(stderr, cmd, "--cluster is required, or pin this session to a board with kanban board use NAME")
+				return 2
+			}
+		}
+		if err := b.RequireBoard(cluster); err != nil {
 			return answer(stdout, stderr, nil, err, false)
 		}
 		n := board.NewTicket{
-			Actor: v.str("actor"), ID: at(positional, 0), Title: v.str("title"),
-			Cluster: v.str("cluster"), Summary: v.str("summary"), Type: v.str("type"),
+			Actor: v.str("actor"), ID: at(positional, 0), Title: v.str("title"), Session: sessionOf(w),
+			Cluster: cluster, Summary: v.str("summary"), Type: v.str("type"),
 			Priority: v.str("priority"), Est: v.str("est"), Repos: v.str("repos"),
 			Tags: v.list("tag"), DependsOn: v.list("depends"),
 			Expedite: v.boolean("expedite"), Ready: v.boolean("ready"),
@@ -487,7 +501,7 @@ func Run(ctx context.Context, w World, argv []string, stdout, stderr io.Writer) 
 	case "pull":
 		lines, err := b.Pull(ctx, board.Args{
 			Actor: v.str("actor"), ID: v.str("id"), Branch: v.str("branch"),
-			Worktree: v.str("worktree"), Force: v.boolean("force")})
+			Worktree: v.str("worktree"), Force: v.boolean("force"), Session: sessionOf(w)})
 		return answer(stdout, stderr, lines, err, false)
 	case "review", "reject", "unblock":
 		lines, err := flowByID(ctx, b, command, board.Args{
@@ -540,6 +554,9 @@ func Run(ctx context.Context, w World, argv []string, stdout, stderr io.Writer) 
 		if err != nil {
 			fmt.Fprintf(stderr, "kanban: %v\n", err)
 			return 1
+		}
+		if !v.boolean("all") {
+			cards = onBoard(cards, pinnedBoard(ctx, w))
 		}
 		if v.boolean("json") {
 			if cards == nil {
@@ -661,7 +678,9 @@ func runHubFlow(ctx context.Context, w World, command string, v *flagValues, pos
 	if key == "" {
 		return 0, false
 	}
-	lines, refusal, handled := w.HubFlow(ctx, key, hubFlowRequest(command, v, positional))
+	req := hubFlowRequest(command, v, positional)
+	req.Session = sessionOf(w)
+	lines, refusal, handled := w.HubFlow(ctx, key, req)
 	if !handled {
 		return 0, false
 	}

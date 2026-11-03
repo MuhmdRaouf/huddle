@@ -306,3 +306,33 @@ func TestTwoConcurrentPullsAnswerOne200AndOne409(t *testing.T) {
 		t.Fatalf("RACE-1 sits in %s after the race, want in-progress", col)
 	}
 }
+
+// A pull routed through the tab stamps the pulling session as the card's owner when the card has
+// none, and leaves the owner a card already has.
+func TestFlowPullStampsTheOwnerSessionOnlyOnACardWithNone(t *testing.T) {
+	repo := newRepo(t, t.TempDir(), "alpha")
+	writeTicket(t, repo, "ready", "OWN-1")
+	writeTicket(t, repo, "ready", "OWN-2")
+	owned := filepath.Join(boardRoot(repo), "ready", "OWN-2.md")
+	text, err := os.ReadFile(owned)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(owned, []byte(strings.Replace(string(text), "cluster: kanban\n", "cluster: kanban\nowner_session: s1\n", 1)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	tab := Mount(context.Background(), Options{Roots: staticRoots(repo), Version: "test", Now: pinnedNow})
+	key := server.KeyOf(boardRoot(repo))
+	flow(t, tab, key, `{"command":"pull","actor":"w1","id":"OWN-1","session":"s2"}`, "OWN-1")
+	flow(t, tab, key, `{"command":"pull","actor":"w2","id":"OWN-2","session":"s2"}`, "OWN-2")
+
+	for id, want := range map[string]string{"OWN-1": "owner_session: s2\n", "OWN-2": "owner_session: s1\n"} {
+		got, err := os.ReadFile(filepath.Join(boardRoot(repo), "in-progress", id+".md"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(string(got), want) || strings.Count(string(got), "owner_session:") != 1 {
+			t.Errorf("%s after the pull:\n%s\nwant exactly %q", id, got, strings.TrimSpace(want))
+		}
+	}
+}

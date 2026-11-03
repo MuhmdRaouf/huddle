@@ -13,7 +13,7 @@ import (
 )
 
 // SchemaVersion is the version an opened database is brought to, and the newest this build reads.
-const SchemaVersion = 29
+const SchemaVersion = 30
 
 // migrations holds migration n's statements at index n-1.
 var migrations = []string{
@@ -325,6 +325,9 @@ var migrations = []string{
 	   saved_at TEXT NOT NULL,
 	   PRIMARY KEY (session_id, agent, shell_id)
 	 );`,
+	// 30: the kanban board a session is pinned to, by name; empty is no pin. The pin rides the
+	// session's row, so a hub restart and a later report leave it as it was.
+	`ALTER TABLE sessions ADD COLUMN board TEXT NOT NULL DEFAULT '';`,
 }
 
 // NewerSchemaError names a database written by a newer huddle: an older one refuses it.

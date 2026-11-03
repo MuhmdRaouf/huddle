@@ -34,7 +34,7 @@ func flowCommands() map[string]func(ctx context.Context, b board.Board, req boar
 		"pull": func(ctx context.Context, b board.Board, req board.FlowRequest) ([]string, error) {
 			return b.Pull(ctx, board.Args{
 				Actor: req.Actor, ID: req.ID, Branch: req.Branch,
-				Worktree: req.Worktree, Force: req.Force})
+				Worktree: req.Worktree, Force: req.Force, Session: req.Session})
 		},
 		"review": func(ctx context.Context, b board.Board, req board.FlowRequest) ([]string, error) {
 			return b.Review(ctx, board.Args{Actor: req.Actor, ID: req.ID, Note: req.Note})

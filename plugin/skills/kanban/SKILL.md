@@ -28,9 +28,10 @@ shows every change on the live board within half a second.
 
 | You want to | Run | Detail |
 |---|---|---|
-| See where things stand | `kanban status`, `kanban list [column]` | §Status and rundowns |
+| See where things stand | `kanban status`, `kanban list [column]` | §Status and rundowns; `list` shows only the board this session is pinned to, `list --all` every board |
 | Read one ticket | `kanban show ID` | the whole file, with its column and badges |
 | Create a board (a feature) | `kanban board create NAME --actor A` | `kanban new --cluster NAME` is refused until the board exists |
+| Work on one board | `kanban board suggest --actor A`, then `kanban board use NAME --actor A` | §Pin the session to a board |
 | Write tickets | `kanban new ...`, then edit the body, `kanban lint` | `references/tickets.md` |
 | Make a ticket workable | `kanban promote ID --actor A` | refused until the ticket meets the bar |
 | Take work | `kanban pull --actor A [--id ID --branch B --worktree W]` | §The worker loop |
@@ -50,6 +51,18 @@ shows every change on the live board within half a second.
 Every command that changes the board takes `--actor`, a short id that is yours alone (`lead`, `w1`, `rev`). Exit
 codes: 0 ok; 1 refused (the message says why and what to do next: read it, do not retry blindly); 2 usage (run
 `kanban <cmd> --help`); 4 no board; 6 no server running.
+
+## Pin the session to a board
+
+A board is a feature of the repo. Once per session, pin yours:
+
+1. `kanban board suggest --actor <you>` prints the board your branch names (`feat/login` names `login`), else the
+   board named like the work tree's directory. Exit 1 means no board matches: ask the user which board you work on.
+2. `kanban board use <NAME> --actor <you>` pins the session. The pin is refused for a board that does not exist.
+3. The pin defaults `kanban new --cluster` and scopes `kanban list`; `--cluster` on `new` and `list --all` override
+   it. The owner can see and change the pin from the session's row in the hub.
+
+A card also records the session that made or first took it in its `owner_session` field. No command edits it.
 
 ## The rule that matters most: move tickets only with `kanban`
 

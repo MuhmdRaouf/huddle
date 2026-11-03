@@ -27,6 +27,7 @@ type Card struct {
 	Expedite      bool           `json:"expedite"`
 	Holder        string         `json:"holder"`
 	Author        string         `json:"author"`
+	OwnerSession  string         `json:"ownerSession"`
 	Deps          []Dep          `json:"deps"`
 	Blocked       *Blocked       `json:"blocked"`
 	Badges        []ticket.Badge `json:"badges"`
@@ -134,14 +135,15 @@ func CardOfLookup(t ticket.Ticket, column, self string, problems []ticket.Proble
 		ID: t.ID, Title: t.Title, Column: column, Summary: t.Summary,
 		Type: t.Type, Priority: t.Priority, Est: t.Est, Cluster: t.Cluster,
 		Tags: t.Tags, Expedite: t.Expedite,
-		Holder:      strings.TrimSpace(t.Fields["claimed_by"]),
-		Author:      strings.TrimSpace(t.Fields["authored_by"]),
-		Deps:        []Dep{},
-		Badges:      []ticket.Badge{},
-		Lint:        CardLint{Failures: []string{}, Warnings: []string{}},
-		MovedByHand: t.Fields["moved_by_hand"],
-		Branch:      t.Fields["branch"],
-		Worktree:    t.Fields["worktree"],
+		Holder:       strings.TrimSpace(t.Fields["claimed_by"]),
+		Author:       strings.TrimSpace(t.Fields["authored_by"]),
+		OwnerSession: strings.TrimSpace(t.Fields["owner_session"]),
+		Deps:         []Dep{},
+		Badges:       []ticket.Badge{},
+		Lint:         CardLint{Failures: []string{}, Warnings: []string{}},
+		MovedByHand:  t.Fields["moved_by_hand"],
+		Branch:       t.Fields["branch"],
+		Worktree:     t.Fields["worktree"],
 	}
 	if card.Tags == nil {
 		card.Tags = []string{}

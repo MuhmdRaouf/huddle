@@ -18,4 +18,6 @@ type FlowRequest struct {
 	On       []string `json:"on"`
 	Pairs    []string `json:"pairs"`
 	Force    bool     `json:"force"`
+	// Session is the id of the session running the command, "" outside one.
+	Session string `json:"session"`
 }

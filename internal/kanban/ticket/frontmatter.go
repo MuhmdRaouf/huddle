@@ -33,7 +33,9 @@ var quotedKeys = map[string]bool{
 
 // scalarKeys hold short free values: bare when they read back unchanged,
 // quoted otherwise.
-var scalarKeys = map[string]bool{"branch": true, "worktree": true, "repos": true, "verified_merge": true}
+var scalarKeys = map[string]bool{
+	"branch": true, "worktree": true, "repos": true, "verified_merge": true, "owner_session": true,
+}
 
 // Split answers the front-matter text (the lines between the two --- markers)
 // and the body after the closing marker. ok is false when the text does not
