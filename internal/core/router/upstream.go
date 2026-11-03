@@ -240,8 +240,16 @@ func UpstreamURL(target *url.URL, path string) (*url.URL, error) {
 var ErrBodyTooLarge = errors.New("too-large")
 
 // ReadBody reads the whole body, or reports ErrBodyTooLarge once it passes the limit (the rest is
-// drained, not buffered).
+// drained, not buffered). A body whose length the request announces within the limit is read
+// straight into one buffer of that size; any other grows as it arrives.
 func ReadBody(req *http.Request, limit int64) ([]byte, error) {
+	if length := req.ContentLength; length > 0 && length <= limit {
+		body := make([]byte, length)
+		if _, err := io.ReadFull(req.Body, body); err != nil {
+			return nil, err
+		}
+		return body, nil
+	}
 	body, err := io.ReadAll(io.LimitReader(req.Body, limit+1))
 	if err != nil {
 		return nil, err
