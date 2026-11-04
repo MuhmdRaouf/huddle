@@ -2201,14 +2201,36 @@ func (c *Channel) Sessions(ctx context.Context) ([]SessionView, error) {
 		if err != nil {
 			return nil, err
 		}
+		folded, err := c.foldedCopies(ctx, s)
+		if err != nil {
+			return nil, err
+		}
 		o, err := c.dbGet(ctx, fmt.Sprintf("SELECT %s n FROM events e WHERE %s", countInt, openAsk), s.Name, s.Name, s.Name)
 		if err != nil {
 			return nil, err
 		}
 		holds := turn.Holder != nil && *turn.Holder == s.Name
-		out = append(out, SessionView{PresenceView: shape, Unread: rInt(u, "n"), Open: rInt(o, "n"), HoldsTurn: holds})
+		out = append(out, SessionView{PresenceView: shape, Unread: rInt(u, "n") - folded, Open: rInt(o, "n"), HoldsTurn: holds})
 	}
 	return out, nil
+}
+
+// foldedCopies counts the unread copies of messages to several sessions that FoldedCopy leaves out
+// for the session: only the grouped events after its cursor are read.
+func (c *Channel) foldedCopies(ctx context.Context, s *Session) (int64, error) {
+	rows, err := c.dbAll(ctx,
+		"SELECT seq, data FROM events WHERE seq > ? AND from_name != ? AND json_extract(data, '$.group') IS NOT NULL",
+		s.Cursor, s.Name)
+	if err != nil {
+		return 0, err
+	}
+	var n int64
+	for _, r := range rows {
+		if FoldedCopy(s.Name, rInt(r, "seq"), rJSON(r, "data")) {
+			n++
+		}
+	}
+	return n, nil
 }
 
 // ── control: the owner, or any session in the channel, pauses and resumes a session ──
@@ -2624,7 +2646,7 @@ func (c *Channel) Events(ctx context.Context, o EventsFilter) ([]Ev, error) {
 	out := []Ev{}
 	for i := len(rows) - 1; i >= 0; i-- {
 		ev := toEv(rows[i])
-		if o.Reader != "" && OwnerPrivate(ev.From, deref(ev.To), o.Reader) {
+		if o.Reader != "" && (OwnerPrivate(ev.From, deref(ev.To), o.Reader) || FoldedCopy(o.Reader, ev.Seq, ev.Data)) {
 			continue
 		}
 		if o.Topic == "" || GlobMatch(ev.Topic, []string{o.Topic}) {
@@ -2646,7 +2668,8 @@ func (c *Channel) LastSeq(ctx context.Context) (int64, error) {
 // Unread is everything the session has not acked yet, in order: every member sees every message,
 // also those addressed to another session (it overhears them); only its own are left out. One
 // exception: an owner's message addressed to one member is that member's alone, so another
-// member's unread leaves it out.
+// member's unread leaves it out. A message to several sessions is one copy to a member it was not
+// addressed to (FoldedCopy).
 func (c *Channel) Unread(ctx context.Context, name string) ([]Ev, error) {
 	s, err := c.need(ctx, name)
 	if err != nil {
@@ -2658,9 +2681,11 @@ func (c *Channel) Unread(ctx context.Context, name string) ([]Ev, error) {
 	if err != nil {
 		return nil, err
 	}
-	out := make([]Ev, len(rows))
-	for i, r := range rows {
-		out[i] = toEv(r)
+	out := make([]Ev, 0, len(rows))
+	for _, r := range rows {
+		if ev := toEv(r); !FoldedCopy(name, ev.Seq, ev.Data) {
+			out = append(out, ev)
+		}
 	}
 	return out, nil
 }

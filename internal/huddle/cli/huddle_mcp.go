@@ -1331,6 +1331,10 @@ func (b *mcpBridge) deliver(event *jsfmt.Value, advance bool) {
 	if from == me {
 		return
 	}
+	// a message to several sessions is one push to a session it was not addressed to
+	if channel.FoldedCopy(me, seq, mcpFieldOf(event, "data")) {
+		return
+	}
 	// an owner's word to one member is that member's alone: the live stream carries every
 	// event, so the bridge drops it for every other session
 	if channel.OwnerPrivate(from, to, me) {

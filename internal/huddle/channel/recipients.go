@@ -3,6 +3,7 @@ package channel
 import (
 	"context"
 	"fmt"
+	"slices"
 
 	"github.com/MuhmdRaouf/huddle/internal/huddle/store"
 	"github.com/MuhmdRaouf/huddle/internal/jsfmt"
@@ -90,6 +91,17 @@ func (c *Channel) sendFanOut(ctx context.Context, from string, names []string, i
 		return nil
 	})
 	return first, err
+}
+
+// FoldedCopy answers whether an event is a later copy of a message to several sessions that the
+// reader was not addressed in. The group's first copy, whose seq is data.group, stands for the
+// group for such a reader; a recipient hears every copy, as before.
+func FoldedCopy(reader string, seq int64, data *jsfmt.Value) bool {
+	group := argIntPtr(data, "group")
+	if group == nil || *group == seq {
+		return false
+	}
+	return !slices.Contains(strsOf(objField(data, "to")), reader)
 }
 
 // tieToGroup stores the event's own seq as its data.group and answers the event as stored.

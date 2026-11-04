@@ -1401,6 +1401,9 @@ func (c *cli) follow(ctx context.Context, channel string, channels []string, aft
 		if c.me != "" && channelpkg.OwnerPrivate(from, textField(event, "to"), c.me) {
 			return
 		}
+		if data, _ := fieldOf(event, "data"); c.me != "" && channelpkg.FoldedCopy(c.me, seq, data) {
+			return
+		}
 		fmt.Fprintln(c.stdout, withChannel(channel, event).EncodeJSON())
 	}
 	// several channels and no --after: each starts from its newest event

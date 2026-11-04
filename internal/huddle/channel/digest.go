@@ -364,8 +364,15 @@ func Digest(ctx context.Context, c *Channel, since any, o DigestOpts) (*DigestRe
 	}
 
 	questions := []DigestQuestion{}
+	asked := map[int64]bool{}
 	for _, r := range open {
 		e := toEv(r)
+		if g := argIntPtr(e.Data, "group"); g != nil {
+			if asked[*g] {
+				continue // an ask to several sessions is one question: its first open copy stands for it
+			}
+			asked[*g] = true
+		}
 		var task any
 		if d := e.Data; d != nil && d.Kind() == jsfmt.KindObject {
 			if t := objField(d, "task"); t != nil && t.Kind() != jsfmt.KindNull {

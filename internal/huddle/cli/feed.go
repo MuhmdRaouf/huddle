@@ -2,8 +2,8 @@
 // or HUDDLE_LISTEN), as text for its context. The listen hook calls it after every tool call
 // and on every prompt; the session-start hook marks "now" so a new session starts clean.
 //
-// It shows the others' messages, asks and replies in full, also those between other sessions,
-// and folds the rest (task updates, knowledge entries, custom topics such as build.ready) into
+// It shows the others' messages, asks and replies in full, also those between other sessions (a
+// message to several sessions once), and folds the rest (task updates, knowledge entries, custom topics such as build.ready) into
 // one count line, so a busy channel costs a line per tool call, not thirty ("listen_detail":
 // "all" shows every event in full). Joins and leaves (session.*), this session's own subagents
 // (<me>.<role>) and an owner's message to another session stay out. It remembers, per Claude
@@ -47,6 +47,15 @@ type feedEvent struct {
 	Topic      string `json:"topic"`
 	Msg        string `json:"msg"`
 	NeedsReply bool   `json:"needs_reply"`
+	// Data is the event's data object as the server wrote it; the feed reads data.group and data.to.
+	Data json.RawMessage `json:"data"`
+}
+
+// folded answers whether the event is a later copy of a message to several sessions that this
+// session was not addressed in.
+func (e feedEvent) folded(as string) bool {
+	data, err := jsfmt.DecodeValue(e.Data)
+	return err == nil && channelpkg.FoldedCopy(as, e.Seq, data)
 }
 
 // timeline reads a channel's newest events after a seq, oldest first; nil when the server does
@@ -148,7 +157,7 @@ func channelPart(id Identity, channel string, events []feedEvent, from int64) st
 	shown := make([]feedEvent, 0, len(events))
 	for _, event := range events {
 		if mine(id.As, event.From) || strings.HasPrefix(event.Topic, "session.") ||
-			channelpkg.OwnerPrivate(event.From, event.To, id.As) {
+			channelpkg.OwnerPrivate(event.From, event.To, id.As) || event.folded(id.As) {
 			continue
 		}
 		shown = append(shown, event)

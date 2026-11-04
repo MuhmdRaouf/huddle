@@ -260,6 +260,27 @@ func TestATopicMessageToOneNameIsOverheardLikeAnyTopicMessage(t *testing.T) {
 	}
 }
 
+func TestAGroupMessageIsOverheardOnce(t *testing.T) {
+	srv := startServer(t, nil)
+	reportSession(t, srv, "s-a", "kanban-release", "api", "UserPromptSubmit")
+	reportSession(t, srv, "s-b", "kanban-release", "web", "UserPromptSubmit")
+	for _, member := range []string{"api", "web", "ops", "docs"} {
+		if code, out := srv.op(t, "kanban-release", "join", member, "{}"); code != 200 {
+			t.Fatalf("join %s = %d %s", member, code, out)
+		}
+	}
+	if code, out := srv.post(t, "/api/links", `{"sessions":["s-a","s-b"],"channel":"kanban-release","level":"overhear"}`, nil); code != 200 {
+		t.Fatalf("the link = %d %s", code, out)
+	}
+	if code, out := srv.op(t, "kanban-release", "message", "api", `{"to":["ops","docs"],"topic":"build.ready","msg":"green for two"}`); code != 200 {
+		t.Fatalf("topic message to two = %d %s", code, out)
+	}
+	rows := linkedRows(t, srv)
+	if len(rows) != 1 || rows[0]["session_id"] != "s-b" {
+		t.Fatalf("a topic message to two names reached %v, want s-b once", rows)
+	}
+}
+
 func TestDigestAndOnRequestLinksHearNoPosts(t *testing.T) {
 	srv := startServer(t, nil)
 	reportSession(t, srv, "s-a", "kanban-release", "api", "UserPromptSubmit")
