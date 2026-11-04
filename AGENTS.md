@@ -174,7 +174,7 @@ attribution off; `node scripts/check-attribution.mjs` runs in CI on every push.
 ## CI
 
 `.github/workflows/ci.yml`: plan, repository rules (gitleaks, attribution, actionlint, plugin validation), the Go
-jobs (gofmt, tidy, build, vet, staticcheck, govulncheck; the release build; race tests in eleven shards with one
+jobs (gofmt, tidy, build, vet, staticcheck, govulncheck; the release build; race tests in twelve shards with one
 coverage gate), the web jobs (`bun run check` and the browser suites), the macOS job (tests and the
 reproducible-build proof) and the gate `All checks passed`. Every job is capped at 10 minutes. Reproduce failures locally; re-run only the failed jobs.
 

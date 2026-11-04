@@ -499,13 +499,13 @@ func TestCIGatesTheMergedProfileOfEveryShard(t *testing.T) {
 
 // ciShards are the test shards ci.yml runs, in matrix order. Each is a list of packages that
 // scripts/shard-packages.sh prints.
-var ciShards = []string{"core", "server", "server-a", "cmd-overhead", "cmd-heavy", "cmd-hub", "cmd", "cli-a", "cli", "rest-heavy", "rest"}
+var ciShards = []string{"core", "server", "server-a", "cmd-overhead", "cmd-live", "cmd-heavy", "cmd-hub", "cmd", "cli-a", "cli", "rest-heavy", "rest"}
 
 // splitGroups are the shards that run one package between them, told apart by the flags
 // scripts/shard-flags.sh prints: every test of the package runs in exactly one shard of its group.
 var splitGroups = [][]string{
 	{"server", "server-a"},
-	{"cmd", "cmd-overhead", "cmd-heavy", "cmd-hub"},
+	{"cmd", "cmd-overhead", "cmd-live", "cmd-heavy", "cmd-hub"},
 	{"cli", "cli-a"},
 }
 
@@ -573,7 +573,7 @@ func TestEachHeavyPackageHasShardsOfItsOwn(t *testing.T) {
 		want   []string
 	}{
 		{[]string{"server", "server-a"}, []string{mp + "/internal/huddle/server"}},
-		{[]string{"cmd", "cmd-overhead", "cmd-heavy", "cmd-hub"}, []string{mp + "/cmd/huddle"}},
+		{[]string{"cmd", "cmd-overhead", "cmd-live", "cmd-heavy", "cmd-hub"}, []string{mp + "/cmd/huddle"}},
 		{[]string{"cli", "cli-a"}, []string{mp + "/internal/huddle/cli"}},
 		{[]string{"rest-heavy"}, []string{
 			mp + "/internal/huddle/hooks",
@@ -685,13 +685,11 @@ func TestEveryTestRunsInExactlyOneShardOfASplitPackage(t *testing.T) {
 }
 
 // A pattern that lists test names names real ones, so a renamed test cannot drop out of its
-// shard unseen; a pattern of another shape is held by the checks above.
+// shard unseen; a name ending in .* stands for every test with that prefix, and one test must
+// have it. A pattern of another shape is held by the checks above.
 func TestShardPatternsNameRealTests(t *testing.T) {
 	for _, group := range splitGroups {
-		exists := map[string]bool{}
-		for _, name := range listTests(t, shardPackages(t, group[0])[0]) {
-			exists[name] = true
-		}
+		tests := listTests(t, shardPackages(t, group[0])[0])
 		for _, shard := range group {
 			_, pattern := shardFlag(t, shard)
 			inner, ok := strings.CutSuffix(strings.TrimPrefix(pattern.String(), "^("), ")$")
@@ -699,7 +697,11 @@ func TestShardPatternsNameRealTests(t *testing.T) {
 				continue
 			}
 			for _, name := range strings.Split(inner, "|") {
-				if !exists[name] {
+				if prefix, ok := strings.CutSuffix(name, ".*"); ok {
+					if !slices.ContainsFunc(tests, func(test string) bool { return strings.HasPrefix(test, prefix) }) {
+						t.Errorf("the %s pattern names the tests %s, none of which is a test of its package", shard, name)
+					}
+				} else if !slices.Contains(tests, name) {
 					t.Errorf("the %s pattern names %s, which is not a test of its package", shard, name)
 				}
 			}
@@ -711,7 +713,7 @@ func TestShardPatternsNameRealTests(t *testing.T) {
 // other tests in its shard still skews: it runs alone, in a shard whose only test it is.
 func TestRouterOverheadRunsAloneInItsOwnShard(t *testing.T) {
 	const test = "TestE2ERouterOverhead"
-	for _, shard := range []string{"cmd", "cmd-heavy", "cmd-hub"} {
+	for _, shard := range []string{"cmd", "cmd-live", "cmd-heavy", "cmd-hub"} {
 		if kind, pattern := shardFlag(t, shard); selects(kind, pattern, test) {
 			t.Errorf("the %s shard also runs %s", shard, test)
 		}
@@ -724,6 +726,35 @@ func TestRouterOverheadRunsAloneInItsOwnShard(t *testing.T) {
 	for _, name := range listTests(t, pkg) {
 		if name != test && selects(kind, pattern, name) {
 			t.Errorf("the cmd-overhead shard also runs %s, want %s alone", name, test)
+		}
+	}
+}
+
+// The live-size hub guard seeds and settles a catch-up of the live world's size, which takes minutes
+// under the race detector: it runs in a shard of its own, so the cap of the shard that holds the rest
+// of the package never counts it. A test named for the same guard (its budgets, say) lands in the
+// same shard.
+func TestLiveSizeHubGuardRunsInItsOwnShard(t *testing.T) {
+	const prefix = "TestE2EHubStaysLightAtLiveSize"
+	guards := []string{prefix, prefix + "Budgets"}
+	for _, shard := range []string{"cmd", "cmd-overhead", "cmd-heavy", "cmd-hub"} {
+		kind, pattern := shardFlag(t, shard)
+		for _, test := range guards {
+			if selects(kind, pattern, test) {
+				t.Errorf("the %s shard also runs %s", shard, test)
+			}
+		}
+	}
+	kind, pattern := shardFlag(t, "cmd-live")
+	for _, test := range guards {
+		if !selects(kind, pattern, test) {
+			t.Errorf("the cmd-live shard does not run %s", test)
+		}
+	}
+	pkg := shardPackages(t, "cmd-live")[0]
+	for _, name := range listTests(t, pkg) {
+		if !strings.HasPrefix(name, prefix) && selects(kind, pattern, name) {
+			t.Errorf("the cmd-live shard also runs %s, want only the tests named %s...", name, prefix)
 		}
 	}
 }
