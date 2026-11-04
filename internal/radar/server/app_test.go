@@ -625,42 +625,73 @@ func TestAppHoldsNotificationsWhileCatchingUp(t *testing.T) {
 			`"plugin":"zai","model":"glm-5.3","upstream":"https://api.z.ai/api/anthropic",`+
 			`"route":"provider","status":200,"latency_ms":900,`+
 			`"usage":{"input_tokens":1000000,"output_tokens":1000000}}`, isoOf(time.Now().UnixMilli()))
-		// a backlog long enough that the first pass is still draining once the app is up
+		// a backlog after the route line, so the first pass has more to read once the alert exists;
+		// the test holds the pass open itself, so the backlog only has to drain once released
 		lines := []string{route}
-		for i := 0; i < 50_000; i++ {
+		for i := 0; i < 5_000; i++ {
 			lines = append(lines, fmt.Sprintf(`{"ts":%q,"event":"UserPromptSubmit","session_id":%q,"prompt":"filling the backlog"}`,
 				isoOf(time.Now().UnixMilli()), fmt.Sprintf("s%d", i%40)))
 		}
 		seedSpool(t, world.state, lines...)
 		writeText(t, filepath.Join(world.state, "budgets.json"),
 			`{"version":1,"budgets":[{"id":"zai-month","scope":"provider:zai","period":"month","limitUsd":1,"action":"warn"}]}`)
+
+		// The first pass is held open after every slice until the test steps it: the test
+		// steps it until the route line has landed, then holds it there for its checks.
+		parked := make(chan struct{})
+		step := make(chan struct{})
+		release := make(chan struct{})
+		var releaseOnce sync.Once
+		letGo := func() { releaseOnce.Do(func() { close(release) }) }
 		notified := &notifyRecorder{}
 		app := mustStart(t, world.env, AppOptions{
 			Version: "test", SinceMs: dayMs, IntervalMs: quietMs,
 			InsightsTickMs: 50, NotifyRunner: notified.record,
+			AfterSlice: func() {
+				select {
+				case parked <- struct{}{}:
+					select {
+					case <-step:
+					case <-release:
+					}
+				case <-release:
+				}
+			},
 		})
 		defer app.Stop()
+		defer letGo()
 		notifiedPath := alerts.NotifiedPath(ctx, world.env)
 
-		// the overspent budget answers in the alerts API while the backlog still drains: the
-		// hold is what stops the notification, not a missing alert
-		waitFor(t, "the budget alert while the first pass drains", 10*time.Second, func() bool {
-			if !app.Watcher.CatchingUp() {
-				return false
+		for len(app.Store.Raw().Requests) == 0 {
+			select {
+			case <-parked:
+			case <-time.After(10 * time.Second):
+				t.Fatal("the first pass never ended a slice")
 			}
+			if len(app.Store.Raw().Requests) == 0 {
+				step <- struct{}{}
+			}
+		}
+
+		// the pass is held open with the overspent budget in the store: the alert answers in
+		// the alerts API, and the hold is what stops the notification, not a missing alert
+		if !app.Watcher.CatchingUp() {
+			t.Fatal("catching up = false while the first pass is held open")
+		}
+		waitFor(t, "the budget alert while the first pass is held open", 10*time.Second, func() bool {
 			answer := getJSON(t, app.Port, "/api/alerts")
 			list, _ := answer["alerts"].([]any)
 			return len(list) > 0
 		})
-		for app.Watcher.CatchingUp() {
-			if exists(notifiedPath) {
-				t.Fatalf("notified.json appeared before the first pass drained")
-			}
-			if notified.count() != 0 {
-				t.Fatalf("a desktop notification went out before the first pass drained")
-			}
-			time.Sleep(20 * time.Millisecond)
+		app.Insights.Tick(ctx)
+		if exists(notifiedPath) {
+			t.Fatalf("notified.json appeared before the first pass drained")
 		}
+		if notified.count() != 0 {
+			t.Fatalf("a desktop notification went out before the first pass drained")
+		}
+
+		letGo()
 		waitFor(t, "the held notification once the backlog drained", 10*time.Second, func() bool {
 			body, err := os.ReadFile(notifiedPath)
 			return err == nil && strings.Contains(string(body), "budget:zai-month")

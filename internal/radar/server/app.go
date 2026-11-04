@@ -170,6 +170,9 @@ type AppOptions struct {
 	InsightsTickMs int64
 	// Log receives the one line a missing history file leaves; nil writes stderr.
 	Log func(line string)
+	// AfterSlice runs after each slice of the watcher's passes, outside its lock; a test
+	// holds the first pass open in it. Nil skips it.
+	AfterSlice func()
 }
 
 // App is the running dashboard: the store, the watcher feeding it, the insights derived from
@@ -273,6 +276,7 @@ func StartApp(ctx context.Context, options AppOptions) (*App, error) {
 		Now:        func() int64 { return now().UnixMilli() },
 		Log:        log,
 		Warm:       WarmFromHistory(st, hist, log),
+		AfterSlice: options.AfterSlice,
 		HarnessCollectors: []ingest.HarnessCollector{
 			ingest.NewCodexCollector(options.Env),
 			ingest.NewOpencodeCollector(options.Env),

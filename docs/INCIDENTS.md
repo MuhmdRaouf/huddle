@@ -666,3 +666,20 @@ Each incident, its cause, and the test that now stops it. A guard named here mus
   fails when the wait holds instead of answering the withdrawn item.
 - **Rule:** a long poll arms its waiter before it reads the state it waits on, so a change at any point after the
   arm either shows in the read or wakes the waiter.
+
+## 2026-11-04, a test waited for radar's first pass to still be draining, and a faster drain made it miss
+
+- **What happened:** CI's macOS job `Compat: macOS (Go rest)` failed `TestAppHoldsNotificationsWhileCatchingUp`
+  (internal/radar/server/app_test.go) with "timed out waiting for the budget alert while the first pass drains". It
+  passed in the local gate and on Linux.
+- **Cause:** the test needed the budget alert in the alerts API while `Watcher.CatchingUp()` was still true, and
+  it polled for both together. How long the 50,000-line backlog takes to drain decides how many polls fall inside that
+  window, so the test raced the drain. Faster session and record eviction (d20076d5) shortened the window until a
+  loaded runner's polls missed it. The product held the notification correctly throughout.
+- **Guard:** `TestAppHoldsNotificationsWhileCatchingUp` (internal/radar/server/app_test.go) holds the first pass open
+  through `AppOptions.AfterSlice`, steps it until the route line has landed, then checks the alert, the held
+  notification and `notified.json` against a pass that cannot move, and releases it to see the notification arrive.
+  `TestTheAfterSliceHookHoldsAPassOpenWithoutHoldingTheWatchersLock` (internal/radar/ingest/watch_afterslice_test.go)
+  fails when the hook runs under the watcher's lock, which would stop `CatchingUp()` from answering.
+- **Rule:** a test that needs a state of a running loop holds the loop in that state through a seam, outside the
+  loop's own lock; it never polls for a window whose width depends on how fast the loop runs.

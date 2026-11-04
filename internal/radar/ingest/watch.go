@@ -103,6 +103,10 @@ type WatcherOptions struct {
 	Stat StatFunc
 	// ChunkBytes is how many bytes one tail read may take; zero is TailChunkBytes.
 	ChunkBytes int64
+	// AfterSlice runs in the watcher's goroutine after each slice of a pass, outside the
+	// watcher's lock, while the pass is still in flight; a test holds a pass open in it. Nil
+	// skips it.
+	AfterSlice func()
 }
 
 // fileTail is one transcript file's read position and its parser.
@@ -222,6 +226,8 @@ type Watcher struct {
 	stat      StatFunc
 	// chunkBytes is how many bytes one tail read may take.
 	chunkBytes int64
+	// afterSlice runs after each slice of a pass, outside mu; nil is none.
+	afterSlice func()
 	// openFilesLimit reads the soft open-files limit the descriptor budget is a quarter of.
 	openFilesLimit func() (uint64, error)
 
@@ -352,6 +358,7 @@ func StartWatcher(ctx context.Context, options WatcherOptions) *Watcher {
 		log:                 log,
 		stat:                stat,
 		chunkBytes:          chunkBytes,
+		afterSlice:          options.AfterSlice,
 		openFilesLimit:      options.OpenFilesLimit,
 		intervalMs:          interval,
 		projectsRoot:        filepath.Join(paths.ClaudeConfigDir(options.Env), "projects"),
@@ -538,6 +545,9 @@ func (w *Watcher) drive() {
 		}
 		finished := w.sliceStep()
 		w.mu.Unlock()
+		if w.afterSlice != nil {
+			w.afterSlice()
+		}
 		if finished {
 			// the pass drained; a still-queued poll starts the next one
 			w.mu.Lock()
