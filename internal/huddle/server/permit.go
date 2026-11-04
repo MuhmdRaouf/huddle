@@ -292,6 +292,10 @@ func (s *server) permitWaitRoute(w http.ResponseWriter, r *http.Request, id int6
 		seconds = n
 	}
 	ctx := r.Context()
+	// armed before the item is read: a withdraw or a decision that lands between the read and
+	// the hold wakes this waiter instead of slipping past it
+	wake := s.permits.arm(id)
+	defer s.permits.done(id, wake)
 	item, err := s.registry.PermissionItemByID(ctx, id, s.now())
 	if err != nil {
 		return err
@@ -304,18 +308,14 @@ func (s *server) permitWaitRoute(w http.ResponseWriter, r *http.Request, id int6
 			return err
 		}
 		if hold := s.permitHold(*item, seconds); hold > 0 {
-			wake := s.permits.arm(id)
 			timer := time.NewTimer(hold)
+			defer timer.Stop()
 			select {
 			case <-wake:
 			case <-timer.C:
 			case <-ctx.Done():
-				timer.Stop()
-				s.permits.done(id, wake)
 				return nil // the hook went away: nothing to answer
 			}
-			timer.Stop()
-			s.permits.done(id, wake)
 			item, err = s.registry.PermissionItemByID(ctx, id, s.now())
 			if err != nil {
 				return err

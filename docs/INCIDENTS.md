@@ -649,3 +649,20 @@ Each incident, its cause, and the test that now stops it. A guard named here mus
   on a virtual clock.
 - **Rule:** a test child's backstop counts the host's silence, not its own age: every command the host sends
   starts the limit over, and only a host that stopped talking for the whole limit ends the child.
+
+## 2026-11-04, a permission poll armed its waiter after reading the item, and a terminal answer in the gap woke nobody
+
+- **What happened:** CI's Linux race job `Test: Go (rest-heavy)` failed
+  `TestThePermitHookPrintsNothingWhenTheTerminalAnswersFirst` (internal/huddle/hooks/permit_test.go) with "the hook
+  never came back from its poll" after 10 s. It passed in the local gate and on a quiet machine.
+- **Cause:** `permitWaitRoute` read the item open, wrote the poll stamp, and only then armed its waiter. The
+  terminal's `PostToolUse` report withdraws the session's open items and wakes the armed waiters; one that landed
+  after the read and before the arm found no waiter to wake. The poll then held to its own timeout (up to 30 s) over
+  an item that was already withdrawn. The test posts its report the moment the item exists, which is the moment the
+  hook's first poll is setting up, so the scheduler decided which side of the gap the report fell on. The report path
+  compares no timestamps: the stamps the test writes played no part.
+- **Guard:** `TestAWithdrawBetweenTheWaitsReadAndItsHoldStillWakesIt` (internal/huddle/server/permit_wait_test.go)
+  withdraws the item from the clock reading that follows the route's read of it, so the gap is hit on every run, and
+  fails when the wait holds instead of answering the withdrawn item.
+- **Rule:** a long poll arms its waiter before it reads the state it waits on, so a change at any point after the
+  arm either shows in the read or wakes the waiter.
