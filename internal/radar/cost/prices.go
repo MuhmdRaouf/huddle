@@ -31,17 +31,29 @@ type PricedRequest struct {
 	ServiceTier *string
 }
 
-var contextSuffix = regexp.MustCompile(`\[[^\]]*\]$`)
-
 // NormalizeModel maps "zai/glm-5.3[1m]" to "glm-5.3": drop a provider prefix and a
 // context-window suffix, lowercased.
 func NormalizeModel(model string) string {
-	bare := contextSuffix.ReplaceAllString(jsscalar.Trim(model), "")
+	bare := withoutContextSuffix(jsscalar.Trim(model))
 	unprefixed := bare
 	if slash := strings.LastIndex(bare, "/"); slash >= 0 {
 		unprefixed = bare[slash+1:]
 	}
 	return strings.ToLower(unprefixed)
+}
+
+// withoutContextSuffix cuts a trailing "[...]" holding no "]" of its own: from the first "["
+// after the last earlier "]" to the closing "]" that ends the id.
+func withoutContextSuffix(id string) string {
+	if !strings.HasSuffix(id, "]") {
+		return id
+	}
+	last := len(id) - 1
+	from := strings.LastIndexByte(id[:last], ']') + 1
+	if open := strings.IndexByte(id[from:last], '['); open >= 0 {
+		return id[:from+open]
+	}
+	return id
 }
 
 // OfferingHostOf is the host the model's own provider offering names ("glm-5.3" →
@@ -165,38 +177,95 @@ func CostFamilyOf(model string) CostFamily {
 	return FamilyOther
 }
 
+// RequestPrice is what one request costs, worked out once: its USD, the family it prices
+// under, and whether anything priced it. A holder of requests keeps one per request and sums
+// them with a CostTally, so a view never prices a request again.
+type RequestPrice struct {
+	USD    shared.USD
+	Family CostFamily
+	Priced bool
+}
+
+// PriceOfRequest prices one request; an unpriced request still carries its family.
+func PriceOfRequest(r PricedRequest) RequestPrice {
+	price := RequestCost(r)
+	family := CostFamilyOf(r.Model)
+	if price == nil {
+		return RequestPrice{Family: family}
+	}
+	return RequestPrice{USD: price.USD, Family: family, Priced: true}
+}
+
+// CostTally sums request prices in the order they are added, as a total and as a split by
+// model family; both stay nil until something priced.
+type CostTally struct {
+	total, claude, glm, other tallyCell
+}
+
+// tallyCell is a running sum that has not started until a price lands in it.
+type tallyCell struct {
+	usd    shared.USD
+	priced bool
+}
+
+func (c *tallyCell) add(usd shared.USD) {
+	if c.priced {
+		c.usd += usd
+		return
+	}
+	c.usd, c.priced = usd, true
+}
+
+func (c tallyCell) result() *shared.USD {
+	if !c.priced {
+		return nil
+	}
+	usd := c.usd
+	return &usd
+}
+
+// Add folds one request's price in; an unpriced one changes nothing.
+func (t *CostTally) Add(price RequestPrice) {
+	if !price.Priced {
+		return
+	}
+	t.total.add(price.USD)
+	switch price.Family {
+	case FamilyClaude:
+		t.claude.add(price.USD)
+	case FamilyGLM:
+		t.glm.add(price.USD)
+	default:
+		t.other.add(price.USD)
+	}
+}
+
+// Total is the cost of everything added: nil when none of it was priced.
+func (t *CostTally) Total() *shared.USD { return t.total.result() }
+
+// Split is the cost of everything added by model family; a family stays nil until something
+// of it prices.
+func (t *CostTally) Split() CostSplit {
+	return CostSplit{Claude: t.claude.result(), GLM: t.glm.result(), Other: t.other.result()}
+}
+
 // CostByFamily splits a request list's cost by model family; a family stays nil until
 // something of it prices.
 func CostByFamily(requests []PricedRequest) CostSplit {
-	var split CostSplit
+	var tally CostTally
 	for i := range requests {
-		cost := RequestCost(requests[i])
-		if cost == nil {
-			continue
-		}
-		switch CostFamilyOf(requests[i].Model) {
-		case FamilyClaude:
-			split.Claude = AddCost(split.Claude, &cost.USD)
-		case FamilyGLM:
-			split.GLM = AddCost(split.GLM, &cost.USD)
-		default:
-			split.Other = AddCost(split.Other, &cost.USD)
-		}
+		tally.Add(PriceOfRequest(requests[i]))
 	}
-	return split
+	return tally.Split()
 }
 
 // CostOfAll is the total estimated cost of some requests: nil when none of them was priced.
 func CostOfAll(requests []PricedRequest) *shared.USD {
-	var total *shared.USD
+	var tally CostTally
 	for i := range requests {
-		cost := RequestCost(requests[i])
-		if cost == nil {
-			continue
-		}
-		total = AddCost(total, &cost.USD)
+		tally.Add(PriceOfRequest(requests[i]))
 	}
-	return total
+	return tally.Total()
 }
 
 // pluginPrefixes maps a model id's prefix to the provider plugin that serves it.

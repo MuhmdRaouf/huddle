@@ -347,6 +347,9 @@ type storedRequest struct {
 	record shared.RequestRecord
 	seq    int64
 	gone   bool // the store dropped the record; requestOrder still lists it until it compacts
+	// price is what the record costs, worked out when it landed and again when a later source
+	// replaced it: every view reads it, none prices.
+	price cost.RequestPrice
 }
 
 // storedTool is a tool call and its arrival number.
@@ -421,6 +424,8 @@ type Store struct {
 	// cap by the same arithmetic.
 	maxRecords int64
 	evictBatch int64
+	// price works out what a record costs, once, when it lands.
+	price func(shared.RequestRecord) cost.RequestPrice
 	// window is how far back records are kept; zero keeps every record until the cap sheds
 	// it.
 	window time.Duration
@@ -494,6 +499,7 @@ type Store struct {
 func CreateStore(now func() time.Time) *Store {
 	return &Store{
 		now:               now,
+		price:             pricedNow,
 		maxRecords:        shared.MaxRecords,
 		evictBatch:        (shared.MaxRecords + 9) / 10,
 		repoRoot:          make(map[string]*string),
@@ -1536,6 +1542,7 @@ func (s *Store) placeRequestLocked(record shared.RequestRecord) shared.RequestRe
 func (s *Store) insertRequestLocked(stored shared.RequestRecord) {
 	fileUnder(s.requestsBySession, stored.SessionID, stored.ID)
 	held := &storedRequest{record: stored, seq: s.nextArrivalLocked()}
+	s.priceHeldLocked(held)
 	s.requests[stored.ID] = held
 	s.requestOrder.add(held)
 	s.projectRequestLocked(held)
@@ -1550,6 +1557,24 @@ func (s *Store) refileRequestLocked(held *storedRequest, stored shared.RequestRe
 		fileUnder(s.requestsBySession, stored.SessionID, stored.ID)
 	}
 	held.record = stored
+	s.priceHeldLocked(held)
+}
+
+// priceHeldLocked works out what a held request costs. The price sheet is compiled in and
+// a price reads only the record, so a held price is good until a later source replaces the
+// record.
+func (s *Store) priceHeldLocked(held *storedRequest) {
+	held.price = s.price(held.record)
+}
+
+// priceOfLocked is what a request costs: the held price when the record is the one the store
+// holds, else the record priced as it stands.
+func (s *Store) priceOfLocked(record *shared.RequestRecord) cost.RequestPrice {
+	held, ok := s.requests[record.ID]
+	if !ok || &held.record != record {
+		return pricedNow(*record)
+	}
+	return held.price
 }
 
 // ownCopyLocked is the held record a later copy from the same source refreshes: the
@@ -2149,7 +2174,7 @@ func (s *Store) buildSummaryLocked() shared.Summary {
 	for _, state := range states {
 		views = append(views, *s.sessionViewLocked(state))
 	}
-	summary := Summarize(views, s.allRequestsLocked(), s.allToolsLocked(), s.nowMillis())
+	summary := Summarize(views, s.allRequestsLocked(), s.allToolsLocked(), s.nowMillis(), s.priceOfLocked)
 	for _, state := range states {
 		summary.Errors += s.noticesOfLocked(state.id, nil)
 	}
@@ -2196,7 +2221,7 @@ func (s *Store) buildSessionListLocked() []SessionListItem {
 		if slice := proj[state.id]; slice != nil {
 			mine = slice.requests
 		}
-		split := cost.CostByFamily(pricedRequests(mine))
+		split := costSplitOf(mine, s.priceOfLocked)
 		item := SessionListItem{
 			ID:              view.ID,
 			Project:         view.Project,
@@ -2218,7 +2243,7 @@ func (s *Store) buildSessionListLocked() []SessionListItem {
 			LastAt:          state.lastAt,
 			External:        view.External,
 			Title:           title,
-			CostUsd:         cost.CostOfAll(pricedRequests(mine)),
+			CostUsd:         costOf(mine, s.priceOfLocked),
 			CostSplitUsd:    &split,
 		}
 		item.Now, item.Context = cardPresence(mine, view.Live)
@@ -2322,7 +2347,7 @@ func (s *Store) buildAgentView(sessionID string, agent *agentState, slice *sessi
 	view.Errors += mine.failed
 	view.Tools = int64(len(mine.tools))
 	view.Tokens = mine.tokens
-	view.CostUsd = cost.CostOfAll(pricedRequests(mine.requests))
+	view.CostUsd = costOf(mine.requests, s.priceOfLocked)
 	if mine.lastRequest != nil {
 		view.Model = strPtr(mine.lastRequest.Model)
 	}
@@ -2931,8 +2956,8 @@ func (s *Store) Models(scope *ModelsScope) ModelsAnswer {
 		answer := derivedOf(&s.modelsCache, s.ver, s.nowMillis(), func() ModelsAnswer {
 			requests := s.allRequestsLocked()
 			return ModelsAnswer{
-				Models:    ModelRows(requests),
-				Upstreams: UpstreamRows(requests),
+				Models:    ModelRows(requests, s.priceOfLocked),
+				Upstreams: UpstreamRows(requests, s.priceOfLocked),
 				Tools:     ToolCounts(s.allToolsLocked()),
 			}
 		})
@@ -2955,8 +2980,8 @@ func (s *Store) Models(scope *ModelsScope) ModelsAnswer {
 		}
 	}
 	return ModelsAnswer{
-		Models:    ModelRows(requests),
-		Upstreams: UpstreamRows(requests),
+		Models:    ModelRows(requests, s.priceOfLocked),
+		Upstreams: UpstreamRows(requests, s.priceOfLocked),
 		Tools:     ToolCounts(s.allToolsLocked()),
 	}
 }

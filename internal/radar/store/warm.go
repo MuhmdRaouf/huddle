@@ -319,6 +319,7 @@ func (s *Store) placeWarmRequestLocked(record shared.RequestRecord, written int6
 	}
 	fileUnder(s.requestsBySession, record.SessionID, record.ID)
 	held := &storedRequest{record: record, seq: written}
+	s.priceHeldLocked(held)
 	s.requests[record.ID] = held
 	s.requestOrder.add(held)
 	s.arrival = max(s.arrival, written)

@@ -68,7 +68,7 @@ func isStopError(stopReason *string) bool {
 }
 
 // Summarize is the dashboard's totals row over the records in view.
-func Summarize(sessions []shared.SessionView, requests []*shared.RequestRecord, tools []*shared.ToolCallRecord, now int64) shared.Summary {
+func Summarize(sessions []shared.SessionView, requests []*shared.RequestRecord, tools []*shared.ToolCallRecord, now int64, priceOf priceReader) shared.Summary {
 	var liveSessions, agents, errors int64
 	for i := range sessions {
 		if sessions[i].Live {
@@ -109,7 +109,7 @@ func Summarize(sessions []shared.SessionView, requests []*shared.RequestRecord, 
 		LatencyP95:   Percentile(latencies, 95),
 		StartedAt:    startedAt,
 		Now:          now,
-		CostUsd:      cost.CostOfAll(pricedRequests(requests)),
+		CostUsd:      costOf(requests, priceOf),
 	}
 }
 
@@ -121,7 +121,7 @@ type ToolCountRow struct {
 }
 
 // ModelRows is one row per model in the models table, biggest token total first.
-func ModelRows(requests []*shared.RequestRecord) []shared.ModelRow {
+func ModelRows(requests []*shared.RequestRecord, priceOf priceReader) []shared.ModelRow {
 	type bucket struct {
 		requests []*shared.RequestRecord
 	}
@@ -146,7 +146,7 @@ func ModelRows(requests []*shared.RequestRecord) []shared.ModelRow {
 			Errors:     countErrors(b.requests),
 			Tokens:     sumTokens(b.requests),
 			LatencyP50: Percentile(latenciesOf(b.requests), 50),
-			CostUsd:    cost.CostOfAll(pricedRequests(b.requests)),
+			CostUsd:    costOf(b.requests, priceOf),
 		})
 	}
 	slices.SortStableFunc(rows, func(a, b shared.ModelRow) int {
@@ -157,7 +157,7 @@ func ModelRows(requests []*shared.RequestRecord) []shared.ModelRow {
 
 // UpstreamRows is one row per host in the upstreams table, biggest token total first: a
 // router's "api.z.ai" and a session's "https://api.z.ai" are the same endpoint.
-func UpstreamRows(requests []*shared.RequestRecord) []shared.UpstreamRow {
+func UpstreamRows(requests []*shared.RequestRecord, priceOf priceReader) []shared.UpstreamRow {
 	type bucket struct {
 		requests []*shared.RequestRecord
 	}
@@ -181,7 +181,7 @@ func UpstreamRows(requests []*shared.RequestRecord) []shared.UpstreamRow {
 			Host:     host,
 			Requests: int64(len(b.requests)),
 			Tokens:   sumTokens(b.requests),
-			CostUsd:  cost.CostOfAll(pricedRequests(b.requests)),
+			CostUsd:  costOf(b.requests, priceOf),
 		})
 	}
 	slices.SortStableFunc(rows, func(a, b shared.UpstreamRow) int {
@@ -259,24 +259,46 @@ func sumTokens(requests []*shared.RequestRecord) shared.Tokens {
 	return tokens
 }
 
-// pricedRequests carries a record list's pricing fields to the cost reader; a record with
-// no stop reason is one the stream may still be writing, whose opening numbers never
-// price.
-func pricedRequests(records []*shared.RequestRecord) []cost.PricedRequest {
-	priced := make([]cost.PricedRequest, 0, len(records))
-	for i := range records {
-		priced = append(priced, cost.PricedRequest{
-			Model:          records[i].Model,
-			Ts:             records[i].Ts,
-			Tokens:         records[i].Tokens,
-			Upstream:       records[i].Upstream,
-			StopReason:     records[i].StopReason,
-			StopReasonNull: records[i].StopReason == nil,
-			CacheWrite1h:   records[i].CacheWrite1h,
-			Speed:          records[i].Speed,
-			Geo:            records[i].Geo,
-			ServiceTier:    records[i].ServiceTier,
-		})
+// priceReader answers what one stored request costs; the store answers from the price it
+// holds, a caller with bare records prices them as they stand (pricedNow).
+type priceReader func(*shared.RequestRecord) cost.RequestPrice
+
+// pricedOf carries a record's pricing fields to the cost reader; a record with no stop
+// reason is one the stream may still be writing, whose opening numbers never price.
+func pricedOf(record *shared.RequestRecord) cost.PricedRequest {
+	return cost.PricedRequest{
+		Model:          record.Model,
+		Ts:             record.Ts,
+		Tokens:         record.Tokens,
+		Upstream:       record.Upstream,
+		StopReason:     record.StopReason,
+		StopReasonNull: record.StopReason == nil,
+		CacheWrite1h:   record.CacheWrite1h,
+		Speed:          record.Speed,
+		Geo:            record.Geo,
+		ServiceTier:    record.ServiceTier,
 	}
-	return priced
+}
+
+// pricedNow prices a record as it stands.
+func pricedNow(record shared.RequestRecord) cost.RequestPrice {
+	return cost.PriceOfRequest(pricedOf(&record))
+}
+
+// costOf is the total cost of some requests, nil when none was priced.
+func costOf(records []*shared.RequestRecord, priceOf priceReader) *shared.USD {
+	var tally cost.CostTally
+	for _, record := range records {
+		tally.Add(priceOf(record))
+	}
+	return tally.Total()
+}
+
+// costSplitOf is the cost of some requests by model family.
+func costSplitOf(records []*shared.RequestRecord, priceOf priceReader) cost.CostSplit {
+	var tally cost.CostTally
+	for _, record := range records {
+		tally.Add(priceOf(record))
+	}
+	return tally.Split()
 }

@@ -3,6 +3,7 @@ package store
 import (
 	"testing"
 
+	"github.com/MuhmdRaouf/huddle/internal/radar/cost"
 	"github.com/MuhmdRaouf/huddle/internal/radar/shared"
 )
 
@@ -52,6 +53,9 @@ func TestMeanOf(t *testing.T) {
 	})
 }
 
+// livePrice prices a bare record as it stands, as a caller without a store does.
+func livePrice(record *shared.RequestRecord) cost.RequestPrice { return pricedNow(*record) }
+
 func TestSummarize(t *testing.T) {
 	t.Run("counts sessions, live sessions, agents, requests, tools and errors", func(t *testing.T) {
 		summary := Summarize(
@@ -98,6 +102,7 @@ func TestSummarize(t *testing.T) {
 				makeTool(func(tool *shared.ToolCallRecord) { tool.ID = "t2"; tool.Ok = false }),
 			}),
 			2_000,
+			livePrice,
 		)
 		if summary.Sessions != 2 {
 			t.Errorf("sessions: got %d, want 2", summary.Sessions)
@@ -135,7 +140,7 @@ func TestSummarize(t *testing.T) {
 	})
 
 	t.Run("keeps nulls honest when there is nothing to measure", func(t *testing.T) {
-		summary := Summarize(nil, nil, nil, 5_000)
+		summary := Summarize(nil, nil, nil, 5_000, livePrice)
 		if summary.StartedAt != nil {
 			t.Errorf("startedAt: got %s, want null", showInt(summary.StartedAt))
 		}
@@ -166,6 +171,7 @@ func TestSummarize(t *testing.T) {
 			}),
 			nil,
 			0,
+			livePrice,
 		)
 		if summary.StartedAt != nil {
 			t.Errorf("startedAt: got %s, want null", showInt(summary.StartedAt))
@@ -195,7 +201,7 @@ func TestModelRows(t *testing.T) {
 				r.LatencyMs = i64(50)
 				r.StopReason = str("overloaded_error")
 			}),
-		}))
+		}), livePrice)
 		if len(rows) != 2 {
 			t.Fatalf("rows length: got %d, want 2", len(rows))
 		}
@@ -232,7 +238,7 @@ func TestModelRows(t *testing.T) {
 	})
 
 	t.Run("returns nothing for no requests", func(t *testing.T) {
-		if rows := ModelRows(nil); len(rows) != 0 {
+		if rows := ModelRows(nil, livePrice); len(rows) != 0 {
 			t.Errorf("rows: got %v, want none", rows)
 		}
 	})
@@ -253,7 +259,7 @@ func TestUpstreamRows(t *testing.T) {
 				r.Upstream = "http://localhost:8787/v1"
 				r.Tokens = tokens(0, 50, 0, 0)
 			}),
-		}))
+		}), livePrice)
 		if len(rows) != 2 {
 			t.Fatalf("rows length: got %d, want 2", len(rows))
 		}

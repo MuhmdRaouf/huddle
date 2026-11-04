@@ -1,9 +1,12 @@
 package cost
 
 import (
+	"regexp"
 	"slices"
+	"strings"
 	"testing"
 
+	"github.com/MuhmdRaouf/huddle/internal/jsscalar"
 	"github.com/MuhmdRaouf/huddle/internal/radar/shared"
 )
 
@@ -300,6 +303,34 @@ func TestNormalizeModelTrimsJavaScriptWhitespace(t *testing.T) {
 	for _, c := range cases {
 		if got := NormalizeModel(c.model); got != c.want {
 			t.Errorf("NormalizeModel(%q) = %q, want %q", c.model, got, c.want)
+		}
+	}
+}
+
+// NormalizeModel answers what the context-suffix pattern \[[^\]]*\]$ would cut, for every shape
+// of bracket a model id can carry, without a regular expression.
+func TestNormalizeModelCutsTheContextSuffixTheWayThePatternDoes(t *testing.T) {
+	suffix := regexp.MustCompile(`\[[^\]]*\]$`)
+	reference := func(model string) string {
+		bare := suffix.ReplaceAllString(jsscalar.Trim(model), "")
+		if slash := strings.LastIndex(bare, "/"); slash >= 0 {
+			bare = bare[slash+1:]
+		}
+		return strings.ToLower(bare)
+	}
+	pieces := []string{"", "a", "Glm-5.3", "zai/", "/", "[", "]", "[1m]", " ", " ", "[x", "x]"}
+	var models []string
+	for _, a := range pieces {
+		for _, b := range pieces {
+			for _, c := range pieces {
+				models = append(models, a+b+c)
+			}
+		}
+	}
+	models = append(models, "zai/GLM-5.3[1m]", "a[b]c[d]", "a[b[c]", "a[b]]", "[[]]", "m[1m] ", " m[1m]", "x/y/z[1m]")
+	for _, model := range models {
+		if got, want := NormalizeModel(model), reference(model); got != want {
+			t.Errorf("NormalizeModel(%q) = %q, want %q", model, got, want)
 		}
 	}
 }
