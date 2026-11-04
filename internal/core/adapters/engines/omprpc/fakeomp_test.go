@@ -5,7 +5,6 @@ package omprpc
 // recorded from omp 18.6.1 (testdata/engines/omp-rpc).
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"encoding/base64"
@@ -30,7 +29,8 @@ import (
 const childModeEnv = "ENGINE_TEST_CHILD"
 
 // childDeadline bounds every child the tests start, so one that escapes its test's cleanup cannot
-// linger.
+// linger. The fake omp counts it from its host's last command (hostSilence); the sleepers count it
+// from their start.
 const childDeadline = 60 * time.Second
 
 func TestMain(m *testing.M) {
@@ -367,11 +367,13 @@ type fakeOmp struct {
 	inputEnded  bool
 	hostReplies map[string]chan map[string]json.RawMessage
 	hostCallIds int
+
+	silence *hostSilence
 }
 
 func runFakeOmp(args []string) {
 	// One backstop for every child: a fake stuck without its host dies here, not in CI.
-	time.AfterFunc(childDeadline, func() { os.Exit(99) })
+	silence := startHostSilence(childDeadline, func() { os.Exit(99) }, realAfterFunc)
 	// --version is answered before the flags are parsed, as the real omp does.
 	for _, arg := range args {
 		if arg == "--version" {
@@ -384,6 +386,7 @@ func runFakeOmp(args []string) {
 		}
 	}
 	f := newFakeOmp(args)
+	f.silence = silence
 	if f.flags["--mode"] != "rpc" {
 		os.Stderr.WriteString("fake omp: only --mode rpc is supported\n")
 		os.Exit(2)
@@ -1099,16 +1102,7 @@ func (f *fakeOmp) serve() {
 		fStr("type", "available_commands_update"),
 		fRaw("commands", array(object(fStr("name", "dump"), fStr("description", "Dump the session")))),
 	))
-	reader := bufio.NewReader(os.Stdin)
-	for {
-		line, err := reader.ReadString('\n')
-		if trimmed := strings.TrimRight(line, "\r\n"); trimmed != "" {
-			f.handle(trimmed)
-		}
-		if err != nil {
-			break
-		}
-	}
+	eachHostLine(os.Stdin, f.silence, f.handle)
 	f.mu.Lock()
 	f.inputEnded = true
 	leave := f.turn == nil && f.settleTimer == nil
@@ -1145,27 +1139,20 @@ type fakeInbox struct {
 	ended    chan struct{}
 }
 
-func newFakeInbox() *fakeInbox {
+func newFakeInbox(silence *hostSilence) *fakeInbox {
 	inbox := &fakeInbox{ended: make(chan struct{})}
 	inbox.cond = sync.NewCond(&inbox.mu)
 	go func() {
 		defer close(inbox.ended)
-		reader := bufio.NewReader(os.Stdin)
-		for {
-			line, err := reader.ReadString('\n')
-			if trimmed := strings.TrimRight(line, "\r\n"); trimmed != "" {
-				var command map[string]json.RawMessage
-				if json.Unmarshal([]byte(trimmed), &command) == nil {
-					inbox.mu.Lock()
-					inbox.received = append(inbox.received, command)
-					inbox.cond.Signal()
-					inbox.mu.Unlock()
-				}
+		eachHostLine(os.Stdin, silence, func(line string) {
+			var command map[string]json.RawMessage
+			if json.Unmarshal([]byte(line), &command) == nil {
+				inbox.mu.Lock()
+				inbox.received = append(inbox.received, command)
+				inbox.cond.Signal()
+				inbox.mu.Unlock()
 			}
-			if err != nil {
-				return
-			}
-		}
+		})
 	}()
 	return inbox
 }
@@ -1222,7 +1209,7 @@ func (f *fakeOmp) replay(dir string) {
 			entries = append(entries, entry)
 		}
 	}
-	inbox := newFakeInbox()
+	inbox := newFakeInbox(f.silence)
 	ids := map[string]string{}
 	for _, entry := range entries {
 		if entry.Dir == "in" {

@@ -633,3 +633,19 @@ Each incident, its cause, and the test that now stops it. A guard named here mus
 - **Rule:** a test that races a call against another asserts what the product promises at every interleaving, and
   pins each interleaving the product answers differently through a seam; it never reads through a handle the
   other call closes.
+
+## 2026-11-03, a machine-wide stall killed a healthy omp replay through the fake's 60 s clock
+
+- **What happened:** the full gate on a632ccd2 failed `TestRecordedOmpSessions/success-edit` after 60.04 s with
+  "want a completed agent turn"; the turn had ended with the fake's exit. The fixture passed alone, in the 12
+  fixtures that ran after it (15 s together) and in every earlier gate. The gate's load average stood at 380 for
+  about two minutes (an iOS Simulator and a virus scanner, outside the suite), and omprpc's tests ran inside it.
+- **Cause:** the fake omp killed itself with exit 99 a fixed 60 s after it started, however much the host had
+  said since. The replay logic holds: 13 fixtures replayed 50 times each under `-race` without one stall. A replay is a few round trips, so it only needs the machine for a moment, but when the machine
+  stalls the host and the fake together, those 60 s run out in the middle of a healthy replay and the host sees
+  the fake exit.
+- **Guard:** `TestAFakeWhoseHostKeepsTalkingIsNeverCutOff`, `TestAFakeWhoseHostFallsSilentIsCutOffAtTheLimit` and
+  `TestEveryCommandTheHostWritesStartsTheLimitOver` (internal/core/adapters/engines/omprpc/hostsilence_test.go),
+  on a virtual clock.
+- **Rule:** a test child's backstop counts the host's silence, not its own age: every command the host sends
+  starts the limit over, and only a host that stopped talking for the whole limit ends the child.
