@@ -308,6 +308,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "huddle-harness"
+version = "0.0.1"
+dependencies = [
+ "huddle-config",
+ "huddle-procs",
+ "huddle-testkit",
+ "libc",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "huddle-keystore"
 version = "0.0.1"
 dependencies = [

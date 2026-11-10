@@ -32,6 +32,7 @@ huddle-router = { path = "crates/huddle-router" }
 huddle-daemon = { path = "crates/huddle-daemon" }
 huddle-keystore = { path = "crates/huddle-keystore" }
 huddle-procs = { path = "crates/huddle-procs" }
+huddle-harness = { path = "crates/huddle-harness" }
 huddle-setup = { path = "crates/huddle-setup" }
 
 [profile.release]
