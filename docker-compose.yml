@@ -1,0 +1,24 @@
+# =============================================================================
+# huddle — the service every mise docker:* task runs through.
+# The WHOLE tree is mounted at /work: the image is only the toolchain, so the
+# gates and builds run against the live checkout, never a COPY of it.
+# =============================================================================
+services:
+  huddle:
+    build: .
+    working_dir: /work
+    environment:
+      # The docker builds land beside, never inside, the host's target/.
+      CARGO_TARGET_DIR: /work/target/docker
+      # The machine is shared; container builds stay as narrow as host gates.
+      CARGO_BUILD_JOBS: 4
+    volumes:
+      - .:/work
+      - cargo-registry:/usr/local/cargo/registry
+      - cargo-git:/usr/local/cargo/git
+      - pre-commit-cache:/root/.cache/pre-commit
+
+volumes:
+  cargo-registry:
+  cargo-git:
+  pre-commit-cache:

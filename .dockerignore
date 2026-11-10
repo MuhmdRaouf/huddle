@@ -1,0 +1,4 @@
+# ┌ Everything: nothing is COPYed from the build context — the image is the
+# │ toolchain, and docker-compose.yml bind-mounts the source at run time. This
+# └ repo's context carries target/, .agents/ and the plugin dists; none is needed.
+*

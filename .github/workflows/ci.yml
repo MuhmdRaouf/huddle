@@ -1,0 +1,310 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  # Everything, unfiltered.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+# Flow:
+#   1. Plan: which parts changed (a manual run checks everything). A part whose marker file is missing is skipped.
+#   2. Repository rules on every push: secrets, AI attribution, the pre-commit hooks (Markdown, YAML, workflows, hygiene), the plugin catalogue.
+#   3. Tests: format and clippy on ubuntu, the suite on ubuntu and macOS, and the router overhead gate alone on its runner.
+#   4. Release: the four release binaries, each built on a runner of its own CPU, and the 10 MB size ceiling on every binary.
+#   5. All checks passed: the one check branch protection requires; a skipped job counts as passed.
+# Runners are pinned so an image migration never changes the toolchain under a green build. Third-party actions are
+# pinned to commit SHAs; Dependabot proposes the bumps. Every job is capped at 10 minutes.
+
+jobs:
+  # 1. Plan
+
+  plan:
+    name: "Plan: what changed"
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+    outputs:
+      plugin: ${{ steps.pick.outputs.plugin }}
+      rust: ${{ steps.pick.outputs.rust }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        if: github.event_name != 'workflow_dispatch'
+        id: filter
+        with:
+          filters: |
+            plugin:
+              - '.claude-plugin/**'
+              - 'plugin/**'
+              - 'plugins/**'
+              - .github/workflows/ci.yml
+            rust:
+              - Cargo.toml
+              - Cargo.lock
+              - VERSION
+              - mise.toml
+              - 'crates/**'
+              - 'crates/huddle-release/**'
+              - 'release/size-limit'
+              - .github/workflows/ci.yml
+      - id: pick
+        env:
+          ALL: ${{ github.event_name == 'workflow_dispatch' }}
+          PLUGIN: ${{ steps.filter.outputs.plugin }}
+          RUST: ${{ steps.filter.outputs.rust }}
+        run: |
+          pick() { # name, changed, the file that must exist
+            if [ ! -e "$3" ]; then echo "$1=false"; elif [ "$ALL" = true ]; then echo "$1=true"; else echo "$1=${2:-false}"; fi
+          }
+          {
+            pick plugin "$PLUGIN" .claude-plugin/marketplace.json
+            pick rust "$RUST" Cargo.toml
+          } >> "$GITHUB_OUTPUT"
+          cat "$GITHUB_OUTPUT"
+
+  # 2. Repository rules
+
+  secrets:
+    name: "Repo: no secrets in history"
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # every commit, not just the tip
+      # The gitleaks CLI at a pinned release, its tarball checked against the published SHA-256. The default rules,
+      # extended by .gitleaks.toml with the exact fake keys the tests use.
+      - name: Install gitleaks 8.30.1
+        run: |
+          curl -sSfLo gitleaks.tar.gz https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz
+          echo "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb  gitleaks.tar.gz" | sha256sum -c -
+          tar -xzf gitleaks.tar.gz gitleaks
+          rm gitleaks.tar.gz
+      # Only the commits of the ref under test: the checkout also fetches every other branch.
+      - name: Scan every commit of this branch for secrets
+        run: ./gitleaks git --redact --verbose --log-opts=HEAD .
+
+  # GitHub lists every author and co-author as a contributor: no commit may credit an AI tool.
+  attribution:
+    name: "Repo: no AI attribution in history"
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@ff7f6a3374ce205788da40198ec918bd5d67aea7 # 1.99.0
+        with:
+          components: rustfmt
+      - run: cargo run -q --locked -p huddle-testkit --bin huddle-check-attribution
+
+  # The pre-commit hooks at the versions .pre-commit-config.yaml pins: Markdown, YAML, workflows (actionlint with
+  # shellcheck), file hygiene and private keys. A clone without the hook is caught here.
+  lint:
+    name: "Repo: lint (pre-commit hooks)"
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.14.7"
+      - name: Run every hook on every file
+        run: |
+          pip install pre-commit==4.6.2
+          pre-commit run --all-files --show-diff-on-failure
+
+  catalogue:
+    name: "Repo: marketplace and plugin valid"
+    needs: plan
+    if: needs.plan.outputs.plugin == 'true'
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+      - name: Validate the marketplace and the plugin
+        run: |
+          npx -y @anthropic-ai/claude-code@2.1.319 plugin validate .
+          npx -y @anthropic-ai/claude-code@2.1.319 plugin validate ./plugin
+      - name: Validate the zai plugin
+        run: npx -y @anthropic-ai/claude-code@2.1.319 plugin validate ./plugins/zai-plugin-cc
+      - name: Validate the kimi plugin
+        run: npx -y @anthropic-ai/claude-code@2.1.319 plugin validate ./plugins/kimi-plugin-cc
+      - name: Validate the deepseek plugin
+        run: npx -y @anthropic-ai/claude-code@2.1.319 plugin validate ./plugins/deepseek-plugin-cc
+      - name: Validate the minimax plugin
+        run: npx -y @anthropic-ai/claude-code@2.1.319 plugin validate ./plugins/minimax-plugin-cc
+      - name: Validate the qwen plugin
+        run: npx -y @anthropic-ai/claude-code@2.1.319 plugin validate ./plugins/qwen-plugin-cc
+
+  # 3. Tests
+
+  # Rust: the format and lint gates on ubuntu, the suite on ubuntu and macOS.
+
+  rust-fmt:
+    name: "Rust: format"
+    needs: plan
+    if: needs.plan.outputs.rust == 'true'
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@ff7f6a3374ce205788da40198ec918bd5d67aea7 # 1.99.0
+        with:
+          components: rustfmt
+      - run: cargo fmt --all --check
+
+  rust-clippy:
+    name: "Rust: clippy"
+    needs: plan
+    if: needs.plan.outputs.rust == 'true'
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@ff7f6a3374ce205788da40198ec918bd5d67aea7 # 1.99.0
+        with:
+          components: clippy
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: rust-${{ runner.os }}-clippy-${{ hashFiles('Cargo.lock', 'crates/**/*.rs') }}
+          restore-keys: rust-${{ runner.os }}-clippy-
+      - run: cargo clippy --workspace --all-targets --locked -- -D warnings
+
+  rust-test:
+    name: "Test: Rust (${{ matrix.runner }})"
+    needs: plan
+    if: needs.plan.outputs.rust == 'true'
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-26.04, macos-26]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@ff7f6a3374ce205788da40198ec918bd5d67aea7 # 1.99.0
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: rust-${{ runner.os }}-test-${{ matrix.runner }}-${{ hashFiles('Cargo.lock', 'crates/**/*.rs') }}
+          restore-keys: rust-${{ runner.os }}-test-${{ matrix.runner }}-
+      - name: Tests (nothing left in TMPDIR, no process left running)
+        run: cargo run -q -p huddle-testkit --bin huddle-test-guard -- --workspace --locked
+
+  # The router overhead timing gate: release build only, alone on its runner so no other load competes with the timings.
+  overhead:
+    name: "Test: router overhead"
+    needs: plan
+    if: needs.plan.outputs.rust == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@ff7f6a3374ce205788da40198ec918bd5d67aea7 # 1.99.0
+      - run: cargo test --release -p huddle --test router_overhead
+
+  # 4. Release
+
+  # The four release binaries, each built on a runner of its own CPU. The linux targets are static musl binaries.
+  rust-cross:
+    name: "Rust: release build (${{ matrix.asset }})"
+    needs: plan
+    if: needs.plan.outputs.rust == 'true'
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { runner: ubuntu-26.04, target: x86_64-unknown-linux-musl, asset: huddle-linux-amd64 }
+          - { runner: ubuntu-24.04-arm, target: aarch64-unknown-linux-musl, asset: huddle-linux-arm64 }
+          - { runner: macos-26-intel, target: x86_64-apple-darwin, asset: huddle-darwin-amd64 }
+          - { runner: macos-26, target: aarch64-apple-darwin, asset: huddle-darwin-arm64 }
+    env:
+      TARGET: ${{ matrix.target }}
+      ASSET: ${{ matrix.asset }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@ff7f6a3374ce205788da40198ec918bd5d67aea7 # 1.99.0
+        with:
+          targets: ${{ matrix.target }}
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: rust-${{ runner.os }}-cross-${{ matrix.target }}-${{ hashFiles('Cargo.lock', 'crates/**/*.rs') }}
+          restore-keys: rust-${{ runner.os }}-cross-${{ matrix.target }}-
+      - name: The musl C compiler ring builds with
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y musl-tools
+          echo "CC_$(echo "$TARGET" | tr - _)=musl-gcc" >> "$GITHUB_ENV"
+      - run: cargo build --release --locked -p huddle --bin huddle --target "$TARGET"
+      - name: Name the asset
+        run: |
+          mkdir -p dist
+          cp "target/$TARGET/release/huddle" "dist/$ASSET"
+      - name: The linux binaries are static
+        if: runner.os == 'Linux'
+        run: file "dist/$ASSET" | grep -Eq 'statically linked|static-pie linked'
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: rust-cross-${{ matrix.asset }}
+          path: dist/${{ matrix.asset }}
+          if-no-files-found: error
+
+  # The 10 MB ceiling on every release binary (release/size-limit).
+  rust-size:
+    name: "Rust: release binary size"
+    needs: [plan, rust-cross]
+    if: needs.plan.outputs.rust == 'true'
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@ff7f6a3374ce205788da40198ec918bd5d67aea7 # 1.99.0
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: rust-cross-*
+          merge-multiple: true
+          path: dist
+      - run: cargo run -q --locked -p huddle-release -- size dist/huddle-*
+
+  # 5. Gate
+
+  all-checks:
+    name: All checks passed
+    if: always()
+    needs: [plan, secrets, attribution, lint, catalogue, rust-fmt, rust-clippy, rust-test, overhead, rust-cross, rust-size]
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+    steps:
+      - env:
+          FAILED: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}
+        run: |
+          if [ "$FAILED" = true ]; then
+            echo "a required job failed or was cancelled"
+            exit 1
+          fi
+          echo "every required job passed or was skipped"

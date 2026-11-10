@@ -1,0 +1,35 @@
+# Changelog
+
+## 0.0.1
+
+First release of huddle: one local router for the provider models, and the delegation words that hand work to other CLI harnesses.
+
+### Router
+
+- One router daemon, huddle-router, on 127.0.0.1:4835: one lane per set-up provider (zai, kimi, deepseek, minimax, qwen), and `claude-*` requests reach Anthropic untouched.
+- A provider request forwards unchanged except the destination, the key swap and the hop-by-hop headers; a message-threads beta answers 400, and Qwen's `context_management` field is the one body edit.
+- The key comes from the environment or the OS keystore (macOS Keychain, the Secret Service on Linux); it never travels in a chat, an argument or an output line.
+- `huddle provider <p> usage` reports requests, tokens and estimated cost per model, from one route line a day.
+- The daemon re-reads `providers.json` every 2 s, so enabling and removing a provider needs no restart. A binary update or a resident size past 1 GiB (`HUDDLE_ROUTER_RSS_CEILING_MB`) hands the socket to a new process; the requests in flight drain.
+- Setup points Claude Code at the router through `HTTPS_PROXY` and the local CA in `~/.agents/ca`; a proxy or CA of your own is never touched.
+
+### Providers
+
+- The five provider plugins (zai, kimi, deepseek, minimax, qwen) each set up with one command and add their models to `/model`; removing one takes its lane, its models and its key back out.
+- The five provider plugins delegate to GLM, Kimi, DeepSeek, MiniMax and Qwen models through the same words.
+
+### Delegation
+
+- `huddle run <harness> <task>` hands work to any CLI harness in its own worktree: the driver runs detached, `huddle result` shows the report and the diff, `--accept` lands it as a commit, `--return` sends it back with feedback, `huddle cancel` removes the worktree and branch.
+- `--background` returns at once; `--setup`, `--gate`, `--scope` and `--forbid` attach checks whose evidence follows the result.
+- `huddle setup` reports every harness's readiness before you delegate; `--smoke` runs one real turn.
+
+### Install
+
+- Install the plugin in Claude Code and run `/huddle:setup`: it gets the binary for this OS and CPU — the release download, checked against `SHA256SUMS`, or a cargo build of the checkout while no release is published — creates the local CA, starts the router and patches `settings.json`. Nothing changes before it runs.
+- One restart, then every session: the session-start hook brings the router back after a crash or a reboot.
+- macOS and Linux, amd64 and arm64. On Windows, huddle runs inside WSL with the Linux binary.
+
+### Verify a download
+
+Download `SHA256SUMS` beside the binary from the release page and run `sha256sum -c SHA256SUMS --ignore-missing` (on macOS, `shasum -a 256 -c SHA256SUMS --ignore-missing`).

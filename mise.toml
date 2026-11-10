@@ -1,0 +1,85 @@
+# =============================================================================
+# mise.toml — pins every tool this repository uses to an exact version.
+#
+#   Why: builds are reproducible and CI and a laptop must agree, so the
+#   toolchain is pinned here and CI reads the same versions.
+#
+#   Rules:
+#     - Exact versions only, never ranges. Bump one row, run `mise run check`,
+#       commit.
+#
+#   Start:    mise run setup    (tools + the git hook, once per clone)
+#             mise tasks        (every task below)
+# =============================================================================
+
+[tools]
+rust       = "1.99.0"
+python     = "3.14.7"
+pre-commit = "4.6.2"
+gitleaks   = "8.30.1"
+
+# =============================================================================
+
+[tasks.setup]
+description = "Install the pinned tools and the pre-commit hook (once per clone)"
+dir = "{{config_root}}"
+run = [
+  "mise install",
+  "pre-commit install --install-hooks",
+]
+
+[tasks.lint]
+description = "Run every pre-commit hook on every file"
+dir = "{{config_root}}"
+run = "pre-commit run --all-files"
+
+[tasks.check]
+description = "Every gate CI runs: lint, static checks and the test suites"
+dir = "{{config_root}}"
+depends = ["lint", "rust:check"]
+run = [
+  "mise run rust:check",
+]
+
+[tasks."rust:check"]
+description = "Rust gates: format, lint and the test suite"
+dir = "{{config_root}}"
+run = [
+  "cargo fmt --all --check",
+  "cargo clippy --workspace --all-targets --locked -- -D warnings",
+  "cargo run -q -p huddle-testkit --bin huddle-test-guard -- --workspace --locked",
+]
+
+[tasks."check:history"]
+description = "Scan every commit of the current branch for secrets and AI attribution (as CI does)"
+dir = "{{config_root}}"
+run = [
+  "gitleaks git --config .gitleaks.toml --redact --verbose --log-opts=HEAD .",
+  "cargo run -q -p huddle-testkit --bin huddle-check-attribution",
+]
+
+# =============================================================================
+# docker — the same gates and builds inside the toolchain image
+# (Dockerfile + docker-compose.yml). The image never COPYs the checkout:
+# compose bind-mounts it. Run builds one at a time.
+# =============================================================================
+
+[tasks."docker:check"]
+description = "The rust:check gates inside the docker toolchain image"
+dir = "{{config_root}}"
+run = "docker compose run --rm huddle sh -c \"cargo fmt --all --check && cargo clippy --workspace --all-targets --locked -- -D warnings && cargo run -q -p huddle-testkit --bin huddle-test-guard -- --workspace --locked\""
+
+[tasks."docker:build"]
+description = "Both static Linux binaries, size-checked, inside the docker toolchain image"
+dir = "{{config_root}}"
+run = "docker compose run --rm huddle sh -c \"cargo zigbuild --release --locked -p huddle --bin huddle --target x86_64-unknown-linux-musl && cargo zigbuild --release --locked -p huddle --bin huddle --target aarch64-unknown-linux-musl && cargo run -q --locked -p huddle-release -- size target/docker/x86_64-unknown-linux-musl/release/huddle target/docker/aarch64-unknown-linux-musl/release/huddle\""
+
+[tasks."docker:lint"]
+description = "The pre-commit hooks on every file, inside the docker toolchain image"
+dir = "{{config_root}}"
+run = "docker compose run --rm huddle sh -c \"pre-commit run --all-files\""
+
+[tasks."docker:shell"]
+description = "A shell in the docker toolchain image with the checkout mounted"
+dir = "{{config_root}}"
+run = "docker compose run --rm huddle bash"
