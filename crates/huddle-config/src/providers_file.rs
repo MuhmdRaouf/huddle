@@ -1,0 +1,228 @@
+//! providers.json: the providers huddle-router serves, re-read on every poll so enabling a
+//! provider needs no restart. The names are recorded as they are given and dropped when no
+//! compiled provider owns them, so the file can never turn a typo into a lane. Every write is
+//! locked and atomic, and every key the user added to the file survives it.
+
+use std::fmt;
+use std::fs::{self, OpenOptions};
+use std::io;
+use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt};
+use std::path::{Path, PathBuf};
+use std::thread;
+use std::time::{Duration, Instant};
+
+use serde::Deserialize;
+use serde_json::Value;
+
+use crate::atomic::write_atomic;
+
+/// The file's name inside the router dir.
+pub const PROVIDERS_FILE: &str = "providers.json";
+/// The file the lock is taken on: the write replaces providers.json's inode, so a lock on it
+/// would not survive the rename.
+pub const LOCK_FILE: &str = "providers.json.lock";
+
+/// How long `set_enabled` waits for the lock. The critical section is a read-modify-write of a
+/// file of a few names, so a longer wait hides a stuck writer.
+const LOCK_WAIT: Duration = Duration::from_secs(5);
+/// The pause between lock tries.
+const LOCK_RETRY: Duration = Duration::from_millis(50);
+
+/// What reading or writing providers.json can refuse.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ProvidersFileError {
+    /// Any read error other than a missing file: `<file>: <message>`.
+    Read { file: String, message: String },
+    /// Malformed or wrong-shape file: `<file>: not valid providers.json (<detail>)`.
+    Invalid { file: String, detail: String },
+    /// The lock is held past the 5 s wait: `<file>: lock held past 5 s`.
+    Locked { file: String },
+    /// Writing the file failed: `<file>: <message>`.
+    Write { file: String, message: String },
+}
+
+impl fmt::Display for ProvidersFileError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ProvidersFileError::Read { file, message } => write!(f, "{file}: {message}"),
+            ProvidersFileError::Invalid { file, detail } => {
+                write!(f, "{file}: not valid providers.json ({detail})")
+            }
+            ProvidersFileError::Locked { file } => write!(f, "{file}: lock held past 5 s"),
+            ProvidersFileError::Write { file, message } => write!(f, "{file}: {message}"),
+        }
+    }
+}
+
+impl std::error::Error for ProvidersFileError {}
+
+/// `<router_dir>/providers.json`.
+pub fn providers_path(router_dir: &Path) -> PathBuf {
+    router_dir.join(PROVIDERS_FILE)
+}
+
+/// The file's shape. `serde(default)` keeps a missing key from failing the parse; a key that is
+/// there but of the wrong type is a parse error, which the reads turn into `Invalid`.
+#[derive(Debug, Default, Deserialize)]
+struct FileShape {
+    #[serde(default)]
+    providers: Vec<String>,
+}
+
+/// Reads providers.json and answers the enabled providers filtered to `known`, in `known`
+/// order. A missing file is an empty list; any other read error, or JSON of the wrong shape, is
+/// an error.
+pub fn read_enabled(router_dir: &Path, known: &[&str]) -> Result<Vec<String>, ProvidersFileError> {
+    let path = providers_path(router_dir);
+    let parsed = parse_file(&path)?;
+    Ok(known
+        .iter()
+        .filter(|name| parsed.providers.contains(&name.to_string()))
+        .map(|name| name.to_string())
+        .collect())
+}
+
+/// Turns a provider on or off. The read-modify-write runs under the lock file, and the write
+/// itself is atomic, so a reader sees the whole old file or the whole new one. No write, and no
+/// mtime change, when the provider is already in the wanted state.
+pub fn set_enabled(router_dir: &Path, name: &str, on: bool) -> Result<(), ProvidersFileError> {
+    let path = providers_path(router_dir);
+    let lock_path = router_dir.join(LOCK_FILE);
+    let file_text = path.display().to_string();
+    let lock_text = lock_path.display().to_string();
+
+    fs::DirBuilder::new()
+        .recursive(true)
+        .mode(0o700)
+        .create(router_dir)
+        .map_err(|err| ProvidersFileError::Write {
+            file: file_text.clone(),
+            message: err.to_string(),
+        })?;
+    let lock = OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .read(true)
+        .write(true)
+        .mode(0o600)
+        .open(&lock_path)
+        .map_err(|err| ProvidersFileError::Write {
+            file: lock_text.clone(),
+            message: err.to_string(),
+        })?;
+    take_lock(&lock, &lock_text)?;
+
+    let mut value = read_current(&path)?;
+    let object = match value.as_object_mut() {
+        Some(object) => object,
+        None => {
+            return Err(ProvidersFileError::Invalid {
+                file: file_text,
+                detail: "the file is not a JSON object".to_string(),
+            });
+        }
+    };
+    let mut providers = providers_of(object, &file_text)?;
+    let has = providers.iter().any(|kept| kept == name);
+    if has == on {
+        return Ok(());
+    }
+    if on {
+        providers.push(name.to_string());
+    } else {
+        providers.retain(|kept| kept != name);
+    }
+    object.insert(
+        "providers".to_string(),
+        Value::Array(providers.into_iter().map(Value::String).collect()),
+    );
+    let bytes = serde_json::to_vec_pretty(&value).map_err(|err| ProvidersFileError::Write {
+        file: file_text.clone(),
+        message: err.to_string(),
+    })?;
+    write_atomic(&path, &bytes, 0o600).map_err(|err| ProvidersFileError::Write {
+        file: file_text,
+        message: err.to_string(),
+    })
+}
+
+/// Parses providers.json into the file's shape, telling a missing file from a broken one.
+fn parse_file(path: &Path) -> Result<FileShape, ProvidersFileError> {
+    let text = path.display().to_string();
+    let raw = match fs::read(path) {
+        Ok(raw) => raw,
+        Err(err) if err.kind() == io::ErrorKind::NotFound => return Ok(FileShape::default()),
+        Err(err) => {
+            return Err(ProvidersFileError::Read {
+                file: text,
+                message: err.to_string(),
+            });
+        }
+    };
+    serde_json::from_slice(&raw).map_err(|err| ProvidersFileError::Invalid {
+        file: text,
+        detail: err.to_string(),
+    })
+}
+
+/// Reads the current file as JSON, starting from an empty object when the file is missing or
+/// unreadable, so a fresh router dir is a valid starting point.
+fn read_current(path: &Path) -> Result<Value, ProvidersFileError> {
+    let text = path.display().to_string();
+    match fs::read(path) {
+        Ok(raw) => serde_json::from_slice(&raw).map_err(|err| ProvidersFileError::Invalid {
+            file: text,
+            detail: err.to_string(),
+        }),
+        Err(_) => Ok(Value::Object(serde_json::Map::new())),
+    }
+}
+
+/// The `providers` list of the current object, refusing a value of the wrong shape.
+fn providers_of(
+    object: &serde_json::Map<String, Value>,
+    file: &str,
+) -> Result<Vec<String>, ProvidersFileError> {
+    match object.get("providers") {
+        None | Some(Value::Null) => Ok(Vec::new()),
+        Some(Value::Array(items)) => items
+            .iter()
+            .map(|item| match item.as_str() {
+                Some(name) => Ok(name.to_string()),
+                None => Err(ProvidersFileError::Invalid {
+                    file: file.to_string(),
+                    detail: "providers is not a list of names".to_string(),
+                }),
+            })
+            .collect(),
+        Some(_) => Err(ProvidersFileError::Invalid {
+            file: file.to_string(),
+            detail: "providers is not a list of names".to_string(),
+        }),
+    }
+}
+
+/// Takes the file lock, waiting up to 5 s in 50 ms steps. The lock dies with the `File`, so the
+/// caller keeps it in scope for the whole critical section.
+fn take_lock(file: &fs::File, lock_text: &str) -> Result<(), ProvidersFileError> {
+    let deadline = Instant::now() + LOCK_WAIT;
+    loop {
+        match file.try_lock() {
+            Ok(()) => return Ok(()),
+            Err(std::fs::TryLockError::WouldBlock) => {
+                if Instant::now() >= deadline {
+                    return Err(ProvidersFileError::Locked {
+                        file: lock_text.to_string(),
+                    });
+                }
+                thread::sleep(LOCK_RETRY);
+            }
+            Err(std::fs::TryLockError::Error(err)) => {
+                return Err(ProvidersFileError::Write {
+                    file: lock_text.to_string(),
+                    message: err.to_string(),
+                });
+            }
+        }
+    }
+}
