@@ -320,6 +320,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "huddle-jobs"
+version = "0.0.1"
+dependencies = [
+ "huddle-config",
+ "huddle-harness",
+ "huddle-procs",
+ "huddle-testkit",
+ "libc",
+ "ring",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "huddle-keystore"
 version = "0.0.1"
 dependencies = [
