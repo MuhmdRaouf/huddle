@@ -28,6 +28,7 @@ huddle-testkit = { path = "crates/huddle-testkit" }
 huddle-config = { path = "crates/huddle-config" }
 huddle-catalog = { path = "crates/huddle-catalog" }
 huddle-pki = { path = "crates/huddle-pki" }
+huddle-router = { path = "crates/huddle-router" }
 huddle-keystore = { path = "crates/huddle-keystore" }
 huddle-procs = { path = "crates/huddle-procs" }
 
