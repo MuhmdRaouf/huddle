@@ -1,0 +1,173 @@
+#!/bin/sh
+# Gets the huddle binary for this OS and CPU, then runs it.
+#   sh "${CLAUDE_PLUGIN_ROOT}/dist/run" <word> [args...]
+# Only the word `setup` installs the binary: it downloads the release, or builds the checkout
+# with cargo while no release is published. Every other word runs the installed binary. A hook
+# does nothing and exits 0 until /huddle:setup has installed a binary.
+# HUDDLE_DOWNLOAD_BASE moves the release URL for tests.
+
+version=0.0.1
+base=${HUDDLE_DOWNLOAD_BASE:-https://github.com/MuhmdRaouf/huddle/releases/download}
+bin_dir=${HUDDLE_HOME:-$HOME/.agents/huddle}/bin
+link=$bin_dir/huddle
+target=$bin_dir/huddle-$version
+word=${1:-}
+
+case "$word" in
+  hook)
+    [ -x "$link" ] && exec "$link" "$@"
+    exit 0
+    ;;
+  setup)
+    ;;
+  run | status | result | cancel | uninstall | router | provider | --version)
+    [ -x "$link" ] && exec "$link" "$@"
+    printf 'huddle: run /huddle:setup first\n' >&2
+    exit 127
+    ;;
+  *)
+    printf 'huddle: unknown command %s\n' "$word" >&2
+    exit 2
+    ;;
+esac
+
+case "$(uname -s)" in
+  Darwin) os=darwin ;;
+  Linux) os=linux ;;
+  *) os=unsupported ;;
+esac
+case "$(uname -m)" in
+  x86_64 | amd64) arch=amd64 ;;
+  arm64 | aarch64) arch=arm64 ;;
+  *) arch=unsupported ;;
+esac
+if [ "$os" = unsupported ] || [ "$arch" = unsupported ]; then
+  printf 'huddle: no huddle %s binary for this platform (%s-%s)\n' "$version" "$os" "$arch" >&2
+  exit 127
+fi
+
+asset=huddle-$os-$arch
+url=$base/v$version/$asset
+sums_url=$base/v$version/SHA256SUMS
+
+sha256_of() {
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$1"
+  elif command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 "$1"
+  else
+    return 1
+  fi
+}
+
+point_link() {
+  ln -sf "huddle-$version" "$bin_dir/.huddle.$$.link" && mv -f "$bin_dir/.huddle.$$.link" "$link"
+}
+
+fail_download() {
+  printf 'huddle: could not download huddle %s (%s)\n' "$version" "$url" >&2
+  exit 127
+}
+
+fetch_release() {
+  # Darwin runs the system curl: it trusts the keychain where a PATH curl may not. HUDDLE_CURL
+  # pins the binary for tests.
+  if [ -n "${HUDDLE_CURL:-}" ] && [ "$os" = darwin ]; then
+    curl_bin=$HUDDLE_CURL
+  elif [ "$os" = darwin ] && [ -x /usr/bin/curl ]; then
+    curl_bin=/usr/bin/curl
+  else
+    curl_bin=curl
+  fi
+  mkdir -p "$bin_dir" || fail_download
+  tmp=$bin_dir/.huddle.$$.download
+  sums=$bin_dir/.huddle.$$.sums
+  # curl's own diagnostics stay off stderr: the failure message below names the URL.
+  if ! "$curl_bin" -fsSL --max-time 120 -o "$tmp" "$url" 2>/dev/null ||
+    ! "$curl_bin" -fsSL --max-time 30 -o "$sums" "$sums_url" 2>/dev/null; then
+    rm -f "$tmp" "$sums"
+    return 3
+  fi
+  want=
+  while read -r sum name; do
+    if [ "$name" = "$asset" ]; then
+      want=$sum
+      break
+    fi
+  done <"$sums"
+  rm -f "$sums"
+  if [ -z "$want" ]; then
+    rm -f "$tmp"
+    printf 'huddle: SHA256SUMS has no entry for %s\n' "$asset" >&2
+    exit 127
+  fi
+  got=$(sha256_of "$tmp") || {
+    rm -f "$tmp"
+    printf 'huddle: neither sha256sum nor shasum is on PATH\n' >&2
+    exit 127
+  }
+  got=${got%% *}
+  if [ "$got" != "$want" ]; then
+    rm -f "$tmp"
+    printf 'huddle: huddle download failed its checksum\n' >&2
+    exit 127
+  fi
+  chmod 755 "$tmp" && mv -f "$tmp" "$target"
+  rm -f "$target.local"
+}
+
+find_source() {
+  if [ -n "${HUDDLE_SOURCE:-}" ] && [ -f "$HUDDLE_SOURCE/crates/huddle/Cargo.toml" ]; then
+    printf '%s\n' "$HUDDLE_SOURCE"
+    return 0
+  fi
+  d=$(cd -- "$(dirname -- "$0")/../.." 2>/dev/null && pwd)
+  if [ -n "$d" ] && [ -f "$d/crates/huddle/Cargo.toml" ]; then
+    printf '%s\n' "$d"
+    return 0
+  fi
+  m=${CLAUDE_CONFIG_DIR:-}
+  [ -n "$m" ] || m=$HOME/.claude
+  m=$m/plugins/marketplaces/muhmdraouf
+  if [ -f "$m/crates/huddle/Cargo.toml" ]; then
+    printf '%s\n' "$m"
+    return 0
+  fi
+  return 1
+}
+
+build_local() {
+  if ! command -v cargo >/dev/null 2>&1; then
+    printf 'huddle: no huddle release is published; install Rust (cargo) to build it from the marketplace checkout\n' >&2
+    printf 'huddle: could not download huddle %s (%s)\n' "$version" "$url" >&2
+    exit 127
+  fi
+  root=$(find_source) || {
+    printf 'huddle: no huddle checkout found to build from; set HUDDLE_SOURCE\n' >&2
+    exit 1
+  }
+  mkdir -p "$bin_dir" || exit 1
+  log=$bin_dir/build.log
+  if ! (cd "$root" && cargo build --release -p huddle) >"$log" 2>&1; then
+    printf 'huddle: building huddle from %s failed; see %s\n' "$root" "$log" >&2
+    exit 1
+  fi
+  tmp=$bin_dir/.huddle.$$.build
+  cp "$root/target/release/huddle" "$tmp" && chmod 755 "$tmp" || exit 1
+  if command -v codesign >/dev/null 2>&1; then
+    codesign -s - -f -i huddle "$tmp" >/dev/null 2>&1 || true
+  fi
+  mv -f "$tmp" "$target" && : >"$target.local"
+}
+
+# A local build carries no version, so its .local marker makes every setup try the release
+# first, then rebuild.
+if [ ! -x "$target" ] || [ -e "$target.local" ]; then
+  fetch_release
+  status=$?
+  if [ "$status" -ne 0 ]; then
+    build_local
+  fi
+fi
+point_link
+exec "$target" "$@"

@@ -1,0 +1,27 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume|clear|compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "h=\"${HUDDLE_HOME:-$HOME/.agents/huddle}/bin/huddle\"; [ -x \"$h\" ] && exec \"$h\" hook session-start; exec sh \"${CLAUDE_PLUGIN_ROOT}/dist/run\" hook session-start",
+            "timeout": 15
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "h=\"${HUDDLE_HOME:-$HOME/.agents/huddle}/bin/huddle\"; [ -x \"$h\" ] && exec \"$h\" hook prompt-submit; exit 0",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}
