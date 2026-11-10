@@ -272,6 +272,28 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "df3b46402a9d5adb4c86a0cf463f42e19994e3ee891101b1841f30a545cb49a9"
 
 [[package]]
+name = "huddle"
+version = "0.0.1"
+dependencies = [
+ "huddle-catalog",
+ "huddle-config",
+ "huddle-daemon",
+ "huddle-harness",
+ "huddle-jobs",
+ "huddle-keystore",
+ "huddle-pki",
+ "huddle-procs",
+ "huddle-router",
+ "huddle-setup",
+ "huddle-testkit",
+ "libc",
+ "rustls",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
 name = "huddle-catalog"
 version = "0.0.1"
 dependencies = [
