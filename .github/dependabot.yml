@@ -1,0 +1,18 @@
+# Every dependency is pinned exactly (Cargo.lock) or to a commit SHA (actions), so nothing moves unless a pull request
+# moves it: Dependabot proposes those once a week, grouped so one review covers a batch.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]
+  - package-ecosystem: cargo
+    directory: "/"
+    schedule:
+      interval: weekly
+    groups:
+      cargo:
+        patterns: ["*"]

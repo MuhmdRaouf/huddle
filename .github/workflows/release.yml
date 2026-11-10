@@ -1,0 +1,93 @@
+name: Release
+
+# A pushed tag v<VERSION> publishes the GitHub release of the same name: the huddle binary for darwin and linux on amd64
+# and arm64, SHA256SUMS and a build-provenance attestation. The notes are the version's CHANGELOG.md section, the checksums
+# and the commit. No workflow creates tags.
+
+on:
+  push:
+    tags: ["v*"]
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+permissions:
+  contents: write # the release
+  id-token: write # the build-provenance attestation
+  attestations: write
+
+jobs:
+  build:
+    name: "Release build: ${{ matrix.asset }}"
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { runner: ubuntu-26.04, target: x86_64-unknown-linux-musl, asset: huddle-linux-amd64 }
+          - { runner: ubuntu-24.04-arm, target: aarch64-unknown-linux-musl, asset: huddle-linux-arm64 }
+          - { runner: macos-26-intel, target: x86_64-apple-darwin, asset: huddle-darwin-amd64 }
+          - { runner: macos-26, target: aarch64-apple-darwin, asset: huddle-darwin-arm64 }
+    env:
+      TARGET: ${{ matrix.target }}
+      ASSET: ${{ matrix.asset }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: The tag names the committed VERSION
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          version=$(cat VERSION)
+          if [ "$TAG" != "v$version" ]; then
+            echo "tag $TAG does not match VERSION $version" >&2
+            exit 1
+          fi
+      - uses: dtolnay/rust-toolchain@ff7f6a3374ce205788da40198ec918bd5d67aea7 # 1.99.0
+        with:
+          targets: ${{ matrix.target }}
+      - name: The musl C compiler ring builds with
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y musl-tools
+          echo "CC_$(echo "$TARGET" | tr - _)=musl-gcc" >> "$GITHUB_ENV"
+      - run: cargo build --release --locked -p huddle --bin huddle --target "$TARGET"
+      - run: |
+          mkdir -p dist
+          cp "target/$TARGET/release/huddle" "dist/$ASSET"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-${{ matrix.asset }}
+          path: dist/${{ matrix.asset }}
+          if-no-files-found: error
+
+  publish:
+    name: "Release: huddle"
+    needs: build
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@ff7f6a3374ce205788da40198ec918bd5d67aea7 # 1.99.0
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: release-*
+          merge-multiple: true
+          path: dist
+      - name: Write SHA256SUMS
+        working-directory: dist
+        run: sha256sum huddle-* | LC_ALL=C sort -k2,2 > SHA256SUMS
+      - name: Attest the assets' build provenance
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: dist/huddle-*
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          version=$(cat VERSION)
+          cargo run -q --locked -p huddle-release -- notes "$version" CHANGELOG.md dist/SHA256SUMS "$GITHUB_SHA" > dist/NOTES.md
+          gh release create "$TAG" dist/huddle-* dist/SHA256SUMS --title "huddle $version" --notes-file dist/NOTES.md
