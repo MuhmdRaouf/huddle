@@ -24,6 +24,7 @@ serde = { version = "=1.0.229", default-features = false, features = ["std", "de
 serde_json = { version = "=1.0.154", default-features = false, features = ["std", "preserve_order"] }
 libc = { version = "=0.2.191", default-features = false, features = ["std"] }
 
+huddle-testkit = { path = "crates/huddle-testkit" }
 
 [profile.release]
 lto = "fat"
