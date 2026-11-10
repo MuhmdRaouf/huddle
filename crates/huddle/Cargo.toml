@@ -1,0 +1,33 @@
+[package]
+name = "huddle"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "huddle"
+path = "src/main.rs"
+
+[dependencies]
+huddle-catalog.workspace = true
+huddle-config.workspace = true
+huddle-daemon.workspace = true
+huddle-harness.workspace = true
+huddle-jobs.workspace = true
+huddle-keystore.workspace = true
+huddle-pki.workspace = true
+huddle-procs.workspace = true
+huddle-router.workspace = true
+huddle-setup.workspace = true
+libc.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+
+[dev-dependencies]
+huddle-testkit.workspace = true
+libc.workspace = true
+rustls.workspace = true
+serde_json.workspace = true
