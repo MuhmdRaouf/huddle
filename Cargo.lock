@@ -366,6 +366,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "huddle-setup"
+version = "0.0.1"
+dependencies = [
+ "huddle-catalog",
+ "huddle-config",
+ "huddle-keystore",
+ "huddle-pki",
+ "huddle-procs",
+ "huddle-testkit",
+ "libc",
+ "ring",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "huddle-testkit"
 version = "0.0.1"
 dependencies = [
