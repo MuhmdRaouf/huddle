@@ -1,0 +1,17 @@
+{
+  "name": "huddle",
+  "description": "Route Claude Code to other providers through huddle-router, and delegate work to other CLI agents and take their reports back.",
+  "author": {
+    "name": "Raouf"
+  },
+  "keywords": [
+    "routing",
+    "proxy",
+    "delegation",
+    "harness",
+    "worktree"
+  ],
+  "repository": "https://github.com/MuhmdRaouf/huddle",
+  "homepage": "https://github.com/MuhmdRaouf/huddle",
+  "license": "GPL-3.0-or-later"
+}
