@@ -1,0 +1,17 @@
+[package]
+name = "huddle-pki"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+huddle-config.workspace = true
+rcgen.workspace = true
+rustls.workspace = true
+ring.workspace = true
+libc.workspace = true
+
+[dev-dependencies]
+huddle-testkit.workspace = true

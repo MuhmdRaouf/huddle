@@ -169,6 +169,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "huddle-pki"
+version = "0.0.1"
+dependencies = [
+ "huddle-config",
+ "huddle-testkit",
+ "libc",
+ "rcgen",
+ "ring",
+ "rustls",
+]
+
+[[package]]
 name = "huddle-procs"
 version = "0.0.1"
 dependencies = [
