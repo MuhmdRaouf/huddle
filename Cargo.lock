@@ -169,6 +169,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "huddle-procs"
+version = "0.0.1"
+dependencies = [
+ "huddle-testkit",
+ "libc",
+]
+
+[[package]]
 name = "huddle-release"
 version = "0.0.1"
 
