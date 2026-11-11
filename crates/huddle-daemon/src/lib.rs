@@ -1,3 +1,4 @@
+pub mod checks;
 pub mod dashboard_inputs;
 pub mod handover;
 pub mod nochain;

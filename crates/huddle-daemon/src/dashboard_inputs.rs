@@ -22,9 +22,33 @@ use tokio::runtime::Handle;
 /// How long a reading is kept before a snapshot starts the next one.
 const WINDOW: Duration = Duration::from_secs(10);
 
+/// The wiring card's state: `Checking` until the first read lands, then `Ok` when Claude Code
+/// points at the router with a CA that exists, else `Bad`.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum WiringState {
+    #[default]
+    Checking,
+    Ok,
+    Bad,
+}
+
+/// The state a finished wiring read shows.
+fn wiring_state_of(wiring: Wiring) -> WiringState {
+    if wiring.proxy && wiring.ca {
+        WiringState::Ok
+    } else {
+        WiringState::Bad
+    }
+}
+
+/// Answers the wiring card's state from the cache.
+pub type WiringStateFn = Arc<dyn Fn() -> WiringState + Send + Sync>;
+
 /// One read of everything the dashboard asks of the machine.
 #[derive(Default)]
 struct Reading {
+    wiring_state: WiringState,
     wiring: Wiring,
     keys: HashMap<&'static str, bool>,
     jobs: Vec<JobRow>,
@@ -95,9 +119,23 @@ impl Cache {
 /// The dashboard's inputs. Until the first read lands, the wiring is off, no lane has a key
 /// answer and no job shows. Called inside the runtime.
 pub fn start(version: String, env: Env, paths: Paths, port: u16) -> DashboardInputs {
+    start_with_state(version, env, paths, port).0
+}
+
+/// `start`, and the wiring card's state read from the same cache.
+pub fn start_with_state(
+    version: String,
+    env: Env,
+    paths: Paths,
+    port: u16,
+) -> (DashboardInputs, WiringStateFn) {
     let read: Read = Arc::new(move || read_all(&env, &paths, port));
     let cache = Cache::new(read, WINDOW, Handle::current());
-    DashboardInputs {
+    let wiring_state: WiringStateFn = Arc::new({
+        let cache = Arc::clone(&cache);
+        move || cache.latest().wiring_state
+    });
+    let inputs = DashboardInputs {
         version,
         wiring: Arc::new({
             let cache = Arc::clone(&cache);
@@ -109,13 +147,16 @@ pub fn start(version: String, env: Env, paths: Paths, port: u16) -> DashboardInp
         }),
         jobs: Arc::new(move || cache.latest().jobs.clone()),
         hosts: Arc::new(Vec::new),
-    }
+    };
+    (inputs, wiring_state)
 }
 
 fn read_all(env: &Env, paths: &Paths, port: u16) -> Reading {
     let store = platform_default(paths);
+    let wiring = read_wiring(paths, port);
     Reading {
-        wiring: read_wiring(paths, port),
+        wiring_state: wiring_state_of(wiring),
+        wiring,
         keys: providers()
             .iter()
             .map(|provider| {
@@ -224,6 +265,45 @@ mod tests {
         cache.latest();
         tokio::time::sleep(Duration::from_millis(100)).await;
         assert_eq!(reads.load(Ordering::SeqCst), 1);
+    }
+
+    fn reading_with(wiring: Wiring) -> Reading {
+        Reading {
+            wiring_state: wiring_state_of(wiring),
+            wiring,
+            ..Reading::default()
+        }
+    }
+
+    #[tokio::test]
+    async fn the_wiring_state_is_checking_until_the_first_read_lands() {
+        let read: Read = Arc::new(|| {
+            std::thread::sleep(Duration::from_millis(100));
+            reading_with(Wiring {
+                proxy: true,
+                ca: true,
+            })
+        });
+        let cache = Cache::new(read, Duration::from_secs(60), Handle::current());
+        assert_eq!(cache.latest().wiring_state, WiringState::Checking);
+        tokio::time::sleep(Duration::from_millis(400)).await;
+        assert_eq!(cache.latest().wiring_state, WiringState::Ok);
+    }
+
+    #[test]
+    fn a_finished_read_is_ok_only_with_the_proxy_and_the_ca() {
+        let only_proxy = Wiring {
+            proxy: true,
+            ca: false,
+        };
+        assert_eq!(wiring_state_of(only_proxy), WiringState::Bad);
+        assert_eq!(wiring_state_of(Wiring::default()), WiringState::Bad);
+    }
+
+    #[test]
+    fn the_wiring_state_serializes_as_a_lowercase_word() {
+        let json = serde_json::to_string(&WiringState::Checking).expect("json");
+        assert_eq!(json, "\"checking\"");
     }
 
     const PROXY: &str =

@@ -9,6 +9,7 @@ publish.workspace = true
 [dependencies]
 huddle-catalog.workspace = true
 huddle-config.workspace = true
+huddle-harness.workspace = true
 huddle-jobs.workspace = true
 huddle-keystore.workspace = true
 huddle-procs.workspace = true
