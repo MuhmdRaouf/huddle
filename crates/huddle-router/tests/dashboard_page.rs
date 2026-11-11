@@ -1,49 +1,135 @@
-//! The dashboard page is one self-contained file: no framework, no build step,
-//! no snapshot data ever parsed as markup.
+//! The dashboard page is one self-contained file: no framework, no build step, nothing loaded
+//! from outside the router, and no snapshot data ever parsed as markup outside one helper.
+
+use serde_json::Value;
 
 const PAGE: &str = include_str!("../src/dashboard.html");
+const FIXTURE: &str = include_str!("fixtures/state-v2.json");
 
-fn external_hosts(page: &str) -> Vec<String> {
-    let mut hosts = Vec::new();
-    for scheme in ["https://", "http://"] {
-        for part in page.split(scheme).skip(1) {
-            let host: String = part
-                .chars()
-                .take_while(|c| c.is_ascii_alphanumeric() || *c == '.' || *c == '-' || *c == ':')
-                .collect();
-            hosts.push(host);
+const PAGE_IDS: [&str; 14] = [
+    "overview",
+    "sessions",
+    "agents",
+    "requests",
+    "errors",
+    "models",
+    "providers",
+    "usage",
+    "projects",
+    "worktrees",
+    "jobs",
+    "plugins",
+    "harnesses",
+    "router",
+];
+
+/// Every object key in the value, except the model names that key `buckets.models`.
+fn contract_keys(value: &Value, under_models: bool, keys: &mut Vec<String>) {
+    match value {
+        Value::Object(map) => {
+            for (key, child) in map {
+                if !under_models {
+                    keys.push(key.clone());
+                }
+                contract_keys(
+                    child,
+                    key == "models" && !under_models && is_bucket_map(child),
+                    keys,
+                );
+            }
         }
+        Value::Array(items) => items
+            .iter()
+            .for_each(|item| contract_keys(item, false, keys)),
+        _ => {}
     }
-    hosts
+}
+
+/// `buckets.models` maps a model name to an array; `models` and `rows` elsewhere are arrays.
+fn is_bucket_map(value: &Value) -> bool {
+    value.is_object()
 }
 
 #[test]
-fn never_writes_markup_from_data() {
-    assert!(!PAGE.contains("innerHTML"));
-    assert!(!PAGE.contains("outerHTML"));
-    assert!(!PAGE.contains("insertAdjacentHTML"));
-    assert!(!PAGE.contains("document.write"));
-}
-
-#[test]
-fn loads_no_external_script() {
+fn loads_nothing_from_outside_the_router() {
+    assert!(!PAGE.contains("http://"), "http:// in the page");
+    assert!(!PAGE.contains("https://"), "https:// in the page");
     assert!(!PAGE.contains("<script src"));
-    assert!(!PAGE.contains("<script type=\"module\" src"));
+    assert!(!PAGE.contains("<link"));
+    assert!(!PAGE.contains("@import"));
+    assert!(!PAGE.contains("Geist"));
+    assert!(
+        PAGE.contains("-apple-system, BlinkMacSystemFont")
+            || PAGE.contains("-apple-system,BlinkMacSystemFont")
+    );
 }
 
 #[test]
-fn only_font_hosts_are_external() {
-    let allowed = ["fonts.googleapis.com", "fonts.gstatic.com", "www.w3.org"];
-    for host in external_hosts(PAGE) {
-        assert!(allowed.contains(&host.as_str()), "external host {host}");
+fn writes_markup_in_one_helper_that_the_data_cannot_reach_unescaped() {
+    assert_eq!(
+        PAGE.matches("innerHTML").count(),
+        1,
+        "innerHTML outside setHtml"
+    );
+    assert!(PAGE.contains("function setHtml(el,html){el.innerHTML=html}"));
+    for word in ["outerHTML", "insertAdjacentHTML", "document.write"] {
+        assert!(!PAGE.contains(word), "{word}");
     }
-    assert!(PAGE.contains("fonts.googleapis.com"));
+    for entity in ["&amp;", "&lt;", "&gt;", "&quot;", "&#39;"] {
+        assert!(PAGE.contains(entity), "esc misses {entity}");
+    }
 }
 
 #[test]
-fn listens_to_the_live_stream() {
+fn carries_all_fourteen_pages() {
+    for id in PAGE_IDS {
+        assert!(PAGE.contains(&format!("['{id}','")), "nav entry {id}");
+        assert!(PAGE.contains(&format!("PAGES.{id}={{")), "page {id}");
+    }
+    for group in ["Monitor", "Usage", "Workspace", "System"] {
+        assert!(PAGE.contains(&format!("['{group}',[")), "group {group}");
+    }
+}
+
+#[test]
+fn reads_every_key_of_the_state_contract() {
+    let state: Value = serde_json::from_str(FIXTURE).expect("fixture parses");
+    let mut keys = Vec::new();
+    contract_keys(&state, false, &mut keys);
+    keys.sort();
+    keys.dedup();
+    for key in keys {
+        let read = PAGE.contains(&format!(".{key}")) || PAGE.contains(&format!("'{key}'"));
+        assert!(read, "the page never reads {key}");
+    }
+}
+
+#[test]
+fn follows_the_live_feed_and_falls_back_to_polling() {
     assert!(PAGE.contains("EventSource('/huddle-router/live')"));
     assert!(PAGE.contains("'snapshot'"));
+    assert!(PAGE.contains("fetch('/huddle-router/state'"));
+    assert!(PAGE.contains("setInterval(getState,2000)"));
+}
+
+#[test]
+fn shows_the_unknown_states_and_never_invents_data() {
+    for text in [
+        "Checking…",
+        "Reconnecting",
+        "Memory only. Restarting the router clears this page.",
+    ] {
+        assert!(PAGE.contains(text), "missing {text}");
+    }
+    for word in ["Math.random", "seed", "sample"] {
+        assert!(!PAGE.contains(word), "leftover {word}");
+    }
+}
+
+#[test]
+fn hides_the_plan_tiles_without_plan_data() {
+    assert!(PAGE.contains("if(PLAN){"));
+    assert!(PAGE.contains("PLAN?`<section>"));
 }
 
 #[test]
@@ -54,34 +140,22 @@ fn carries_the_logo_with_three_orbit_dots() {
 }
 
 #[test]
-fn has_every_section_and_the_footer() {
-    for text in [
-        "Claude Code wiring",
-        "Requests",
-        "Errors",
-        "Lanes",
-        "Live requests",
-        "In flight",
-        "Delegated jobs",
-        "No requests yet",
-        "Memory only. Restarting the router clears this page.",
-        "may be hung",
-        "Reconnecting",
+fn keeps_the_admin_shell() {
+    for id in [
+        "id=\"drawer\"",
+        "id=\"pal\"",
+        "id=\"scrim\"",
+        "id=\"rcard\"",
+        "data-theme-set=\"dark\"",
+        "name=\"viewport\"",
     ] {
-        assert!(PAGE.contains(text), "missing {text}");
+        assert!(PAGE.contains(id), "missing {id}");
     }
+    assert!(PAGE.contains("localStorage.setItem('huddle-admin-theme',t)"));
+    assert!(PAGE.contains("@media (max-width:600px)"));
 }
 
 #[test]
-fn stays_small() {
-    assert!(PAGE.len() < 40 * 1024, "{} bytes", PAGE.len());
-}
-
-#[test]
-fn narrow_screens_cannot_widen_the_page() {
-    assert!(PAGE.contains("name=\"viewport\""));
-    assert!(PAGE.contains("minmax(min(100%,200px),1fr)"));
-    assert!(PAGE.contains("minmax(min(100%,230px),1fr)"));
-    assert!(PAGE.contains("@media (max-width:520px)"));
-    assert!(PAGE.contains(".scroll{overflow-x:auto}"));
+fn stays_under_the_size_limit() {
+    assert!(PAGE.len() < 140 * 1024, "{} bytes", PAGE.len());
 }

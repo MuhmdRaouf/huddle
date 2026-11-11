@@ -105,15 +105,20 @@ drain.
 
 Open `http://127.0.0.1:4835/` while the router runs. The page updates live.
 
-- **Health**: the router's version and uptime, whether Claude Code points at it
-  (`HTTPS_PROXY` and the local CA in `settings.json`), requests per second and
-  recent errors.
-- **Lanes**: Anthropic and each provider, with requests, errors, time to first
-  byte, tokens, and whether a key is stored (yes or no, never the key).
-- **Requests**: the 200 latest model requests and the ones in flight, with
-  model, lane, status, time and tokens.
-- **Jobs**: delegated jobs that are queued, running, waiting for review, or
-  dead (their driver is gone).
+The page is an admin panel with 14 pages in four groups, live badges, a router
+card, an Auto, Light and Dark switch, `⌘K` search and sortable tables. It works
+on a narrow screen and loads nothing from outside the router.
+
+- **Monitor**: Overview (stats, traffic chart, what needs you, live sessions),
+  Sessions and Agents (state, context fill, prompt cache, subagents, worktrees),
+  Requests (the 200 latest, with a detail sheet) and Errors grouped by status.
+- **Usage**: Models (requests, errors, time to first token, speed, cache), Providers
+  (one lane each, with whether a key is stored, never the key) and Usage (tokens,
+  cache, and the Claude plan windows when Anthropic's replies carry them).
+- **Workspace**: Projects, Worktrees and delegated Jobs.
+- **System**: Plugins, Harnesses and the Router with its health checks and wiring.
+
+A part that is not known yet shows `—`, or "Checking…" while its first check runs.
 
 The page keeps everything in the router's memory. A restart clears it. It
 shows no prompts and no keys. A different `HUDDLE_ROUTER_PORT` moves the page

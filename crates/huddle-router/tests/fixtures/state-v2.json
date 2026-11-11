@@ -1,0 +1,1529 @@
+{
+ "version": "0.0.3",
+ "pid": 48211,
+ "started_ms": 1799992800000,
+ "now_ms": 1800000000000,
+ "router": {
+  "cpu_pct": 0.4,
+  "rss_bytes": 19300000,
+  "viewers": 1,
+  "connections": 11
+ },
+ "wiring": {
+  "state": "ok",
+  "proxy": true,
+  "ca": true
+ },
+ "plan": {
+  "five_hour_pct": 62,
+  "five_hour_reset_ms": 1800006480000,
+  "week_pct": 41,
+  "week_reset_ms": 1800345600000
+ },
+ "buckets": {
+  "width_ms": 30000,
+  "end_ms": 1800000000000,
+  "models": {
+   "claude-opus-5-5": [
+    {
+     "n": 0,
+     "err": 0,
+     "tok_in": 0,
+     "tok_out": 0,
+     "ttft_p50": 1100
+    },
+    {
+     "n": 1,
+     "err": 0,
+     "tok_in": 4000,
+     "tok_out": 600,
+     "ttft_p50": 1105
+    },
+    {
+     "n": 2,
+     "err": 0,
+     "tok_in": 8000,
+     "tok_out": 1200,
+     "ttft_p50": 1110
+    },
+    {
+     "n": 3,
+     "err": 0,
+     "tok_in": 12000,
+     "tok_out": 1800,
+     "ttft_p50": 1115
+    },
+    {
+     "n": 4,
+     "err": 0,
+     "tok_in": 16000,
+     "tok_out": 2400,
+     "ttft_p50": 1120
+    },
+    {
+     "n": 0,
+     "err": 0,
+     "tok_in": 0,
+     "tok_out": 0,
+     "ttft_p50": 1125
+    },
+    {
+     "n": 1,
+     "err": 0,
+     "tok_in": 4000,
+     "tok_out": 600,
+     "ttft_p50": 1130
+    },
+    {
+     "n": 2,
+     "err": 0,
+     "tok_in": 8000,
+     "tok_out": 1200,
+     "ttft_p50": 1135
+    },
+    {
+     "n": 3,
+     "err": 0,
+     "tok_in": 12000,
+     "tok_out": 1800,
+     "ttft_p50": 1140
+    },
+    {
+     "n": 4,
+     "err": 0,
+     "tok_in": 16000,
+     "tok_out": 2400,
+     "ttft_p50": 1145
+    },
+    {
+     "n": 0,
+     "err": 0,
+     "tok_in": 0,
+     "tok_out": 0,
+     "ttft_p50": 1150
+    },
+    {
+     "n": 1,
+     "err": 0,
+     "tok_in": 4000,
+     "tok_out": 600,
+     "ttft_p50": 1155
+    },
+    {
+     "n": 2,
+     "err": 1,
+     "tok_in": 8000,
+     "tok_out": 1200,
+     "ttft_p50": 1160
+    },
+    {
+     "n": 3,
+     "err": 0,
+     "tok_in": 12000,
+     "tok_out": 1800,
+     "ttft_p50": 1165
+    },
+    {
+     "n": 4,
+     "err": 0,
+     "tok_in": 16000,
+     "tok_out": 2400,
+     "ttft_p50": 1170
+    },
+    {
+     "n": 0,
+     "err": 0,
+     "tok_in": 0,
+     "tok_out": 0,
+     "ttft_p50": 1175
+    },
+    {
+     "n": 1,
+     "err": 0,
+     "tok_in": 4000,
+     "tok_out": 600,
+     "ttft_p50": 1180
+    },
+    {
+     "n": 2,
+     "err": 0,
+     "tok_in": 8000,
+     "tok_out": 1200,
+     "ttft_p50": 1185
+    },
+    {
+     "n": 3,
+     "err": 0,
+     "tok_in": 12000,
+     "tok_out": 1800,
+     "ttft_p50": 1190
+    },
+    {
+     "n": 4,
+     "err": 0,
+     "tok_in": 16000,
+     "tok_out": 2400,
+     "ttft_p50": 1195
+    },
+    {
+     "n": 0,
+     "err": 0,
+     "tok_in": 0,
+     "tok_out": 0,
+     "ttft_p50": 1200
+    },
+    {
+     "n": 1,
+     "err": 0,
+     "tok_in": 4000,
+     "tok_out": 600,
+     "ttft_p50": 1205
+    },
+    {
+     "n": 2,
+     "err": 0,
+     "tok_in": 8000,
+     "tok_out": 1200,
+     "ttft_p50": 1210
+    },
+    {
+     "n": 3,
+     "err": 0,
+     "tok_in": 12000,
+     "tok_out": 1800,
+     "ttft_p50": 1215
+    },
+    {
+     "n": 4,
+     "err": 0,
+     "tok_in": 16000,
+     "tok_out": 2400,
+     "ttft_p50": 1220
+    },
+    {
+     "n": 0,
+     "err": 0,
+     "tok_in": 0,
+     "tok_out": 0,
+     "ttft_p50": 1225
+    },
+    {
+     "n": 1,
+     "err": 0,
+     "tok_in": 4000,
+     "tok_out": 600,
+     "ttft_p50": 1230
+    },
+    {
+     "n": 2,
+     "err": 0,
+     "tok_in": 8000,
+     "tok_out": 1200,
+     "ttft_p50": 1235
+    },
+    {
+     "n": 3,
+     "err": 0,
+     "tok_in": 12000,
+     "tok_out": 1800,
+     "ttft_p50": 1240
+    },
+    {
+     "n": 4,
+     "err": 0,
+     "tok_in": 16000,
+     "tok_out": 2400,
+     "ttft_p50": 1245
+    }
+   ],
+   "glm-5.3": [
+    {
+     "n": 0,
+     "err": 0,
+     "tok_in": 0,
+     "tok_out": 0,
+     "ttft_p50": 0
+    },
+    {
+     "n": 0,
+     "err": 0,
+     "tok_in": 0,
+     "tok_out": 0,
+     "ttft_p50": 0
+    },
+    {
+     "n": 0,
+     "err": 0,
+     "tok_in": 0,
+     "tok_out": 0,
+     "ttft_p50": 0
+    },
+    {
+     "n": 0,
+     "err": 0,
+     "tok_in": 0,
+     "tok_out": 0,
+     "ttft_p50": 0
+    },
+    {
+     "n": 0,
+     "err": 0,
+     "tok_in": 0,
+     "tok_out": 0,
+     "ttft_p50": 0
+    },
+    {
+     "n": 0,
+     "err": 0,
+     "tok_in": 0,
+     "tok_out": 0,
+     "ttft_p50": 0
+    },
+    {
+     "n": 0,
+     "err": 0,
+     "tok_in": 0,
+     "tok_out": 0,
+     "ttft_p50": 0
+    },
+    {
+     "n": 0,
+     "err": 0,
+     "tok_in": 0,
+     "tok_out": 0,
+     "ttft_p50": 0
+    },
+    {
+     "n": 0,
+     "err": 0,
+     "tok_in": 0,
+     "tok_out": 0,
+     "ttft_p50": 0
+    },
+    {
+     "n": 0,
+     "err": 0,
+     "tok_in": 0,
+     "tok_out": 0,
+     "ttft_p50": 0
+    },
+    {
+     "n": 0,
+     "err": 0,
+     "tok_in": 0,
+     "tok_out": 0,
+     "ttft_p50": 0
+    },
+    {
+     "n": 0,
+     "err": 0,
+     "tok_in": 0,
+     "tok_out": 0,
+     "ttft_p50": 0
+    },
+    {
+     "n": 0,
+     "err": 0,
+     "tok_in": 0,
+     "tok_out": 0,
+     "ttft_p50": 0
+    },
+    {
+     "n": 0,
+     "err": 0,
+     "tok_in": 0,
+     "tok_out": 0,
+     "ttft_p50": 0
+    },
+    {
+     "n": 0,
+     "err": 0,
+     "tok_in": 0,
+     "tok_out": 0,
+     "ttft_p50": 0
+    },
+    {
+     "n": 0,
+     "err": 0,
+     "tok_in": 0,
+     "tok_out": 0,
+     "ttft_p50": 0
+    },
+    {
+     "n": 2,
+     "err": 0,
+     "tok_in": 1500,
+     "tok_out": 300,
+     "ttft_p50": 700
+    },
+    {
+     "n": 2,
+     "err": 0,
+     "tok_in": 1500,
+     "tok_out": 300,
+     "ttft_p50": 700
+    },
+    {
+     "n": 2,
+     "err": 0,
+     "tok_in": 1500,
+     "tok_out": 300,
+     "ttft_p50": 700
+    },
+    {
+     "n": 2,
+     "err": 0,
+     "tok_in": 1500,
+     "tok_out": 300,
+     "ttft_p50": 700
+    },
+    {
+     "n": 2,
+     "err": 0,
+     "tok_in": 1500,
+     "tok_out": 300,
+     "ttft_p50": 700
+    },
+    {
+     "n": 2,
+     "err": 0,
+     "tok_in": 1500,
+     "tok_out": 300,
+     "ttft_p50": 700
+    },
+    {
+     "n": 2,
+     "err": 0,
+     "tok_in": 1500,
+     "tok_out": 300,
+     "ttft_p50": 700
+    },
+    {
+     "n": 2,
+     "err": 0,
+     "tok_in": 1500,
+     "tok_out": 300,
+     "ttft_p50": 700
+    },
+    {
+     "n": 2,
+     "err": 0,
+     "tok_in": 1500,
+     "tok_out": 300,
+     "ttft_p50": 700
+    },
+    {
+     "n": 2,
+     "err": 0,
+     "tok_in": 1500,
+     "tok_out": 300,
+     "ttft_p50": 700
+    },
+    {
+     "n": 2,
+     "err": 0,
+     "tok_in": 1500,
+     "tok_out": 300,
+     "ttft_p50": 700
+    },
+    {
+     "n": 2,
+     "err": 0,
+     "tok_in": 1500,
+     "tok_out": 300,
+     "ttft_p50": 700
+    },
+    {
+     "n": 2,
+     "err": 0,
+     "tok_in": 1500,
+     "tok_out": 300,
+     "ttft_p50": 700
+    },
+    {
+     "n": 2,
+     "err": 0,
+     "tok_in": 1500,
+     "tok_out": 300,
+     "ttft_p50": 700
+    }
+   ]
+  }
+ },
+ "models": [
+  {
+   "model": "claude-opus-5-5",
+   "lane": "anthropic",
+   "requests": 29,
+   "errors": 1,
+   "ttft_p50": 1200,
+   "ttft_p95": 2100,
+   "out_tps_p50": 58,
+   "tokens_in": 34800,
+   "cache_read": 1100000,
+   "cache_write": 0,
+   "tokens_out": 12000,
+   "sessions": 1,
+   "last_ms": 1799999970000
+  },
+  {
+   "model": "glm-5.3",
+   "lane": "zai",
+   "requests": 8,
+   "errors": 1,
+   "ttft_p50": 700,
+   "ttft_p95": 1300,
+   "out_tps_p50": 91,
+   "tokens_in": 9600,
+   "cache_read": 300000,
+   "cache_write": 0,
+   "tokens_out": 2900,
+   "sessions": 1,
+   "last_ms": 1799999940000
+  }
+ ],
+ "lanes": [
+  {
+   "id": "anthropic",
+   "name": "Anthropic",
+   "enabled": true,
+   "models": "claude-*",
+   "setup": null,
+   "key": null,
+   "requests": 29,
+   "errors": 1,
+   "ttft_p50": 1200,
+   "ttft_p95": 2100,
+   "tokens_in": 34800,
+   "tokens_out": 12000,
+   "last": {
+    "status": 200,
+    "at_ms": 1799999970000
+   }
+  },
+  {
+   "id": "zai",
+   "name": "Z.ai GLM",
+   "enabled": true,
+   "models": "glm-*",
+   "setup": null,
+   "key": true,
+   "requests": 8,
+   "errors": 1,
+   "ttft_p50": 700,
+   "ttft_p95": 1300,
+   "tokens_in": 9600,
+   "tokens_out": 2900,
+   "last": {
+    "status": 200,
+    "at_ms": 1799999940000
+   }
+  },
+  {
+   "id": "deepseek",
+   "name": "DeepSeek",
+   "enabled": false,
+   "models": "deepseek-*",
+   "setup": "/deepseek:setup",
+   "key": false,
+   "requests": 0,
+   "errors": 0,
+   "ttft_p50": null,
+   "ttft_p95": null,
+   "tokens_in": 0,
+   "tokens_out": 0,
+   "last": null
+  }
+ ],
+ "recent": [
+  {
+   "id": 1,
+   "at_ms": 1799999727000,
+   "session": "5d8c6baf-e3f2-45aa-a5d0-6db99ffbed99",
+   "agent": "main",
+   "model": "claude-opus-5-5",
+   "lane": "anthropic",
+   "status": 200,
+   "reason": null,
+   "ttft_ms": 910,
+   "dur_ms": 4300,
+   "router_ms": 4,
+   "tokens_in": 1200,
+   "cache_read": 38000,
+   "cache_write": 0,
+   "tokens_out": 420,
+   "stop": "end_turn",
+   "upstream_id": "req_011C0001"
+  },
+  {
+   "id": 2,
+   "at_ms": 1799999734000,
+   "session": "5d8c6baf-e3f2-45aa-a5d0-6db99ffbed99",
+   "agent": "main",
+   "model": "claude-opus-5-5",
+   "lane": "anthropic",
+   "status": 200,
+   "reason": null,
+   "ttft_ms": 920,
+   "dur_ms": 4400,
+   "router_ms": 4,
+   "tokens_in": 1200,
+   "cache_read": 38000,
+   "cache_write": 0,
+   "tokens_out": 420,
+   "stop": "end_turn",
+   "upstream_id": "req_011C0002"
+  },
+  {
+   "id": 3,
+   "at_ms": 1799999741000,
+   "session": "5d8c6baf-e3f2-45aa-a5d0-6db99ffbed99",
+   "agent": "agent-abc",
+   "model": "claude-opus-5-5",
+   "lane": "anthropic",
+   "status": 200,
+   "reason": null,
+   "ttft_ms": 930,
+   "dur_ms": 4500,
+   "router_ms": 4,
+   "tokens_in": 1200,
+   "cache_read": 38000,
+   "cache_write": 0,
+   "tokens_out": 420,
+   "stop": "end_turn",
+   "upstream_id": "req_011C0003"
+  },
+  {
+   "id": 4,
+   "at_ms": 1799999748000,
+   "session": "5d8c6baf-e3f2-45aa-a5d0-6db99ffbed99",
+   "agent": "main",
+   "model": "claude-opus-5-5",
+   "lane": "anthropic",
+   "status": 200,
+   "reason": null,
+   "ttft_ms": 940,
+   "dur_ms": 4600,
+   "router_ms": 4,
+   "tokens_in": 1200,
+   "cache_read": 38000,
+   "cache_write": 0,
+   "tokens_out": 420,
+   "stop": "end_turn",
+   "upstream_id": "req_011C0004"
+  },
+  {
+   "id": 5,
+   "at_ms": 1799999755000,
+   "session": "5d8c6baf-e3f2-45aa-a5d0-6db99ffbed99",
+   "agent": "main",
+   "model": "claude-opus-5-5",
+   "lane": "anthropic",
+   "status": 200,
+   "reason": null,
+   "ttft_ms": 950,
+   "dur_ms": 4700,
+   "router_ms": 4,
+   "tokens_in": 1200,
+   "cache_read": 38000,
+   "cache_write": 0,
+   "tokens_out": 420,
+   "stop": "end_turn",
+   "upstream_id": "req_011C0005"
+  },
+  {
+   "id": 6,
+   "at_ms": 1799999762000,
+   "session": "5d8c6baf-e3f2-45aa-a5d0-6db99ffbed99",
+   "agent": "agent-abc",
+   "model": "claude-opus-5-5",
+   "lane": "anthropic",
+   "status": 200,
+   "reason": null,
+   "ttft_ms": 960,
+   "dur_ms": 4800,
+   "router_ms": 4,
+   "tokens_in": 1200,
+   "cache_read": 38000,
+   "cache_write": 0,
+   "tokens_out": 420,
+   "stop": "end_turn",
+   "upstream_id": "req_011C0006"
+  },
+  {
+   "id": 7,
+   "at_ms": 1799999769000,
+   "session": "5d8c6baf-e3f2-45aa-a5d0-6db99ffbed99",
+   "agent": "main",
+   "model": "claude-opus-5-5",
+   "lane": "anthropic",
+   "status": 529,
+   "reason": "overloaded_error",
+   "ttft_ms": null,
+   "dur_ms": 4900,
+   "router_ms": 4,
+   "tokens_in": 1200,
+   "cache_read": 38000,
+   "cache_write": 0,
+   "tokens_out": 0,
+   "stop": null,
+   "upstream_id": "req_011C0007"
+  },
+  {
+   "id": 8,
+   "at_ms": 1799999776000,
+   "session": "5d8c6baf-e3f2-45aa-a5d0-6db99ffbed99",
+   "agent": "main",
+   "model": "claude-opus-5-5",
+   "lane": "anthropic",
+   "status": 200,
+   "reason": null,
+   "ttft_ms": 980,
+   "dur_ms": 5000,
+   "router_ms": 4,
+   "tokens_in": 1200,
+   "cache_read": 38000,
+   "cache_write": 0,
+   "tokens_out": 420,
+   "stop": "end_turn",
+   "upstream_id": "req_011C0008"
+  },
+  {
+   "id": 9,
+   "at_ms": 1799999783000,
+   "session": "5d8c6baf-e3f2-45aa-a5d0-6db99ffbed99",
+   "agent": "agent-abc",
+   "model": "claude-opus-5-5",
+   "lane": "anthropic",
+   "status": 200,
+   "reason": null,
+   "ttft_ms": 990,
+   "dur_ms": 5100,
+   "router_ms": 4,
+   "tokens_in": 1200,
+   "cache_read": 38000,
+   "cache_write": 0,
+   "tokens_out": 420,
+   "stop": "end_turn",
+   "upstream_id": "req_011C0009"
+  },
+  {
+   "id": 10,
+   "at_ms": 1799999790000,
+   "session": "5d8c6baf-e3f2-45aa-a5d0-6db99ffbed99",
+   "agent": "main",
+   "model": "claude-opus-5-5",
+   "lane": "anthropic",
+   "status": 200,
+   "reason": null,
+   "ttft_ms": 1000,
+   "dur_ms": 5200,
+   "router_ms": 4,
+   "tokens_in": 1200,
+   "cache_read": 38000,
+   "cache_write": 0,
+   "tokens_out": 420,
+   "stop": "end_turn",
+   "upstream_id": "req_011C0010"
+  },
+  {
+   "id": 11,
+   "at_ms": 1799999797000,
+   "session": "5d8c6baf-e3f2-45aa-a5d0-6db99ffbed99",
+   "agent": "main",
+   "model": "claude-opus-5-5",
+   "lane": "anthropic",
+   "status": 200,
+   "reason": null,
+   "ttft_ms": 1010,
+   "dur_ms": 5300,
+   "router_ms": 4,
+   "tokens_in": 1200,
+   "cache_read": 38000,
+   "cache_write": 0,
+   "tokens_out": 420,
+   "stop": "end_turn",
+   "upstream_id": "req_011C0011"
+  },
+  {
+   "id": 12,
+   "at_ms": 1799999804000,
+   "session": "5d8c6baf-e3f2-45aa-a5d0-6db99ffbed99",
+   "agent": "agent-abc",
+   "model": "claude-opus-5-5",
+   "lane": "anthropic",
+   "status": 200,
+   "reason": null,
+   "ttft_ms": 1020,
+   "dur_ms": 5400,
+   "router_ms": 4,
+   "tokens_in": 1200,
+   "cache_read": 38000,
+   "cache_write": 0,
+   "tokens_out": 420,
+   "stop": "end_turn",
+   "upstream_id": "req_011C0012"
+  },
+  {
+   "id": 13,
+   "at_ms": 1799999811000,
+   "session": "5d8c6baf-e3f2-45aa-a5d0-6db99ffbed99",
+   "agent": "main",
+   "model": "claude-opus-5-5",
+   "lane": "anthropic",
+   "status": 200,
+   "reason": null,
+   "ttft_ms": 1030,
+   "dur_ms": 5500,
+   "router_ms": 4,
+   "tokens_in": 1200,
+   "cache_read": 38000,
+   "cache_write": 0,
+   "tokens_out": 420,
+   "stop": "end_turn",
+   "upstream_id": "req_011C0013"
+  },
+  {
+   "id": 14,
+   "at_ms": 1799999818000,
+   "session": "5d8c6baf-e3f2-45aa-a5d0-6db99ffbed99",
+   "agent": "main",
+   "model": "claude-opus-5-5",
+   "lane": "anthropic",
+   "status": 200,
+   "reason": null,
+   "ttft_ms": 1040,
+   "dur_ms": 5600,
+   "router_ms": 4,
+   "tokens_in": 1200,
+   "cache_read": 38000,
+   "cache_write": 0,
+   "tokens_out": 420,
+   "stop": "end_turn",
+   "upstream_id": "req_011C0014"
+  },
+  {
+   "id": 15,
+   "at_ms": 1799999825000,
+   "session": "5d8c6baf-e3f2-45aa-a5d0-6db99ffbed99",
+   "agent": "agent-abc",
+   "model": "claude-opus-5-5",
+   "lane": "anthropic",
+   "status": 200,
+   "reason": null,
+   "ttft_ms": 1050,
+   "dur_ms": 5700,
+   "router_ms": 4,
+   "tokens_in": 1200,
+   "cache_read": 38000,
+   "cache_write": 0,
+   "tokens_out": 420,
+   "stop": "end_turn",
+   "upstream_id": "req_011C0015"
+  },
+  {
+   "id": 16,
+   "at_ms": 1799999832000,
+   "session": "5d8c6baf-e3f2-45aa-a5d0-6db99ffbed99",
+   "agent": "main",
+   "model": "claude-opus-5-5",
+   "lane": "anthropic",
+   "status": 200,
+   "reason": null,
+   "ttft_ms": 1060,
+   "dur_ms": 5800,
+   "router_ms": 4,
+   "tokens_in": 1200,
+   "cache_read": 38000,
+   "cache_write": 0,
+   "tokens_out": 420,
+   "stop": "end_turn",
+   "upstream_id": "req_011C0016"
+  },
+  {
+   "id": 17,
+   "at_ms": 1799999839000,
+   "session": "5d8c6baf-e3f2-45aa-a5d0-6db99ffbed99",
+   "agent": "main",
+   "model": "claude-opus-5-5",
+   "lane": "anthropic",
+   "status": 200,
+   "reason": null,
+   "ttft_ms": 1070,
+   "dur_ms": 5900,
+   "router_ms": 4,
+   "tokens_in": 1200,
+   "cache_read": 38000,
+   "cache_write": 0,
+   "tokens_out": 420,
+   "stop": "end_turn",
+   "upstream_id": "req_011C0017"
+  },
+  {
+   "id": 18,
+   "at_ms": 1799999846000,
+   "session": "5d8c6baf-e3f2-45aa-a5d0-6db99ffbed99",
+   "agent": "agent-abc",
+   "model": "claude-opus-5-5",
+   "lane": "anthropic",
+   "status": 200,
+   "reason": null,
+   "ttft_ms": 1080,
+   "dur_ms": 6000,
+   "router_ms": 4,
+   "tokens_in": 1200,
+   "cache_read": 38000,
+   "cache_write": 0,
+   "tokens_out": 420,
+   "stop": "end_turn",
+   "upstream_id": "req_011C0018"
+  },
+  {
+   "id": 19,
+   "at_ms": 1799999853000,
+   "session": "5d8c6baf-e3f2-45aa-a5d0-6db99ffbed99",
+   "agent": "main",
+   "model": "claude-opus-5-5",
+   "lane": "anthropic",
+   "status": 200,
+   "reason": null,
+   "ttft_ms": 1090,
+   "dur_ms": 6100,
+   "router_ms": 4,
+   "tokens_in": 1200,
+   "cache_read": 38000,
+   "cache_write": 0,
+   "tokens_out": 420,
+   "stop": "end_turn",
+   "upstream_id": "req_011C0019"
+  },
+  {
+   "id": 20,
+   "at_ms": 1799999860000,
+   "session": "5d8c6baf-e3f2-45aa-a5d0-6db99ffbed99",
+   "agent": "main",
+   "model": "claude-opus-5-5",
+   "lane": "anthropic",
+   "status": 200,
+   "reason": null,
+   "ttft_ms": 1100,
+   "dur_ms": 6200,
+   "router_ms": 4,
+   "tokens_in": 1200,
+   "cache_read": 38000,
+   "cache_write": 0,
+   "tokens_out": 420,
+   "stop": "end_turn",
+   "upstream_id": "req_011C0020"
+  },
+  {
+   "id": 21,
+   "at_ms": 1799999867000,
+   "session": "5d8c6baf-e3f2-45aa-a5d0-6db99ffbed99",
+   "agent": "agent-abc",
+   "model": "claude-opus-5-5",
+   "lane": "anthropic",
+   "status": 200,
+   "reason": null,
+   "ttft_ms": 1110,
+   "dur_ms": 6300,
+   "router_ms": 4,
+   "tokens_in": 1200,
+   "cache_read": 38000,
+   "cache_write": 0,
+   "tokens_out": 420,
+   "stop": "end_turn",
+   "upstream_id": "req_011C0021"
+  },
+  {
+   "id": 22,
+   "at_ms": 1799999874000,
+   "session": "5d8c6baf-e3f2-45aa-a5d0-6db99ffbed99",
+   "agent": "main",
+   "model": "claude-opus-5-5",
+   "lane": "anthropic",
+   "status": 200,
+   "reason": null,
+   "ttft_ms": 1120,
+   "dur_ms": 6400,
+   "router_ms": 4,
+   "tokens_in": 1200,
+   "cache_read": 38000,
+   "cache_write": 0,
+   "tokens_out": 420,
+   "stop": "end_turn",
+   "upstream_id": "req_011C0022"
+  },
+  {
+   "id": 23,
+   "at_ms": 1799999881000,
+   "session": "5d8c6baf-e3f2-45aa-a5d0-6db99ffbed99",
+   "agent": "main",
+   "model": "claude-opus-5-5",
+   "lane": "anthropic",
+   "status": 200,
+   "reason": null,
+   "ttft_ms": 1130,
+   "dur_ms": 6500,
+   "router_ms": 4,
+   "tokens_in": 1200,
+   "cache_read": 38000,
+   "cache_write": 0,
+   "tokens_out": 420,
+   "stop": "end_turn",
+   "upstream_id": "req_011C0023"
+  },
+  {
+   "id": 24,
+   "at_ms": 1799999888000,
+   "session": "5d8c6baf-e3f2-45aa-a5d0-6db99ffbed99",
+   "agent": "agent-abc",
+   "model": "claude-opus-5-5",
+   "lane": "anthropic",
+   "status": 200,
+   "reason": null,
+   "ttft_ms": 1140,
+   "dur_ms": 6600,
+   "router_ms": 4,
+   "tokens_in": 1200,
+   "cache_read": 38000,
+   "cache_write": 0,
+   "tokens_out": 420,
+   "stop": "end_turn",
+   "upstream_id": "req_011C0024"
+  },
+  {
+   "id": 25,
+   "at_ms": 1799999895000,
+   "session": "5d8c6baf-e3f2-45aa-a5d0-6db99ffbed99",
+   "agent": "main",
+   "model": "claude-opus-5-5",
+   "lane": "anthropic",
+   "status": 200,
+   "reason": null,
+   "ttft_ms": 1150,
+   "dur_ms": 6700,
+   "router_ms": 4,
+   "tokens_in": 1200,
+   "cache_read": 38000,
+   "cache_write": 0,
+   "tokens_out": 420,
+   "stop": "end_turn",
+   "upstream_id": "req_011C0025"
+  },
+  {
+   "id": 26,
+   "at_ms": 1799999902000,
+   "session": "5d8c6baf-e3f2-45aa-a5d0-6db99ffbed99",
+   "agent": "main",
+   "model": "claude-opus-5-5",
+   "lane": "anthropic",
+   "status": 200,
+   "reason": null,
+   "ttft_ms": 1160,
+   "dur_ms": 6800,
+   "router_ms": 4,
+   "tokens_in": 1200,
+   "cache_read": 38000,
+   "cache_write": 0,
+   "tokens_out": 420,
+   "stop": "end_turn",
+   "upstream_id": "req_011C0026"
+  },
+  {
+   "id": 27,
+   "at_ms": 1799999909000,
+   "session": "5d8c6baf-e3f2-45aa-a5d0-6db99ffbed99",
+   "agent": "agent-abc",
+   "model": "claude-opus-5-5",
+   "lane": "anthropic",
+   "status": 200,
+   "reason": null,
+   "ttft_ms": 1170,
+   "dur_ms": 6900,
+   "router_ms": 4,
+   "tokens_in": 1200,
+   "cache_read": 38000,
+   "cache_write": 0,
+   "tokens_out": 420,
+   "stop": "end_turn",
+   "upstream_id": "req_011C0027"
+  },
+  {
+   "id": 28,
+   "at_ms": 1799999916000,
+   "session": "5d8c6baf-e3f2-45aa-a5d0-6db99ffbed99",
+   "agent": "main",
+   "model": "claude-opus-5-5",
+   "lane": "anthropic",
+   "status": 200,
+   "reason": null,
+   "ttft_ms": 1180,
+   "dur_ms": 7000,
+   "router_ms": 4,
+   "tokens_in": 1200,
+   "cache_read": 38000,
+   "cache_write": 0,
+   "tokens_out": 420,
+   "stop": "end_turn",
+   "upstream_id": "req_011C0028"
+  },
+  {
+   "id": 29,
+   "at_ms": 1799999923000,
+   "session": "5d8c6baf-e3f2-45aa-a5d0-6db99ffbed99",
+   "agent": "main",
+   "model": "claude-opus-5-5",
+   "lane": "anthropic",
+   "status": 200,
+   "reason": null,
+   "ttft_ms": 1190,
+   "dur_ms": 7100,
+   "router_ms": 4,
+   "tokens_in": 1200,
+   "cache_read": 38000,
+   "cache_write": 0,
+   "tokens_out": 420,
+   "stop": "end_turn",
+   "upstream_id": "req_011C0029"
+  },
+  {
+   "id": 31,
+   "at_ms": 1799999937000,
+   "session": "a41f02c9-0000-4000-8000-000000000001",
+   "agent": null,
+   "model": "glm-5.3",
+   "lane": "zai",
+   "status": 200,
+   "reason": null,
+   "ttft_ms": 1210,
+   "dur_ms": 7300,
+   "router_ms": 4,
+   "tokens_in": 1200,
+   "cache_read": 38000,
+   "cache_write": 0,
+   "tokens_out": 420,
+   "stop": "end_turn",
+   "upstream_id": null
+  },
+  {
+   "id": 32,
+   "at_ms": 1799999944000,
+   "session": "a41f02c9-0000-4000-8000-000000000001",
+   "agent": null,
+   "model": "glm-5.3",
+   "lane": "zai",
+   "status": 200,
+   "reason": null,
+   "ttft_ms": 1220,
+   "dur_ms": 7400,
+   "router_ms": 4,
+   "tokens_in": 1200,
+   "cache_read": 38000,
+   "cache_write": 0,
+   "tokens_out": 420,
+   "stop": "end_turn",
+   "upstream_id": null
+  },
+  {
+   "id": 33,
+   "at_ms": 1799999951000,
+   "session": "a41f02c9-0000-4000-8000-000000000001",
+   "agent": null,
+   "model": "glm-5.3",
+   "lane": "zai",
+   "status": 429,
+   "reason": "rate_limit_error",
+   "ttft_ms": null,
+   "dur_ms": 7500,
+   "router_ms": 4,
+   "tokens_in": 1200,
+   "cache_read": 38000,
+   "cache_write": 0,
+   "tokens_out": 0,
+   "stop": null,
+   "upstream_id": null
+  },
+  {
+   "id": 34,
+   "at_ms": 1799999958000,
+   "session": "a41f02c9-0000-4000-8000-000000000001",
+   "agent": null,
+   "model": "glm-5.3",
+   "lane": "zai",
+   "status": 200,
+   "reason": null,
+   "ttft_ms": 1240,
+   "dur_ms": 7600,
+   "router_ms": 4,
+   "tokens_in": 1200,
+   "cache_read": 38000,
+   "cache_write": 0,
+   "tokens_out": 420,
+   "stop": "end_turn",
+   "upstream_id": null
+  },
+  {
+   "id": 35,
+   "at_ms": 1799999965000,
+   "session": "a41f02c9-0000-4000-8000-000000000001",
+   "agent": null,
+   "model": "glm-5.3",
+   "lane": "zai",
+   "status": 200,
+   "reason": null,
+   "ttft_ms": 1250,
+   "dur_ms": 7700,
+   "router_ms": 4,
+   "tokens_in": 1200,
+   "cache_read": 38000,
+   "cache_write": 0,
+   "tokens_out": 420,
+   "stop": "end_turn",
+   "upstream_id": null
+  },
+  {
+   "id": 36,
+   "at_ms": 1799999972000,
+   "session": "a41f02c9-0000-4000-8000-000000000001",
+   "agent": null,
+   "model": "glm-5.3",
+   "lane": "zai",
+   "status": 200,
+   "reason": null,
+   "ttft_ms": 1260,
+   "dur_ms": 7800,
+   "router_ms": 4,
+   "tokens_in": 1200,
+   "cache_read": 38000,
+   "cache_write": 0,
+   "tokens_out": 420,
+   "stop": "end_turn",
+   "upstream_id": null
+  },
+  {
+   "id": 37,
+   "at_ms": 1799999979000,
+   "session": "a41f02c9-0000-4000-8000-000000000001",
+   "agent": null,
+   "model": "glm-5.3",
+   "lane": "zai",
+   "status": 200,
+   "reason": null,
+   "ttft_ms": 1270,
+   "dur_ms": 7900,
+   "router_ms": 4,
+   "tokens_in": 1200,
+   "cache_read": 38000,
+   "cache_write": 0,
+   "tokens_out": 420,
+   "stop": "end_turn",
+   "upstream_id": null
+  },
+  {
+   "id": 38,
+   "at_ms": 1799999986000,
+   "session": "a41f02c9-0000-4000-8000-000000000001",
+   "agent": null,
+   "model": "glm-5.3",
+   "lane": "zai",
+   "status": 200,
+   "reason": null,
+   "ttft_ms": 1280,
+   "dur_ms": 8000,
+   "router_ms": 4,
+   "tokens_in": 1200,
+   "cache_read": 38000,
+   "cache_write": 0,
+   "tokens_out": 420,
+   "stop": "end_turn",
+   "upstream_id": null
+  }
+ ],
+ "in_flight": [
+  {
+   "id": 99,
+   "started_ms": 1799999994000,
+   "last_byte_ms": 1799999999000,
+   "session": "5d8c6baf-e3f2-45aa-a5d0-6db99ffbed99",
+   "model": "claude-opus-5-5",
+   "lane": "anthropic",
+   "agent": "main"
+  }
+ ],
+ "sessions": [
+  {
+   "id": "5d8c6baf-e3f2-45aa-a5d0-6db99ffbed99",
+   "title": "Dashboard v2 redesign",
+   "project": "huddle",
+   "cwd": "/Users/raouf/Playground/huddle",
+   "branch": "main",
+   "model": "claude-opus-5-5",
+   "state": "working",
+   "started_ms": 1799988480000,
+   "last_ms": 1799999994000,
+   "waiting_since_ms": null,
+   "context_tokens": 142000,
+   "context_limit": 200000,
+   "cache_ttl_ms": 300000,
+   "last_request_ms": 1799999970000,
+   "agents": [
+    {
+     "id": "main",
+     "type": "main",
+     "description": "",
+     "model": "claude-opus-5-5",
+     "state": "running",
+     "started_ms": 1799988480000,
+     "ended_ms": null,
+     "worktree": null
+    },
+    {
+     "id": "agent-abc",
+     "type": "sonnet-5.5",
+     "description": "D5 the page",
+     "model": "claude-sonnet-5-5",
+     "state": "running",
+     "started_ms": 1799998800000,
+     "ended_ms": null,
+     "worktree": "/Users/raouf/Playground/huddle/.agents/worktrees/dv2-d5"
+    },
+    {
+     "id": "agent-def",
+     "type": "Explore",
+     "description": "Map the dashboard code",
+     "model": "claude-haiku-5-5",
+     "state": "done",
+     "started_ms": 1799997600000,
+     "ended_ms": 1799997720000,
+     "worktree": null
+    }
+   ]
+  },
+  {
+   "id": "a41f02c9-0000-4000-8000-000000000001",
+   "title": "Migrate Tofu runners to ARM",
+   "project": "infra-tofu",
+   "cwd": "/Users/raouf/Work/infra-tofu",
+   "branch": "feat/arm-runners",
+   "model": "glm-5.3",
+   "state": "waiting",
+   "started_ms": 1799996520000,
+   "last_ms": 1799999760000,
+   "waiting_since_ms": 1799999760000,
+   "context_tokens": 172000,
+   "context_limit": 200000,
+   "cache_ttl_ms": 3600000,
+   "last_request_ms": 1799999760000,
+   "agents": []
+  },
+  {
+   "id": "0be771d4-0000-4000-8000-000000000002",
+   "title": "",
+   "project": "wpml-org",
+   "cwd": "/home/dev/wpml-org",
+   "branch": "fix/retry",
+   "model": "claude-sonnet-5-5",
+   "state": "idle",
+   "started_ms": 1799995500000,
+   "last_ms": 1799998200000,
+   "waiting_since_ms": null,
+   "context_tokens": null,
+   "context_limit": 200000,
+   "cache_ttl_ms": null,
+   "last_request_ms": null,
+   "agents": []
+  }
+ ],
+ "worktrees": [
+  {
+   "path": "/Users/raouf/Playground/huddle",
+   "project": "huddle",
+   "branch": "main",
+   "head": "172ae7b4",
+   "kind": "checkout",
+   "used_by": "5d8c6baf \u00b7 main",
+   "changes": 3,
+   "last_commit_ms": 1799997600000
+  },
+  {
+   "path": "/Users/raouf/Playground/huddle/.agents/worktrees/dv2-d5",
+   "project": "huddle",
+   "branch": "dv2/d5",
+   "head": "172ae7b4",
+   "kind": "agent",
+   "used_by": "D5 the page",
+   "changes": 2,
+   "last_commit_ms": 1799997600000
+  },
+  {
+   "path": "/Users/raouf/Work/infra-tofu/.agents/worktrees/old",
+   "project": "infra-tofu",
+   "branch": "feat/old",
+   "head": "51c08e9d",
+   "kind": "agent",
+   "used_by": null,
+   "changes": 12,
+   "last_commit_ms": 1799481600000
+  },
+  {
+   "path": "/Users/raouf/.agents/huddle/jobs/huddle/j-91cc",
+   "project": "huddle",
+   "branch": "huddle/j-91cc",
+   "head": "9c1f2e0a",
+   "kind": "job",
+   "used_by": "codex \u00b7 j-91cc",
+   "changes": null,
+   "last_commit_ms": 1799999820000
+  }
+ ],
+ "plugins": {
+  "state": "ready",
+  "rows": [
+   {
+    "name": "huddle",
+    "version": "0.0.3",
+    "installed": true,
+    "setup": true,
+    "key": null,
+    "lane": null,
+    "models": 0,
+    "next": null
+   },
+   {
+    "name": "zai",
+    "version": "0.0.3",
+    "installed": true,
+    "setup": true,
+    "key": true,
+    "lane": "glm-*",
+    "models": 3,
+    "next": null
+   },
+   {
+    "name": "deepseek",
+    "version": "0.0.3",
+    "installed": true,
+    "setup": false,
+    "key": false,
+    "lane": null,
+    "models": 0,
+    "next": "/deepseek:setup"
+   },
+   {
+    "name": "qwen",
+    "version": null,
+    "installed": false,
+    "setup": false,
+    "key": null,
+    "lane": null,
+    "models": 0,
+    "next": "/plugin install qwen@muhmdraouf"
+   }
+  ],
+  "checks": [
+   {
+    "id": "binary",
+    "level": "pass",
+    "label": "Binary",
+    "value": "huddle 0.0.3",
+    "detail": "~/.agents/huddle/bin/huddle-0.0.3"
+   },
+   {
+    "id": "plugin",
+    "level": "warn",
+    "label": "Plugin",
+    "value": "huddle@muhmdraouf 0.0.2",
+    "detail": "run /huddle:update"
+   }
+  ]
+ },
+ "harnesses": {
+  "state": "ready",
+  "rows": [
+   {
+    "id": "codex",
+    "name": "Codex CLI",
+    "status": "ready",
+    "bin": "/Users/raouf/.paradev/bin/codex",
+    "version": "codex-cli 0.167.0",
+    "flags": "unverified",
+    "report": "free text",
+    "access": [
+     "readonly",
+     "write"
+    ]
+   },
+   {
+    "id": "amp",
+    "name": "Amp Code",
+    "status": "fail",
+    "bin": "/Users/raouf/.paradev/bin/amp",
+    "version": "command failed: amp --version",
+    "flags": "unverified",
+    "report": "free text",
+    "access": [
+     "write"
+    ]
+   },
+   {
+    "id": "pi",
+    "name": "Pi",
+    "status": "missing",
+    "bin": "",
+    "version": "",
+    "flags": "checked",
+    "report": "checked",
+    "access": [
+     "readonly",
+     "exec",
+     "write"
+    ]
+   }
+  ]
+ },
+ "jobs": [
+  {
+   "id": "j-91cc",
+   "harness": "codex",
+   "repo": "huddle",
+   "title": "Second pass on the update handover",
+   "state": "running",
+   "started_ms": 1799999820000,
+   "ended_ms": null,
+   "files": 4,
+   "add": 96,
+   "del": 31,
+   "why": null
+  },
+  {
+   "id": "j-3f2a",
+   "harness": "opencode",
+   "repo": "huddle",
+   "title": "Port the fake harness",
+   "state": "awaiting_review",
+   "started_ms": 1799997960000,
+   "ended_ms": 1799998680000,
+   "files": 7,
+   "add": 212,
+   "del": 48,
+   "why": null
+  },
+  {
+   "id": "j-5a90",
+   "harness": "opencode",
+   "repo": "huddle",
+   "title": "Fix the flaky e2e",
+   "state": "dead",
+   "started_ms": 1799992200000,
+   "ended_ms": 1799992920000,
+   "files": 1,
+   "add": 9,
+   "del": 3,
+   "why": "driver exited (signal 9)"
+  }
+ ],
+ "hosts": [
+  "hub.raouf.me"
+ ]
+}
