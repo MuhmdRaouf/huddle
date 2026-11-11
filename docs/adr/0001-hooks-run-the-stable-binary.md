@@ -12,7 +12,7 @@ Status: accepted. It sets D8 in [DECISIONS.md](../DECISIONS.md).
   while nothing of it reaches the router: no session start re-applies the wiring, and no prompt
   brings a stopped router back.
 - The bootstrap keeps a path that no update deletes: every download or verified build repoints
-  `${HUDDLE_HOME:-$HOME/.agents/huddle}/bin/huddle` at the binary it installed.
+  `${HUDDLE_DATA_HOME:-${XDG_DATA_HOME:-$HOME/.local/share}/huddle}/bin/huddle` at the binary it installed.
 
 ## Decision
 
@@ -21,10 +21,10 @@ UserPromptSubmit probe, and nothing else. Both lines run the `huddle` link when 
 bootstrap only until the first binary exists:
 
 ```sh
-h="${HUDDLE_HOME:-$HOME/.agents/huddle}/bin/huddle"; [ -x "$h" ] && exec "$h" hook session-start; exec sh "${CLAUDE_PLUGIN_ROOT}/dist/run" hook session-start
+h="${HUDDLE_DATA_HOME:-${XDG_DATA_HOME:-$HOME/.local/share}/huddle}/bin/huddle"; [ -x "$h" ] && exec "$h" hook session-start; exec sh "${CLAUDE_PLUGIN_ROOT}/dist/run" hook session-start
 ```
 
-- The line names the binary home the way the bootstrap does, so `HUDDLE_HOME` moves both.
+- The line names the binary home the way the bootstrap does, so `HUDDLE_DATA_HOME` and `XDG_DATA_HOME` move both.
 - It is POSIX sh with builtins only (`[`, `exec`): the warm path forks nothing before the binary.
 - `[ -x ]` follows the link, so a link whose build is gone falls back to the bootstrap.
 - The first hook on a new machine still reaches `dist/run`, which exits 0 in silence until

@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.0.5
+
+huddle keeps its files in the XDG folders and remembers every request.
+
+### Layout
+
+- Files move out of `~/.agents`: config in `~/.config/huddle/` (`config.toml`, `providers.toml`, `harnesses.toml`), data in `~/.local/share/huddle/` (`bin/`, `ca/`), state in `~/.local/state/huddle/` (`huddle.db`, `router.log`, `run/`, the ledgers, `jobs/`).
+- `HUDDLE_CONFIG_HOME`, `HUDDLE_DATA_HOME` and `HUDDLE_STATE_HOME` point at huddle's own folder for a kind; `XDG_CONFIG_HOME`, `XDG_DATA_HOME` and `XDG_STATE_HOME` move it when those are unset. `HUDDLE_HOME` and `HUDDLE_ROUTER_HOME` are gone.
+- Every file huddle owns is TOML, and every folder and file is created on demand. The CA files are `huddle-ca.pem` and `huddle-ca-key.pem`.
+- Upgrading from 0.0.4: run `huddle uninstall` first, then `/huddle:setup` with 0.0.5. Nothing is migrated.
+
+### History
+
+- Every finished request is one row in `huddle.db`: time, session, agent, model, lane, status, tokens, cache, time to first token, duration, stop reason and upstream id. No prompt, key or header value is stored. The events files are gone.
+- Rows older than `[history] keep_days` in `config.toml` (90 by default) are pruned once a day. Rows without usage are filled from Claude Code's session logs.
+- `GET /huddle-router/history` answers range buckets (15 min, 24 h, 7 d, 30 d), session and project totals and a filtered, paged search.
+- Claude models are priced at API list rates and shown as API-equivalent.
+
+### Delegation
+
+- A job runs in your folder or the one `--dir <path>` names. huddle makes no worktree and no branch; `--diff`, `--accept`, `--return` and `/huddle:cancel` work on that folder. A second write job in the same folder is refused.
+- A job's record is `job.toml` under the state folder.
+
 ## 0.0.4
 
 The dashboard reads sessions, agents and tokens the way Claude Code really writes them.

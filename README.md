@@ -23,7 +23,7 @@ huddle is a Claude Code plugin and one Rust binary with two jobs:
 
 - **Routing.** A local router sends each model request to the provider the model
   belongs to, and every `claude-*` request to Anthropic untouched.
-- **Delegation.** A task goes to another coding CLI in its own git worktree.
+- **Delegation.** A task goes to another coding CLI, working in your folder or the one `--dir` names.
   Claude reads the diff and the report, then accepts or returns it.
 
 A live dashboard shows both, and one command keeps the binary current.
@@ -50,10 +50,10 @@ The `huddle` plugin:
 |---|---|
 | `/huddle:setup [harness]` | Install the binary and wire Claude Code to the router; with a harness, show whether that CLI is ready |
 | `/huddle:update` | Install the binary of the version the plugin carries and hand the router over |
-| `/huddle:run <harness> <task>` | Run a task on another coding CLI in its own worktree; `--background` returns at once |
+| `/huddle:run <harness> <task>` | Run a task on another coding CLI in this folder or `--dir`; `--background` returns at once |
 | `/huddle:status [job-id]` | Show every delegated job, or one in full |
 | `/huddle:result <job-id>` | Read a job's report and diff, then `--accept` it or `--return` it with feedback |
-| `/huddle:cancel <job-id>` | Stop a job and remove its worktree and branch |
+| `/huddle:cancel <job-id>` | Stop a job |
 | `/huddle:add-dashboard-host <host>` | Let a domain of yours open the dashboard |
 | `/huddle:remove-dashboard-host <host>` | Take that domain back out |
 
@@ -88,7 +88,8 @@ huddle-daemon          the router's run loop: one process per user, handover,
 huddle-router          the proxy: lanes, the key swap, the Anthropic default,
                        the dashboard page and its live state.
 huddle-setup           the install, the settings patch and its undo.
-huddle-jobs            the job model and its git worktrees.
+huddle-jobs            the job model and its records.
+huddle-history         the request history in `huddle.db`.
 huddle-harness         the harness table and its runners.
 huddle-sessions        Claude Code's session logs and the projects' worktrees,
                        read only.
@@ -128,7 +129,7 @@ dashboard shows what happens.
    swap and the hop-by-hop headers. Qwen's `context_management` field is the one
    body edit.
 
-The daemon re-reads `~/.agents/huddle-router/providers.json` every 2 s, so
+The daemon re-reads `~/.config/huddle/providers.toml` every 2 s, so
 adding or removing a provider needs no restart. A binary update, or a resident
 size past 1 GiB, hands the socket to a new process while the requests in flight
 drain.
@@ -146,15 +147,19 @@ session, request and project.
 |---|---|---|
 | Monitor | Overview | Stats, the traffic chart (requests, tokens, time to first token, errors per model), what needs you, live sessions, activity |
 | | Sessions, Agents | State (working, waiting and for how long, idle), context fill, prompt cache warmth, subagents with their model and worktree |
-| | Requests, Errors | The 200 latest requests with timing and tokens, each credited to its agent; errors grouped by status |
+| | Requests, Errors | Search over the full history with filters and paging, each request credited to its agent; errors grouped by status |
 | Usage | Models, Providers, Usage | Speed, latency, cache hits and tokens per model; one lane per provider; the Claude plan windows when Anthropic's replies carry them |
 | Workspace | Projects, Worktrees, Jobs | Sessions, worktrees and delegated jobs per repository, with uncommitted file counts |
 | System | Plugins, Harnesses, Router | Each plugin's install, setup, key, lane and next step; every coding CLI's readiness; the router's health checks and wiring |
 
 Where the data comes from:
 
-- **The router** keeps the latest 200 requests, per-model counts in 30 s buckets
-  and its own CPU and memory, in memory only. A restart clears them.
+- **The router** keeps live counts and its own CPU and memory in memory only; a
+  restart clears them. Every finished request is also one row in `huddle.db`
+  (no prompt, key or header value), kept `[history] keep_days` days in
+  `config.toml`, 90 by default. The range switch (15 min, 24 h, 7 d, 30 d), the
+  session and project totals and the request search read it. Claude models are
+  priced at API list rates and shown as API-equivalent.
 - **Claude Code's session logs** under `~/.claude/projects/` give each session's
   title, path, branch, subagents, context and token counts. They are read only,
   and only while a dashboard page is open.
@@ -208,26 +213,30 @@ Hand a task to another coding CLI: `claude`, `codex`, `opencode`, `omp`, `pi`,
 lists every harness and whether it is ready; the dashboard's Harnesses page
 shows the same table.
 
-1. `/huddle:run <harness> <task>` creates a git worktree under
-   `~/.agents/huddle/jobs/` and starts the harness there. It waits for the
+1. `/huddle:run <harness> <task>` starts the harness in your current folder, or
+   the folder `--dir <path>` names. Huddle makes no worktree: pass a worktree's
+   path with `--dir` when you want isolation. It waits for the
    result; `--background` returns at once. `--readonly`, `--exec` and `--write`
    set what the harness may do.
 2. `/huddle:status` lists the jobs; a job whose driver died shows as dead.
 3. `/huddle:result <job-id> --diff` shows the report and the change.
 4. `--accept` lands it as a commit (`--no-commit` leaves it in the working
    tree), or `--return "<feedback>"` sends it back for another attempt.
-5. `/huddle:cancel <job-id>` stops it and removes its worktree and branch.
+5. `/huddle:cancel <job-id>` stops it and leaves the folder as it is.
 
-Your checkout does not change until you accept. A worktree is not a sandbox:
-the harness can still reach the rest of the machine as this user.
+The harness edits the folder directly, and a second write job in the same folder
+is refused. A folder is not a sandbox: the harness can still reach the rest of
+the machine as this user.
 
 ### Setup and recovery
 
 1. `/huddle:setup` runs `plugin/dist/run setup`, a POSIX sh script. It downloads
    the release for this OS and CPU and checks it against `SHA256SUMS`, or builds
    the checkout with `cargo` while no release is published.
-2. The binary lands at `~/.agents/huddle/bin/huddle-<version>`, with a `huddle`
-   link to it.
+2. The binary lands at `~/.local/share/huddle/bin/huddle-<version>`, with a
+   `huddle` link to it.
+   An existing 0.0.4 install runs `huddle uninstall` first, then `/huddle:setup`
+   with 0.0.5; nothing moves from `~/.agents`.
 3. `huddle setup --install` creates the local CA, starts the router, patches
    `settings.json` and records every change in a ledger. Nothing changes before
    it runs.
@@ -293,7 +302,7 @@ huddle/
 │   ├── huddle-router/          # the proxy, its lanes and the dashboard page
 │   ├── huddle-daemon/          # the run loop, singleton, handover, dashboard checks
 │   ├── huddle-setup/           # the install, the settings patch and its undo
-│   ├── huddle-jobs/            # the job model and worktrees
+│   ├── huddle-jobs/            # the job model and records
 │   ├── huddle-harness/         # the harness table and runners
 │   ├── huddle-sessions/        # Claude Code session logs and worktrees, read only
 │   ├── huddle-catalog/         # provider data and routing
@@ -322,10 +331,9 @@ Files huddle writes on your machine:
 
 | Path | Holds |
 |---|---|
-| `~/.agents/huddle/bin/` | the binaries and the `huddle` link |
-| `~/.agents/huddle/jobs/` | delegated job worktrees and reports |
-| `~/.agents/huddle-router/` | `providers.json`, `router.log`, route events |
-| `~/.config/huddle/config.toml` | the dashboard hosts |
+| `~/.config/huddle/` | `config.toml` (dashboard hosts, `[history] keep_days`), `providers.toml`, `harnesses.toml` |
+| `~/.local/share/huddle/` | `bin/` (the binaries and the `huddle` link), `ca/` (`huddle-ca.pem`, `huddle-ca-key.pem`) |
+| `~/.local/state/huddle/` | `huddle.db`, `router.log`, `run/`, the settings and provider ledgers, `jobs/` |
 | `~/.claude/settings.json` | the proxy and CA settings, undone by `huddle uninstall` |
 
 ## Automation
@@ -385,7 +393,7 @@ To try the plugin from the working tree, run `claude --plugin-dir ./plugin`.
 
 Tests are hermetic. `HOME`, `CLAUDE_CONFIG_DIR` and the `XDG_*` directories
 point at temp directories from `huddle-testkit`. No test touches the real
-`~/.claude`, `~/.agents` or `~/.config`, binds port 4835 or reaches a real
+`~/.claude`, `~/.agents`, `~/.config` or `~/.local`, binds port 4835 or reaches a real
 provider: upstreams are in-process fakes.
 
 ## Versioning

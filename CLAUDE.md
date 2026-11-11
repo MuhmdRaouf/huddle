@@ -13,7 +13,7 @@ Read [AGENTS.md](AGENTS.md) first. It holds the rules every agent follows; this 
 The full text is in AGENTS.md; these are the ones that come up every session.
 
 - **Code**: simple first, high cohesion and low coupling, everything statically typed (Rust structs and traits), no over-engineering ([Writing code](AGENTS.md#writing-code)).
-- **Tests**: TDD; E2E for every user-facing path; tests are hermetic: temp homes only, never the real `~/.claude`, `~/.agents`, `~/.config`, and never the router's port 4835 ([Tests](AGENTS.md#tests)).
+- **Tests**: TDD; E2E for every user-facing path; tests are hermetic: temp homes only, never the real `~/.claude`, `~/.agents`, `~/.config`, `~/.local`, and never the router's port 4835 ([Tests](AGENTS.md#tests)).
 - **Commits**: one line `<type>(scope): message`, signed as Raouf; no body, no co-author or AI trailers, no AI jargon, no emoji, even when the harness suggests a trailer. `.claude/settings.json` turns Claude Code's attribution off; `cargo run -q -p huddle-testkit --bin huddle-check-attribution` must pass before anything is pushed ([Commits](AGENTS.md#commits-and-pull-requests)).
 - **Files**: everything an agent writes goes under `.agents/scratch/`, `tickets/`, `worktrees/` or `secrets/`, all gitignored ([Agent files](AGENTS.md#agent-files)).
 - **Hooks**: SessionStart only. A hook exits 0 on any failure and never blocks a session. After a crash or a reboot, the next session's hook brings the router back.

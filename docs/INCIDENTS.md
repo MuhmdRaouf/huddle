@@ -39,7 +39,7 @@ Each incident, its cause, and the test that now stops it. A guard named here mus
   real user's config directories.
 - **Cause:** the state and XDG variables outrank HOME, and the run left them unset.
 - **Guard:** crates/huddle-testkit/tests/temp_home.rs:every_state_variable_points_inside_the_home
-- **Rule:** isolation sets HOME, HUDDLE_HOME, CLAUDE_CONFIG_DIR and every XDG_* variable to the
+- **Rule:** isolation sets HOME, CLAUDE_CONFIG_DIR and every XDG_* variable to the
   temp home, and the kit checks every one of them.
 
 ## 2026-10-21, a script signalled 76 of the owner's processes
@@ -80,7 +80,7 @@ Each incident, its cause, and the test that now stops it. A guard named here mus
 
 ## 2026-10-25, a healthy router had no pid to show
 
-- **What happened:** a caller saw the daemon answer its health path, read `run/router.json` and
+- **What happened:** a caller saw the daemon answer its health path, read `run/router.toml` and
   found no file. It passed on every rerun alone.
 - **Cause:** the daemon served its listener before its record landed, so under load a caller could
   see it healthy before the record existed. `router start` and `router status` read the pid the

@@ -20,7 +20,7 @@ Status: accepted, 2026-10-25. It sets D2 and D10 in [DECISIONS.md](../DECISIONS.
 - `huddle router start` probes first: a daemon that answers its health path is named and never
   started over, with or without a provider. A start whose record names another build takes the
   running router over through the handover socket, and the port never closes during the takeover.
-- The router's record (`~/.agents/huddle-router/run/router.json`) names its pid, port and build. It
+- The router's record (`~/.local/state/huddle/run/router.toml`) names its pid, port and build. It
   lands before the first health answer, so a router seen healthy always has a pid to show.
 - A stop sends no signal when the record names no live daemon on the recorded port.
 - The RSS ceiling (1 GiB by default, `HUDDLE_ROUTER_RSS_CEILING_MB`, checked every 30 s) hands the

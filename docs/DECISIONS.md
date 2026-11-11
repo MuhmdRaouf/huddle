@@ -20,16 +20,18 @@ first through the lock, names the holder and exits 0; a stale lock never blocks 
 ## D3: Providers are data
 
 The five providers live once, compiled in (`crates/huddle-catalog`). A provider is enabled when its setup
-recorded it in `~/.agents/huddle-router/providers.json`, which the daemon re-reads on change: a lane appears
+recorded it in `~/.config/huddle/providers.toml`, which the daemon re-reads on change: a lane appears
 within one poll. A request's `model` is matched against every enabled provider — catalog ids first, then the
 longest model prefix, case-sensitively. A model no lane claims goes to Anthropic.
 
 ## D4: State
 
-State lives under `$HOME/.agents`: the router's home `huddle-router/` (the lock, `run/router.json`, the log and
-`events/`), the shared CA root `ca/` beside it, and the Claude settings ledger. `HUDDLE_ROUTER_HOME` moves the
-router home and the CA stays beside it. Every state file is written through an atomic rename into a private
-directory.
+Files live in the XDG folders, split by kind. Config (`~/.config/huddle/`) holds `config.toml`, `providers.toml` and
+`harnesses.toml`. Data (`~/.local/share/huddle/`) holds `bin/` and the CA in `ca/`. State (`~/.local/state/huddle/`)
+holds `huddle.db`, the log, `run/` (the lock, `router.toml`, the handover socket), the settings ledger and the jobs.
+`HUDDLE_CONFIG_HOME`, `HUDDLE_DATA_HOME` and `HUDDLE_STATE_HOME` point at huddle's own folder for a kind; else
+`XDG_<KIND>_HOME/huddle`; else the default. Huddle's files are TOML, and every state file is written through an
+atomic rename into a private directory. Nothing is written under `~/.agents`.
 
 ## D5: A provider's key
 
@@ -55,7 +57,7 @@ has dropped stays a silent exit 0.
 
 ## D8: Hooks run the stable binary
 
-Every hook line runs `${HUDDLE_HOME:-$HOME/.agents/huddle}/bin/huddle` when it is there, and the bootstrap
+Every hook line runs `${HUDDLE_DATA_HOME:-${XDG_DATA_HOME:-$HOME/.local/share}/huddle}/bin/huddle` when it is there, and the bootstrap
 only until the first binary exists, so a session's hooks outlive a plugin update
 ([ADR-1](adr/0001-hooks-run-the-stable-binary.md)).
 
@@ -78,22 +80,25 @@ An upstream reset before the body reached the transport retries once, on a fresh
 from byte zero. A timeout or a refused connection is never retried, and an answer already streaming is never
 sent again in full.
 
-## D12: Route events
+## D12: Request history
 
-The router writes one JSONL line per routed request under `~/.agents/huddle-router/events/`, one file per UTC
-day, carrying the router's own timestamp and the usage the answer reported. `huddle provider <p> usage` reads
-those lines; a torn last line counts for nothing.
+Every finished request is one row in `huddle.db` under the state folder: time, session, agent, model, lane, status,
+tokens, cache, time to first token, duration, stop reason and upstream id. No prompt, key or header value is stored.
+A writer thread batches the inserts off the request path, and rows older than `[history] keep_days` in `config.toml`
+(90 by default) are pruned once a day. Rows without usage are filled from Claude Code's session logs when a page is
+open and when a history query runs. `huddle provider <p> usage` and the dashboard's history views read the database.
+Claude models are priced at API list rates and labelled API-equivalent.
 
 ## D13: Delegation through jobs
 
-`huddle run <harness> <task>` starts a job: a worktree of the current repository, a driver running the named
+`huddle run <harness> <task>` starts a job: the caller's folder (or the one `--dir` names), a driver running the named
 harness, and the checks the caller gated it with. The report comes back verbatim — a verdict is what huddle
 measured, and the harness decides what to do with it. `accept` lands the commit, `result` shows the report,
-`cancel` removes the worktree, and a killed driver's process group is reaped by the next word.
+`cancel` stops the job and leaves the folder as it is, and a killed driver's process group is reaped by the next word.
 
 ## D14: Tests are hermetic
 
-Every test runs on the kit's temp home (`crates/huddle-testkit`), which gives `HOME`, `HUDDLE_HOME`,
+Every test runs on the kit's temp home (`crates/huddle-testkit`), which gives `HOME`,
 `CLAUDE_CONFIG_DIR` and every `XDG_*` variable a private directory, leases its ports and lets no owner
 variable reach a child. Upstreams and harnesses are in-process fakes. A run that leaves a process or a temp
 entry behind fails, and no test reaches the live router's port or writes the process environment.
