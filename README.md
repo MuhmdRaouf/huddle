@@ -158,7 +158,7 @@ Where the data comes from:
   restart clears them. Every finished request is also one row in `huddle.db`
   (no prompt, key or header value), kept `[history] keep_days` days in
   `config.toml`, 90 by default. The range switch (15 min, 24 h, 7 d, 30 d), the
-  session and project totals and the request search read it. Claude models are
+  session and project totals and the request search (24 h to 90 d) read it. Claude models are
   priced at API list rates and shown as API-equivalent.
 - **Claude Code's session logs** under `~/.claude/projects/` give each session's
   title, path, branch, subagents, context and token counts. They are read only,

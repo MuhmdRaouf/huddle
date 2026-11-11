@@ -22,47 +22,51 @@ const DEFAULT_LIMIT: u64 = 100;
 /// The time windows the page asks for, each with its bucket width.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Span {
-    Quarter,
+    QuarterHour,
     Day,
     Week,
     Month,
+    Quarter,
 }
 
 impl Span {
     fn parse(text: &str) -> Option<Span> {
         match text {
-            "15m" => Some(Span::Quarter),
+            "15m" => Some(Span::QuarterHour),
             "24h" => Some(Span::Day),
             "7d" => Some(Span::Week),
             "30d" => Some(Span::Month),
+            "90d" => Some(Span::Quarter),
             _ => None,
         }
     }
 
     fn name(self) -> &'static str {
         match self {
-            Span::Quarter => "15m",
+            Span::QuarterHour => "15m",
             Span::Day => "24h",
             Span::Week => "7d",
             Span::Month => "30d",
+            Span::Quarter => "90d",
         }
     }
 
     fn length_ms(self) -> u64 {
         match self {
-            Span::Quarter => 15 * MINUTE,
+            Span::QuarterHour => 15 * MINUTE,
             Span::Day => DAY,
             Span::Week => 7 * DAY,
             Span::Month => 30 * DAY,
+            Span::Quarter => 90 * DAY,
         }
     }
 
     pub fn width_ms(self) -> u64 {
         match self {
-            Span::Quarter => 30 * SECOND,
+            Span::QuarterHour => 30 * SECOND,
             Span::Day => 15 * MINUTE,
             Span::Week => HOUR,
-            Span::Month => DAY,
+            Span::Month | Span::Quarter => DAY,
         }
     }
 
@@ -149,7 +153,9 @@ pub fn parse(query: &str, now_ms: u64) -> Result<Query, Refusal> {
     };
     let span = match get("range") {
         None => Span::Day,
-        Some(text) => Span::parse(text).ok_or_else(|| bad("range must be 15m, 24h, 7d or 30d"))?,
+        Some(text) => {
+            Span::parse(text).ok_or_else(|| bad("range must be 15m, 24h, 7d, 30d or 90d"))?
+        }
     };
     match get("view") {
         None => Err(bad("view is required: buckets, totals or search")),

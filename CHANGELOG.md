@@ -15,7 +15,7 @@ huddle keeps its files in the XDG folders and remembers every request.
 
 - Every finished request is one row in `huddle.db`: time, session, agent, model, lane, status, tokens, cache, time to first token, duration, stop reason and upstream id. No prompt, key or header value is stored. The events files are gone.
 - Rows older than `[history] keep_days` in `config.toml` (90 by default) are pruned once a day. Rows without usage are filled from Claude Code's session logs.
-- `GET /huddle-router/history` answers range buckets (15 min, 24 h, 7 d, 30 d), session and project totals and a filtered, paged search.
+- `GET /huddle-router/history` answers range buckets (15 min, 24 h, 7 d, 30 d), session and project totals and a filtered, paged search over 24 h to 90 d.
 - Claude models are priced at API list rates and shown as API-equivalent.
 
 ### Delegation

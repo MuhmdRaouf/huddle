@@ -836,7 +836,7 @@ const REQ_COLS=[
 function reqFilter(r){const f=F.req;const okS=f==='all'||(f==='ok'&&r.status===200)||(f==='err'&&isErr(r))||(f==='cancel'&&r.status===499)||(f==='flight'&&r.status==null);
  return okS&&(F.lane==='all'||r.lane===F.lane)&&qmatch('req',r.m+' '+(r.s?r.s.project+' '+r.s.id:'')+' '+(r.a?r.a.desc+' '+r.a.type:'')+' '+r.id+' '+(r.up||''))}
 /* ---------- search over the kept history (Requests and Errors) ---------- */
-const HPAGE=100,HFIL=['model','lane','session','agent','project','status'],HRANGES=RANGES.filter(r=>r[0]!=='15m'),HSTAT=[['any','Any status'],['ok','OK'],['error','Error'],['left','Client left']];
+const HPAGE=100,HFIL=['model','lane','session','agent','project','status'],HRANGES=[...RANGES.filter(r=>r[0]!=='15m'),['90d','90 d']],HSTAT=[['any','Any status'],['ok','OK'],['error','Error'],['left','Client left']];
 const HS={mode:'live',range:'24h',f:{},off:0,data:null,rows:[],err:false,seq:0,t:0};
 const hdef=p=>({range:'24h',status:p==='errors'?'error':'any'});
 const hrow=(x,i)=>{const cr=n0(x.cache_read),cw=n0(x.cache_write),ti=num(x.tokens_in);

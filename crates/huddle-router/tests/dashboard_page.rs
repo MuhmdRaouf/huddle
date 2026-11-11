@@ -293,6 +293,10 @@ fn t10_requests_and_errors_search_the_history_with_every_filter_and_paging() {
     assert!(PAGE.contains("'&limit='+HPAGE+'&offset='"));
     assert!(PAGE.contains("encodeURIComponent("));
     assert!(PAGE.contains("data-hf="), "filter inputs");
+    assert!(
+        PAGE.contains("HRANGES=[...RANGES.filter(r=>r[0]!=='15m'),['90d','90 d']]"),
+        "search offers 24 h to 90 d"
+    );
     for status in ["'any'", "'ok'", "'error'", "'left'"] {
         assert!(PAGE.contains(status), "status {status}");
     }
