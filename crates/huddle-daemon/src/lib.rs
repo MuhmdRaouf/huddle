@@ -2,6 +2,7 @@ pub mod checks;
 pub mod dashboard_inputs;
 pub mod handover;
 pub mod nochain;
+pub mod read_cache;
 pub mod rss;
 pub mod serve;
 pub mod singleton;

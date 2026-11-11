@@ -243,7 +243,7 @@ fn a_plain_claude_request_shows_with_session_and_tokens() {
     assert_eq!(row["model"], "claude-opus-5-5");
     assert_eq!(row["lane"], "anthropic");
     assert_eq!(row["status"], 200);
-    assert_eq!(row["session"], "cse_01Jq");
+    assert_eq!(row["session"], SESSION);
     assert_eq!(row["tokens_in"], 120);
     assert_eq!(row["tokens_out"], 34);
     let anthropic_lane = &snapshot["lanes"][0];
@@ -286,7 +286,7 @@ fn a_request_through_connect_shows_with_its_session() {
         Some(recent_of(daemon.port)).filter(|r| !r.is_empty())
     });
     assert_eq!(recent[0]["lane"], "anthropic");
-    assert_eq!(recent[0]["session"], "cse_01Jq");
+    assert_eq!(recent[0]["session"], SESSION);
     assert_eq!(recent[0]["tokens_in"], 120);
 }
 
@@ -590,4 +590,137 @@ fn a_running_job_with_a_live_driver_is_listed() {
     assert_eq!(job["harness"], "opencode");
     assert_eq!(job["repo"], "huddle");
     assert_eq!(job["state"], "running");
+}
+
+const LOG_SESSION: &str = "5d8c6baf-e3f2-45aa-a5d0-6db99ffbed99";
+const LOGGED_REQUEST: &str = "req_011CVe2eJoin";
+
+/// A Claude Code log with one finished assistant turn that carries `LOGGED_REQUEST`.
+fn write_session_log(daemon: &Daemon) {
+    let dir = daemon.home.root().join(".claude/projects/-tmp-proj");
+    std::fs::create_dir_all(&dir).expect("mkdir projects");
+    let at = huddle_jobs::id::iso_ms(huddle_jobs::id::now_ms() - 60_000);
+    let line = format!(
+        r#"{{"type":"assistant","timestamp":"{at}","cwd":"/tmp/proj","gitBranch":"main","sessionId":"{LOG_SESSION}","requestId":"{LOGGED_REQUEST}","message":{{"model":"claude-opus-5-5","stop_reason":"end_turn","usage":{{"input_tokens":5,"cache_creation_input_tokens":100,"cache_read_input_tokens":1000,"output_tokens":9}},"content":[{{"type":"text","text":"PRIVATE REPLY TEXT"}}]}}}}"#
+    );
+    std::fs::write(
+        dir.join(format!("{LOG_SESSION}.jsonl")),
+        format!("{line}\n"),
+    )
+    .expect("log");
+}
+
+fn logged_upstream() -> FakeUpstream {
+    start_upstream(|_, _| {
+        let mut headers = json_header();
+        headers.push(("request-id".to_string(), LOGGED_REQUEST.to_string()));
+        Step::answer_with_headers(200, headers, r#"{"type":"message"}"#)
+    })
+}
+
+#[test]
+fn a_request_is_credited_to_the_agent_whose_log_carries_its_request_id() {
+    let (anthropic, zai) = (logged_upstream(), usage_upstream());
+    let daemon = fixture_with(&anthropic, &zai);
+    write_session_log(&daemon);
+    let _viewer = Live::open(daemon.port);
+
+    let status = post_messages(
+        daemon.port,
+        r#"{"model":"claude-opus-5-5","messages":[]}"#,
+        &[("x-claude-code-session-id", LOG_SESSION)],
+    );
+    assert_eq!(status, 200);
+
+    let snapshot = wait_for("the request credited to its agent", || {
+        let snapshot = state(daemon.port);
+        snapshot["recent"][0]["agent"]
+            .is_string()
+            .then_some(snapshot)
+    });
+    let row = &snapshot["recent"][0];
+    assert_eq!(row["agent"], format!("{LOG_SESSION}:main"));
+    assert_eq!(row["session"], LOG_SESSION);
+    assert_eq!(row["upstream_id"], LOGGED_REQUEST);
+    assert_eq!(row["tokens_in"], 1105);
+    assert_eq!(row["cache_read"], 1000);
+    assert_eq!(row["cache_write"], 100);
+    assert_eq!(row["tokens_out"], 9);
+    let session = &snapshot["sessions"][0];
+    assert_eq!(session["id"], LOG_SESSION);
+    assert_eq!(session["state"], "waiting");
+    assert_eq!(session["cwd"], "/tmp/proj");
+    let text = snapshot.to_string();
+    assert!(!text.contains("PRIVATE REPLY TEXT"), "no message text");
+    assert!(!text.contains("req_011CVe2eJoin\"]"), "no request id list");
+}
+
+#[test]
+fn a_session_with_a_request_in_flight_is_working() {
+    let held = start_upstream(|_, _| Step::sse_head_then_silence());
+    let (anthropic, zai) = (held, usage_upstream());
+    let daemon = fixture_with(&anthropic, &zai);
+    write_session_log(&daemon);
+    let _viewer = Live::open(daemon.port);
+    let port = daemon.port;
+    std::thread::spawn(move || {
+        post_messages(
+            port,
+            r#"{"model":"claude-opus-5-5","messages":[]}"#,
+            &[("x-claude-code-session-id", LOG_SESSION)],
+        )
+    });
+
+    let snapshot = wait_for("the session working", || {
+        let snapshot = state(daemon.port);
+        (snapshot["sessions"][0]["state"] == "working").then_some(snapshot)
+    });
+
+    assert_eq!(snapshot["in_flight"][0]["session"], LOG_SESSION);
+}
+
+#[test]
+fn the_router_card_the_checks_and_the_hosts_fill_while_a_page_is_open() {
+    let (anthropic, zai) = (usage_upstream(), usage_upstream());
+    let daemon = fixture_with(&anthropic, &zai);
+    let _viewer = Live::open(daemon.port);
+
+    let snapshot = wait_for("plugin checks and a process sample", || {
+        let snapshot = state(daemon.port);
+        let ready = snapshot["plugins"]["state"] == "ready"
+            && snapshot["wiring"]["state"] != "checking"
+            && snapshot["router"]["rss_bytes"].is_u64();
+        ready.then_some(snapshot)
+    });
+
+    assert_eq!(snapshot["wiring"]["state"], "bad");
+    assert_eq!(snapshot["router"]["viewers"], 1);
+    assert!(snapshot["router"]["cpu_pct"].is_f64());
+    assert!(snapshot["router"]["connections"].is_u64());
+    assert!(snapshot["plugins"]["rows"][0]["requests"].is_u64());
+    assert!(
+        snapshot["plugins"]["checks"]
+            .as_array()
+            .is_some_and(|c| !c.is_empty())
+    );
+    assert!(snapshot["hosts"].is_array());
+}
+
+#[test]
+fn with_no_page_open_no_session_log_or_check_is_read() {
+    let (anthropic, zai) = (usage_upstream(), usage_upstream());
+    let daemon = fixture_with(&anthropic, &zai);
+    write_session_log(&daemon);
+
+    std::thread::sleep(Duration::from_millis(300));
+    let snapshot = state(daemon.port);
+    std::thread::sleep(Duration::from_millis(600));
+    let snapshot_later = state(daemon.port);
+
+    for shown in [&snapshot, &snapshot_later] {
+        assert_eq!(shown["sessions"].as_array().map(Vec::len), Some(0));
+        assert_eq!(shown["plugins"]["state"], "checking");
+        assert_eq!(shown["harnesses"]["state"], "checking");
+        assert!(shown["router"]["rss_bytes"].is_null());
+    }
 }

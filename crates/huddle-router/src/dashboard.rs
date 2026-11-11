@@ -16,9 +16,13 @@ use tokio::time::{Instant, sleep_until};
 
 use crate::anthropic::StreamingBody;
 use crate::dispatch::now_ms;
-use crate::live::{JobRow, LaneMeta, LiveState, Snapshot, SnapshotInputs, Wiring};
+use crate::join;
+use crate::live::{
+    JobRow, LaneMeta, LiveState, ProcessUsage, Snapshot, SnapshotInputs, Wiring, WiringState,
+};
 use crate::server::{RespBody, full_body, json_answer};
 use huddle_catalog::providers::providers;
+use huddle_sessions::{Session, Worktree};
 
 pub const PAGE_PATH: &str = "/";
 pub const STATE_PATH: &str = "/huddle-router/state";
@@ -52,6 +56,28 @@ pub struct DashboardInputs {
     pub hosts: Arc<dyn Fn() -> Vec<String> + Send + Sync>,
     /// Connections open to the router now.
     pub connections: Arc<dyn Fn() -> usize + Send + Sync>,
+    /// The wiring card's state.
+    pub wiring_state: Arc<dyn Fn() -> WiringState + Send + Sync>,
+    /// The router process's CPU and memory. Asked only while a page is open.
+    pub process: Arc<dyn Fn() -> ProcessUsage + Send + Sync>,
+    /// Claude Code's sessions and the projects' worktrees. Asked only while a page is open.
+    pub sessions: Arc<dyn Fn() -> Machine + Send + Sync>,
+    /// The plugin page: `{state, rows, checks}`. Asked only while a page is open.
+    pub plugins: Arc<dyn Fn() -> serde_json::Value + Send + Sync>,
+    /// The harness page: `{state, rows}`. Asked only while a page is open.
+    pub harnesses: Arc<dyn Fn() -> serde_json::Value + Send + Sync>,
+}
+
+/// What the session logs and git say about the machine.
+#[derive(Debug, Clone, Default)]
+pub struct Machine {
+    pub sessions: Vec<Session>,
+    pub worktrees: Vec<Worktree>,
+}
+
+/// A page that has no reading yet.
+fn checking() -> serde_json::Value {
+    serde_json::json!({ "state": "checking", "rows": [], "checks": [] })
 }
 
 impl Default for DashboardInputs {
@@ -64,6 +90,11 @@ impl Default for DashboardInputs {
             jobs: Arc::new(Vec::new),
             hosts: Arc::new(Vec::new),
             connections: Arc::new(|| 0),
+            wiring_state: Arc::new(WiringState::default),
+            process: Arc::new(ProcessUsage::default),
+            sessions: Arc::new(Machine::default),
+            plugins: Arc::new(checking),
+            harnesses: Arc::new(checking),
         }
     }
 }
@@ -191,17 +222,32 @@ impl Dashboard {
                 key: (self.inputs.key_present)(provider.id),
             }
         }));
-        self.live.snapshot(
-            now_ms(),
-            &SnapshotInputs {
-                version: self.inputs.version.clone(),
-                pid: std::process::id(),
-                wiring: (self.inputs.wiring)(),
-                lanes,
-                jobs: (self.inputs.jobs)(),
-                connections: (self.inputs.connections)(),
-            },
-        )
+        // The log, git and `ps` reads belong to an open page: without a viewer none is asked.
+        let watched = self.live.viewers() > 0;
+        let mut inputs = SnapshotInputs {
+            version: self.inputs.version.clone(),
+            pid: std::process::id(),
+            wiring: (self.inputs.wiring)(),
+            wiring_state: (self.inputs.wiring_state)(),
+            lanes,
+            jobs: (self.inputs.jobs)(),
+            connections: (self.inputs.connections)(),
+            hosts: (self.inputs.hosts)(),
+            plugins: checking(),
+            harnesses: checking(),
+            ..SnapshotInputs::default()
+        };
+        if watched {
+            let machine = (self.inputs.sessions)();
+            inputs.process = (self.inputs.process)();
+            inputs.sessions = machine.sessions;
+            inputs.worktrees = machine.worktrees;
+            inputs.plugins = (self.inputs.plugins)();
+            inputs.harnesses = (self.inputs.harnesses)();
+        }
+        let mut snapshot = self.live.snapshot(now_ms(), &inputs);
+        join::apply(&mut snapshot);
+        snapshot
     }
 
     fn snapshot_json(&self) -> String {

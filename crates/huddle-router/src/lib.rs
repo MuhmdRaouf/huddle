@@ -8,6 +8,7 @@ pub mod dashboard;
 pub mod dispatch;
 pub mod events;
 pub mod health;
+pub mod join;
 pub mod keycache;
 pub mod keycheck;
 pub mod lane;

@@ -8,6 +8,7 @@ use std::process::Command;
 use std::time::{Duration, Instant};
 
 use huddle_config::env::Env;
+use huddle_router::live::ProcessUsage;
 
 /// The resident size a daemon hands itself over past: one GiB.
 pub const DEFAULT_CEILING: u64 = 1 << 30;
@@ -83,6 +84,34 @@ pub fn read_rss(pid: u32) -> Result<u64, RssError> {
     parse_rss(&String::from_utf8_lossy(&out.stdout))
 }
 
+/// Reads `ps -o pcpu=,rss=` into percent and bytes: the first non-empty line wins.
+pub fn parse_usage(out: &str) -> Result<ProcessUsage, RssError> {
+    let Some(line) = out.lines().find(|line| !line.trim().is_empty()) else {
+        return Err(RssError::Parse("ps printed no usage".to_string()));
+    };
+    let mut fields = line.split_whitespace();
+    let (Some(cpu), Some(kib)) = (fields.next(), fields.next()) else {
+        return Err(RssError::Parse(format!("ps printed {line:?}, not a usage")));
+    };
+    match (cpu.parse::<f64>(), kib.parse::<u64>()) {
+        (Ok(cpu), Ok(kib)) => Ok(ProcessUsage {
+            cpu_pct: Some(cpu),
+            rss_bytes: Some(kib << 10),
+        }),
+        _ => Err(RssError::Parse(format!("ps printed {line:?}, not a usage"))),
+    }
+}
+
+/// Reads one process's CPU percent and resident size with `ps -o pcpu=,rss= -p <pid>`.
+/// Blocking: run it off the runtime.
+pub fn read_usage(pid: u32) -> Result<ProcessUsage, RssError> {
+    let out = Command::new("ps")
+        .args(["-o", "pcpu=,rss=", "-p", &pid.to_string()])
+        .output()
+        .map_err(RssError::Spawn)?;
+    parse_usage(&String::from_utf8_lossy(&out.stdout))
+}
+
 /// What one check decided.
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum RssDecision {
@@ -151,6 +180,24 @@ pub fn format_interval(interval: Duration) -> String {
 mod tests {
     use super::*;
     use huddle_config::env::Env;
+
+    #[test]
+    fn ps_cpu_and_rss_columns_parse_into_percent_and_bytes() {
+        let usage = parse_usage("  0.4  18848\n").expect("parse");
+        assert_eq!(
+            (usage.cpu_pct, usage.rss_bytes),
+            (Some(0.4), Some(18848 << 10))
+        );
+        assert!(parse_usage("\n").is_err());
+        assert!(parse_usage("x 5\n").is_err());
+        assert!(parse_usage("0.1\n").is_err());
+    }
+
+    #[test]
+    fn the_running_process_has_a_usage_reading() {
+        let usage = read_usage(std::process::id()).expect("ps");
+        assert!(usage.rss_bytes.is_some_and(|bytes| bytes > 0));
+    }
 
     #[test]
     fn the_ceiling_comes_from_the_environment_or_defaults_to_one_gib() {

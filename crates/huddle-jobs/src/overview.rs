@@ -1,5 +1,6 @@
 //! huddle-jobs: overview.
 
+use crate::git::{self, DiffMode};
 use crate::id::parse_iso_ms;
 use crate::liveness::{driver_record_path, job_alive, read_record};
 use crate::model::{Job, JobState};
@@ -19,6 +20,15 @@ pub struct JobRow {
     pub title: String,
     pub state: &'static str,
     pub started_ms: u64,
+    /// When the latest attempt ended; `None` while it runs.
+    pub ended_ms: Option<u64>,
+    /// Files, added lines and removed lines of the worktree against the job's base; `None`
+    /// when the job has no readable worktree diff.
+    pub files: Option<u32>,
+    pub add: Option<u64>,
+    pub del: Option<u64>,
+    /// One line on why the job is stuck or failed.
+    pub why: Option<String>,
 }
 
 /// Queued, running, dead and awaiting-review jobs of every repo under `paths.jobs_root`,
@@ -59,6 +69,14 @@ fn row_of(store: &JobStore, job: &Job, now_ms: u64) -> Option<JobRow> {
         .attempts
         .last()
         .map_or(job.created_at.as_str(), |a| a.started_at.as_str());
+    let (files, add, del) = match job.state {
+        JobState::Running | JobState::AwaitingReview => diff_size(job),
+        _ => (None, None, None),
+    };
+    let why = job
+        .failure
+        .clone()
+        .or_else(|| (state == "dead").then(|| "the driver is gone".to_string()));
     Some(JobRow {
         id: job.id.clone(),
         harness: job.harness.clone(),
@@ -66,7 +84,47 @@ fn row_of(store: &JobStore, job: &Job, now_ms: u64) -> Option<JobRow> {
         title: job.title.clone(),
         state,
         started_ms: parse_iso_ms(started).unwrap_or(0),
+        ended_ms: job
+            .attempts
+            .last()
+            .and_then(|attempt| attempt.ended_at.as_deref())
+            .and_then(parse_iso_ms),
+        files,
+        add,
+        del,
+        why,
     })
+}
+
+/// The worktree's change size against the base, from the diff's stat summary.
+fn diff_size(job: &Job) -> (Option<u32>, Option<u64>, Option<u64>) {
+    let stat = git::diff(Path::new(&job.worktree), &job.base_sha, DiffMode::Stat);
+    match stat.ok().as_deref().and_then(parse_summary) {
+        Some((files, add, del)) => (Some(files), Some(add), Some(del)),
+        None => (None, None, None),
+    }
+}
+
+/// Reads ` 2 files changed, 3 insertions(+), 1 deletion(-)`. An empty diff is `(0, 0, 0)`.
+fn parse_summary(stat: &str) -> Option<(u32, u64, u64)> {
+    let Some(line) = stat.lines().last() else {
+        return Some((0, 0, 0));
+    };
+    if !line.contains("changed") {
+        return None;
+    }
+    let count_before = |word: &str| {
+        line.split(',')
+            .find(|part| part.contains(word))
+            .and_then(|part| part.split_whitespace().next())
+            .and_then(|n| n.parse::<u64>().ok())
+            .unwrap_or(0)
+    };
+    Some((
+        u32::try_from(count_before("file")).unwrap_or(u32::MAX),
+        count_before("insertion"),
+        count_before("deletion"),
+    ))
 }
 
 /// The sweep's liveness check without its writes.
@@ -89,4 +147,22 @@ fn repo_name(repo_root: &str) -> String {
     Path::new(repo_root)
         .file_name()
         .map_or_else(String::new, |name| name.to_string_lossy().into_owned())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_summary;
+
+    #[test]
+    fn the_summary_line_gives_files_added_and_removed() {
+        let stat =
+            " a.txt | 2 +-\n b.txt | 2 ++\n 2 files changed, 3 insertions(+), 1 deletion(-)\n";
+        assert_eq!(parse_summary(stat), Some((2, 3, 1)));
+        assert_eq!(
+            parse_summary(" 1 file changed, 4 deletions(-)\n"),
+            Some((1, 0, 4))
+        );
+        assert_eq!(parse_summary(""), Some((0, 0, 0)));
+        assert_eq!(parse_summary("fatal: nope"), None);
+    }
 }

@@ -5,6 +5,7 @@ use std::collections::{HashMap, VecDeque};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
+use huddle_sessions::{Session, Worktree};
 use tokio::sync::watch;
 
 use crate::answer_facts::PlanUsage;
@@ -19,8 +20,6 @@ const TTFT_SAMPLES: usize = 500;
 const SECONDS: usize = 60;
 /// The window `errors_5m` counts over.
 const ERROR_WINDOW_MS: u64 = 5 * 60 * 1000;
-/// Characters of the session id the snapshot shows.
-const SESSION_CHARS: usize = 8;
 
 /// What the caller knows when a model request arrives.
 #[derive(Debug, Clone)]
@@ -78,18 +77,58 @@ pub struct JobRow {
     pub title: String,
     pub state: String,
     pub started_ms: u64,
+    pub ended_ms: Option<u64>,
+    pub files: Option<u32>,
+    pub add: Option<u64>,
+    pub del: Option<u64>,
+    pub why: Option<String>,
 }
 
-/// What the live state cannot know: the process, its wiring, the lane list and the jobs.
-#[derive(Debug, Clone)]
+/// The wiring card's state: `Checking` until the first read lands, then `Ok` when Claude Code
+/// points at the router with a CA that exists, else `Bad`.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum WiringState {
+    #[default]
+    Checking,
+    Ok,
+    Bad,
+}
+
+/// The wiring card as the page reads it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+pub struct WiringCard {
+    pub state: WiringState,
+    pub proxy: bool,
+    pub ca: bool,
+}
+
+/// The router process's own load, as `ps` reports it; `None` before the first sample.
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct ProcessUsage {
+    pub cpu_pct: Option<f64>,
+    pub rss_bytes: Option<u64>,
+}
+
+/// What the live state cannot know: the process, its wiring, the lane list, the jobs and what
+/// the daemon read from the machine. The plugin and harness pages arrive as built JSON: the
+/// daemon owns their shape and the router only carries them.
+#[derive(Debug, Clone, Default)]
 pub struct SnapshotInputs {
     pub version: String,
     pub pid: u32,
     pub wiring: Wiring,
+    pub wiring_state: WiringState,
     pub lanes: Vec<LaneMeta>,
     pub jobs: Vec<JobRow>,
     /// Open connections to the router.
     pub connections: usize,
+    pub process: ProcessUsage,
+    pub sessions: Vec<Session>,
+    pub worktrees: Vec<Worktree>,
+    pub plugins: serde_json::Value,
+    pub harnesses: serde_json::Value,
+    pub hosts: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
@@ -128,11 +167,13 @@ pub struct LaneLast {
 }
 
 /// The router card's counters.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize)]
 pub struct RouterStats {
     /// Dashboard live feeds open now.
     pub viewers: usize,
     pub connections: usize,
+    pub cpu_pct: Option<f64>,
+    pub rss_bytes: Option<u64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
@@ -176,7 +217,7 @@ pub struct Snapshot {
     pub pid: u32,
     pub started_ms: u64,
     pub now_ms: u64,
-    pub wiring: Wiring,
+    pub wiring: WiringCard,
     pub router: RouterStats,
     /// Plan usage from the latest Anthropic answer that carried it.
     pub plan: Option<PlanUsage>,
@@ -191,6 +232,11 @@ pub struct Snapshot {
     pub recent: Vec<RecentRow>,
     pub in_flight: Vec<InFlightRow>,
     pub jobs: Vec<JobRow>,
+    pub sessions: Vec<Session>,
+    pub worktrees: Vec<Worktree>,
+    pub plugins: serde_json::Value,
+    pub harnesses: serde_json::Value,
+    pub hosts: Vec<String>,
 }
 
 struct Active {
@@ -254,6 +300,11 @@ impl LiveState {
     }
 
     /// Counts one open dashboard feed until the guard drops.
+    /// Dashboard live feeds open now.
+    pub fn viewers(&self) -> usize {
+        self.viewers.load(Ordering::Relaxed)
+    }
+
     pub fn viewer(self: &Arc<Self>) -> Viewer {
         self.viewers.fetch_add(1, Ordering::Relaxed);
         Viewer {
@@ -285,7 +336,7 @@ impl LiveState {
                     started_ms: request.now_ms,
                     first_byte_ms: None,
                     last_byte_ms: request.now_ms,
-                    session: request.session.map(|session| truncate(&session)),
+                    session: request.session,
                     model: request.model,
                     lane: request.lane,
                 },
@@ -385,10 +436,16 @@ impl LiveState {
             pid: inputs.pid,
             started_ms: self.started_ms,
             now_ms,
-            wiring: inputs.wiring,
+            wiring: WiringCard {
+                state: inputs.wiring_state,
+                proxy: inputs.wiring.proxy,
+                ca: inputs.wiring.ca,
+            },
             router: RouterStats {
                 viewers: self.viewers.load(Ordering::Relaxed),
                 connections: inputs.connections,
+                cpu_pct: inputs.process.cpu_pct,
+                rss_bytes: inputs.process.rss_bytes,
             },
             plan: inner.plan,
             buckets: stats::buckets(&inner.models, now_ms),
@@ -400,6 +457,11 @@ impl LiveState {
             recent: inner.recent.iter().cloned().collect(),
             in_flight,
             jobs: inputs.jobs.clone(),
+            sessions: inputs.sessions.clone(),
+            worktrees: inputs.worktrees.clone(),
+            plugins: inputs.plugins.clone(),
+            harnesses: inputs.harnesses.clone(),
+            hosts: inputs.hosts.clone(),
         }
     }
 
@@ -438,7 +500,7 @@ fn record(inner: &mut Inner, id: u64, active: Active, finish: Finish) {
     if finish.plan.is_some() {
         inner.plan = finish.plan;
     }
-    let session = active.session.map(|session| truncate(&session));
+    let session = active.session;
     if inner.models.contains_key(&active.model) || inner.models.len() < MAX_MODELS {
         let series = inner.models.entry(active.model.clone()).or_default();
         series.push(
@@ -544,10 +606,6 @@ fn non_negative(tokens: i64) -> u64 {
     tokens.max(0) as u64
 }
 
-fn truncate(session: &str) -> String {
-    session.chars().take(SESSION_CHARS).collect()
-}
-
 fn lane_row(meta: &LaneMeta, stats: Option<&LaneStats>) -> LaneRow {
     let empty = LaneStats::default();
     let stats = stats.unwrap_or(&empty);
@@ -631,9 +689,15 @@ mod tests {
                 proxy: true,
                 ca: false,
             },
+            wiring_state: WiringState::Bad,
             lanes: lanes.iter().map(|id| meta(id)).collect(),
             jobs: Vec::new(),
             connections: 3,
+            process: ProcessUsage {
+                cpu_pct: Some(0.4),
+                rss_bytes: Some(19_300_000),
+            },
+            ..SnapshotInputs::default()
         }
     }
 
@@ -730,7 +794,7 @@ mod tests {
     }
 
     #[test]
-    fn the_session_shows_eight_characters_or_null() {
+    fn the_session_shows_in_full_or_null() {
         let live = LiveState::new(T0);
         let with = begin(&live, "zai", "glm-5.3", T0);
         let without = live.start(RequestStart {
@@ -740,12 +804,15 @@ mod tests {
             now_ms: T0,
         });
         let open = live.snapshot(T0, &inputs(&["zai"]));
-        assert_eq!(open.in_flight[0].session.as_deref(), Some("cse_01Jq"));
+        assert_eq!(
+            open.in_flight[0].session.as_deref(),
+            Some("cse_01JqXrugEVi7")
+        );
         assert_eq!(open.in_flight[1].session, None);
         live.finish(with, end(200, None, T0 + 1));
         live.finish(without, end(200, None, T0 + 1));
         let done = live.snapshot(T0 + 2, &inputs(&["zai"]));
-        assert_eq!(done.recent[1].session.as_deref(), Some("cse_01Jq"));
+        assert_eq!(done.recent[1].session.as_deref(), Some("cse_01JqXrugEVi7"));
         assert_eq!(done.recent[0].session, None);
     }
 
@@ -911,6 +978,11 @@ mod tests {
             title: "add lane tests".into(),
             state: "running".into(),
             started_ms: T0,
+            ended_ms: None,
+            files: None,
+            add: None,
+            del: None,
+            why: None,
         });
         let json = serde_json::to_value(live.snapshot(T0 + 3000, &given)).expect("serializes");
 
@@ -943,7 +1015,12 @@ mod tests {
                 "router",
                 "plan",
                 "buckets",
-                "models"
+                "models",
+                "sessions",
+                "worktrees",
+                "plugins",
+                "harnesses",
+                "hosts"
             ])
         );
         assert_eq!(json["version"], "0.0.2");
@@ -952,7 +1029,7 @@ mod tests {
         assert_eq!(json["now_ms"], T0 + 3000);
         assert_eq!(
             json["wiring"],
-            serde_json::json!({"proxy": true, "ca": false})
+            serde_json::json!({"state": "bad", "proxy": true, "ca": false})
         );
         assert_eq!(
             keys(&json["last_error"]),
@@ -1019,7 +1096,19 @@ mod tests {
         );
         assert_eq!(
             keys(&json["jobs"][0]),
-            sorted(&["id", "harness", "repo", "title", "state", "started_ms"])
+            sorted(&[
+                "id",
+                "harness",
+                "repo",
+                "title",
+                "state",
+                "started_ms",
+                "ended_ms",
+                "files",
+                "add",
+                "del",
+                "why"
+            ])
         );
         assert_eq!(json["per_second"].as_array().expect("array").len(), 60);
     }
@@ -1177,6 +1266,8 @@ mod tests {
         let second = live.viewer();
         let router = live.snapshot(T0, &inputs(&[])).router;
         assert_eq!((router.viewers, router.connections), (2, 3));
+        assert_eq!(router.cpu_pct, Some(0.4));
+        assert_eq!(router.rss_bytes, Some(19_300_000));
         drop(first);
         drop(second);
         assert_eq!(live.snapshot(T0, &inputs(&[])).router.viewers, 0);

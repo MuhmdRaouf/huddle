@@ -11,6 +11,7 @@ huddle-config.workspace = true
 huddle-catalog.workspace = true
 huddle-keystore.workspace = true
 huddle-pki.workspace = true
+huddle-sessions.workspace = true
 tokio.workspace = true
 hyper.workspace = true
 hyper-util.workspace = true

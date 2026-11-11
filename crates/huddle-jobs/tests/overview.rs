@@ -157,9 +157,74 @@ fn a_row_serialises_with_the_contract_field_names() {
         title: "t".into(),
         state: "running",
         started_ms: 5,
+        ended_ms: None,
+        files: None,
+        add: None,
+        del: None,
+        why: None,
     };
     assert_eq!(
         serde_json::to_string(&row).unwrap(),
-        r#"{"id":"j-1","harness":"opencode","repo":"huddle","title":"t","state":"running","started_ms":5}"#
+        r#"{"id":"j-1","harness":"opencode","repo":"huddle","title":"t","state":"running","started_ms":5,"ended_ms":null,"files":null,"add":null,"del":null,"why":null}"#
     );
+}
+
+#[test]
+fn d4_a_job_row_carries_its_end_time_diff_size_and_why() {
+    let r = rig();
+    let mut job = sample_job(&r, "j-rev", Access::Write, JobState::AwaitingReview);
+    job.created_at = iso_ms(NOW - 120_000);
+    job.updated_at = iso_ms(NOW - 1_000);
+    let mut ended = attempt(NOW - 60_000);
+    ended.ended_at = Some(iso_ms(NOW - 30_000));
+    job.attempts = vec![ended];
+    job.failure = Some("tests are red".into());
+    let tree = Path::new(&job.worktree).to_path_buf();
+    support::git(
+        &r.repo,
+        &["worktree", "add", "-q", &job.worktree, "-b", "huddle/j-rev"],
+    );
+    support::write(&tree, "a.txt", "two\n");
+    support::write(&tree, "b.txt", "x\ny\n");
+    JobStore::for_repo(&r.paths, &r.repo)
+        .create(&job)
+        .expect("create");
+
+    let rows = overview(&r.paths, NOW);
+
+    let row = row(&rows, "j-rev");
+    assert_eq!(row.ended_ms, Some(NOW - 30_000));
+    assert_eq!((row.files, row.add, row.del), (Some(2), Some(3), Some(1)));
+    assert_eq!(row.why.as_deref(), Some("tests are red"));
+}
+
+#[test]
+fn d4_a_running_job_has_no_end_time_and_a_dead_one_says_why() {
+    let r = rig();
+    add(
+        &r,
+        &r.repo,
+        "j-run",
+        JobState::Running,
+        "run",
+        Some(own_record()),
+    );
+    add(
+        &r,
+        &r.repo,
+        "j-dead",
+        JobState::Running,
+        "dead",
+        Some(dead_record()),
+    );
+
+    let rows = overview(&r.paths, NOW);
+
+    assert_eq!(row(&rows, "j-run").ended_ms, None);
+    assert_eq!(row(&rows, "j-run").why, None);
+    assert_eq!(
+        row(&rows, "j-dead").why.as_deref(),
+        Some("the driver is gone")
+    );
+    assert_eq!(row(&rows, "j-run").files, None);
 }

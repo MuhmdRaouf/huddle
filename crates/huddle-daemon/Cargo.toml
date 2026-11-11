@@ -14,6 +14,7 @@ huddle-jobs.workspace = true
 huddle-keystore.workspace = true
 huddle-procs.workspace = true
 huddle-router.workspace = true
+huddle-sessions.workspace = true
 tokio.workspace = true
 hyper.workspace = true
 hyper-util.workspace = true
