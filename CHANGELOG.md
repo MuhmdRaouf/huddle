@@ -9,6 +9,7 @@ huddle keeps its files in the XDG folders and remembers every request.
 - Files move out of `~/.agents`: config in `~/.config/huddle/` (`config.toml`, `providers.toml`, `harnesses.toml`), data in `~/.local/share/huddle/` (`bin/`, `ca/`), state in `~/.local/state/huddle/` (`huddle.db`, `router.log`, `run/`, the ledgers, `jobs/`).
 - `HUDDLE_CONFIG_HOME`, `HUDDLE_DATA_HOME` and `HUDDLE_STATE_HOME` point at huddle's own folder for a kind; `XDG_CONFIG_HOME`, `XDG_DATA_HOME` and `XDG_STATE_HOME` move it when those are unset. `HUDDLE_HOME` and `HUDDLE_ROUTER_HOME` are gone.
 - Every file huddle owns is TOML, and every folder and file is created on demand. The CA files are `huddle-ca.pem` and `huddle-ca-key.pem`.
+- `add-dashboard-host`, `remove-dashboard-host` and the provider setup and remove words edit `config.toml` and `providers.toml` in place: your comments, blank lines and key order stay.
 - Upgrading from 0.0.4: run `huddle uninstall` first, then `/huddle:setup` with 0.0.5. Nothing is migrated.
 
 ### History

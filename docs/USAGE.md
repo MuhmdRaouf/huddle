@@ -57,8 +57,8 @@ Inside Claude Code the plugin's commands run the words for you. The launcher ans
 
 | Path | What writes it | Who reads it |
 |---|---|---|
-| `~/.config/huddle/config.toml` | `setup --install` writes the commented defaults once; `add-dashboard-host` edits `dashboard.hosts`; you edit `[history] keep_days` (90 by default) | The daemon |
-| `~/.config/huddle/providers.toml` | `provider <p> setup` and `remove`: the enabled providers | The daemon, re-read every 2 s |
+| `~/.config/huddle/config.toml` | `setup --install` writes the commented defaults once; `add-dashboard-host` and `remove-dashboard-host` edit `dashboard.hosts` in place, keeping your comments; you edit `[history] keep_days` (90 by default) | The daemon |
+| `~/.config/huddle/providers.toml` | `provider <p> setup` and `remove`: the enabled providers, edited in place | The daemon, re-read every 2 s |
 | `~/.config/huddle/harnesses.toml` | You: one entry per extra CLI | `setup`, `run`, `status`, the driver |
 | `~/.local/share/huddle/bin/` | The launcher on `/huddle:setup`: `huddle-<version>` and the `huddle` link to it | Every word and hook |
 | `~/.local/share/huddle/ca/` | `setup --install`, or the daemon's first start: `huddle-ca.pem` and `huddle-ca-key.pem`, the local CA | Claude Code through `NODE_EXTRA_CA_CERTS`, the daemon's leaf signer |

@@ -1,5 +1,5 @@
 use huddle_config::providers_file::{
-    ProvidersFileError, providers_path, read_enabled, set_enabled,
+    DEFAULT_PROVIDERS, ProvidersFileError, providers_path, read_enabled, set_enabled,
 };
 use huddle_testkit::temp_home::TempHome;
 use std::fs;
@@ -187,5 +187,43 @@ fn t2_a_broken_providers_toml_names_the_file() {
             providers_path(home.root()).display()
         )),
         "{text}"
+    );
+}
+
+#[test]
+fn an_enable_edits_the_file_in_place_and_keeps_comments_and_order() {
+    let home = TempHome::new();
+    let dir = home.root().join("cfg");
+    let hand = "\
+# my lanes
+
+# zai first, always
+providers = [\"zai\"] # keep this
+
+[notes]
+why = \"cheap tokens\"
+";
+    write_file(&dir, hand);
+
+    set_enabled(&dir, "kimi", true).expect("enable");
+    let text = fs::read_to_string(providers_path(&dir)).expect("read");
+    assert_eq!(text, hand.replace("[\"zai\"]", "[\"zai\", \"kimi\"]"));
+
+    set_enabled(&dir, "kimi", false).expect("disable");
+    assert_eq!(
+        fs::read_to_string(providers_path(&dir)).expect("read"),
+        hand
+    );
+}
+
+#[test]
+fn a_first_enable_starts_from_the_default_file() {
+    let home = TempHome::new();
+    let dir = home.root().join("cfg");
+
+    set_enabled(&dir, "zai", true).expect("enable");
+    assert_eq!(
+        fs::read_to_string(providers_path(&dir)).expect("read"),
+        DEFAULT_PROVIDERS.replace("providers = []", "providers = [\"zai\"]")
     );
 }

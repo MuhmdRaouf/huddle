@@ -12,7 +12,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use serde::Deserialize;
-use toml::{Table, Value};
+use toml_edit::{Array, DocumentMut, Item};
 
 use crate::atomic::write_atomic;
 use crate::files::DIR_MODE;
@@ -115,8 +115,8 @@ pub fn set_enabled(dir: &Path, name: &str, on: bool) -> Result<(), ProvidersFile
         })?;
     take_lock(&lock, &lock_text)?;
 
-    let mut table = read_current(&path)?;
-    let mut providers = providers_of(&table, &file_text)?;
+    let mut doc = read_current(&path)?;
+    let mut providers = providers_of(&doc, &file_text)?;
     let has = providers.iter().any(|kept| kept == name);
     if has == on {
         return Ok(());
@@ -126,14 +126,18 @@ pub fn set_enabled(dir: &Path, name: &str, on: bool) -> Result<(), ProvidersFile
     } else {
         providers.retain(|kept| kept != name);
     }
-    table.insert(
-        "providers".to_string(),
-        Value::Array(providers.into_iter().map(Value::String).collect()),
-    );
-    let text = toml::to_string_pretty(&table).map_err(|err| ProvidersFileError::Write {
-        file: file_text.clone(),
-        message: err.to_string(),
-    })?;
+    match doc.get_mut("providers").and_then(Item::as_array_mut) {
+        Some(array) => {
+            array.clear();
+            array.extend(providers.iter().map(String::as_str));
+            array.fmt();
+        }
+        None => {
+            let array: Array = providers.iter().map(String::as_str).collect();
+            doc.insert("providers", toml_edit::value(array));
+        }
+    }
+    let text = doc.to_string();
     write_atomic(&path, text.as_bytes(), crate::files::FILE_MODE).map_err(|err| {
         ProvidersFileError::Write {
             file: file_text,
@@ -162,40 +166,35 @@ fn parse_file(path: &Path) -> Result<FileShape, ProvidersFileError> {
     })
 }
 
-/// Reads the current file as a table, starting from an empty one when the file is missing or
-/// unreadable, so a fresh config dir is a valid starting point. The table keeps every key the
-/// user added.
-fn read_current(path: &Path) -> Result<Table, ProvidersFileError> {
-    let text = path.display().to_string();
-    match fs::read(path) {
-        Ok(raw) => toml::from_str(&String::from_utf8_lossy(&raw)).map_err(|err| {
-            ProvidersFileError::Invalid {
-                file: text,
-                detail: err.message().to_string(),
-            }
-        }),
-        Err(_) => Ok(Table::new()),
-    }
+/// Parses the current file for an in-place edit, starting from [`DEFAULT_PROVIDERS`] when the
+/// file is missing or unreadable, so a fresh config dir is a valid starting point. Every key,
+/// comment and blank line the user wrote stays.
+fn read_current(path: &Path) -> Result<DocumentMut, ProvidersFileError> {
+    let text = match fs::read(path) {
+        Ok(raw) => String::from_utf8_lossy(&raw).into_owned(),
+        Err(_) => DEFAULT_PROVIDERS.to_string(),
+    };
+    text.parse::<DocumentMut>()
+        .map_err(|err| ProvidersFileError::Invalid {
+            file: path.display().to_string(),
+            detail: err.message().to_string(),
+        })
 }
 
-/// The `providers` list of the current object, refusing a value of the wrong shape.
-fn providers_of(table: &Table, file: &str) -> Result<Vec<String>, ProvidersFileError> {
-    match table.get("providers") {
+/// The `providers` list of the current file, refusing a value of the wrong shape.
+fn providers_of(doc: &DocumentMut, file: &str) -> Result<Vec<String>, ProvidersFileError> {
+    let wrong = || ProvidersFileError::Invalid {
+        file: file.to_string(),
+        detail: "providers is not a list of names".to_string(),
+    };
+    match doc.get("providers") {
         None => Ok(Vec::new()),
-        Some(Value::Array(items)) => items
+        Some(item) => item
+            .as_array()
+            .ok_or_else(wrong)?
             .iter()
-            .map(|item| match item.as_str() {
-                Some(name) => Ok(name.to_string()),
-                None => Err(ProvidersFileError::Invalid {
-                    file: file.to_string(),
-                    detail: "providers is not a list of names".to_string(),
-                }),
-            })
+            .map(|value| value.as_str().map(str::to_string).ok_or_else(wrong))
             .collect(),
-        Some(_) => Err(ProvidersFileError::Invalid {
-            file: file.to_string(),
-            detail: "providers is not a list of names".to_string(),
-        }),
     }
 }
 
