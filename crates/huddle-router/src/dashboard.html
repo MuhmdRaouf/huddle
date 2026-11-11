@@ -1,0 +1,510 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>huddle router · live</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#081A1F;color:#E6F1F2;font-family:Inter,system-ui,sans-serif;font-size:14px}
+.mono{font-family:'JetBrains Mono',ui-monospace,monospace}
+.muted{color:#8FB0B5}
+
+.page{width:100%;max-width:1360px;margin:0 auto;padding:28px 24px 48px;display:flex;flex-direction:column;gap:20px}
+header{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:16px}
+.brand{display:flex;align-items:center;gap:14px}
+.brand-text{display:flex;flex-direction:column;gap:2px}
+.brand-line{display:flex;align-items:baseline;gap:10px}
+.brand-name{font-size:22px;font-weight:700;letter-spacing:-.02em}
+.brand-sub{font-size:13px}
+.addr{font-size:12px}
+.live{display:flex;align-items:center;gap:8px;padding:8px 14px;border-radius:999px;background:#0E2A30;border:1px solid #1B3C44;font-size:13px}
+.live b{font-weight:600}
+.live-dot{width:8px;height:8px;border-radius:50%;background:#2FB8B0;display:inline-block;animation:pulse 1.8s infinite}
+.live.lost .live-dot{background:#F2C14E;animation:none}
+@keyframes pulse{0%{box-shadow:0 0 0 0 rgba(47,184,176,.55)}70%{box-shadow:0 0 0 8px rgba(47,184,176,0)}100%{box-shadow:0 0 0 0 rgba(47,184,176,0)}}
+@keyframes slidein{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:none}}
+@keyframes sweep{from{background-position:200% 0}to{background-position:-200% 0}}
+@media (prefers-reduced-motion:reduce){*{animation:none!important}}
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,230px),1fr));gap:14px}
+.card{background:#0C2329;border:1px solid #17363E;border-radius:16px}
+.tile{padding:18px;display:flex;flex-direction:column;gap:10px;min-width:0}
+.label{font-size:12px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:#8FB0B5}
+.row{display:flex;align-items:center;gap:10px}
+.between{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+.big{font-size:26px;font-weight:700;letter-spacing:-.02em}
+.big.warn{color:#F2C14E}
+.big.bad{color:#FF9B8A}
+.dot{width:10px;height:10px;border-radius:50%;background:#2FB8B0;flex:none}
+.dot.down{background:#FF6B5A}
+.small{font-size:12px}
+.wire{display:flex;align-items:center;gap:8px;min-width:0}
+.wire svg{flex:none}
+.bars{display:flex;align-items:flex-end;gap:2px;height:40px}
+.bars i{flex:1;border-radius:2px;min-height:3px;background:#2FB8B0}
+.bars i.zero{background:#16343B}
+.bars i.last{background:#FF8A6B}
+h2{margin:0;font-size:16px;font-weight:600}
+section.block{display:flex;flex-direction:column;gap:12px}
+.head{display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:8px}
+.head span{font-size:13px;color:#8FB0B5}
+.lanes{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,200px),1fr));gap:12px}
+.lane{padding:16px;display:flex;flex-direction:column;gap:12px;transition:border-color .2s;min-width:0}
+.lane:hover{border-color:#2A5560}
+.lane.off{background:transparent;border:1px dashed #1E3D45}
+.lane-top{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.lane-name{display:flex;align-items:center;gap:8px;font-size:15px;font-weight:600;min-width:0}
+.lane-dot{width:9px;height:9px;border-radius:50%;background:#2FB8B0;flex:none}
+.off .lane-dot{background:transparent;border:1.5px solid #5D7F84}
+.models{font-size:12px;color:#8FB0B5;overflow-wrap:anywhere}
+.stats{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px 12px}
+.stat{display:flex;flex-direction:column;gap:2px;min-width:0}
+.stat span:first-child{font-size:11px;color:#8FB0B5}
+.stat .n{font-size:18px;font-weight:600}
+.stat .m{font-size:13px}
+.pill{display:inline-block;padding:3px 9px;border-radius:999px;font-size:12px;font-weight:600;white-space:nowrap;color:#7FE0D9;background:rgba(47,184,176,.14)}
+.pill.off{color:#8FB0B5;background:rgba(143,176,181,.12)}
+.pill.purple{color:#C9A6FF;background:rgba(201,166,255,.12)}
+.pill.amber{color:#F2C14E;background:rgba(242,193,78,.14)}
+.pill.red{color:#FF9B8A;background:rgba(255,107,90,.16)}
+.cols{display:flex;flex-wrap:wrap;gap:20px;align-items:flex-start}
+.reqs{flex:999 1 min(100%,640px);min-width:0;overflow:hidden}
+.reqs .head{padding:16px 18px;border-bottom:1px solid #17363E}
+.scroll{overflow-x:auto}
+table{width:100%;min-width:720px;border-collapse:collapse;font-size:13px}
+th{text-align:left;color:#8FB0B5;font-size:11px;text-transform:uppercase;letter-spacing:.06em;font-weight:600;padding:10px 8px}
+th:first-child,td:first-child{padding-left:18px}
+th:last-child,td:last-child{padding-right:18px}
+td{padding:10px 8px;border-top:1px solid #132F36;white-space:nowrap}
+tbody tr:hover{background:#0F2A31}
+tr.fresh{animation:slidein .35s ease-out}
+.r{text-align:right}
+td.model{max-width:260px;overflow:hidden;text-overflow:ellipsis}
+.empty{padding:22px 18px;color:#8FB0B5;font-size:13px}
+.side{flex:1 1 min(100%,340px);min-width:0;display:flex;flex-direction:column;gap:20px}
+.panel{padding:16px 18px;display:flex;flex-direction:column;gap:12px;min-width:0}
+.flight{display:flex;flex-direction:column;gap:6px}
+.flight-top{display:flex;justify-content:space-between;gap:8px}
+.flight-who{font-size:13px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.track{height:4px;border-radius:4px;background:#132F36;overflow:hidden}
+.fill{height:100%;width:100%;background:linear-gradient(90deg,#17857F 0%,#2FB8B0 40%,#9BE7E2 50%,#2FB8B0 60%,#17857F 100%);background-size:200% 100%;animation:sweep 1.6s linear infinite}
+.flight.slow .fill{animation:none;background:#F2C14E;opacity:.6}
+.flight.slow .timer{color:#F2C14E}
+.timer{font-size:12px;color:#B9D2D5;white-space:nowrap}
+.hung{font-size:12px;color:#F2C14E}
+.job .pill{flex:none}
+.job{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 12px;border-radius:12px;background:#0F2A31}
+.job-text{display:flex;flex-direction:column;gap:2px;min-width:0}
+.job-title{font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.job-title span{font-weight:400;color:#8FB0B5}
+.job-task{font-size:12px;color:#8FB0B5;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.foot{margin:0;font-size:12px;color:#6F9095;text-align:center}
+@media (max-width:640px){.page{padding:20px 16px 40px}.big{font-size:22px}}
+@media (max-width:520px){.lanes{grid-template-columns:minmax(0,1fr)}}
+</style>
+</head>
+<body>
+<div class="page">
+
+<header>
+<div class="brand">
+<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 64 64" role="img" aria-label="Huddle"><circle cx="32" cy="32" r="26" fill="none" stroke="#CFE8EA" stroke-width="1.5" stroke-opacity="0.5"/><path d="M19.9 16L26.4 16L26.4 28.8L38.5 28.8L38.5 32L19.9 32Z" fill="#2FB8B0"/><path d="M19.9 32L38.5 32L38.5 35.2L26.4 35.2L26.4 48L19.9 48Z" fill="#17857F"/><path d="M37.9 16L44.1 16L44.1 32L37.9 32Z" fill="#FF8A6B"/><path d="M37.9 32L44.1 32L44.1 48L37.9 48Z" fill="#E8623F"/><circle cx="15.29" cy="51.92" r="3.6" fill="#FF8A6B"/><circle cx="56.43" cy="40.89" r="2.4" fill="#CFE8EA"/><circle cx="23.11" cy="7.57" r="1.7" fill="#CFE8EA"/></svg>
+<div class="brand-text">
+<div class="brand-line"><span class="brand-name">huddle</span><span class="brand-sub muted">router</span></div>
+<span class="addr mono muted" id="addr">127.0.0.1</span>
+</div>
+</div>
+<div class="live" id="live"><span class="live-dot"></span><b id="live-word">Live</b><span class="muted" id="live-note">· memory only, nothing stored</span></div>
+</header>
+
+<section class="tiles" aria-label="Health">
+<div class="card tile">
+<span class="label">Router</span>
+<div class="row"><span class="dot" id="router-dot"></span><span class="big" id="router-state">Up</span></div>
+<span class="small mono muted" id="router-meta">waiting for the router</span>
+</div>
+<div class="card tile">
+<span class="label">Claude Code wiring</span>
+<div id="wiring" style="display:flex;flex-direction:column;gap:6px"></div>
+</div>
+<div class="card tile">
+<div class="between"><span class="label">Requests · last 60 s</span><span class="big" id="per-min">0</span></div>
+<div class="bars" id="bars" aria-hidden="true"></div>
+</div>
+<div class="card tile">
+<span class="label">Errors · last 5 min</span>
+<div class="row" style="align-items:baseline"><span class="big" id="err-count">0</span><span class="muted" id="err-note" style="font-size:13px">all clear</span></div>
+<span class="small mono muted" id="err-last" style="overflow-wrap:anywhere">no errors</span>
+</div>
+</section>
+
+<section class="block" aria-label="Provider lanes">
+<div class="head"><h2>Lanes</h2><span>since the router started · p50 / p95 time to first token</span></div>
+<div class="lanes" id="lanes"></div>
+</section>
+
+<div class="cols">
+<section class="card reqs" aria-label="Live requests">
+<div class="head"><h2>Live requests</h2><span>last 200 kept in memory · newest first</span></div>
+<div class="scroll">
+<table>
+<thead><tr><th>Time</th><th>Session</th><th>Model</th><th>Lane</th><th>Status</th><th class="r">TTFT</th><th class="r">Tokens in / out</th></tr></thead>
+<tbody id="rows"></tbody>
+</table>
+</div>
+<div class="empty" id="rows-empty">No requests yet</div>
+</section>
+
+<aside class="side">
+<section class="card panel" aria-label="In flight">
+<div class="between"><h2>In flight</h2><span class="muted" id="flight-count" style="font-size:13px">0 open streams</span></div>
+<div id="flight"></div>
+</section>
+<section class="card panel" aria-label="Delegated jobs">
+<div class="between"><h2>Delegated jobs</h2><span class="small mono muted">/huddle:run</span></div>
+<div id="jobs" style="display:flex;flex-direction:column;gap:12px"></div>
+</section>
+</aside>
+</div>
+
+<p class="foot">Memory only. Restarting the router clears this page.</p>
+</div>
+
+<script>
+(function () {
+  'use strict';
+  var $ = function (id) { return document.getElementById(id); };
+  var NS = 'http://www.w3.org/2000/svg';
+  var snap = null;
+  var offset = 0;
+  var lostSince = null;
+  var seen = {};
+  var flightRows = [];
+
+  function el(tag, cls, text) {
+    var n = document.createElement(tag);
+    if (cls) n.className = cls;
+    if (text !== undefined && text !== null) n.textContent = text;
+    return n;
+  }
+  function fill(node, children) {
+    node.replaceChildren.apply(node, children);
+  }
+  function num(v) { return typeof v === 'number' && isFinite(v) ? v : null; }
+  function fmtTok(n) {
+    n = num(n);
+    if (n === null) return '—';
+    if (n >= 1e6) return (n / 1e6).toFixed(1) + 'M';
+    if (n >= 1e3) return (n / 1e3).toFixed(1) + 'k';
+    return String(n);
+  }
+  function fmtTokPair(a, b) {
+    return num(a) === null && num(b) === null ? '—' : fmtTok(a) + ' / ' + fmtTok(b);
+  }
+  function fmtSecs(ms) {
+    ms = num(ms);
+    return ms === null ? '—' : (ms / 1000).toFixed(ms < 10000 ? 2 : 1) + ' s';
+  }
+  function fmtInt(n) { return (num(n) || 0).toLocaleString('en-US'); }
+  function z(n) { return (n < 10 ? '0' : '') + n; }
+  function clock(ms) {
+    var d = new Date(ms);
+    return z(d.getHours()) + ':' + z(d.getMinutes()) + ':' + z(d.getSeconds());
+  }
+  function span(secs) {
+    secs = Math.max(0, Math.floor(secs));
+    var h = Math.floor(secs / 3600), m = Math.floor((secs % 3600) / 60), s = secs % 60;
+    if (h > 0) return h + 'h ' + z(m) + 'm ' + z(s) + 's';
+    if (m > 0) return m + 'm ' + z(s) + 's';
+    return s + ' s';
+  }
+  function serverNow() { return Date.now() + offset; }
+
+  function laneClass(id) { return id === 'anthropic' ? 'pill purple' : 'pill'; }
+  function statusClass(s) {
+    if (s === null || s === undefined) return 'pill off';
+    if (s < 400) return 'pill';
+    return s === 429 ? 'pill amber' : 'pill red';
+  }
+
+  function check(ok) {
+    var svg = document.createElementNS(NS, 'svg');
+    svg.setAttribute('width', '16');
+    svg.setAttribute('height', '16');
+    svg.setAttribute('viewBox', '0 0 24 24');
+    svg.setAttribute('fill', 'none');
+    svg.setAttribute('stroke', ok ? '#2FB8B0' : '#F2C14E');
+    svg.setAttribute('stroke-width', '2.5');
+    svg.setAttribute('stroke-linecap', 'round');
+    svg.setAttribute('stroke-linejoin', 'round');
+    svg.setAttribute('aria-hidden', 'true');
+    var p = document.createElementNS(NS, 'path');
+    p.setAttribute('d', ok ? 'M5 12l5 5L19 7' : 'M6 6l12 12M18 6L6 18');
+    svg.appendChild(p);
+    return svg;
+  }
+  function wireRow(ok, text) {
+    var r = el('div', 'wire');
+    r.appendChild(check(ok));
+    r.appendChild(el('span', 'mono small', text));
+    return r;
+  }
+
+  function renderHeader() {
+    var port = location.port || '4835';
+    var v = snap && snap.version ? ' · v' + snap.version : '';
+    $('addr').textContent = '127.0.0.1:' + port + v;
+  }
+
+  function renderWiring() {
+    var w = (snap && snap.wiring) || {};
+    var port = location.port || '4835';
+    fill($('wiring'), [
+      wireRow(!!w.proxy, w.proxy ? 'HTTPS_PROXY → :' + port : 'HTTPS_PROXY not set to this router'),
+      wireRow(!!w.ca, w.ca ? 'CA trusted (NODE_EXTRA_CA_CERTS)' : 'CA not trusted (NODE_EXTRA_CA_CERTS)')
+    ]);
+  }
+
+  function renderRate() {
+    var ps = (snap && Array.isArray(snap.per_second) ? snap.per_second : []).map(function (v) { return num(v) || 0; });
+    var total = ps.reduce(function (a, b) { return a + b; }, 0);
+    $('per-min').textContent = String(total);
+    var max = Math.max.apply(null, ps.concat([4]));
+    var bars = ps.map(function (v, i) {
+      var b = el('i', v === 0 ? 'zero' : '');
+      if (i === ps.length - 1) b.classList.add('last');
+      b.style.height = Math.max(8, Math.round((v / max) * 100)) + '%';
+      return b;
+    });
+    fill($('bars'), bars);
+  }
+
+  function renderErrors() {
+    var n = (snap && num(snap.errors_5m)) || 0;
+    var c = $('err-count');
+    c.textContent = String(n);
+    c.className = 'big' + (n ? ' warn' : '');
+    $('err-note').textContent = n ? (n === 1 ? 'error' : 'errors') : 'all clear';
+    var e = snap && snap.last_error;
+    $('err-last').textContent = e
+      ? 'last: ' + [e.lane, e.status, e.reason, e.model].filter(function (x) { return x !== null && x !== undefined && x !== ''; }).join(' · ')
+      : 'no errors';
+  }
+
+  function laneCard(l) {
+    var on = !!l.enabled;
+    var card = el('div', 'card lane' + (on ? '' : ' off'));
+    var top = el('div', 'lane-top');
+    var name = el('div', 'lane-name');
+    name.appendChild(el('span', 'lane-dot'));
+    name.appendChild(el('span', '', l.name || l.id));
+    top.appendChild(name);
+    top.appendChild(el('span', on ? 'pill' : 'pill off', on ? 'live' : 'off'));
+    card.appendChild(top);
+    card.appendChild(el('span', 'models mono', l.models || ''));
+    if (!on) {
+      var hint = el('span', 'small muted', 'Not set up');
+      if (l.setup) {
+        hint.textContent = 'Not set up · run ';
+        var cmd = el('span', 'mono', l.setup);
+        cmd.style.color = '#E6F1F2';
+        hint.appendChild(cmd);
+      }
+      card.appendChild(hint);
+      return card;
+    }
+    var grid = el('div', 'stats');
+    var stat = function (label, value, cls) {
+      var s = el('div', 'stat');
+      s.appendChild(el('span', '', label));
+      s.appendChild(el('span', cls, value));
+      return s;
+    };
+    var lat = num(l.ttft_p50_ms) === null && num(l.ttft_p95_ms) === null
+      ? '—'
+      : fmtSecs(l.ttft_p50_ms).replace(' s', '') + ' / ' + fmtSecs(l.ttft_p95_ms);
+    grid.appendChild(stat('Requests', fmtInt(l.requests), 'n'));
+    grid.appendChild(stat('Errors', fmtInt(l.errors), 'n'));
+    grid.appendChild(stat('TTFT', lat, 'm mono'));
+    grid.appendChild(stat('Tokens in / out', fmtTokPair(l.tokens_in, l.tokens_out), 'm mono'));
+    card.appendChild(grid);
+    var foot = null;
+    if (l.id === 'anthropic') foot = 'Untouched, straight to api.anthropic.com';
+    else if (l.key === true) foot = 'Key in the OS keystore';
+    else if (l.key === false) foot = 'No key stored';
+    if (foot) card.appendChild(el('span', 'small muted', foot));
+    return card;
+  }
+
+  function renderLanes() {
+    var lanes = (snap && Array.isArray(snap.lanes)) ? snap.lanes : [];
+    var on = lanes.filter(function (l) { return l.enabled; });
+    var off = lanes.filter(function (l) { return !l.enabled; });
+    fill($('lanes'), on.concat(off).map(laneCard));
+  }
+
+  function row(r, fresh) {
+    var tr = el('tr', fresh ? 'fresh' : '');
+    tr.appendChild(el('td', 'mono muted', num(r.at_ms) === null ? '—' : clock(r.at_ms)));
+    tr.appendChild(el('td', '', r.session || '—'));
+    var model = el('td', 'mono model', r.model || '—');
+    model.title = r.model || '';
+    tr.appendChild(model);
+    var lane = el('td');
+    lane.appendChild(el('span', laneClass(r.lane), r.lane || '—'));
+    tr.appendChild(lane);
+    var st = el('td');
+    st.appendChild(el('span', statusClass(r.status), r.status === null || r.status === undefined ? '—' : String(r.status)));
+    if (r.reason) {
+      st.appendChild(document.createTextNode(' '));
+      var why = el('span', 'small muted', r.reason);
+      st.appendChild(why);
+    }
+    tr.appendChild(st);
+    tr.appendChild(el('td', 'mono r', fmtSecs(r.ttft_ms)));
+    tr.appendChild(el('td', 'mono r', fmtTokPair(r.tokens_in, r.tokens_out)));
+    tr.lastChild.style.color = '#B9D2D5';
+    return tr;
+  }
+
+  function renderRows(first) {
+    var recent = (snap && Array.isArray(snap.recent)) ? snap.recent : [];
+    var next = {};
+    var rows = recent.map(function (r) {
+      next[r.id] = true;
+      return row(r, !first && !seen[r.id]);
+    });
+    seen = next;
+    fill($('rows'), rows);
+    $('rows-empty').hidden = recent.length > 0;
+  }
+
+  function renderFlight() {
+    var list = (snap && Array.isArray(snap.in_flight)) ? snap.in_flight : [];
+    $('flight-count').textContent = list.length + (list.length === 1 ? ' open stream' : ' open streams');
+    flightRows = [];
+    if (!list.length) {
+      fill($('flight'), [el('span', 'small muted', 'No open streams')]);
+      return;
+    }
+    fill($('flight'), list.map(function (f) {
+      var box = el('div', 'flight');
+      var top = el('div', 'flight-top');
+      var who = el('span', 'flight-who', f.session || 'no session');
+      var model = el('span', 'mono muted', ' · ' + (f.model || '—'));
+      who.appendChild(model);
+      who.title = (f.session || 'no session') + ' · ' + (f.model || '');
+      var timer = el('span', 'timer mono', '');
+      top.appendChild(who);
+      top.appendChild(timer);
+      var track = el('div', 'track');
+      track.appendChild(el('div', 'fill'));
+      var hung = el('span', 'hung', 'No bytes for 45 s · may be hung');
+      hung.hidden = true;
+      box.appendChild(top);
+      box.appendChild(track);
+      box.appendChild(hung);
+      flightRows.push({ f: f, box: box, timer: timer, hung: hung });
+      return box;
+    }));
+    tickFlight();
+  }
+
+  function tickFlight() {
+    var now = serverNow();
+    flightRows.forEach(function (x) {
+      var started = num(x.f.started_ms);
+      var lastByte = num(x.f.last_byte_ms);
+      var ref = lastByte !== null ? lastByte : started;
+      var slow = ref !== null && now - ref >= 45000;
+      x.timer.textContent = started === null ? '—' : Math.max(0, Math.floor((now - started) / 1000)) + ' s';
+      x.box.classList.toggle('slow', slow);
+      x.hung.hidden = !slow;
+      if (slow) x.hung.textContent = 'No bytes for ' + Math.floor((now - ref) / 1000) + ' s · may be hung';
+    });
+  }
+
+  var jobStyle = {
+    queued: ['pill off', 'queued'],
+    running: ['pill', 'running'],
+    awaiting_review: ['pill purple', 'ready to review'],
+    failed: ['pill red', 'failed'],
+    dead: ['pill red', 'driver dead']
+  };
+
+  function renderJobs() {
+    var jobs = (snap && Array.isArray(snap.jobs)) ? snap.jobs : [];
+    if (!jobs.length) {
+      fill($('jobs'), [el('span', 'small muted', 'No delegated jobs')]);
+      return;
+    }
+    fill($('jobs'), jobs.map(function (j) {
+      var st = jobStyle[j.state] || ['pill off', j.state || '—'];
+      var box = el('div', 'job');
+      var text = el('div', 'job-text');
+      var title = el('span', 'job-title', j.harness || '—');
+      title.appendChild(el('span', '', ' · ' + (j.repo || '—')));
+      text.appendChild(title);
+      var task = el('span', 'job-task', j.title || '');
+      task.title = j.title || '';
+      text.appendChild(task);
+      box.appendChild(text);
+      box.appendChild(el('span', st[0], st[1]));
+      return box;
+    }));
+  }
+
+  function renderClock() {
+    var up = snap && num(snap.started_ms) !== null ? span((serverNow() - snap.started_ms) / 1000) : '—';
+    var pid = snap && num(snap.pid) !== null ? ' · pid ' + snap.pid : '';
+    $('router-meta').textContent = snap ? 'uptime ' + up + pid : 'waiting for the router';
+    var down = lostSince !== null && Date.now() - lostSince >= 5000;
+    $('router-state').textContent = down ? 'Down' : 'Up';
+    $('router-dot').className = 'dot' + (down ? ' down' : '');
+    var lost = lostSince !== null;
+    $('live').className = 'live' + (lost ? ' lost' : '');
+    $('live-word').textContent = lost ? 'Reconnecting' : 'Live';
+    $('live-note').textContent = lost ? '· trying again' : '· memory only, nothing stored';
+    tickFlight();
+  }
+
+  function render(first) {
+    renderHeader();
+    renderWiring();
+    renderRate();
+    renderErrors();
+    renderLanes();
+    renderRows(first);
+    renderFlight();
+    renderJobs();
+    renderClock();
+  }
+
+  var es = new EventSource('/huddle-router/live');
+  es.addEventListener('snapshot', function (ev) {
+    var data;
+    try { data = JSON.parse(ev.data); } catch (e) { return; }
+    var first = snap === null;
+    snap = data;
+    if (num(data.now_ms) !== null) offset = data.now_ms - Date.now();
+    lostSince = null;
+    render(first);
+  });
+  es.onerror = function () {
+    if (lostSince === null) lostSince = Date.now();
+    renderClock();
+  };
+  es.onopen = function () {
+    lostSince = null;
+    renderClock();
+  };
+
+  render(true);
+  setInterval(renderClock, 1000);
+})();
+</script>
+</body>
+</html>
