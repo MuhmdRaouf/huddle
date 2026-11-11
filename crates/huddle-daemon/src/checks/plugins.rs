@@ -56,11 +56,13 @@ pub fn read(
     let known: Vec<&str> = providers().iter().map(|provider| provider.id).collect();
     let installed_plugins =
         fs::read_to_string(paths.claude_dir.join("plugins/installed_plugins.json")).ok();
+    let carried = carried_versions(installed_plugins.as_deref());
     let settings = fs::read_to_string(paths.claude_dir.join("settings.json")).ok();
     report(&Facts {
         version,
         port,
         installed_plugins: installed_plugins.as_deref(),
+        carried: &carried,
         settings: settings.as_deref(),
         wiring,
         enabled: providers_file::read_enabled(&paths.router_dir, &known)
@@ -77,18 +79,56 @@ pub fn plugin_key(plugin: &str) -> String {
     format!("{plugin}@{MARKETPLACE}")
 }
 
-/// The installed version of a plugin (`zai-plugin-cc`, `huddle`): `None` when it is not
-/// installed, `Some(None)` when it is installed without a readable version.
-pub fn installed_version(installed_plugins: Option<&str>, plugin: &str) -> Option<Option<String>> {
+/// The installed release of a plugin (`zai-plugin-cc`, `huddle`): `None` when it is not
+/// installed, `Some(None)` when it is installed without a readable release. A plugin installed
+/// from a git checkout is recorded under the commit, so its release is the one its `dist/run`
+/// carries.
+pub fn installed_version(
+    installed_plugins: Option<&str>,
+    carried: &HashMap<String, String>,
+    plugin: &str,
+) -> Option<Option<String>> {
     let doc: Value = serde_json::from_str(installed_plugins?).ok()?;
     let entries = doc.get("plugins")?.get(plugin_key(plugin))?.as_array()?;
-    let first = entries.first()?;
-    Some(
-        first
-            .get("version")
-            .and_then(Value::as_str)
-            .map(str::to_string),
-    )
+    let recorded = entries.first()?.get("version").and_then(Value::as_str);
+    Some(match recorded {
+        Some(version) if is_release(version) => Some(version.to_string()),
+        _ => carried.get(plugin).cloned(),
+    })
+}
+
+/// `<major>.<minor>.<patch>`, digits only.
+fn is_release(version: &str) -> bool {
+    let parts: Vec<&str> = version.split('.').collect();
+    parts.len() == 3
+        && parts
+            .iter()
+            .all(|part| !part.is_empty() && part.bytes().all(|b| b.is_ascii_digit()))
+}
+
+/// The `version=` line of each marketplace plugin's installed `dist/run`, by plugin name.
+fn carried_versions(installed_plugins: Option<&str>) -> HashMap<String, String> {
+    let Some(doc) = installed_plugins.and_then(|text| serde_json::from_str::<Value>(text).ok())
+    else {
+        return HashMap::new();
+    };
+    let Some(plugins) = doc.get("plugins").and_then(Value::as_object) else {
+        return HashMap::new();
+    };
+    let suffix = format!("@{MARKETPLACE}");
+    plugins
+        .iter()
+        .filter_map(|(key, entries)| {
+            let name = key.strip_suffix(&suffix)?;
+            let install = entries.as_array()?.first()?.get("installPath")?.as_str()?;
+            let run = fs::read_to_string(std::path::Path::new(install).join("dist/run")).ok()?;
+            let version = run
+                .lines()
+                .find_map(|line| line.strip_prefix("version="))?
+                .trim();
+            is_release(version).then(|| (name.to_string(), version.to_string()))
+        })
+        .collect()
 }
 
 fn rows(facts: &Facts) -> Vec<PluginRow> {
@@ -101,7 +141,7 @@ fn rows(facts: &Facts) -> Vec<PluginRow> {
 
 fn row(provider: &Provider, facts: &Facts, picker: &[String]) -> PluginRow {
     let plugin = format!("{}-plugin-cc", provider.id);
-    let installed = installed_version(facts.installed_plugins, &plugin);
+    let installed = installed_version(facts.installed_plugins, facts.carried, &plugin);
     let setup = facts
         .enabled
         .as_ref()
@@ -169,6 +209,9 @@ mod tests {
         "kimi-plugin-cc@muhmdraouf":[{"scope":"user","version":"0.0.2"}],
         "other@elsewhere":[{"version":"9"}]}}"#;
 
+    static NO_RUN_VERSIONS: std::sync::LazyLock<HashMap<String, String>> =
+        std::sync::LazyLock::new(HashMap::new);
+
     const SETTINGS: &str = r#"{"modelPicker":{"options":[
         {"model":"glm-5.3","label":"GLM 5.3"},{"model":"glm-5.3-flash","label":"GLM 5.3 Flash"},
         {"model":"kimi-k3","label":"Kimi K3"}]}}"#;
@@ -178,6 +221,7 @@ mod tests {
             version: "0.0.3",
             port: 4835,
             installed_plugins: Some(INSTALLED),
+            carried: &NO_RUN_VERSIONS,
             settings: Some(SETTINGS),
             wiring: Wiring {
                 proxy: true,
@@ -283,9 +327,75 @@ mod tests {
     #[test]
     fn installed_version_tells_missing_from_unversioned() {
         let doc = r#"{"plugins":{"zai-plugin-cc@muhmdraouf":[{"scope":"user"}]}}"#;
-        assert_eq!(installed_version(Some(doc), "zai-plugin-cc"), Some(None));
-        assert_eq!(installed_version(Some(doc), "kimi-plugin-cc"), None);
-        assert_eq!(installed_version(None, "zai-plugin-cc"), None);
+        let none = HashMap::new();
+        assert_eq!(
+            installed_version(Some(doc), &none, "zai-plugin-cc"),
+            Some(None)
+        );
+        assert_eq!(installed_version(Some(doc), &none, "kimi-plugin-cc"), None);
+        assert_eq!(installed_version(None, &none, "zai-plugin-cc"), None);
+    }
+
+    #[test]
+    fn q3_a_git_sha_record_reads_the_release_its_dist_run_carries() {
+        let doc = r#"{"plugins":{
+            "huddle@muhmdraouf":[{"version":"1d1ac60d1993"}],
+            "zai-plugin-cc@muhmdraouf":[{"version":"1d1ac60d1993"}],
+            "kimi-plugin-cc@muhmdraouf":[{"version":"0.0.2"}]}}"#;
+        let carried = HashMap::from([("huddle".to_string(), "0.0.3".to_string())]);
+        assert_eq!(
+            installed_version(Some(doc), &carried, "huddle"),
+            Some(Some("0.0.3".into()))
+        );
+        assert_eq!(
+            installed_version(Some(doc), &carried, "zai-plugin-cc"),
+            Some(None)
+        );
+        assert_eq!(
+            installed_version(Some(doc), &carried, "kimi-plugin-cc"),
+            Some(Some("0.0.2".into()))
+        );
+    }
+
+    #[test]
+    fn q3_read_finds_the_version_in_the_installed_dist_run() {
+        use huddle_config::env::Env;
+        use huddle_testkit::temp_home::TempHome;
+
+        let home = TempHome::new();
+        let root = home.root().display().to_string();
+        let paths = Paths::from_env(&Env::with(&[("HOME", root.as_str())])).expect("paths");
+        let install = paths
+            .claude_dir
+            .join("plugins/cache/muhmdraouf/huddle/1d1ac60d1993");
+        fs::create_dir_all(install.join("dist")).expect("install dir");
+        fs::write(
+            install.join("dist/run"),
+            "#!/bin/sh\nset -eu\nversion=0.0.3\n",
+        )
+        .expect("dist/run");
+        let doc = serde_json::json!({"plugins": {"huddle@muhmdraouf": [
+            {"version": "1d1ac60d1993", "installPath": install.display().to_string()}
+        ]}});
+        fs::write(
+            paths.claude_dir.join("plugins/installed_plugins.json"),
+            doc.to_string(),
+        )
+        .expect("installed");
+        let keys = HashMap::new();
+        let wiring = Wiring {
+            proxy: true,
+            ca: true,
+        };
+
+        let report = read(&paths, "0.0.3", 4835, wiring, &keys);
+
+        let binary = report
+            .checks
+            .iter()
+            .find(|c| c.id == "binary")
+            .expect("binary");
+        assert_eq!(binary.detail, "", "{}", binary.detail);
     }
 
     #[test]

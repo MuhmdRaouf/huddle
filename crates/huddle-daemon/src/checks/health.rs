@@ -36,7 +36,7 @@ fn check(
 /// The running binary against the version the huddle plugin carries.
 fn binary(facts: &Facts) -> Check {
     let value = format!("huddle {}", facts.version);
-    let plugin = installed_version(facts.installed_plugins, "huddle").flatten();
+    let plugin = installed_version(facts.installed_plugins, facts.carried, "huddle").flatten();
     match plugin {
         Some(plugin) if plugin != facts.version => check(
             "binary",
@@ -62,7 +62,7 @@ fn router(facts: &Facts) -> Check {
 
 /// The hook ships in the huddle plugin's hooks.json; a hand-written one in settings counts too.
 fn hook(facts: &Facts) -> Check {
-    let from_plugin = installed_version(facts.installed_plugins, "huddle").is_some();
+    let from_plugin = installed_version(facts.installed_plugins, facts.carried, "huddle").is_some();
     if from_plugin || settings_name_hook(facts.settings) {
         return check(
             "hook",
@@ -172,12 +172,15 @@ mod tests {
 
     const HUDDLE_CURRENT: &str = r#"{"plugins":{"huddle@muhmdraouf":[{"version":"0.0.3"}]}}"#;
     const HUDDLE_OLD: &str = r#"{"plugins":{"huddle@muhmdraouf":[{"version":"0.0.2"}]}}"#;
+    static NO_RUN_VERSIONS: std::sync::LazyLock<HashMap<String, String>> =
+        std::sync::LazyLock::new(HashMap::new);
 
     fn facts<'a>(keys: &'a HashMap<&'static str, bool>) -> Facts<'a> {
         Facts {
             version: "0.0.3",
             port: 4835,
             installed_plugins: Some(HUDDLE_CURRENT),
+            carried: &NO_RUN_VERSIONS,
             settings: None,
             wiring: Wiring {
                 proxy: true,

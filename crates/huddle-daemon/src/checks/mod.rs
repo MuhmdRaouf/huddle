@@ -45,6 +45,8 @@ pub struct Facts<'a> {
     pub port: u16,
     /// `<claude_dir>/plugins/installed_plugins.json`.
     pub installed_plugins: Option<&'a str>,
+    /// The `version=` line of each installed plugin's `dist/run`, by plugin name.
+    pub carried: &'a HashMap<String, String>,
     /// `<claude_dir>/settings.json`.
     pub settings: Option<&'a str>,
     pub wiring: Wiring,
