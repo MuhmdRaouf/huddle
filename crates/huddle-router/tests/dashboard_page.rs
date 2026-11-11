@@ -159,3 +159,8 @@ fn keeps_the_admin_shell() {
 fn stays_under_the_size_limit() {
     assert!(PAGE.len() < 140 * 1024, "{} bytes", PAGE.len());
 }
+
+#[test]
+fn q4_a_sub_millisecond_router_hop_reads_under_one_ms() {
+    assert!(PAGE.contains("r.rt==null?'—':r.rt<1?'&lt;1 ms':r.rt+' ms'"));
+}

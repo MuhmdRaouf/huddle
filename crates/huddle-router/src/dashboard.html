@@ -955,7 +955,7 @@ const DRAWERS={
   let wf='';
   if(total>0){const rt=n0(r.rt),tt=r.ttft!=null?r.ttft:r.status==null?Math.min(total,NOW-r.t):0;const s1=Math.min(100,rt/total*100),s2=Math.max(0,Math.min(100-s1,(tt-rt)/total*100)),s3=Math.max(0,100-s1-s2);
    wf=`<div><h4>Timing <span class="faint">${(total/1e3).toFixed(2)} s total</span></h4><div class="wf"><i style="width:${s1.toFixed(2)}%;background:var(--faint)"></i><i style="width:${s2.toFixed(2)}%;background:var(--warn)"></i><i style="width:${s3.toFixed(2)}%;background:${col(r.m)}"></i></div>
-    <div class="wfl"><span><span class="sw" style="background:var(--faint)"></span>Router <b>${r.rt==null?'—':r.rt+' ms'}</b></span><span><span class="sw" style="background:var(--warn)"></span>First token <b>${msf(r.ttft)}</b></span><span><span class="sw" style="background:${col(r.m)}"></span>Streaming <b>${r.ttft!=null?((total-r.ttft)/1e3).toFixed(1)+' s':'—'}</b></span></div></div>`}
+    <div class="wfl"><span><span class="sw" style="background:var(--faint)"></span>Router <b>${r.rt==null?'—':r.rt<1?'&lt;1 ms':r.rt+' ms'}</b></span><span><span class="sw" style="background:var(--warn)"></span>First token <b>${msf(r.ttft)}</b></span><span><span class="sw" style="background:${col(r.m)}"></span>Streaming <b>${r.ttft!=null?((total-r.ttft)/1e3).toFixed(1)+' s':'—'}</b></span></div></div>`}
   return `<div class="dh"><div class="grow">${reqStatus(r)}<h3>${modelTag(r.m)} <span class="muted" style="font-weight:400;font-size:15px">· ${clock(r.t)}</span></h3><div class="s">${cid(r.id.slice(1))}</div></div>${closeBtn()}</div>
   <div class="db">${wf}
    <div><h4>Tokens</h4><div class="facts">
