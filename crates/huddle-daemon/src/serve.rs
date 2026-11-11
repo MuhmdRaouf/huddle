@@ -17,6 +17,7 @@ use huddle_config::atomic::write_atomic;
 use huddle_config::env::Env;
 use huddle_config::paths::Paths;
 use huddle_config::providers_file::read_enabled;
+use huddle_router::dashboard::DashboardInputs;
 use huddle_router::dispatch::{Router, RouterConfig};
 use huddle_router::events::{EventSink, iso_utc_ms, now_ms};
 use huddle_router::reload::{POLL, ProvidersWatch, ReloadAction};
@@ -220,6 +221,10 @@ pub async fn run(
             anthropic_url,
             log: Arc::clone(&log),
             events: Some(EventSink::start(router_dir.join("events"))),
+            dashboard: DashboardInputs {
+                version: version.clone(),
+                ..DashboardInputs::default()
+            },
         },
         &initial_enabled,
     );

@@ -17,6 +17,7 @@ use hyper::{Method, Request, Response, StatusCode};
 use tokio::net::TcpListener;
 use tokio::sync::watch;
 
+use crate::dashboard::{Dashboard, LIVE_PATH, PAGE_PATH, STATE_PATH};
 use crate::health::{HEALTH_PATH, health_answer};
 
 pub const ROUTER_NAME: &str = "huddle-router";
@@ -206,6 +207,8 @@ pub struct EntryCtx {
     /// The provider names the health answer lists, read fresh per request so the
     /// list stays current.
     pub providers: Arc<dyn Fn() -> Vec<String> + Send + Sync>,
+    /// The page, the state and the live feed; `None` leaves those paths to `forward`.
+    pub dashboard: Option<Arc<Dashboard>>,
 }
 
 /// True, after answering 421, when the request does not name this port on the loopback: a
@@ -225,7 +228,7 @@ fn refuse_host(req: &Request<Incoming>, port: u16) -> bool {
 }
 
 /// The entry flow: CONNECT first, then the Host guard, then the health path (never forwarded),
-/// then forward.
+/// then the dashboard's paths, then forward.
 pub fn entry_handler(ctx: Arc<EntryCtx>) -> Handler {
     Arc::new(move |req: Request<Incoming>| {
         let ctx = ctx.clone();
@@ -253,9 +256,34 @@ pub fn entry_handler(ctx: Arc<EntryCtx>) -> Handler {
                     "huddle-router: no such path",
                 );
             }
+            if let Some(dashboard) = &ctx.dashboard
+                && let Some(answer) = dashboard_answer(dashboard, &req)
+            {
+                return answer;
+            }
             (ctx.forward)(req).await
         })
     })
+}
+
+/// The dashboard's answer for this request, or none when it is not a dashboard path. A bare
+/// `GET /` is the page; a wrong method on the state and live paths is a 404, as on health.
+fn dashboard_answer(
+    dashboard: &Arc<Dashboard>,
+    req: &Request<Incoming>,
+) -> Option<Response<RespBody>> {
+    let get = req.method() == Method::GET;
+    match req.uri().path() {
+        PAGE_PATH if get => Some(dashboard.page_answer()),
+        STATE_PATH if get => Some(dashboard.state_answer()),
+        LIVE_PATH if get => Some(dashboard.live_answer()),
+        STATE_PATH | LIVE_PATH => Some(anthropic_error(
+            StatusCode::NOT_FOUND,
+            "not_found_error",
+            "huddle-router: no such path",
+        )),
+        _ => None,
+    }
 }
 
 /// Binds `127.0.0.1:port`.

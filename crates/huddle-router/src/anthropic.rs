@@ -6,7 +6,7 @@
 //! request that is not a model request goes to the pass-through.
 
 use std::pin::Pin;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, PoisonError};
 use std::task::{Context, Poll};
 use std::time::{Duration, Instant};
 
@@ -20,10 +20,12 @@ use tokio::sync::mpsc;
 
 use crate::body;
 use crate::dispatch::RequestEvents;
+use crate::lane::{LaneTap, compressed};
 use crate::server::{
     BodyCut, Handler, HandlerFuture, RespBody, anthropic_error, cut_response, empty_body, receive,
     safe_path,
 };
+use crate::sse::Usage;
 use crate::upstream::{
     Failure, FailureCode, RequestBody, StreamedBody, UpstreamAnswer, UpstreamClient,
     UpstreamRequest, forward_headers, response_headers, upstream_url,
@@ -154,6 +156,12 @@ impl AnthropicPath {
         // The rest of the body fills the stream while the answer is already being relayed.
         tokio::spawn(fill(body, Arc::clone(&stream)));
         if (self.is_anthropic)(&model) {
+            let events = RequestEvents::from_parts(&parts);
+            events.set_route("anthropic");
+            events.set_plugin("huddle-router");
+            events.set_asked_model(&model);
+            events.set_served_model(&model);
+            events.track("anthropic", &model);
             self.forward_streamed(parts, stream).await
         } else {
             (self.streamed_route)(parts, stream, model).await
@@ -166,12 +174,16 @@ impl AnthropicPath {
         let events = RequestEvents::from_parts(&parts);
         let request = match self.request(&parts, RequestBody::Whole(body)) {
             Ok(request) => request,
-            Err(answer) => return answer,
+            Err(answer) => return unsent(&events, answer),
         };
         events.mark_sent();
-        let mut done = OutcomeWatch::new(Some(self.answer_hook(events)));
+        let usage_out = Arc::new(Mutex::new(None));
+        let mut done = OutcomeWatch::new(Some(self.answer_hook(events.clone(), &usage_out)));
         match self.client.send(request).await {
-            Ok(answer) => stream_answer(answer, self.client.idle(), done, StreamShape::default()),
+            Ok(answer) => {
+                let shape = answer_shape(&answer, &events, usage_out);
+                stream_answer(answer, self.client.idle(), done, shape)
+            }
             Err(failure) if failure.client_closed => {
                 done.finish(AnswerOutcome::ClientClosed { bytes: 0 });
                 cut_response()
@@ -193,12 +205,16 @@ impl AnthropicPath {
         let events = RequestEvents::from_parts(&parts);
         let request = match self.request(&parts, RequestBody::Streamed(Arc::clone(&stream))) {
             Ok(request) => request,
-            Err(answer) => return answer,
+            Err(answer) => return unsent(&events, answer),
         };
         events.mark_sent();
-        let mut done = OutcomeWatch::new(Some(self.answer_hook(events)));
+        let usage_out = Arc::new(Mutex::new(None));
+        let mut done = OutcomeWatch::new(Some(self.answer_hook(events.clone(), &usage_out)));
         match self.client.send(request).await {
-            Ok(answer) => stream_answer(answer, self.client.idle(), done, StreamShape::default()),
+            Ok(answer) => {
+                let shape = answer_shape(&answer, &events, usage_out);
+                stream_answer(answer, self.client.idle(), done, shape)
+            }
             Err(failure) if failure.client_closed || stream.client_failed() => {
                 done.finish(AnswerOutcome::ClientClosed { bytes: 0 });
                 cut_response()
@@ -211,14 +227,27 @@ impl AnthropicPath {
     }
 
     /// The per-request outcome hook: the path's shared hook first, then the request's route
-    /// event.
-    fn answer_hook(&self, events: RequestEvents) -> OutcomeHook {
+    /// event, with the usage the answer's tap read when the answer ended whole.
+    fn answer_hook(
+        &self,
+        events: RequestEvents,
+        usage_out: &Arc<Mutex<Option<Usage>>>,
+    ) -> OutcomeHook {
         let shared = self.on_outcome.clone();
+        let usage_out = Arc::clone(usage_out);
         Arc::new(move |outcome| {
             if let Some(shared) = shared.as_ref() {
                 shared(outcome);
             }
             if events.active() {
+                if let AnswerOutcome::Finished { .. } = outcome {
+                    events.set_usage(
+                        usage_out
+                            .lock()
+                            .unwrap_or_else(PoisonError::into_inner)
+                            .clone(),
+                    );
+                }
                 let (status, error) = event_of(outcome);
                 events.emit(status, error);
             }
@@ -251,6 +280,31 @@ impl AnthropicPath {
             headers: forward_headers(&parts.headers, &self.target, len),
             body,
         })
+    }
+}
+
+/// A request that never left: its event and its live entry end with the answer it got.
+fn unsent(events: &RequestEvents, answer: Response<RespBody>) -> Response<RespBody> {
+    events.emit(
+        answer.status().as_u16(),
+        Some("bad request path".to_owned()),
+    );
+    answer
+}
+
+/// How an Anthropic answer is read on its way out: the live feed sees every frame, and the
+/// usage is read only off an uncompressed success, since the client's own `accept-encoding`
+/// reaches Anthropic and a compressed body is not parsed. Bytes and headers are never touched.
+fn answer_shape(
+    answer: &UpstreamAnswer,
+    events: &RequestEvents,
+    usage_out: Arc<Mutex<Option<Usage>>>,
+) -> StreamShape {
+    let tap = (answer.status.is_success() && !compressed(&answer.headers))
+        .then(|| Box::new(LaneTap::new(&answer.headers, usage_out)) as Box<dyn AnswerTap>);
+    StreamShape {
+        prefix: Bytes::new(),
+        tap: events.live_tap(tap),
     }
 }
 
@@ -523,8 +577,8 @@ impl Drop for OutcomeWatch {
 
 /// The answer's body: the frames the pump forwards, in order; a body error cuts the
 /// connection.
-struct StreamingBody {
-    rx: mpsc::Receiver<Result<Frame<Bytes>, BodyCut>>,
+pub(crate) struct StreamingBody {
+    pub(crate) rx: mpsc::Receiver<Result<Frame<Bytes>, BodyCut>>,
 }
 
 impl Body for StreamingBody {

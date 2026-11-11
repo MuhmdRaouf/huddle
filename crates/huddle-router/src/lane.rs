@@ -270,7 +270,10 @@ impl Lane {
                                 answer,
                                 self.client.idle(),
                                 OutcomeWatch::new(hook.clone()),
-                                StreamShape { prefix, tap: None },
+                                StreamShape {
+                                    prefix,
+                                    tap: events.live_tap(None),
+                                },
                             )
                         }
                     }
@@ -292,7 +295,7 @@ impl Lane {
                         OutcomeWatch::new(hook.clone()),
                         StreamShape {
                             prefix: Bytes::new(),
-                            tap,
+                            tap: events.live_tap(tap),
                         },
                     )
                 }
@@ -516,7 +519,7 @@ enum Judged {
 }
 
 /// Reads usage off a passing lane answer; the frames are never touched or delayed.
-struct LaneTap {
+pub(crate) struct LaneTap {
     tracker: Option<LaneTracker>,
     usage_out: Arc<Mutex<Option<Usage>>>,
 }
@@ -547,7 +550,7 @@ impl LaneTracker {
 
 impl LaneTap {
     /// A tap for one answer, writing its final usage to `usage_out`.
-    fn new(headers: &HeaderMap, usage_out: Arc<Mutex<Option<Usage>>>) -> LaneTap {
+    pub(crate) fn new(headers: &HeaderMap, usage_out: Arc<Mutex<Option<Usage>>>) -> LaneTap {
         let tracker = if is_event_stream(headers) {
             LaneTracker::Event(SseUsageTracker::new())
         } else {
@@ -578,9 +581,9 @@ fn lock<T>(value: &Mutex<T>) -> MutexGuard<'_, T> {
     value.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
-/// Whether the provider compressed its answer anyway: the lane asks for `identity`, so a
-/// compressed answer passes unjudged and unread.
-fn compressed(headers: &HeaderMap) -> bool {
+/// Whether an answer is compressed: a lane asks its provider for `identity`, so a compressed
+/// lane answer passes unjudged and unread, and so does a compressed Anthropic answer.
+pub(crate) fn compressed(headers: &HeaderMap) -> bool {
     match headers
         .get(CONTENT_ENCODING)
         .and_then(|value| value.to_str().ok())

@@ -225,7 +225,7 @@ impl LiveState {
                     started_ms: request.now_ms,
                     first_byte_ms: None,
                     last_byte_ms: request.now_ms,
-                    session: request.session,
+                    session: request.session.map(|session| truncate(&session)),
                     model: request.model,
                     lane: request.lane,
                 },
@@ -612,6 +612,7 @@ mod tests {
             now_ms: T0,
         });
         let open = live.snapshot(T0, &inputs(&["zai"]));
+        assert_eq!(open.in_flight[0].session.as_deref(), Some("cse_01Jq"));
         assert_eq!(open.in_flight[1].session, None);
         live.finish(with, end(200, None, T0 + 1));
         live.finish(without, end(200, None, T0 + 1));

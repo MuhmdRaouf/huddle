@@ -42,6 +42,7 @@ async fn rig(anthropic: FakeUpstream, zai: FakeUpstream) -> Rig {
         anthropic_url: anthropic.url().parse::<Uri>().expect("uri"),
         log: Arc::new(|_| {}),
         events: Some(EventSink::start(dir)),
+        dashboard: huddle_router::dashboard::DashboardInputs::default(),
     };
     let router = Router::new(config, &["zai".to_string()]);
     let listener = bind(port).await.expect("bind");

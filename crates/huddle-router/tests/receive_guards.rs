@@ -50,6 +50,7 @@ async fn entry() -> Rig {
         connect: counting("connect", connects.clone()),
         forward: counting("forward", forwards.clone()),
         providers: Arc::new(|| vec!["zai".to_string()]),
+        dashboard: None,
     }));
     let (_tx, rx) = watch::channel(false);
     tokio::spawn(async move {

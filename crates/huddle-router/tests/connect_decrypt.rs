@@ -290,6 +290,7 @@ async fn decrypted_model_requests_write_route_events() {
             anthropic_url: anthropic.url().parse().expect("uri"),
             log: Arc::new(|_| {}),
             events: Some(EventSink::start(paths.router_dir.join("events"))),
+            dashboard: huddle_router::dashboard::DashboardInputs::default(),
         },
         &["zai".to_string()],
     );

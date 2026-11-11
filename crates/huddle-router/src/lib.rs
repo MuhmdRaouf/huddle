@@ -3,6 +3,7 @@ pub mod anthropic;
 pub mod body;
 pub mod connect;
 pub mod crashlog;
+pub mod dashboard;
 pub mod dispatch;
 pub mod events;
 pub mod health;
