@@ -450,11 +450,11 @@ const ic=(n,c)=>`<svg class="i${c?' '+c:''}" viewBox="0 0 24 24" aria-hidden="tr
 
 /* ---------- the world, read from the snapshot ---------- */
 let SESS=[],AGENTS=[],REQS=[],MODELS=[],MN=[],COLOR={},LANES=[],JOBS=[],WT=[],HARN=[],BK=[],BW=3e4,PLAN=null,PL={state:'checking',rows:[],checks:[]},WIRE={state:'checking'},RT={},ST=null;
-const col=m=>COLOR[m]||'var(--faint)';
+const col=m=>COLOR[m]||HCOLOR[m]||'var(--faint)';
 const sstate=s=>s.state==='working'||s.state==='waiting'?s.state:'idle';
 const mainA=s=>s.agents[0];
 const isErr=r=>r.status!=null&&r.status>=400&&r.status!==499;
-const EMPTY={n:0,tok:0,err:0,p50:0};
+const EMPTY={n:0,tok:0,err:0,p50:0,cost:0};
 const ERRDEF={
  529:['Overloaded','overloaded_error','Anthropic was busy. Claude Code retried.',true],
  429:['Rate limited','rate_limit_error','The provider throttled the request. Claude Code backed off and retried.',true],
@@ -593,6 +593,56 @@ const qmatch=(id,txt)=>{const q=(F.q[id]||'').trim().toLowerCase();return !q||tx
 function kpiGrid(items){return items.map(k=>`<div class="kpi"><div class="k">${k.k}</div><div class="v">${k.v}${k.small?`<small>${k.small}</small>`:''}${k.delta||''}</div>${k.meter!=null?meter(k.meter,k.mk):''}${k.sp?spark(k.sp,k.color||'var(--accent)'):''}${k.d?`<div class="d">${k.d}</div>`:''}</div>`).join('')}
 const checking=(what)=>`<span class="muted">Checking…</span>`;
 
+/* ---------- time ranges ---------- */
+const RANGES=[['15m','15 min'],['24h','24 h'],['7d','7 d'],['30d','30 d']],RANGE_MIN={'15m':15,'24h':1440,'7d':10080,'30d':43200};
+const FLAT='Claude plan usage is flat-rate; this is what the same tokens cost on the API';
+const HIST={range:'15m',bk:null,tot:null,ser:null,err:false},HCOLOR={};
+try{const r=localStorage.getItem('huddle-range');if(RANGES.some(x=>x[0]===r))HIST.range=r}catch(e){}
+const liveRange=()=>HIST.range==='15m';
+const rangeLabel=()=>RANGES.find(x=>x[0]===HIST.range)[1];
+const rangeSeg=()=>seg('range',RANGES,HIST.range);
+const usd=v=>num(v)==null?'—':'$'+(v>0&&v<0.01?v.toFixed(4):v.toFixed(2));
+const apiq=()=>`<span class="faint" title="${FLAT}">API-equivalent</span>`;
+const SER0={b:[0,1].map(i=>Object.assign({byM:{},t:i,w:0},EMPTY)),mn:[],bw:3e4};
+const ser=()=>liveRange()?{b:BK,mn:MN,bw:BW}:(HIST.ser||SER0);
+const rangeMin=()=>RANGE_MIN[HIST.range];
+const tickLabel=t=>HIST.range==='7d'||HIST.range==='30d'?new Date(t).toLocaleDateString(undefined,{month:'short',day:'numeric'}):clock(t).slice(0,5);
+function histSeries(d){const w=Math.max(1,num(d.width_ms)||3e5),s0=Math.floor(d.from_ms/w)*w,N=Math.max(2,Math.floor((d.to_ms-s0)/w)+1);
+ const b=Array.from({length:N},(_,i)=>Object.assign({byM:{},t:s0+i*w,w:0},EMPTY)),names=new Set();
+ arr(d.buckets).forEach(x=>{const k=b[Math.min(N-1,Math.max(0,Math.floor((x.start_ms-s0)/w)))],o={n:n0(x.n),err:n0(x.err),tok:n0(x.tok_in)+n0(x.tok_out),p50:n0(x.ttft_p50),cost:n0(x.cost_usd)};
+  k.byM[x.model]=o;k.n+=o.n;k.err+=o.err;k.tok+=o.tok;k.cost+=o.cost;k.w+=o.p50*o.n;names.add(x.model)});
+ b.forEach(k=>{k.p50=k.n?k.w/k.n:0});return {b,mn:[...names].filter(Boolean).sort(),bw:w}}
+/* per-model rows for a history range: totals carry counts and cost, buckets carry latency */
+function histRows(){const lat={};arr(HIST.bk&&HIST.bk.buckets).forEach(x=>{const l=lat[x.model]||(lat[x.model]={w:0,n:0,p95:null});if(num(x.ttft_p50)!=null){l.w+=x.ttft_p50*n0(x.n);l.n+=n0(x.n)}if(num(x.ttft_p95)!=null)l.p95=Math.max(l.p95||0,x.ttft_p95)});
+ const ts=arr(HIST.tot&&HIST.tot.totals),all=Math.max(1,sum(ts.map(t=>n0(t.n))));
+ return ts.map(t=>{const l=lat[t.key]||{n:0,p95:null},tin=n0(t.tok_in),cr=n0(t.cache_read),cw=n0(t.cache_write);
+  return {id:t.key,n:n0(t.n),err:n0(t.err),tin,cr,cw,out:n0(t.tok_out),fresh:Math.max(0,tin-cr-cw),p50:l.n?l.w/l.n:null,p95:l.p95,cost:num(t.cost_usd),apiq:!!t.api_equivalent,hit:tin?cr/tin:0,share:n0(t.n)/all}})}
+const RM=()=>liveRange()?MODELS:histRows();
+const HIDE_IN_RANGE=['lane','trend','speed','sess','last'];
+const COSTCOL={k:'cost',label:'Est. cost',num:1,v:x=>x.cost||0,h:x=>`<span class="mono">${usd(x.cost)}</span>${x.apiq?' '+apiq():''}`};
+const rangeCols=cols=>liveRange()?cols:cols.filter(c=>!HIDE_IN_RANGE.includes(c.k)).concat([COSTCOL]);
+const rangeRows=()=>liveRange()?modelRows():histRows();
+const rangeEmpty=()=>HIST.bk||HIST.err||liveRange()?`No requests in the last ${rangeLabel()}`:'Checking…';
+const rangeStatus=()=>liveRange()?'':HIST.err?`<div class="legendrow badc">Could not load history. Showing the last data.</div>`:HIST.bk?'':`<div class="legendrow">${checking()}</div>`;
+function histKpis(){if(!HIST.tot)return `<div class="card pad">${checking()}</div>`;
+ const ts=arr(HIST.tot.totals),reqs=sum(ts.map(t=>n0(t.n)));
+ if(!reqs)return `<div class="card"><div class="allclear">${ic('info')} No requests in the last ${rangeLabel()}</div></div>`;
+ const errs=sum(ts.map(t=>n0(t.err))),tin=sum(ts.map(t=>n0(t.tok_in))),cr=sum(ts.map(t=>n0(t.cache_read))),out=sum(ts.map(t=>n0(t.tok_out))),cost=sum(ts.map(t=>n0(t.cost_usd))),aq=ts.some(t=>t.api_equivalent);
+ return kpiCard([
+  {k:'Requests',v:fmt(reqs),d:`in the last ${rangeLabel()}`},
+  {k:'Errors',v:fmt(errs),d:`${(errs/reqs*100).toFixed(1)}% of requests`,color:'var(--bad)'},
+  {k:'Tokens in',v:fmt(tin),d:'cache reads and writes included'},
+  {k:'Tokens out',v:fmt(out),d:'generated'},
+  {k:'Cache hit rate',v:tin?Math.round(cr/tin*100):'—',small:tin?'%':'',d:'read from cache / tokens in'},
+  {k:'Estimated cost',v:usd(cost),d:aq?`includes Claude cost, ${apiq()}`:'from list prices'}],'k6')}
+function loadHistory(){if(liveRange())return;const r=HIST.range,get=u=>fetch(u,{cache:'no-store'}).then(x=>{if(!x.ok)throw new Error(String(x.status));return x.json()});
+ Promise.all([get('/huddle-router/history?view=buckets&range='+r),get('/huddle-router/history?view=totals&by=model&range='+r)]).then(([bk,tot])=>{if(HIST.range!==r)return;
+  HIST.bk=bk;HIST.tot=tot;HIST.ser=histSeries(bk);HIST.err=false;HIST.ser.mn.forEach((m,i)=>{HCOLOR[m]='var(--c'+(i%6+1)+')'});paint()},()=>{if(HIST.range!==r)return;HIST.err=true;paint()})}
+function setRange(k){if(!RANGES.some(r=>r[0]===k))return;HIST.range=k;HIST.bk=HIST.tot=HIST.ser=null;HIST.err=false;CH.focus=null;if(liveRange()&&CH.metric==='cost')CH.metric='req';
+ try{localStorage.setItem('huddle-range',k)}catch(e){}
+ render();loadHistory()}
+const priceNote=()=>liveRange()||!HIST.bk?'':`<div class="legendrow">Estimated from list prices. Prices retrieved ${esc(HIST.bk.prices_retrieved)}; Claude prices retrieved ${esc(HIST.bk.claude_prices_retrieved)}.</div>`;
+
 /* ---------- overview ---------- */
 function attnItems(){const it=[];
  const open=s=>`<button class="btn sm" data-open="session:${esc(s.id)}">Open</button>`;
@@ -609,7 +659,7 @@ function attnItems(){const it=[];
  return it}
 function attnList(){const it=attnItems();if(!it.length)return `<div class="allclear">${ic('check')} Nothing needs you right now</div>`;
  return it.map(a=>`<div class="attn-row"><span class="tag ${a.k}">${esc(a.tag)}</span><div class="what"><div class="t">${esc(a.t)}</div><div class="m">${esc(a.m)}</div></div>${a.act}</div>`).join('')}
-function overviewKpis(){const b=BK;
+function overviewKpis(){if(!liveRange())return histKpis();const b=BK;
  const live=SESS.filter(s=>sstate(s)!=='idle').length,waiting=SESS.filter(s=>sstate(s)==='waiting').length;
  const subs=AGENTS.filter(a=>a.type!=='main'),run=subs.filter(a=>a.state==='running').length,doneN=subs.filter(a=>a.state==='done'&&a.end!=null&&a.end>NOW-15*MIN).length;
  const last5=b.slice(20),prev5=b.slice(10,20);
@@ -634,35 +684,37 @@ const CM={
  req:{label:'Requests',val:b=>b.n,agg:bs=>sum(bs.map(b=>b.n)),f:v=>fmt(v),up:null},
  tok:{label:'Tokens',val:b=>b.tok,agg:bs=>sum(bs.map(b=>b.tok)),f:v=>fmt(v),up:null},
  lat:{label:'Time to first token',val:b=>b.p50||0,agg:bs=>wavg(bs,b=>b.p50||0,b=>b.n)||0,f:v=>Math.round(v)+'<small>ms p50</small>',up:false},
- err:{label:'Errors',val:b=>b.err,agg:bs=>sum(bs.map(b=>b.err)),f:v=>fmt(v),up:false}
+ err:{label:'Errors',val:b=>b.err,agg:bs=>sum(bs.map(b=>b.err)),f:v=>fmt(v),up:false},
+ cost:{label:'Est. cost',val:b=>b.cost||0,agg:bs=>sum(bs.map(b=>b.cost||0)),f:v=>usd(v),up:null}
 };
-function mtabs(){const b=BK;return `<div class="mtabs" role="tablist">${Object.entries(CM).map(([k,c])=>`<button class="mtab" role="tab" data-metric="${k}" aria-selected="${k===CH.metric}"><div class="k">${c.label}</div><div class="v">${c.f(c.agg(b))}${deltaH(c.agg(b.slice(20)),c.agg(b.slice(10,20)),c.up)}</div></button>`).join('')}</div>`}
-function modelTotals(metric){const t={};MN.forEach(m=>{const mb=BK.map(x=>x.byM[m]||EMPTY);t[m]=metric==='lat'?(CM.lat.agg(mb)||0):sum(mb.map(x=>CM[metric].val(x)))});return t}
+function mtabs(){const b=ser().b,t=Math.floor(b.length/3);return `<div class="mtabs" role="tablist">${Object.entries(CM).filter(([k])=>k!=='cost'||!liveRange()).map(([k,c])=>`<button class="mtab" role="tab" data-metric="${k}" aria-selected="${k===CH.metric}"><div class="k">${c.label}</div><div class="v">${c.f(c.agg(b))}${deltaH(c.agg(b.slice(-t)),c.agg(b.slice(-2*t,-t)),c.up)}</div></button>`).join('')}</div>`}
+function modelTotals(metric){const t={},S=ser();S.mn.forEach(m=>{const mb=S.b.map(x=>x.byM[m]||EMPTY);t[m]=metric==='lat'?(CM.lat.agg(mb)||0):sum(mb.map(x=>CM[metric].val(x)))});return t}
 function bars(){const t=modelTotals(CH.metric),max=Math.max(1,...Object.values(t));
- return `<div class="k"><span>By model</span><span class="faint">${CH.focus?'click again for all':'click to focus'}</span></div><div class="bars">${MN.length?MN.slice().sort((a,b)=>t[b]-t[a]).map(m=>`<button class="bar${CH.focus&&CH.focus!==m?' off':''}${CH.focus===m?' on':''}" data-focus="${esc(m)}"><i style="width:${(t[m]/max*100).toFixed(1)}%"></i><span>${sw(m)}<span class="mono">${esc(m)}</span></span><span class="n">${CH.metric==='lat'?Math.round(t[m])+' ms':fmt(t[m])}</span></button>`).join(''):'<div class="faint" style="padding:6px 8px">No traffic yet</div>'}</div>`}
+ return `<div class="k"><span>By model</span><span class="faint">${CH.focus?'click again for all':'click to focus'}</span></div><div class="bars">${ser().mn.length?ser().mn.slice().sort((a,b)=>t[b]-t[a]).map(m=>`<button class="bar${CH.focus&&CH.focus!==m?' off':''}${CH.focus===m?' on':''}" data-focus="${esc(m)}"><i style="width:${(t[m]/max*100).toFixed(1)}%"></i><span>${sw(m)}<span class="mono">${esc(m)}</span></span><span class="n">${CH.metric==='lat'?Math.round(t[m])+' ms':CH.metric==='cost'?usd(t[m]):fmt(t[m])}</span></button>`).join(''):'<div class="faint" style="padding:6px 8px">No traffic yet</div>'}</div>`}
 function smooth(p){if(p.length<2)return '';let d=`M${p[0][0].toFixed(1)},${p[0][1].toFixed(1)}`;for(let i=0;i<p.length-1;i++){const[x0,y0]=p[i],[x1,y1]=p[i+1],cx=((x0+x1)/2).toFixed(1);d+=` C${cx},${y0.toFixed(1)} ${cx},${y1.toFixed(1)} ${x1.toFixed(1)},${y1.toFixed(1)}`}return d}
 function niceMax(v){if(v<=0)return 1;const p=Math.pow(10,Math.floor(Math.log10(v))),n=v/p;return (n<=1?1:n<=2?2:n<=2.5?2.5:n<=5?5:10)*p}
 function drawChart(){const svg=$('#chart');if(!svg)return;const W=svg.clientWidth;if(!W)return;const H=240,pl=46,pr=14,pt=10,pb=26;
- svg.setAttribute('viewBox',`0 0 ${W} ${H}`);const b=BK,c=CM[CH.metric],N=b.length;
- if(CH.focus&&MN.indexOf(CH.focus)<0)CH.focus=null;
+ svg.setAttribute('viewBox',`0 0 ${W} ${H}`);const S=ser(),b=S.b,c=CM[CH.metric],N=b.length;
+ if(!c){CH.metric='req';return drawChart()}
+ if(CH.focus&&S.mn.indexOf(CH.focus)<0)CH.focus=null;
  const data=b.map(x=>c.val(CH.focus?(x.byM[CH.focus]||EMPTY):x));const color=CH.focus?col(CH.focus):'var(--accent)';
  const mx=niceMax(Math.max(1,...data)/4)*4;const x=i=>pl+i*(W-pl-pr)/(N-1),y=v=>pt+(H-pt-pb)*(1-v/mx);
  let g=`<defs><linearGradient id="cg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${color}" stop-opacity=".22"/><stop offset="1" stop-color="${color}" stop-opacity="0"/></linearGradient></defs>`;
- for(let k=0;k<=4;k++){const v=mx*k/4;g+=`<line class="gl" x1="${pl}" x2="${W-pr}" y1="${y(v).toFixed(1)}" y2="${y(v).toFixed(1)}"${k?' stroke-dasharray="2 4"':''}/><text class="ax" x="${pl-8}" y="${(y(v)+4).toFixed(1)}" text-anchor="end">${CH.metric==='lat'?Math.round(v):fmt(v)}</text>`}
- [0,10,20,29].forEach((i,j)=>{g+=`<text class="ax" x="${x(i).toFixed(1)}" y="${H-6}" text-anchor="${j===0?'start':j===3?'end':'middle'}">${j===3?'now':clock(b[i].t).slice(0,5)}</text>`});
+ for(let k=0;k<=4;k++){const v=mx*k/4;g+=`<line class="gl" x1="${pl}" x2="${W-pr}" y1="${y(v).toFixed(1)}" y2="${y(v).toFixed(1)}"${k?' stroke-dasharray="2 4"':''}/><text class="ax" x="${pl-8}" y="${(y(v)+4).toFixed(1)}" text-anchor="end">${CH.metric==='lat'?Math.round(v):CH.metric==='cost'?usd(v):fmt(v)}</text>`}
+ [0,Math.floor(N/3),Math.floor(2*N/3),N-1].forEach((i,j)=>{g+=`<text class="ax" x="${x(i).toFixed(1)}" y="${H-6}" text-anchor="${j===0?'start':j===3?'end':'middle'}">${j===3?'now':tickLabel(b[i].t)}</text>`});
  const pts=data.map((v,i)=>[x(i),y(v)]),line=smooth(pts);
  g+=`<path d="${line} L${x(N-1).toFixed(1)},${y(0).toFixed(1)} L${x(0).toFixed(1)},${y(0).toFixed(1)} Z" fill="url(#cg)"/><path d="${line}" fill="none" stroke="${color}" stroke-width="2" stroke-linecap="round"/>`;
  g+=`<circle cx="${x(N-1).toFixed(1)}" cy="${y(data[N-1]).toFixed(1)}" r="3.5" fill="${color}" stroke="var(--surface)" stroke-width="2"/>`;
  const tip=$('#tip');
  if(CH.hover!=null){const i=CH.hover;g+=`<line x1="${x(i).toFixed(1)}" x2="${x(i).toFixed(1)}" y1="${pt}" y2="${H-pb}" stroke="var(--faint)" stroke-dasharray="3 3"/><circle cx="${x(i).toFixed(1)}" cy="${y(data[i]).toFixed(1)}" r="4" fill="var(--surface)" stroke="${color}" stroke-width="2"/>`;
-  const bk=b[i],rows=MN.map(m=>({m,v:c.val(bk.byM[m]||EMPTY)})).filter(r=>r.v>0&&(!CH.focus||r.m===CH.focus)).sort((a,b)=>b.v-a.v);
-  const f=v=>CH.metric==='lat'?Math.round(v)+' ms':fmt(v);
-  setHtml(tip,`<div class="h">${clock(bk.t)}–${clock(bk.t+BW).slice(3)}</div>${rows.map(r=>`<div class="r"><span>${sw(r.m)}${esc(r.m)}</span><span>${f(r.v)}</span></div>`).join('')||'<div class="r"><span>No requests</span><span></span></div>'}<div class="r tot"><span>${CH.focus?esc(CH.focus):'All models'}</span><span>${f(data[i])}</span></div>`);
+  const bk=b[i],rows=S.mn.map(m=>({m,v:c.val(bk.byM[m]||EMPTY)})).filter(r=>r.v>0&&(!CH.focus||r.m===CH.focus)).sort((a,b)=>b.v-a.v);
+  const f=v=>CH.metric==='lat'?Math.round(v)+' ms':CH.metric==='cost'?usd(v):fmt(v);
+  setHtml(tip,`<div class="h">${HIST.range==='7d'||HIST.range==='30d'?tickLabel(bk.t):clock(bk.t)+'–'+clock(bk.t+S.bw).slice(3)}</div>${rows.map(r=>`<div class="r"><span>${sw(r.m)}${esc(r.m)}</span><span>${f(r.v)}</span></div>`).join('')||'<div class="r"><span>No requests</span><span></span></div>'}<div class="r tot"><span>${CH.focus?esc(CH.focus):'All models'}</span><span>${f(data[i])}</span></div>`);
   const rect=svg.getBoundingClientRect(),left=x(i)*rect.width/W;tip.classList.add('on');const tw=tip.offsetWidth;tip.style.left=Math.max(0,left>rect.width/2?left-tw-14:left+14)+'px'}
  else tip.classList.remove('on');
  setHtml(svg,g)}
 function bindChart(){const svg=$('#chart');if(!svg)return;
- svg.onpointermove=e=>{const r=svg.getBoundingClientRect(),W=svg.clientWidth,px=(e.clientX-r.left)*W/r.width;const i=Math.max(0,Math.min(29,Math.round((px-46)/((W-60)/29))));if(i!==CH.hover){CH.hover=i;drawChart()}};
+ svg.onpointermove=e=>{const r=svg.getBoundingClientRect(),W=svg.clientWidth,px=(e.clientX-r.left)*W/r.width;const N=ser().b.length,i=Math.max(0,Math.min(N-1,Math.round((px-46)/((W-60)/(N-1)))));if(i!==CH.hover){CH.hover=i;drawChart()}};
  svg.onpointerleave=()=>{CH.hover=null;drawChart()}}
 function feed(){const ev=[];
  SESS.forEach(s=>{
@@ -703,9 +755,9 @@ function routerMini(){return `<dl class="kv" style="padding:14px 16px">
 const PAGES={};
 const kpiCard=(items,cls)=>`<div class="card kpis${cls?' '+cls:''}">${kpiGrid(items)}</div>`;
 PAGES.overview={title:'Overview',body:()=>
- head('Overview','Everything huddle sees right now, kept in memory. A router restart starts it fresh.',`<span class="note">Last 15 minutes</span>`)+
- reg('kpis',overviewKpis)+
- `<section>${secH('Traffic','<span class="note">30-second buckets</span>',['requests','All requests'])}<div class="card chart">${reg('mtabs',mtabs)}<div class="chart-body"><div class="plot"><svg id="chart" role="img" aria-label="Traffic over the last 15 minutes"></svg><div class="tip" id="tip"></div></div><div class="split">${reg('bars',bars)}</div></div></div></section>`+
+ head('Overview',liveRange()?'Everything huddle sees right now, kept in memory. A router restart starts it fresh.':`Requests, tokens and cost for the last ${rangeLabel()}, from the history database. Sessions, jobs and providers below stay live.`,rangeSeg())+
+ reg('rstat',rangeStatus)+reg('kpis',overviewKpis)+
+ `<section>${secH('Traffic',reg('bw',()=>`<span class="note">${liveRange()?'30-second':dur(ser().bw)} buckets</span>`),['requests','All requests'])}<div class="card chart">${reg('mtabs',mtabs)}<div class="chart-body"><div class="plot"><svg id="chart" role="img" aria-label="Traffic over the selected range"></svg><div class="tip" id="tip"></div></div><div class="split">${reg('bars',bars)}</div></div></div></section>`+
  `<section>${secH('Needs you',reg('attn-n',()=>`<span class="note">${attnItems().length} items</span>`))}<div class="card">${reg('attn',attnList)}</div></section>`+
  `<section>${secH('Live sessions',reg('sess-n',()=>`<span class="note">${SESS.filter(s=>sstate(s)!=='idle').length} live · waiting first</span>`),['sessions','All sessions'])}<div class="card t">${reg('sessmini',()=>table('sessmini',SESS_COLS.filter(c=>c.k!=='req'),SESS,{row:s=>'session:'+s.id,sort:{k:'state',d:1},empty:'No sessions in the last 24 hours'}))}</div></section>`+
  `<div class="g3"><section>${secH('Activity')}<div class="card">${reg('feed',feed)}</div></section><section>${secH('Providers',null,['providers','Details'])}<div class="card list">${reg('lanesmini',lanesMini)}</div></section><div class="stack"><section>${secH('Delegated jobs',null,['jobs','All jobs'])}<div class="card list">${reg('jobsmini',jobsMini)}</div></section><section>${secH('Router',null,['router','Details'])}<div class="card">${reg('routermini',routerMini)}</div></section></div></div>`,
@@ -772,8 +824,8 @@ PAGES.errors={title:'Errors',body:()=>head('Errors','Failed and cancelled reques
  `<section>${secH('Recent')}<div class="card t">${reg('errr',()=>table('errr',REQ_COLS.filter(c=>['time','status','model','who','dur','in'].includes(c.k)),stats().done.filter(r=>r.status!==200).reverse(),{row:r=>'request:'+r.id,limit:40,empty:'No errors in the last 15 minutes'}))}</div></section>`};
 
 function modelRows(){const t=Math.max(1,sum(MODELS.map(m=>m.n)));return MODELS.map(m=>Object.assign({share:m.n/t,hit:m.tin?m.cr/m.tin:0,trend:BK.map(x=>(x.byM[m.id]||EMPTY).n)},m))}
-PAGES.models={title:'Models',body:()=>head('Models','Every model seen in the last 15 minutes, with speed, latency, cache use and errors.')+
- `<div class="card t">${reg('models',()=>table('models',[
+PAGES.models={title:'Models',body:()=>head('Models',`Every model seen in the last ${rangeLabel()}, with latency, cache use, errors and estimated cost.`,rangeSeg())+reg('rstat',rangeStatus)+
+ `<div class="card t">${reg('models',()=>table('models',rangeCols([
   {k:'model',label:'Model',v:x=>x.id,h:x=>modelTag(x.id)},
   {k:'lane',label:'Lane',v:x=>x.lane,h:x=>`<span class="muted">${esc(x.lane)}</span>`,sm:1},
   {k:'n',label:'Requests',num:1,v:x=>x.n,h:x=>`<b>${x.n}</b>`},
@@ -788,7 +840,7 @@ PAGES.models={title:'Models',body:()=>head('Models','Every model seen in the las
   {k:'out',label:'Tokens out',num:1,v:x=>x.out,h:x=>`<span class="mono">${fmt(x.out)}</span>`},
   {k:'sess',label:'Sessions',num:1,v:x=>x.sess||0,h:x=>x.sess==null?'—':x.sess,sm:1},
   {k:'last',label:'Last used',num:1,v:x=>-(x.last||0),h:x=>`<span class="muted">${x.last?ago(x.last):'—'}</span>`,sm:1}
- ],modelRows(),{sort:{k:'n',d:-1},empty:'No requests in the last 15 minutes'}))}</div>`};
+ ]),rangeRows(),{sort:{k:'n',d:-1},empty:rangeEmpty()}))}</div>`};
 
 const laneLast=l=>{if(l.last)return l.last;const rs=stats().byLane[l.id]||[];const r=rs[rs.length-1];return r?{status:r.status,t:r.t}:null};
 PAGES.providers={title:'Providers',body:()=>head('Providers','One lane per provider. A request goes to the lane whose pattern matches its model, and anything no lane claims goes to Anthropic untouched.')+
@@ -805,13 +857,13 @@ PAGES.providers={title:'Providers',body:()=>head('Providers','One lane per provi
  ],LANES,{sort:{k:'state',d:1},empty:'No lanes yet'}))}</div>`+
  `<div class="notebox">${ic('info')}<span>Keys stay in the operating system's key store. This page only learns whether a key exists, never its value.</span></div>`};
 
-PAGES.usage={title:'Usage',body:()=>head('Usage','Where the tokens went in the last 15 minutes'+'.')+
+PAGES.usage={title:'Usage',body:()=>head('Usage',`Where the tokens went in the last ${rangeLabel()}.`,rangeSeg())+reg('rstat',rangeStatus)+
  `<div class="${'g2e'}">${reg('planbox',()=>PLAN?`<section>${secH('Claude plan','<span class="note">from Anthropic\'s usage headers</span>')}<div class="card pad plan">${
   PLAN.h5!=null?`<div class="planrow"><div><div class="k">5-hour window</div><div class="v">${Math.round(PLAN.h5)}<small>%</small></div></div><div class="r">${PLAN.h5r!=null?'resets in '+dur(PLAN.h5r-NOW)+'<br><span class="faint">at '+clock(PLAN.h5r).slice(0,5)+'</span>':'—'}</div>${meter(PLAN.h5,'acc')}</div>`:''}${
   PLAN.wk!=null?`<div class="planrow"><div><div class="k">This week</div><div class="v">${Math.round(PLAN.wk)}<small>%</small></div></div><div class="r">${PLAN.wkr!=null?'resets in '+dur(PLAN.wkr-NOW):'—'}</div>${meter(PLAN.wk,'acc')}</div>`:''}</div></section>`:'')}
- <section>${secH('Cache')}<div class="card kpis" style="grid-template-columns:repeat(2,minmax(0,1fr))">${reg('cachek',()=>{const cr=sum(MODELS.map(m=>m.cr)),cw=sum(MODELS.map(m=>m.cw)),fresh=sum(MODELS.map(m=>m.fresh)),out=sum(MODELS.map(m=>m.out));return kpiGrid([
-  {k:'Read from cache',v:fmt(cr),d:cr+cw+fresh?`${Math.round(cr/(cr+cw+fresh)*100)}% of input tokens`:'—'},{k:'Written to cache',v:fmt(cw),d:'new prefixes cached'},{k:'Fresh input',v:fmt(fresh),d:'not cached'},{k:'Output',v:fmt(out),d:`${fmt(out/15)} per minute`}])})}</div></section></div>`+
- `<section>${secH('Tokens by model')}<div class="card t">${reg('tokm',()=>table('tokm',[
+ <section>${secH('Cache')}<div class="card kpis" style="grid-template-columns:repeat(2,minmax(0,1fr))">${reg('cachek',()=>{const rm=RM(),cr=sum(rm.map(m=>m.cr)),cw=sum(rm.map(m=>m.cw)),fresh=sum(rm.map(m=>m.fresh)),out=sum(rm.map(m=>m.out));return kpiGrid([
+  {k:'Read from cache',v:fmt(cr),d:cr+cw+fresh?`${Math.round(cr/(cr+cw+fresh)*100)}% of input tokens`:'—'},{k:'Written to cache',v:fmt(cw),d:'new prefixes cached'},{k:'Fresh input',v:fmt(fresh),d:'not cached'},{k:'Output',v:fmt(out),d:`${fmt(out/rangeMin())} per minute`}])})}</div></section></div>`+
+ `<section>${secH('Tokens by model')}<div class="card t">${reg('tokm',()=>table('tokm',rangeCols([
   {k:'m',label:'Model',v:x=>x.id,h:x=>modelTag(x.id)},
   {k:'in',label:'Fresh input',num:1,v:x=>x.fresh,h:x=>fmt(x.fresh)},
   {k:'cw',label:'Cache write',num:1,v:x=>x.cw,h:x=>fmt(x.cw),sm:1},
@@ -819,8 +871,8 @@ PAGES.usage={title:'Usage',body:()=>head('Usage','Where the tokens went in the l
   {k:'out',label:'Output',num:1,v:x=>x.out,h:x=>fmt(x.out)},
   {k:'tot',label:'Total',num:1,v:x=>x.tin+x.out,h:x=>`<b>${fmt(x.tin+x.out)}</b>`},
   {k:'hit',label:'Cache hit',num:1,v:x=>x.hit,h:x=>`<div class="sharebar"><span class="mono">${Math.round(x.hit*100)}%</span>${meter(x.hit*100,'acc')}</div>`,sm:1}
- ],modelRows(),{sort:{k:'tot',d:-1},empty:'No requests in the last 15 minutes'}))}</div></section>`+
- `<section>${secH('Projects × models','<span class="note">total tokens, darker is more</span>')}<div class="card t">${reg('matrix',matrix)}</div></section>`};
+ ]),rangeRows(),{sort:{k:'tot',d:-1},empty:rangeEmpty()}))}</div>${reg('prices',priceNote)}</section>`+
+ `<section>${secH('Projects × models','<span class="note">last 15 min, total tokens, darker is more</span>')}<div class="card t">${reg('matrix',matrix)}</div></section>`};
 function matrix(){const ps=projects().filter(p=>p.reqs.length),cells={};let max=1;ps.forEach(p=>{cells[p.name]={};p.reqs.forEach(r=>{cells[p.name][r.m]=(cells[p.name][r.m]||0)+tokIn(r)+n0(r.out)});Object.values(cells[p.name]).forEach(v=>{max=Math.max(max,v)})});
  if(!ps.length)return `<div class="allclear">${ic('info')} No requests matched to a project yet</div>`;
  return `<div class="tbl"><table class="matrix"><thead><tr><th>Project</th>${MN.map(m=>`<th class="num">${sw(m)} <span class="mono">${esc(m)}</span></th>`).join('')}<th class="num">Total</th></tr></thead><tbody>${ps.map(p=>`<tr><td><b style="font-weight:500">${esc(p.name)}</b></td>${MN.map(m=>{const v=cells[p.name][m]||0;return `<td class="cellv" style="background:${v?`color-mix(in srgb,var(--accent) ${Math.round(6+v/max*44)}%,transparent)`:'transparent'}">${v?fmt(v):'<span class="faint">·</span>'}</td>`}).join('')}<td class="cellv"><b>${fmt(sum(Object.values(cells[p.name])))}</b></td></tr>`).join('')}</tbody></table></div>`}
@@ -920,7 +972,7 @@ PAGES.router={title:'Router',body:()=>head('Router','The local proxy every Claud
  `<div class="g2e"><section>${secH('Claude Code wiring')}<div class="card pad">${reg('wiring',wiringCard)}</div></section>
  <section>${secH('Dashboard hosts')}<div class="card t">${reg('hosts',()=>table('hosts',[{k:'h',label:'Host',h:h=>`<span class="mono">${esc(h[0])}</span>`},{k:'r',label:'Reaches',h:h=>h[1]},{k:'x',label:'Remove',h:h=>h[2]?cmd(h[2]):'<span class="faint">always on</span>'}],arr(SNAP.hosts).map(h=>[h,'Dashboard pages only','huddle remove-dashboard-host '+h]).concat([['127.0.0.1','Everything',null],['localhost','Everything',null]])))}<div class="legendrow">Add one with ${cmd('huddle add-dashboard-host <host>')}</div></div></section></div>`+
  `<section>${secH('Files')}<div class="card t">${table('files',[{k:'p',label:'Path',h:f=>cid(f[0])},{k:'w',label:'Holds',h:f=>`<span class="muted">${f[1]}</span>`}],[
-  ['~/.config/huddle/providers.toml','Enabled lanes'],['~/.config/huddle/config.toml','Dashboard hosts'],['~/.agents/huddle-router/events/','Route events, one JSONL file per day'],['~/.agents/huddle-router/router.log','Router log'],['~/.agents/ca/','Local CA that Claude Code trusts'],['~/.agents/huddle/jobs/','Delegated job worktrees and reports']])}</div></section>`};
+  ['~/.config/huddle/config.toml','Dashboard hosts and settings'],['~/.config/huddle/providers.toml','Enabled lanes'],['~/.config/huddle/harnesses.toml','Delegation harnesses'],['~/.local/share/huddle/bin/','The huddle binary'],['~/.local/share/huddle/ca/huddle-ca.pem','Local CA that Claude Code trusts'],['~/.local/state/huddle/huddle.db','Request history'],['~/.local/state/huddle/router.log','Router log'],['~/.local/state/huddle/run/','Router lock, port and handover socket'],['~/.local/state/huddle/settings-ledger.toml','What setup changed in Claude Code settings'],['~/.local/state/huddle/jobs/','Delegated job reports']])}</div></section>`};
 
 /* ---------- drawers ---------- */
 let DR=null;
@@ -1026,7 +1078,7 @@ document.addEventListener('click',e=>{
  const c=e.target.closest('[data-copy]');if(c){e.stopPropagation();copy(c.dataset.copy);return}
  if(e.target.closest('[data-close]')){closeDrawer();return}
  const so=e.target.closest('[data-sort]');if(so){const[id,k]=so.dataset.sort.split(':');const cur=SORT[id];SORT[id]={k,d:cur&&cur.k===k?-cur.d:(so.classList.contains('num')?-1:1)};refresh();if(DR)renderDrawer(true);return}
- const sg=e.target.closest('[data-seg]');if(sg){const[id,k]=sg.dataset.seg.split(':');F[id]=k;$$('[data-seg]').filter(b=>b.dataset.seg.startsWith(id+':')).forEach(b=>b.setAttribute('aria-pressed',String(b===sg)));refresh();return}
+ const sg=e.target.closest('[data-seg]');if(sg){const[id,k]=sg.dataset.seg.split(':');if(id==='range'){setRange(k);return}F[id]=k;$$('[data-seg]').filter(b=>b.dataset.seg.startsWith(id+':')).forEach(b=>b.setAttribute('aria-pressed',String(b===sg)));refresh();return}
  const mt=e.target.closest('[data-metric]');if(mt){CH.metric=mt.dataset.metric;refresh();drawChart();return}
  const fo=e.target.closest('[data-focus]');if(fo){CH.focus=CH.focus===fo.dataset.focus?null:fo.dataset.focus;refresh();drawChart();return}
  const op=e.target.closest('[data-open]');if(op){openDrawer(op.dataset.open);return}
@@ -1085,6 +1137,8 @@ if(typeof EventSource==='function'){
 let saved='system';try{saved=localStorage.getItem('huddle-admin-theme')||'system'}catch(e){}
 setTheme(saved);update({});
 setInterval(()=>update(SNAP),2000);
+setInterval(()=>{if(document.visibilityState==='visible')loadHistory()},60000);
+loadHistory();
 })();
 </script>
 </body>

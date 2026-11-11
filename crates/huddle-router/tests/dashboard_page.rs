@@ -164,3 +164,60 @@ fn stays_under_the_size_limit() {
 fn q4_a_sub_millisecond_router_hop_reads_under_one_ms() {
     assert!(PAGE.contains("r.rt==null?'—':r.rt<1?'&lt;1 ms':r.rt+' ms'"));
 }
+
+#[test]
+fn t8_fetches_history_only_for_a_range_longer_than_the_live_one() {
+    assert!(PAGE.contains("/huddle-router/history?view=buckets&range="));
+    assert!(PAGE.contains("/huddle-router/history?view=totals&by=model&range="));
+    assert!(PAGE.contains("function loadHistory(){if(liveRange())return"));
+    assert!(PAGE.contains(
+        "setInterval(()=>{if(document.visibilityState==='visible')loadHistory()},60000)"
+    ));
+    for label in ["15 min", "24 h", "7 d", "30 d"] {
+        assert!(PAGE.contains(&format!("'{label}'")), "range {label}");
+    }
+    for page in ["overview", "models", "usage"] {
+        let start = PAGE.find(&format!("PAGES.{page}={{")).expect("page");
+        let body = &PAGE[start..start + 700];
+        assert!(body.contains("rangeSeg()"), "{page} lacks the range switch");
+    }
+}
+
+#[test]
+fn t8_labels_claude_cost_as_api_equivalent_and_dates_the_prices() {
+    assert!(PAGE.contains("API-equivalent"));
+    assert!(
+        PAGE.contains(
+            "Claude plan usage is flat-rate; this is what the same tokens cost on the API"
+        )
+    );
+    assert!(PAGE.contains("prices_retrieved"));
+    assert!(PAGE.contains("claude_prices_retrieved"));
+}
+
+#[test]
+fn t8_names_the_real_file_layout_and_no_agents_folder() {
+    assert!(!PAGE.contains("~/.agents"), "~/.agents in the page");
+    assert!(!PAGE.contains("events/"), "events/ in the page");
+    for path in [
+        "~/.config/huddle/providers.toml",
+        "~/.config/huddle/harnesses.toml",
+        "~/.config/huddle/config.toml",
+        "~/.local/share/huddle/bin/",
+        "~/.local/share/huddle/ca/huddle-ca.pem",
+        "~/.local/state/huddle/huddle.db",
+        "~/.local/state/huddle/router.log",
+        "~/.local/state/huddle/run/",
+        "~/.local/state/huddle/settings-ledger.toml",
+        "~/.local/state/huddle/jobs/",
+    ] {
+        assert!(PAGE.contains(path), "missing {path}");
+    }
+}
+
+#[test]
+fn t8_remembers_the_range_and_shows_a_failed_fetch_without_dropping_data() {
+    assert!(PAGE.contains("localStorage.setItem('huddle-range'"));
+    assert!(PAGE.contains("localStorage.getItem('huddle-range')"));
+    assert!(PAGE.contains("Could not load history. Showing the last data."));
+}
