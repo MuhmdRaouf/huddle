@@ -234,6 +234,12 @@ pub async fn run(
         Arc::new(move || hosts.read().unwrap_or_else(|e| e.into_inner()).clone())
     };
     let history_db = paths.state_dir.join(HISTORY_FILE);
+    dashboard.history = {
+        let (db, claude_dir) = (history_db.clone(), paths.claude_dir.clone());
+        Arc::new(move || {
+            history_upkeep::open_filled(&db, &claude_dir, u64::try_from(now_ms()).unwrap_or(0))
+        })
+    };
     // The database is created and migrated once, here, so the writer threads that open it next
     // never race to create it.
     let opened = tokio::task::spawn_blocking({

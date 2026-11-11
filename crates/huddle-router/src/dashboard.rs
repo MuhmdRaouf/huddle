@@ -16,17 +16,20 @@ use tokio::time::{Instant, sleep_until};
 
 use crate::anthropic::StreamingBody;
 use crate::dispatch::now_ms;
+use crate::history_view::{self, Refusal};
 use crate::join;
 use crate::live::{
     JobRow, LaneMeta, LiveState, ProcessUsage, Snapshot, SnapshotInputs, Wiring, WiringState,
 };
 use crate::server::{RespBody, full_body, json_answer};
 use huddle_catalog::providers::providers;
+use huddle_history::History;
 use huddle_sessions::{Session, Worktree};
 
 pub const PAGE_PATH: &str = "/";
 pub const STATE_PATH: &str = "/huddle-router/state";
 pub const LIVE_PATH: &str = "/huddle-router/live";
+pub const HISTORY_PATH: &str = "/huddle-router/history";
 
 const PAGE: &str = include_str!("dashboard.html");
 
@@ -39,6 +42,10 @@ const BUSY_EVERY: Duration = Duration::from_secs(5);
 
 /// Answers whether the keystore holds a key for a provider id; `None` when unknown.
 pub type KeyPresent = Arc<dyn Fn(&str) -> Option<bool> + Send + Sync>;
+
+/// Opens the history database, with its missing usage filled, or answers none when there is no
+/// database. Called on a blocking thread, once per history request.
+pub type HistoryOpen = Arc<dyn Fn() -> Option<History> + Send + Sync>;
 
 /// What the snapshot needs from outside the router. Each closure answers from a cache and
 /// never blocks: a slow read refreshes the cache off the request path.
@@ -66,6 +73,8 @@ pub struct DashboardInputs {
     pub plugins: Arc<dyn Fn() -> serde_json::Value + Send + Sync>,
     /// The harness page: `{state, rows}`. Asked only while a page is open.
     pub harnesses: Arc<dyn Fn() -> serde_json::Value + Send + Sync>,
+    /// The history database for `/huddle-router/history`. Called only when such a request comes.
+    pub history: HistoryOpen,
 }
 
 /// What the session logs and git say about the machine.
@@ -95,6 +104,7 @@ impl Default for DashboardInputs {
             sessions: Arc::new(Machine::default),
             plugins: Arc::new(checking),
             harnesses: Arc::new(checking),
+            history: Arc::new(|| None),
         }
     }
 }
@@ -135,6 +145,30 @@ impl Dashboard {
     /// The snapshot as one JSON answer.
     pub fn state_answer(&self) -> Response<RespBody> {
         let mut response = json_answer(StatusCode::OK, self.snapshot_json());
+        response
+            .headers_mut()
+            .insert(CACHE_CONTROL, HeaderValue::from_static("no-store"));
+        response
+    }
+
+    /// The history answer for a query string. The database work runs on a blocking thread.
+    pub async fn history_answer(&self, query: &str) -> Response<RespBody> {
+        let now = now_ms();
+        let parsed = match history_view::parse(query, now) {
+            Ok(parsed) => parsed,
+            Err(Refusal::Bad(reason)) => return plain(StatusCode::BAD_REQUEST, &reason),
+            Err(Refusal::UnknownView) => return plain(StatusCode::NOT_FOUND, "no such view"),
+        };
+        let open = Arc::clone(&self.inputs.history);
+        let worked = tokio::task::spawn_blocking(move || match open() {
+            None => Ok(history_view::empty_answer(&parsed, now)),
+            Some(history) => history_view::answer(&history, &parsed, now),
+        })
+        .await;
+        let mut response = match worked {
+            Ok(Ok(value)) => json_answer(StatusCode::OK, value.to_string()),
+            Ok(Err(_)) | Err(_) => plain(StatusCode::INTERNAL_SERVER_ERROR, "history unavailable"),
+        };
         response
             .headers_mut()
             .insert(CACHE_CONTROL, HeaderValue::from_static("no-store"));
@@ -255,6 +289,17 @@ impl Dashboard {
         // The snapshot is plain data; an empty body keeps the answer well-formed.
         serde_json::to_string(&self.snapshot()).unwrap_or_default()
     }
+}
+
+/// A one-line plain-text answer.
+fn plain(status: StatusCode, reason: &str) -> Response<RespBody> {
+    let mut response = Response::new(full_body(format!("{reason}\n")));
+    *response.status_mut() = status;
+    response.headers_mut().insert(
+        CONTENT_TYPE,
+        HeaderValue::from_static("text/plain; charset=utf-8"),
+    );
+    response
 }
 
 /// One snapshot as a server-sent event.

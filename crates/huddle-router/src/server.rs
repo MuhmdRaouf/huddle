@@ -17,7 +17,7 @@ use hyper::{Method, Request, Response, StatusCode};
 use tokio::net::TcpListener;
 use tokio::sync::watch;
 
-use crate::dashboard::{Dashboard, LIVE_PATH, PAGE_PATH, STATE_PATH};
+use crate::dashboard::{Dashboard, HISTORY_PATH, LIVE_PATH, PAGE_PATH, STATE_PATH};
 use crate::health::{HEALTH_PATH, health_answer};
 
 pub const ROUTER_NAME: &str = "huddle-router";
@@ -263,7 +263,11 @@ fn wrong_host() -> Response<RespBody> {
 /// True for the only requests a dashboard host may make: a GET of the page, the state or the
 /// live feed.
 fn is_dashboard_read(req: &Request<Incoming>) -> bool {
-    req.method() == Method::GET && matches!(req.uri().path(), PAGE_PATH | STATE_PATH | LIVE_PATH)
+    req.method() == Method::GET
+        && matches!(
+            req.uri().path(),
+            PAGE_PATH | STATE_PATH | LIVE_PATH | HISTORY_PATH
+        )
 }
 
 /// The entry flow: CONNECT first, then the Host guard (a dashboard host stops here unless it
@@ -298,7 +302,7 @@ pub fn entry_handler(ctx: Arc<EntryCtx>) -> Handler {
                 );
             }
             if let Some(dashboard) = &ctx.dashboard
-                && let Some(answer) = dashboard_answer(dashboard, &req)
+                && let Some(answer) = dashboard_answer(dashboard, &req).await
             {
                 return answer;
             }
@@ -309,7 +313,7 @@ pub fn entry_handler(ctx: Arc<EntryCtx>) -> Handler {
 
 /// The dashboard's answer for this request, or none when it is not a dashboard path. A bare
 /// `GET /` is the page; a wrong method on the state and live paths is a 404, as on health.
-fn dashboard_answer(
+async fn dashboard_answer(
     dashboard: &Arc<Dashboard>,
     req: &Request<Incoming>,
 ) -> Option<Response<RespBody>> {
@@ -318,7 +322,12 @@ fn dashboard_answer(
         PAGE_PATH if get => Some(dashboard.page_answer()),
         STATE_PATH if get => Some(dashboard.state_answer()),
         LIVE_PATH if get => Some(dashboard.live_answer()),
-        STATE_PATH | LIVE_PATH => Some(anthropic_error(
+        HISTORY_PATH if get => Some(
+            dashboard
+                .history_answer(req.uri().query().unwrap_or(""))
+                .await,
+        ),
+        STATE_PATH | LIVE_PATH | HISTORY_PATH => Some(anthropic_error(
             StatusCode::NOT_FOUND,
             "not_found_error",
             "huddle-router: no such path",

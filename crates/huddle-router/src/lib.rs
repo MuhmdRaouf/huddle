@@ -8,6 +8,7 @@ pub mod crashlog;
 pub mod dashboard;
 pub mod dispatch;
 pub mod health;
+pub mod history_view;
 pub mod join;
 pub mod keycache;
 pub mod keycheck;

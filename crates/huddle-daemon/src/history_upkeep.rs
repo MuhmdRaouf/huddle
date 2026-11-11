@@ -59,6 +59,18 @@ pub fn fill_missing(
     history.fill(&credits)
 }
 
+/// Opens an existing database for a history request, with its missing usage filled first.
+/// None when there is no database (a read never creates one) or it cannot be opened; a failed
+/// fill leaves the rows as they are.
+pub fn open_filled(db_path: &Path, claude_dir: &Path, now_ms: u64) -> Option<History> {
+    if !db_path.exists() {
+        return None;
+    }
+    let mut history = History::open(db_path).ok()?;
+    let _ = fill_missing(&mut history, claude_dir, now_ms);
+    Some(history)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -171,5 +183,38 @@ mod tests {
             .find(|r| r.upstream_id.as_deref() == Some("req_2"))
             .expect("other row");
         assert_eq!(other.tokens_out, None);
+    }
+
+    #[test]
+    fn t6_open_filled_answers_none_without_a_database_and_fills_an_existing_one() {
+        let home = TempHome::new();
+        let db = home.root().join("huddle.db");
+        assert!(open_filled(&db, home.root(), NOW).is_none());
+        assert!(!db.exists(), "a read never creates the database");
+
+        History::open(&db)
+            .expect("open")
+            .insert(&[row(NOW - DAY, Some("req_9"))])
+            .expect("insert");
+        let log = home.root().join("projects/-w-huddle/s9.jsonl");
+        std::fs::create_dir_all(log.parent().expect("parent")).expect("mkdir");
+        std::fs::write(
+            &log,
+            "{\"type\":\"assistant\",\"requestId\":\"req_9\",\"cwd\":\"/w/huddle\",\"message\":{\"model\":\"m\",\"usage\":{\"input_tokens\":1,\"output_tokens\":2}}}\n",
+        )
+        .expect("write log");
+        std::fs::File::options()
+            .write(true)
+            .open(&log)
+            .and_then(|file| {
+                file.set_modified(
+                    std::time::UNIX_EPOCH + std::time::Duration::from_millis(NOW - 3_600_000),
+                )
+            })
+            .expect("set mtime");
+
+        let history = open_filled(&db, home.root(), NOW).expect("open");
+
+        assert_eq!(rows_of(&history)[0].tokens_out, Some(2));
     }
 }
