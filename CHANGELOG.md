@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.0.4
+
+The dashboard reads sessions, agents and tokens the way Claude Code really writes them.
+
+### Dashboard
+
+- A session is working while a request is in flight or a tool runs, for up to 10 minutes; a turn the user interrupts is waiting. Subagents follow the same rule, so running agents show as running.
+- A session lists only the subagents active in the last 2 hours, at most 50, which keeps each snapshot near 45 KB instead of 340 KB.
+- A context past 200k tokens has the 1M limit, so the fill never reads over 100%.
+- Claude's tokens, cache tokens and stop reason come from the session logs by `request-id` and count in the request rows, the charts, the model table, output speed and the lane totals.
+- A plugin installed from the marketplace's git checkout shows the release its `dist/run` carries, so the binary check no longer asks for `/huddle:update` by mistake.
+- A router hop under a millisecond reads `<1 ms`.
+
 ## 0.0.3
 
 An admin panel for the router, a dashboard at your own domain, and one command to update.
