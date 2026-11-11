@@ -47,13 +47,16 @@ jobs:
       - uses: dtolnay/rust-toolchain@ff7f6a3374ce205788da40198ec918bd5d67aea7 # 1.99.0
         with:
           targets: ${{ matrix.target }}
-      - name: The musl C compiler ring builds with
+      - name: zig and cargo-zigbuild for the static Linux binaries
         if: runner.os == 'Linux'
+        run: .github/install-zigbuild.sh
+      - name: Build
         run: |
-          sudo apt-get update
-          sudo apt-get install -y musl-tools
-          echo "CC_$(echo "$TARGET" | tr - _)=musl-gcc" >> "$GITHUB_ENV"
-      - run: cargo build --release --locked -p huddle --bin huddle --target "$TARGET"
+          if [ "$RUNNER_OS" = Linux ]; then
+            cargo zigbuild --release --locked -p huddle --bin huddle --target "$TARGET"
+          else
+            cargo build --release --locked -p huddle --bin huddle --target "$TARGET"
+          fi
       - run: |
           mkdir -p dist
           cp "target/$TARGET/release/huddle" "dist/$ASSET"

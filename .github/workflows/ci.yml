@@ -53,6 +53,7 @@ jobs:
               - 'crates/**'
               - 'crates/huddle-release/**'
               - 'release/size-limit'
+              - .github/install-zigbuild.sh
               - .github/workflows/ci.yml
       - id: pick
         env:
@@ -254,13 +255,16 @@ jobs:
             target
           key: rust-${{ runner.os }}-cross-${{ matrix.target }}-${{ hashFiles('Cargo.lock', 'crates/**/*.rs') }}
           restore-keys: rust-${{ runner.os }}-cross-${{ matrix.target }}-
-      - name: The musl C compiler ring builds with
+      - name: zig and cargo-zigbuild for the static Linux binaries
         if: runner.os == 'Linux'
+        run: .github/install-zigbuild.sh
+      - name: Build
         run: |
-          sudo apt-get update
-          sudo apt-get install -y musl-tools
-          echo "CC_$(echo "$TARGET" | tr - _)=musl-gcc" >> "$GITHUB_ENV"
-      - run: cargo build --release --locked -p huddle --bin huddle --target "$TARGET"
+          if [ "$RUNNER_OS" = Linux ]; then
+            cargo zigbuild --release --locked -p huddle --bin huddle --target "$TARGET"
+          else
+            cargo build --release --locked -p huddle --bin huddle --target "$TARGET"
+          fi
       - name: Name the asset
         run: |
           mkdir -p dist
