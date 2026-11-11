@@ -1,0 +1,3 @@
+{"type":"user","timestamp":"2026-11-11T11:56:00.000Z","cwd":"/Users/x/huddle","sessionId":"s-tool","message":{"content":"PROMPT TEXT"}}
+{"type":"api-request","timestamp":"2026-11-11T11:56:00.100Z","sessionId":"s-tool"}
+{"type":"assistant","timestamp":"2026-11-11T11:57:00.000Z","sessionId":"s-tool","requestId":"req_t1","message":{"model":"claude-opus-5-5","stop_reason":"tool_use","usage":{"input_tokens":1,"cache_creation_input_tokens":40000,"cache_read_input_tokens":600000,"output_tokens":5},"content":[]}}

@@ -1,0 +1,2 @@
+{"type":"api-request","timestamp":"2026-11-11T11:58:00.000Z","sessionId":"s-tool"}
+{"type":"assistant","timestamp":"2026-11-11T11:58:30.000Z","sessionId":"s-tool","requestId":"req_r1","message":{"model":"claude-sonnet-5-5","stop_reason":"tool_use","usage":{"input_tokens":1,"cache_creation_input_tokens":0,"cache_read_input_tokens":10,"output_tokens":1},"content":[]}}

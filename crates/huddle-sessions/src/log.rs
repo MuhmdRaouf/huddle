@@ -23,6 +23,8 @@ struct Line {
     custom_title: Option<String>,
     #[serde(rename = "aiTitle")]
     ai_title: Option<String>,
+    #[serde(rename = "interruptedMessageId")]
+    interrupted_message_id: Option<String>,
     message: Option<Message>,
 }
 
@@ -47,11 +49,22 @@ struct CacheCreation {
     ephemeral_1h_input_tokens: Option<u64>,
 }
 
-/// The last assistant line: when it was written and whether the turn ended.
+/// Where a turn stands after its last event.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct AssistantEnd {
+pub(crate) enum Phase {
+    /// A request was sent and no answer has been written yet.
+    Asked,
+    /// The model stopped to run a tool, or is still streaming.
+    Tool,
+    /// The model ended the turn, or the user interrupted it.
+    Ended,
+}
+
+/// The last turn event of a log and when it was written.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct Turn {
     pub at_ms: Option<u64>,
-    pub end_turn: bool,
+    pub phase: Phase,
 }
 
 #[derive(Debug, Default)]
@@ -64,7 +77,8 @@ pub(crate) struct Summary {
     pub ai_title: Option<String>,
     pub model: Option<String>,
     pub requested_model: Option<String>,
-    pub last_assistant: Option<AssistantEnd>,
+    pub last_turn: Option<Turn>,
+    pub last_assistant_ms: Option<u64>,
     pub last_usage: Option<Usage>,
     pub one_hour_cache: bool,
     /// One entry per request id, holding the last usage seen for it, in order of first sight.
@@ -93,8 +107,13 @@ impl Summary {
         replace_some(&mut self.branch, line.git_branch);
         replace_some(&mut self.custom_title, line.custom_title);
         replace_some(&mut self.ai_title, line.ai_title);
-        if line.kind.as_deref() == Some("assistant") {
-            self.add_assistant(at_ms, line.request_id, line.requested_model, line.message);
+        match line.kind.as_deref() {
+            Some("assistant") => {
+                self.add_assistant(at_ms, line.request_id, line.requested_model, line.message)
+            }
+            Some("api-request") => self.turn(at_ms, Phase::Asked),
+            Some("user") if line.interrupted_message_id.is_some() => self.turn(at_ms, Phase::Ended),
+            _ => {}
         }
     }
 
@@ -111,10 +130,12 @@ impl Summary {
         }
         replace_some(&mut self.model, message.model);
         replace_some(&mut self.requested_model, requested_model);
-        self.last_assistant = Some(AssistantEnd {
-            at_ms,
-            end_turn: message.stop_reason.as_deref() == Some("end_turn"),
-        });
+        self.last_assistant_ms = at_ms;
+        let phase = match message.stop_reason.as_deref() {
+            Some("end_turn" | "stop_sequence" | "max_tokens" | "refusal") => Phase::Ended,
+            _ => Phase::Tool,
+        };
+        self.turn(at_ms, phase);
         let Some(raw) = message.usage else { return };
         let usage = Usage {
             input: raw.input_tokens.unwrap_or(0),
@@ -133,6 +154,10 @@ impl Summary {
                 None => self.requests.push((id, usage)),
             }
         }
+    }
+
+    fn turn(&mut self, at_ms: Option<u64>, phase: Phase) {
+        self.last_turn = Some(Turn { at_ms, phase });
     }
 
     pub(crate) fn tags(&self, agent_id: &str) -> Vec<RequestTag> {

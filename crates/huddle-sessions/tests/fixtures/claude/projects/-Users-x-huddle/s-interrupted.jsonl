@@ -1,0 +1,2 @@
+{"type":"assistant","timestamp":"2026-11-11T11:40:00.000Z","cwd":"/Users/x/huddle","sessionId":"s-interrupted","requestId":"req_x1","message":{"model":"claude-opus-5-5","stop_reason":"tool_use","usage":{"input_tokens":1,"cache_creation_input_tokens":0,"cache_read_input_tokens":10,"output_tokens":1},"content":[]}}
+{"type":"user","timestamp":"2026-11-11T11:41:00.000Z","sessionId":"s-interrupted","interruptedMessageId":"msg_1","message":{"content":[{"type":"text","text":"[Request interrupted by user]"}]}}

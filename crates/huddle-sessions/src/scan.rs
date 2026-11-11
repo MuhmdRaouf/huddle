@@ -13,6 +13,9 @@ use crate::tail::{read_head, read_tail};
 
 const ONE_HOUR_MS: u64 = 3_600_000;
 const FIVE_MINUTES_MS: u64 = 300_000;
+/// Subagents whose log has not changed for this long are left out.
+const AGENT_MAX_AGE_MS: u64 = 2 * ONE_HOUR_MS;
+const MAX_AGENTS: usize = 50;
 
 /// The newest `limits.max_sessions` logs modified within `limits.max_age_ms` of `now_ms`,
 /// newest first. Each log is read from its last `limits.tail_bytes` bytes.
@@ -77,13 +80,17 @@ fn modified_ms(path: &Path) -> Option<u64> {
 fn session(log: &Log, now_ms: u64, tail_bytes: u64) -> Option<Session> {
     let main = Summary::parse(&read_tail(&log.path, tail_bytes)?);
     let started_ms = read_head(&log.path).and_then(|head| Summary::parse(&head).first_ms);
-    let (state, waiting_since_ms) = session_state(main.last_assistant, now_ms);
+    let (state, waiting_since_ms) = session_state(main.last_turn, now_ms);
     let model = main.model.clone();
-    let context_limit = if [&main.model, &main.requested_model]
+    let context_tokens = main
+        .last_usage
+        .map(|u| u.input + u.cache_read + u.cache_write);
+    let one_million = [&main.model, &main.requested_model]
         .into_iter()
         .flatten()
-        .any(|m| m.ends_with("[1m]"))
-    {
+        .any(|m| m.ends_with("[1m]"));
+    // The 1M window is not always named in the model id; a context past 200k proves it.
+    let context_limit = if one_million || context_tokens.is_some_and(|t| t > 200_000) {
         1_000_000
     } else {
         200_000
@@ -119,16 +126,14 @@ fn session(log: &Log, now_ms: u64, tail_bytes: u64) -> Option<Session> {
         started_ms,
         last_ms: main.last_ms.or(Some(log.modified_ms)),
         waiting_since_ms,
-        context_tokens: main
-            .last_usage
-            .map(|u| u.input + u.cache_read + u.cache_write),
+        context_tokens,
         context_limit,
         cache_ttl_ms: if main.one_hour_cache {
             ONE_HOUR_MS
         } else {
             FIVE_MINUTES_MS
         },
-        last_request_ms: main.last_assistant.and_then(|end| end.at_ms),
+        last_request_ms: main.last_assistant_ms,
         agents,
         request_ids,
     })
@@ -150,16 +155,22 @@ struct Meta {
     finished: bool,
 }
 
-/// Subagents of one session, ordered by file name, each with its request tags.
+/// The newest `MAX_AGENTS` subagents of one session changed within `AGENT_MAX_AGE_MS`,
+/// ordered by file name, each with its request tags.
 fn subagents(dir: &Path, now_ms: u64, tail_bytes: u64) -> Vec<(Agent, Vec<RequestTag>)> {
     let Ok(entries) = fs::read_dir(dir) else {
         return Vec::new();
     };
-    let mut logs: Vec<PathBuf> = entries
+    let mut logs: Vec<(u64, PathBuf)> = entries
         .flatten()
         .map(|e| e.path())
         .filter(|p| p.extension().is_some_and(|x| x == "jsonl"))
+        .filter_map(|p| Some((modified_ms(&p)?, p)))
+        .filter(|(at, _)| now_ms.saturating_sub(*at) <= AGENT_MAX_AGE_MS)
         .collect();
+    logs.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.1.cmp(&b.1)));
+    logs.truncate(MAX_AGENTS);
+    let mut logs: Vec<PathBuf> = logs.into_iter().map(|(_, p)| p).collect();
     logs.sort();
     logs.iter()
         .filter_map(|path| subagent(path, now_ms, tail_bytes))
@@ -174,7 +185,7 @@ fn subagent(path: &Path, now_ms: u64, tail_bytes: u64) -> Option<(Agent, Vec<Req
         .unwrap_or_default();
     let tail = Summary::parse(&read_tail(path, tail_bytes)?);
     let started_ms = read_head(path).and_then(|head| Summary::parse(&head).first_ms);
-    let (state, _) = session_state(tail.last_assistant, now_ms);
+    let (state, _) = session_state(tail.last_turn, now_ms);
     let (state, ended_ms) = if meta.finished {
         (AgentState::Done, tail.last_ms)
     } else {

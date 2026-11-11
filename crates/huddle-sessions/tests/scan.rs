@@ -47,6 +47,14 @@ fn claude_dir(home: &TempHome) -> std::path::PathBuf {
     set_age(&project.join("s-waiting.jsonl"), 10 * 60_000);
     set_age(&project.join("s-idle.jsonl"), 3 * HOUR_MS);
     set_age(&project.join("s-old.jsonl"), 30 * HOUR_MS);
+    set_age(&project.join("s-tool.jsonl"), 3 * 60_000);
+    set_age(&project.join("s-asked.jsonl"), 5 * 60_000);
+    set_age(&project.join("s-interrupted.jsonl"), 19 * 60_000);
+    set_age(&project.join("s-tool/subagents/agent-run.jsonl"), 90_000);
+    set_age(
+        &project.join("s-tool/subagents/agent-stale.jsonl"),
+        3 * HOUR_MS,
+    );
     claude
 }
 
@@ -65,7 +73,17 @@ fn by_id<'a>(sessions: &'a [Session], id: &str) -> &'a Session {
 #[test]
 fn d1_lists_logs_modified_in_the_last_day_newest_first() {
     let ids: Vec<String> = scanned().into_iter().map(|s| s.id).collect();
-    assert_eq!(ids, ["s-working", "s-waiting", "s-idle"]);
+    assert_eq!(
+        ids,
+        [
+            "s-working",
+            "s-tool",
+            "s-asked",
+            "s-waiting",
+            "s-interrupted",
+            "s-idle"
+        ]
+    );
 }
 
 #[test]
@@ -79,7 +97,7 @@ fn d1_keeps_only_the_newest_sessions_up_to_the_limit() {
         .into_iter()
         .map(|s| s.id)
         .collect();
-    assert_eq!(ids, ["s-working", "s-waiting"]);
+    assert_eq!(ids, ["s-working", "s-tool"]);
 }
 
 #[test]
@@ -215,4 +233,73 @@ fn d1_no_message_text_or_tool_input_reaches_the_output() {
         !json.contains("request_ids"),
         "request tags stay inside the daemon"
     );
+}
+
+#[test]
+fn q1_a_request_in_flight_is_working() {
+    let sessions = scanned();
+    assert_eq!(by_id(&sessions, "s-asked").state, SessionState::Working);
+}
+
+#[test]
+fn q1_a_tool_running_for_minutes_is_working() {
+    let sessions = scanned();
+    let s = by_id(&sessions, "s-tool");
+    assert_eq!(s.state, SessionState::Working);
+    assert_eq!(s.agents[0].state, AgentState::Running);
+}
+
+#[test]
+fn q1_an_interrupted_turn_is_waiting_since_the_interrupt() {
+    let sessions = scanned();
+    let s = by_id(&sessions, "s-interrupted");
+    assert_eq!(s.state, SessionState::Waiting);
+    assert_eq!(s.waiting_since_ms, parse_iso_ms("2026-11-11T11:41:00.000Z"));
+}
+
+#[test]
+fn q1_a_context_past_200k_has_the_1m_limit() {
+    let sessions = scanned();
+    let s = by_id(&sessions, "s-tool");
+    assert_eq!(s.context_tokens, Some(640_001));
+    assert_eq!(s.context_limit, 1_000_000);
+}
+
+#[test]
+fn q1_a_subagent_running_a_tool_is_running() {
+    let sessions = scanned();
+    let s = by_id(&sessions, "s-tool");
+    let run = s
+        .agents
+        .iter()
+        .find(|a| a.id == "agent-run")
+        .expect("agent listed");
+    assert_eq!(run.state, AgentState::Running);
+}
+
+#[test]
+fn q1_subagents_idle_for_two_hours_are_left_out() {
+    let sessions = scanned();
+    let s = by_id(&sessions, "s-tool");
+    let ids: Vec<&str> = s.agents.iter().map(|a| a.id.as_str()).collect();
+    assert_eq!(ids, ["main", "agent-run"]);
+}
+
+#[test]
+fn q1_a_session_lists_its_fifty_newest_subagents() {
+    let home = TempHome::new();
+    let claude = claude_dir(&home);
+    let dir = claude.join("projects/-Users-x-huddle/s-tool/subagents");
+    let line = fs::read_to_string(dir.join("agent-run.jsonl")).expect("read");
+    for n in 0..60u64 {
+        let path = dir.join(format!("agent-n{n:02}.jsonl"));
+        fs::write(&path, &line).expect("write");
+        set_age(&path, 100_000 + n * 1_000);
+    }
+    let sessions = scan(&claude, now_ms(), Limits::default());
+    let agents = &by_id(&sessions, "s-tool").agents;
+    assert_eq!(agents.len(), 1 + 50);
+    assert!(agents.iter().any(|a| a.id == "agent-run"));
+    assert!(agents.iter().any(|a| a.id == "agent-n48"));
+    assert!(agents.iter().all(|a| a.id != "agent-n49"));
 }
