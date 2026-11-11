@@ -284,3 +284,46 @@ fn t9_shows_loading_and_failed_states_and_reuses_the_cost_label() {
     assert!(PAGE.contains("t.api_equivalent?' '+apiq()"));
     assert_eq!(PAGE.matches("const FLAT=").count(), 1);
 }
+
+#[test]
+fn t10_requests_and_errors_search_the_history_with_every_filter_and_paging() {
+    assert!(PAGE.contains("const HPAGE=100"));
+    assert!(PAGE.contains("HFIL=['model','lane','session','agent','project','status']"));
+    assert!(PAGE.contains("HQ+'search&range='"));
+    assert!(PAGE.contains("'&limit='+HPAGE+'&offset='"));
+    assert!(PAGE.contains("encodeURIComponent("));
+    assert!(PAGE.contains("data-hf="), "filter inputs");
+    for status in ["'any'", "'ok'", "'error'", "'left'"] {
+        assert!(PAGE.contains(status), "status {status}");
+    }
+}
+
+#[test]
+fn t10_errors_default_to_status_error_and_the_hash_holds_the_filters() {
+    assert!(PAGE.contains("status:p==='errors'?'error':'any'"));
+    assert!(PAGE.contains("split('?')[0]"), "route ignores the query");
+    assert!(PAGE.contains("mode=history"));
+    assert!(PAGE.contains("history.replaceState(null,'','#'+page+'?'+"));
+    assert!(PAGE.contains("new URLSearchParams("));
+}
+
+#[test]
+fn t10_fetches_on_filter_change_debounced_and_on_page_change_only() {
+    assert!(PAGE.contains("setTimeout(hsearch,300)"));
+    assert!(PAGE.contains("data-hp=\"prev\"") && PAGE.contains("data-hp=\"next\""));
+    let start = PAGE.find("function hsearch(").expect("hsearch");
+    let body = &PAGE[start..start + 700];
+    assert!(!body.contains("setInterval"), "no polling in history mode");
+    assert_eq!(PAGE.matches("setInterval(").count(), 4, "no new timer");
+}
+
+#[test]
+fn t10_history_rows_carry_cost_and_open_the_request_sheet() {
+    assert!(PAGE.contains("label:'Cost'"));
+    assert!(PAGE.contains("hseg('hmode'") || PAGE.contains("seg('hmode'"));
+    assert!(PAGE.contains("['live','Live'],['history','History']"));
+    assert!(PAGE.contains("HS.rows.find("), "sheet finds search rows");
+    assert!(PAGE.contains("Could not load history. Showing the last data."));
+    assert!(PAGE.contains("No requests match these filters"));
+    assert!(PAGE.contains("${HS.off+1}–${HS.off+n}"), "range text");
+}

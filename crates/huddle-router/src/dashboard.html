@@ -158,6 +158,7 @@ kbd{font-family:var(--mono);font-size:10.5px;padding:0 5px;border:1px solid var(
 .seg button:hover{color:var(--text)}
 .seg button[aria-pressed="true"]{background:var(--subtle);color:var(--text);font-weight:500}
 .seg button .n{color:var(--faint);margin-left:5px;font-family:var(--mono);font-size:11.5px}
+.hbar{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 14px}.hbar select,.hbar .hin{border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--text);padding:5px 10px;font:13px var(--sans);height:30px;min-width:0;width:140px}.hpager{display:flex;align-items:center;gap:10px;padding:10px 16px;border-top:1px solid var(--line-soft);font-size:12.5px;color:var(--muted)}.hpager button{border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--text);padding:4px 12px;font:13px var(--sans);cursor:pointer}.hpager button:disabled{opacity:.4;cursor:default}
 .search{min-width:200px;width:260px;max-width:100%;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--text);padding:5px 10px 5px 30px;font:13px var(--sans);background-image:none;height:30px}
 .search::placeholder{color:var(--faint)}
 .sbox{position:relative;display:inline-flex}
@@ -834,15 +835,45 @@ const REQ_COLS=[
 ];
 function reqFilter(r){const f=F.req;const okS=f==='all'||(f==='ok'&&r.status===200)||(f==='err'&&isErr(r))||(f==='cancel'&&r.status===499)||(f==='flight'&&r.status==null);
  return okS&&(F.lane==='all'||r.lane===F.lane)&&qmatch('req',r.m+' '+(r.s?r.s.project+' '+r.s.id:'')+' '+(r.a?r.a.desc+' '+r.a.type:'')+' '+r.id+' '+(r.up||''))}
-PAGES.requests={title:'Requests',body:()=>head('Requests','The last 200 model requests through the router, newest first. Prompt text, tool output and header values never reach this page.',
- seg('req',[['all','All'],['ok','200'],['err','Errors'],['cancel','Cancelled'],['flight','In flight']],F.req)+reg('lanesel',()=>seg('lane',[['all','All lanes']].concat(LANES.map(l=>[l.id,l.id])),F.lane))+search('req','Filter by model, project or agent'))+
+/* ---------- search over the kept history (Requests and Errors) ---------- */
+const HPAGE=100,HFIL=['model','lane','session','agent','project','status'],HRANGES=RANGES.filter(r=>r[0]!=='15m'),HSTAT=[['any','Any status'],['ok','OK'],['error','Error'],['left','Client left']];
+const HS={mode:'live',range:'24h',f:{},off:0,data:null,rows:[],err:false,seq:0,t:0};
+const hdef=p=>({range:'24h',status:p==='errors'?'error':'any'});
+const hrow=(x,i)=>{const cr=n0(x.cache_read),cw=n0(x.cache_write),ti=num(x.tokens_in);
+ return {h:1,id:'h'+(x.upstream_id||x.at_ms+'-'+i),t:num(x.at_ms),status:num(x.status),reason:x.reason||null,m:x.model||'',lane:x.lane||'',ttft:num(x.ttft_ms),dur:num(x.dur_ms),rt:null,
+  in:ti==null?null:Math.max(0,ti-cr-cw),cr,cw,out:num(x.tokens_out),stop:x.stop||null,up:x.upstream_id||null,cost:num(x.cost_usd),
+  s:x.session?{id:x.session,sid:x.session,name:x.session,project:x.project||''}:null,a:x.agent?{type:x.agent,desc:''}:null}};
+const HCOLS=REQ_COLS.concat([{k:'cost',label:'Cost',num:1,v:r=>n0(r.cost),h:r=>r.cost==null?NA:costCell({cost_usd:r.cost,api_equivalent:r.lane==='anthropic'})}]);
+/* the filters and the page live in the hash: #requests?mode=history&range=7d&model=glm-5.3&offset=100 */
+function hload(p){const q=new URLSearchParams((location.hash.split('?')[1])||'');HS.mode=q.get('mode')==='history'?'history':'live';
+ if(HS.mode!=='history')return;
+ const d=hdef(p);HS.range=HRANGES.some(r=>r[0]===q.get('range'))?q.get('range'):d.range;
+ HS.f={};HFIL.forEach(k=>{HS.f[k]=q.has(k)?q.get(k):d[k]||''});
+ HS.off=Math.max(0,parseInt(q.get('offset'),10)||0);HS.data=null;HS.rows=[];HS.err=false;hsearch()}
+function hhash(){const q=new URLSearchParams({mode:'history',range:HS.range}),d=hdef(page);
+ HFIL.forEach(k=>{if(HS.f[k]&&HS.f[k]!==d[k])q.set(k,HS.f[k])});if(HS.off)q.set('offset',HS.off);
+ history.replaceState(null,'','#'+page+'?'+q)}
+function hsearch(){clearTimeout(HS.t);hhash();const n=++HS.seq;
+ hget(HQ+'search&range='+HS.range+HFIL.filter(k=>HS.f[k]&&HS.f[k]!=='any').map(k=>'&'+k+'='+encodeURIComponent(HS.f[k])).join('')+'&limit='+HPAGE+'&offset='+HS.off).then(d=>{if(n!==HS.seq)return;
+  HS.data=d;HS.rows=arr(d.rows).map(hrow);HS.err=false;paint()},()=>{if(n!==HS.seq)return;HS.err=true;paint()})}
+const hmodes=()=>seg('hmode',[['live','Live'],['history','History']],HS.mode);
+function hbar(){const o=(l,c)=>l.map(([k,t])=>`<option value="${esc(k)}"${k===c?' selected':''}>${esc(t)}</option>`).join('');
+ return `<div class="hbar"><select data-hf="range" aria-label="Range">${o(HRANGES,HS.range)}</select><select data-hf="status" aria-label="Status">${o(HSTAT,HS.f.status)}</select>`+
+  HFIL.filter(k=>k!=='status').map(k=>`<input class="hin" data-hf="${k}" placeholder="${k[0].toUpperCase()+k.slice(1)}" value="${esc(HS.f[k]||'')}" aria-label="Filter by ${k}">`).join('')+`</div>`}
+function hresults(){const d=HS.data,n=HS.rows.length,tot=d?n0(d.total):0;
+ const note=HS.err?`<div class="legendrow badc">Could not load history. Showing the last data.</div>`:d?'':`<div class="legendrow">${checking()}</div>`;
+ return table('hreq',HCOLS,HS.rows,{row:r=>'request:'+r.id,empty:d?'No requests match these filters':HS.err?'No data':'Loading…'})+note+
+  `<div class="hpager"><button data-hp="prev"${HS.off>0?'':' disabled'}>Prev</button><span class="mono">${n?`${HS.off+1}–${HS.off+n}`:'0'} of ${tot}</span><button data-hp="next"${d&&HS.off+n<tot?'':' disabled'}>Next</button></div>`+pricesLine(d)}
+const hview=(t,desc)=>head(t,desc,hmodes())+hbar()+`<div class="card t">${reg('hist',hresults)}</div>`;
+PAGES.requests={title:'Requests',body:()=>HS.mode==='history'?hview('Requests','Every request kept in history, newest first. Prompt text, tool output and header values never reach this page.'):head('Requests','The last 200 model requests through the router, newest first. Prompt text, tool output and header values never reach this page.',
+ hmodes()+seg('req',[['all','All'],['ok','200'],['err','Errors'],['cancel','Cancelled'],['flight','In flight']],F.req)+reg('lanesel',()=>seg('lane',[['all','All lanes']].concat(LANES.map(l=>[l.id,l.id])),F.lane))+search('req','Filter by model, project or agent'))+
  `<div class="card t">${reg('req',()=>table('req',REQ_COLS,REQS.slice().reverse().slice(0,200).filter(reqFilter),{row:r=>'request:'+r.id,sort:{k:'time',d:-1},empty:'No requests match'}))}</div>`};
 
 function errGroups(){const d=stats().done,o={};d.filter(r=>r.status!==200).forEach(r=>{(o[r.status]=o[r.status]||[]).push(r)});const t0=NOW-15*MIN;
  return Object.entries(o).map(([code,rs])=>{const c=+code;const trend=Array(30).fill(0);rs.forEach(r=>{trend[Math.max(0,Math.min(29,Math.floor((r.t-t0)/30e3)))]++});
   const reason=(rs.find(r=>r.reason)||{}).reason;
   return {code:c,def:errDef(c,reason),rs,trend,lanes:[...new Set(rs.map(r=>r.lane))],models:[...new Set(rs.map(r=>r.m))],sessions:new Set(rs.map(r=>r.sess).filter(Boolean)).size,last:rs[rs.length-1].t,share:rs.length/d.length}})}
-PAGES.errors={title:'Errors',body:()=>head('Errors','Failed and cancelled requests in the last 15 minutes, grouped by cause. A 499 means you stopped the stream, so it never counts as an error.')+
+PAGES.errors={title:'Errors',body:()=>HS.mode==='history'?hview('Errors','Failed requests kept in history, newest first. Choose the status to include requests you cancelled.'):head('Errors','Failed and cancelled requests in the last 15 minutes, grouped by cause. A 499 means you stopped the stream, so it never counts as an error.',hmodes())+
  `<section>${secH('By cause')}<div class="card t">${reg('errg',()=>table('errg',[
   {k:'err',label:'Cause',v:g=>g.def[0],h:g=>`<div class="ct">${esc(g.def[0])}</div><div class="cs">${esc(g.def[1])}</div>`},
   {k:'code',label:'Status',v:g=>g.code,h:g=>g.code===499?pill('off','499'):g.code===429?pill('warn','429'):pill('bad',String(g.code))},
@@ -1039,7 +1070,7 @@ const DRAWERS={
    <div><h4>Recent requests</h4><div class="card t">${table('d-req',REQ_COLS.filter(c=>['time','status','model','ttft','in','out'].includes(c.k)),rs.slice().reverse(),{row:r=>'request:'+r.id,limit:12,empty:'No requests kept for this session'})}</div></div>
    <div class="notebox">${ic('info')}<span>Read from Claude Code's session log for ${esc(s.sid)}. Prompt text and tool output are never read into this page.</span></div>
   </div>`},
- request(id){const r=REQS.find(x=>x.id===id);if(!r)return '';
+ request(id){const r=REQS.find(x=>x.id===id)||HS.rows.find(x=>x.id===id);if(!r)return '';
   const total=r.dur!=null?r.dur:r.status==null?NOW-r.t:null,L=LANES.find(l=>l.id===r.lane);
   let wf='';
   if(total>0){const rt=n0(r.rt),tt=r.ttft!=null?r.ttft:r.status==null?Math.min(total,NOW-r.t):0;const s1=Math.min(100,rt/total*100),s2=Math.max(0,Math.min(100-s1,(tt-rt)/total*100)),s3=Math.max(0,100-s1-s2);
@@ -1051,7 +1082,7 @@ const DRAWERS={
     <div class="fact"><div class="k">Fresh input</div><div class="v">${fmt(r.in)}</div></div><div class="fact"><div class="k">Cache write</div><div class="v">${fmt(r.cw)}</div></div>
     <div class="fact"><div class="k">Cache read</div><div class="v">${fmt(r.cr)}</div></div><div class="fact"><div class="k">Output</div><div class="v">${r.status==null?'streaming…':fmt(r.out)}</div></div>
     <div class="fact"><div class="k">Output speed</div><div class="v">${speed(r)?Math.round(speed(r))+' tok/s':'—'}</div></div><div class="fact"><div class="k">Stop reason</div><div class="v mono">${esc(r.stop||'—')}</div></div></div></div>
-   <div><h4>Route</h4><dl class="kv"><dt>Session</dt><dd>${r.s?`<button class="cid" data-open="session:${esc(r.s.id)}">${esc(r.s.name)}</button> <span class="mono faint">${esc(r.s.sid)}</span>`:'—'}</dd><dt>Agent</dt><dd>${r.a?(r.a.type==='main'?'main':`<span class="mono">${esc(r.a.type)}</span> · ${esc(r.a.desc)}`):'—'}</dd>
+   <div><h4>Route</h4><dl class="kv"><dt>Session</dt><dd>${r.s?r.h?`<span class="mono">${esc(r.s.sid)}</span>`:`<button class="cid" data-open="session:${esc(r.s.id)}">${esc(r.s.name)}</button> <span class="mono faint">${esc(r.s.sid)}</span>`:'—'}</dd><dt>Agent</dt><dd>${r.a?(r.a.type==='main'?'main':`<span class="mono">${esc(r.a.type)}</span> · ${esc(r.a.desc)}`):'—'}</dd>
     <dt>Lane</dt><dd>${L?`${esc(L.name)} <span class="mono faint">${esc(L.match)} → ${esc(L.id)}</span>`:esc(r.lane||'—')}</dd><dt>Upstream id</dt><dd>${cid(r.up)}</dd>
     ${r.status&&r.status!==200?`<dt>Cause</dt><dd>${esc(errDef(r.status,r.reason)[2])}</dd>`:''}</dl></div>
    <div class="notebox">${ic('info')}<span>The router keeps the model, timings, token counts and status. It never keeps the prompt, the answer or header values.</span></div>
@@ -1102,7 +1133,8 @@ function shell(){setHtml($('#nav'),navHtml());setHtml($('#rcard'),rcard());$('#c
 
 /* ---------- routing ---------- */
 let page='overview';
-function render(){REG={};const h=(location.hash||'#overview').slice(1);page=PAGES[h]?h:'overview';const p=PAGES[page];
+function render(){REG={};const h=(location.hash||'#overview').slice(1).split('?')[0];page=PAGES[h]?h:'overview';const p=PAGES[page];
+ if(page==='requests'||page==='errors')hload(page);else HS.mode='live';
  const grp=NAV.find(([,its])=>its.some(([k])=>k===page))[0];
  setHtml($('#crumbs'),`<span class="c0">Huddle</span>${ic('chev')}<span>${grp}</span>${ic('chev')}<b>${p.title}</b>`);
  setHtml($('#content'),p.body()+`<div class="foot">${dot('ok',true)} Memory only. Restarting the router clears this page.</div>`);
@@ -1116,13 +1148,15 @@ document.addEventListener('click',e=>{
  const c=e.target.closest('[data-copy]');if(c){e.stopPropagation();copy(c.dataset.copy);return}
  if(e.target.closest('[data-close]')){closeDrawer();return}
  const so=e.target.closest('[data-sort]');if(so){const[id,k]=so.dataset.sort.split(':');const cur=SORT[id];SORT[id]={k,d:cur&&cur.k===k?-cur.d:(so.classList.contains('num')?-1:1)};refresh();if(DR)renderDrawer(true);return}
- const sg=e.target.closest('[data-seg]');if(sg){const[id,k]=sg.dataset.seg.split(':');if(id==='range'){setRange(k);return}F[id]=k;$$('[data-seg]').filter(b=>b.dataset.seg.startsWith(id+':')).forEach(b=>b.setAttribute('aria-pressed',String(b===sg)));refresh();return}
+ const sg=e.target.closest('[data-seg]');if(sg){const[id,k]=sg.dataset.seg.split(':');if(id==='range'){setRange(k);return}if(id==='hmode'){location.hash='#'+page+(k==='history'?'?mode=history':'');return}F[id]=k;$$('[data-seg]').filter(b=>b.dataset.seg.startsWith(id+':')).forEach(b=>b.setAttribute('aria-pressed',String(b===sg)));refresh();return}
+ const hp=e.target.closest('[data-hp]');if(hp){HS.off=Math.max(0,HS.off+(hp.dataset.hp==='next'?HPAGE:-HPAGE));hsearch();return}
  const mt=e.target.closest('[data-metric]');if(mt){CH.metric=mt.dataset.metric;refresh();drawChart();return}
  const fo=e.target.closest('[data-focus]');if(fo){CH.focus=CH.focus===fo.dataset.focus?null:fo.dataset.focus;refresh();drawChart();return}
  const op=e.target.closest('[data-open]');if(op){openDrawer(op.dataset.open);return}
  const th=e.target.closest('[data-theme-set]');if(th){setTheme(th.dataset.themeSet);return}
 });
-document.addEventListener('input',e=>{const q=e.target.closest('[data-q]');if(q){F.q[q.dataset.q]=q.value;refresh()}});
+document.addEventListener('input',e=>{const q=e.target.closest('[data-q]');if(q){F.q[q.dataset.q]=q.value;refresh()}
+ const hf=e.target.closest('[data-hf]');if(hf){const k=hf.dataset.hf;if(k==='range')HS.range=hf.value;else HS.f[k]=hf.value;HS.off=0;clearTimeout(HS.t);HS.t=setTimeout(hsearch,300)}});
 $('#scrim').onclick=()=>{closeDrawer();closeSidebar()};
 $('#menu').onclick=()=>{$('#sb').classList.add('on');$('#scrim').classList.add('on')};
 function closeSidebar(){$('#sb').classList.remove('on');if(!DR)$('#scrim').classList.remove('on')}
