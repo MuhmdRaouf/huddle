@@ -2,10 +2,12 @@
   <img src="assets/banner.svg" alt="huddle — one local router and delegation for Claude Code" width="100%"/>
 </p>
 
-[![License: GPL-3.0-or-later](https://img.shields.io/badge/License-GPL--3.0--or--later-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
-[![Rust Version](https://img.shields.io/badge/Rust-1.99.0-B7410E?logo=rust)](https://www.rust-lang.org/)
-[![Claude Code plugin](https://img.shields.io/badge/Claude_Code-plugin-cba6f7)](https://code.claude.com/docs/en/plugins)
-[![CI](https://github.com/MuhmdRaouf/huddle/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/MuhmdRaouf/huddle/actions/workflows/ci.yml)
+<p align="center">
+  <a href="https://www.gnu.org/licenses/gpl-3.0"><img src="https://img.shields.io/badge/License-GPL--3.0--or--later-blue.svg" alt="License: GPL-3.0-or-later"></a>
+  <a href="https://www.rust-lang.org/"><img src="https://img.shields.io/badge/Rust-1.99.0-B7410E?logo=rust" alt="Rust Version"></a>
+  <a href="https://code.claude.com/docs/en/plugins"><img src="https://img.shields.io/badge/Claude_Code-plugin-cba6f7" alt="Claude Code plugin"></a>
+  <a href="https://github.com/MuhmdRaouf/huddle/actions/workflows/ci.yml"><img src="https://github.com/MuhmdRaouf/huddle/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI"></a>
+</p>
 
 <p align="center">Built with ❤️ for the Claude Code community.</p>
 
