@@ -250,8 +250,8 @@ pub const LOG_FIELD_LIMIT: usize = 64 * 1024;
 /// How many bytes of the head and of the tail a cut field keeps.
 pub const LOG_KEEP: usize = 16 * 1024;
 
-/// Stands in for a prompt's text in the outbound log; the text itself lives in job.json.
-pub const PROMPT_REF: &str = "job.json#prompt";
+/// Stands in for a prompt's text in the outbound log; the text itself lives in job.toml.
+pub const PROMPT_REF: &str = "job.toml#prompt";
 
 /// The log line for an inbound frame: `frame.text`, unless a tool result field is too big, when
 /// that field is cut to its byte count plus its first and last `LOG_KEEP` bytes. Inbound frames
@@ -266,7 +266,7 @@ pub fn log_text(frame: &Frame) -> String {
 }
 
 /// The log line for an outbound command, as sent, except a prompt's `message` becomes
-/// `{"$ref":"job.json#prompt"}`: the prompt text is not for the log.
+/// `{"$ref":"job.toml#prompt"}`: the prompt text is not for the log.
 pub fn outbound_log_text(command: &str) -> String {
     let Ok(value) = serde_json::from_str::<Value>(command) else {
         return command.to_string();

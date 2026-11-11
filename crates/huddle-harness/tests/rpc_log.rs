@@ -62,7 +62,7 @@ fn a_prompt_is_logged_as_a_reference_and_other_commands_as_sent() {
     let value: serde_json::Value = serde_json::from_str(&out).expect("json");
     assert_eq!(
         value["message"],
-        serde_json::json!({"$ref": "job.json#prompt"})
+        serde_json::json!({"$ref": "job.toml#prompt"})
     );
     assert_eq!(value["id"], serde_json::json!("c4"));
     assert_eq!(
