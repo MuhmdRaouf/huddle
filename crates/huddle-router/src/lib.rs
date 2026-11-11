@@ -9,6 +9,7 @@ pub mod health;
 pub mod keycache;
 pub mod keycheck;
 pub mod lane;
+pub mod live;
 pub mod refusal;
 pub mod reload;
 pub mod server;
