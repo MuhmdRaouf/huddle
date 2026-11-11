@@ -76,6 +76,11 @@ impl JobStore {
         }
     }
 
+    /// The store at an existing repo jobs directory.
+    pub fn at_root(root: PathBuf) -> JobStore {
+        JobStore { root }
+    }
+
     /// The store a job dir lives in, and that job's id (for the detached driver).
     pub fn for_job_dir(job_dir: &Path) -> Option<(JobStore, String)> {
         let root = job_dir.parent()?.to_path_buf();
