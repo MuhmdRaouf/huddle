@@ -6,9 +6,12 @@ huddle keeps its files in the XDG folders and remembers every request.
 
 ### Layout
 
-- Files move out of `~/.agents`: config in `~/.config/huddle/` (`config.toml`, `providers.toml`, `harnesses.toml`), data in `~/.local/share/huddle/` (`bin/`, `ca/`), state in `~/.local/state/huddle/` (`huddle.db`, `router.log`, `run/`, the ledgers, `jobs/`).
-- `HUDDLE_CONFIG_HOME`, `HUDDLE_DATA_HOME` and `HUDDLE_STATE_HOME` point at huddle's own folder for a kind; `XDG_CONFIG_HOME`, `XDG_DATA_HOME` and `XDG_STATE_HOME` move it when those are unset. `HUDDLE_HOME` and `HUDDLE_ROUTER_HOME` are gone.
+- Files move out of `~/.agents`: config in `~/.config/huddle/` (`config.toml`, `providers.toml`, `harnesses.toml`), data in `~/.local/share/huddle/` (`bin/`, `ca/`), state in `~/.local/state/huddle/` (`huddle.db`, `router.log`, the ledgers, `jobs/`).
+- The router's lock, port and handover socket live in `$XDG_RUNTIME_DIR/huddle/`, or `~/.local/state/huddle/run/` when it is unset (macOS). The release download and the setup build log live in `~/.cache/huddle/`.
+- `HUDDLE_CONFIG_HOME`, `HUDDLE_DATA_HOME`, `HUDDLE_STATE_HOME`, `HUDDLE_CACHE_HOME` and `HUDDLE_RUNTIME_DIR` point at huddle's own folder for a kind; the matching `XDG_*` variable moves it when those are unset. A relative path in any of them is ignored, as the XDG Base Directory spec says. `HUDDLE_HOME` and `HUDDLE_ROUTER_HOME` are gone.
 - Every file huddle owns is TOML, and every folder and file is created on demand. The CA files are `huddle-ca.pem` and `huddle-ca-key.pem`.
+- `setup --install` creates `config.toml`, `providers.toml` and `harnesses.toml` with their defaults when they are missing, and never overwrites one.
+- Folders are created 0755 and files 0644. The CA folder stays 0700; the CA key, the settings ledger and `settings.json.pristine` stay 0600.
 - `add-dashboard-host`, `remove-dashboard-host` and the provider setup and remove words edit `config.toml` and `providers.toml` in place: your comments, blank lines and key order stay.
 - Upgrading from 0.0.4: run `huddle uninstall` first, then `/huddle:setup` with 0.0.5. Nothing is migrated.
 
@@ -22,7 +25,14 @@ huddle keeps its files in the XDG folders and remembers every request.
 ### Delegation
 
 - A job runs in your folder or the one `--dir <path>` names. huddle makes no worktree and no branch; `--diff`, `--accept`, `--return` and `/huddle:cancel` work on that folder. A second write job in the same folder is refused.
+- A readonly job that changes a file fails.
 - A job's record is `job.toml` under the state folder.
+
+### Dashboard
+
+- Overview, Usage and Models switch between 15 min, 24 h, 7 d and 30 d; past 15 min they read `huddle.db`.
+- Sessions and Projects show 30-day totals and trends beside the live view.
+- Requests and Errors search the whole history over 24 h to 90 d, filtered by model, lane, session, agent, project and status, 100 rows a page, each with its estimated cost.
 
 ## 0.0.4
 
