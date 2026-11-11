@@ -2,6 +2,7 @@
 
 use std::io::Write;
 
+use huddle_config::dashboard_hosts;
 use huddle_config::env::Env;
 use huddle_config::paths::Paths;
 use huddle_daemon::start::{HEALTH_WAIT, HealthAnswer, RouterRecord, health, read_record};
@@ -30,7 +31,7 @@ pub fn run(args: &[String], env: &Env) -> i32 {
     if json {
         answer_json(&answer, record.as_ref())
     } else {
-        answer_plain(port, &answer, record.as_ref())
+        answer_plain(port, &answer, record.as_ref(), &paths)
     }
 }
 
@@ -44,7 +45,12 @@ fn not_running(json: bool) -> i32 {
     6
 }
 
-fn answer_plain(port: u16, answer: &HealthAnswer, record: Option<&RouterRecord>) -> i32 {
+fn answer_plain(
+    port: u16,
+    answer: &HealthAnswer,
+    record: Option<&RouterRecord>,
+    paths: &Paths,
+) -> i32 {
     let pid = match record {
         Some(record) => record.pid.to_string(),
         None => "unknown".to_string(),
@@ -58,7 +64,18 @@ fn answer_plain(port: u16, answer: &HealthAnswer, record: Option<&RouterRecord>)
         "huddle-router: http://127.0.0.1:{port}\npid {pid} · version {version} · providers {}",
         answer.providers.join(", ")
     );
+    let _ = writeln!(std::io::stdout(), "{}", hosts_line(paths));
     0
+}
+
+/// The dashboard hosts the next config read yields, or the error that makes the router accept
+/// loopback only.
+fn hosts_line(paths: &Paths) -> String {
+    match dashboard_hosts::read(&dashboard_hosts::config_path(paths)) {
+        Ok(hosts) if hosts.is_empty() => "dashboard hosts: none".to_string(),
+        Ok(hosts) => format!("dashboard hosts: {}", hosts.join(", ")),
+        Err(error) => format!("dashboard hosts: {error}"),
+    }
 }
 
 /// The script answer: the keys in order, the record's parts only while the record is trusted.

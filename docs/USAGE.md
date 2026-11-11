@@ -40,8 +40,10 @@ One row per word, with the exit codes it answers. `<p>` is `zai`, `kimi`, `deeps
 | `huddle cancel <id>` | Stops a job, removes its worktree and branch. | `0`, `2` wrong state, `4` unknown id, `1` error |
 | `huddle router serve` | The router daemon in this foreground process; `--takeover` takes a running daemon's socket. | `0` stopped, handed over or already served, `1`, `2` bad port |
 | `huddle router start` | One daemon for this home, detached. | `0`, `1`, `2` bad port |
-| `huddle router status` | What answers on the port, with the record's pid and version; `--json` is for scripts. | `0` running, `6` not running, `2` bad port |
+| `huddle router status` | What answers on the port, with the record's pid and version and the dashboard hosts; `--json` is for scripts. | `0` running, `6` not running, `2` bad port |
 | `huddle router stop` | One SIGTERM to the recorded pid, then a wait for the port to go. | `0` stopped, `6` not running, `1` past 10 s, `2` bad port |
+| `huddle add-dashboard-host <host>` | Lists a bare host name in `~/.config/huddle/config.toml`; the router reads the dashboard's page, state and live paths for it within 2 s. A repeat changes nothing. | `0`, `2` not a bare host name or usage, `1` |
+| `huddle remove-dashboard-host <host>` | Takes the host back out; one that is not listed changes nothing. | `0`, `2`, `1` |
 | `huddle provider <p> key` | Reads the key from hidden stdin into the keystore. | `0`, `2` empty or invalid, `1` |
 | `huddle provider <p> setup` | Checks the key with the provider, enables the lane, starts the router, reports ready or not. | `0` ready, `6` not ready, `1` |
 | `huddle provider <p> remove` | Takes the lane, the `/model` entries and the stored key back out; the other providers keep serving. | `0`, `1` |

@@ -32,7 +32,7 @@ plugins from this repository. The five provider plugins depend on `huddle`.
 
 | Plugin | What it is | Models |
 |---|---|---|
-| [`huddle`](plugin/README.md) | The router, the session hooks and the delegation commands (`/huddle:setup`, `/huddle:run`, `/huddle:status`, `/huddle:result`, `/huddle:cancel`) | every `claude-*` model, to Anthropic |
+| [`huddle`](plugin/README.md) | The router, the session hooks and the delegation commands (`/huddle:setup`, `/huddle:run`, `/huddle:status`, `/huddle:result`, `/huddle:cancel`, `/huddle:add-dashboard-host`, `/huddle:remove-dashboard-host`) | every `claude-*` model, to Anthropic |
 | [`zai-plugin-cc`](plugins/zai-plugin-cc/README.md) | Z.ai GLM lane, key and `/model` entries | `glm-5.3`, `glm-5.3-flash` |
 | [`kimi-plugin-cc`](plugins/kimi-plugin-cc/README.md) | Moonshot Kimi lane, key and `/model` entries | `kimi-k3`, `kimi-k2.6` |
 | [`deepseek-plugin-cc`](plugins/deepseek-plugin-cc/README.md) | DeepSeek lane, key and `/model` entries | `deepseek-v4-pro`, `deepseek-flash` |
@@ -118,6 +118,28 @@ Open `http://127.0.0.1:4835/` while the router runs. The page updates live.
 The page keeps everything in the router's memory. A restart clears it. It
 shows no prompts and no keys. A different `HUDDLE_ROUTER_PORT` moves the page
 with the router.
+
+#### Open it at your own domain
+
+1. `huddle add-dashboard-host huddle.example.com` (or `/huddle:add-dashboard-host huddle.example.com`)
+   lists the name in `~/.config/huddle/config.toml`. The router picks it up
+   within 2 s, with no restart.
+2. Point your reverse proxy at the router. A Caddy block:
+
+   ```caddy
+   huddle.example.com {
+       reverse_proxy 127.0.0.1:4835
+   }
+   ```
+
+3. `huddle remove-dashboard-host huddle.example.com` takes the name back out.
+   `huddle router status` lists the hosts.
+
+A listed host reaches the page, `/huddle-router/state` and
+`/huddle-router/live` and nothing else: model requests, keys and the health
+check answer 421. The page has no login, so keep the domain on a network you
+trust. A broken `config.toml` leaves the loopback as the only way in; the
+error is in `router.log` and in `huddle router status`.
 
 ### Providers
 

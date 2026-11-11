@@ -20,7 +20,7 @@ case "$word" in
     ;;
   setup)
     ;;
-  run | status | result | cancel | uninstall | router | provider | --version)
+  run | status | result | cancel | add-dashboard-host | remove-dashboard-host | uninstall | router | provider | --version)
     [ -x "$link" ] && exec "$link" "$@"
     printf 'huddle: run /huddle:setup first\n' >&2
     exit 127
