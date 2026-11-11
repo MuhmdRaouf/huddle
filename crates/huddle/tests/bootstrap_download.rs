@@ -70,7 +70,6 @@ fn run_bootstrap(home: &TempHome, shims: &Path, base: &str, args: &[&str]) -> Ou
     let mut cmd = Command::new("sh");
     cmd.arg(dist_run()).args(args);
     cmd.env_clear().envs(home.env());
-    cmd.env_remove("HUDDLE_HOME"); // the default layout, ~/.agents/huddle/bin
     cmd.env("PATH", format!("{}:/usr/bin:/bin", shims.display()));
     cmd.env("HUDDLE_DOWNLOAD_BASE", base);
     cmd.output().expect("run dist/run")
@@ -104,7 +103,7 @@ fn setup_downloads_verifies_installs_and_runs_the_binary() {
     assert_eq!(stdout_of(&out), "fake huddle setup --install\n");
     assert_eq!(stderr_of(&out), "");
 
-    let bin_dir = root.join(".agents/huddle/bin");
+    let bin_dir = root.join(".local/share/huddle/bin");
     let target = bin_dir.join(format!("huddle-{version}"));
     let mode = fs::metadata(&target)
         .expect("binary installed")
@@ -144,7 +143,7 @@ fn a_checksum_mismatch_installs_nothing() {
     );
     assert_eq!(stdout_of(&out), "");
     let target = root
-        .join(".agents/huddle/bin")
+        .join(".local/share/huddle/bin")
         .join(format!("huddle-{version}"));
     assert!(!target.exists(), "no binary after a bad checksum");
 }
@@ -173,7 +172,7 @@ fn hooks_and_unknown_words_change_nothing_before_setup() {
     let home = TempHome::new();
     let root = home.root().to_path_buf();
     let shim_dir = shims(&root, "Linux", "x86_64");
-    let bin_dir = root.join(".agents/huddle/bin");
+    let bin_dir = root.join(".local/share/huddle/bin");
     let base = format!("file://{}", root.join("nothing").display());
 
     let hook = run_bootstrap(&home, &shim_dir, &base, &["hook", "session-start"]);

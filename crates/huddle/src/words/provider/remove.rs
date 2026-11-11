@@ -21,7 +21,7 @@ pub fn run(provider: &'static Provider, env: &Env) -> i32 {
     let mut lines = Vec::new();
     let mut failed = false;
     if let Err(error) =
-        huddle_config::providers_file::set_enabled(&paths.router_dir, provider.id, false)
+        huddle_config::providers_file::set_enabled(&paths.config_dir, provider.id, false)
     {
         failed = true;
         lines.push(format!("could not update the router: {error}"));

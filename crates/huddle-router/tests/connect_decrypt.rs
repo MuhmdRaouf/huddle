@@ -22,7 +22,7 @@ use tokio::sync::watch;
 use tokio_rustls::TlsConnector;
 
 fn ca_dir(home: &TempHome) -> PathBuf {
-    home.root().join(".agents/ca")
+    home.root().join(".local/share/huddle/ca")
 }
 
 fn tls_client(ca_der: &[u8]) -> TlsConnector {
@@ -258,7 +258,7 @@ async fn model_request<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin>(
 }
 
 fn written_events(home: &TempHome) -> Vec<serde_json::Value> {
-    let dir = home.root().join(".agents/huddle-router/events");
+    let dir = home.root().join(".local/state/huddle/events");
     let mut lines = Vec::new();
     for entry in std::fs::read_dir(dir).into_iter().flatten().flatten() {
         let text = std::fs::read_to_string(entry.path()).expect("read");
@@ -289,7 +289,7 @@ async fn decrypted_model_requests_write_route_events() {
             port,
             anthropic_url: anthropic.url().parse().expect("uri"),
             log: Arc::new(|_| {}),
-            events: Some(EventSink::start(paths.router_dir.join("events"))),
+            events: Some(EventSink::start(paths.state_dir.join("events"))),
             dashboard: huddle_router::dashboard::DashboardInputs::default(),
         },
         &["zai".to_string()],

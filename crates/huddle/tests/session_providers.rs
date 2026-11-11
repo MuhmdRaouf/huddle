@@ -10,7 +10,6 @@ fn huddle(home: &TempHome, port: u16, key: Option<&str>, args: &[&str]) -> Outpu
     cmd.args(args)
         .env_clear()
         .envs(home.env())
-        .env_remove("HUDDLE_HOME")
         .env("CLAUDE_CONFIG_DIR", home.root().join(".claude"))
         .env("HUDDLE_ROUTER_PORT", port.to_string());
     if let Some(k) = key {
@@ -66,10 +65,10 @@ fn wait_running(home: &TempHome, port: u16) -> bool {
 }
 
 fn set_up_state(home: &TempHome) {
-    let huddle_dir = home.root().join(".agents/huddle");
+    let huddle_dir = home.root().join(".local/state/huddle");
     fs::create_dir_all(&huddle_dir).expect("mkdir huddle");
     fs::write(huddle_dir.join("settings-ledger.json"), "{}\n").expect("ledger");
-    let router = home.root().join(".agents/huddle-router");
+    let router = home.root().join(".config/huddle");
     fs::create_dir_all(&router).expect("mkdir router");
     fs::write(router.join("providers.json"), "{\"providers\":[\"zai\"]}").expect("providers");
     fs::create_dir_all(home.root().join(".claude")).expect("mkdir claude");
@@ -148,8 +147,8 @@ fn a_provider_with_no_plugin_entry_is_cleaned_up() {
     );
 
     assert_eq!(out.status.code(), Some(0));
-    let enabled = fs::read_to_string(home.root().join(".agents/huddle-router/providers.json"))
-        .expect("providers");
+    let enabled =
+        fs::read_to_string(home.root().join(".config/huddle/providers.json")).expect("providers");
     assert!(!enabled.contains("zai"), "{enabled}");
     wait_running(&home, port);
 }

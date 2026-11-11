@@ -41,7 +41,7 @@ fn fake_daemon() -> u16 {
 }
 
 fn write_record(paths: &Paths, pid: u32, port: u16, executable: &str) {
-    let dir = paths.router_dir.join("run");
+    let dir = paths.run_dir.clone();
     fs::create_dir_all(&dir).expect("mkdir");
     let record = RouterRecord {
         pid,
@@ -93,7 +93,7 @@ fn a_record_naming_another_binary_is_taken_over() {
     let port = fake_daemon();
     write_record(&paths, 1234, port, "/old/huddle");
     let args = home.root().join("args");
-    let record_dir = paths.router_dir.join("run");
+    let record_dir = paths.run_dir.clone();
     let new_record = serde_json::to_string_pretty(&RouterRecord {
         pid: 5678,
         port,
@@ -147,7 +147,7 @@ fn a_takeover_nobody_answers_names_the_old_pid_and_the_log() {
         error.to_string(),
         format!(
             "huddle-router: the daemon (pid 1234) never handed over to {exe_text} (its log: {})",
-            paths.router_dir.join("router.log").display()
+            paths.state_dir.join("router.log").display()
         )
     );
 }

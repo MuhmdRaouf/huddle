@@ -17,7 +17,11 @@ fn fixture() -> (TempHome, Paths, RouterTarget) {
     let target = RouterTarget {
         port: 18999,
         router_url: "http://127.0.0.1:18999".into(),
-        ca_pem: paths.ca_dir.join("ca.pem").to_string_lossy().into_owned(),
+        ca_pem: paths
+            .ca_dir
+            .join("huddle-ca.pem")
+            .to_string_lossy()
+            .into_owned(),
         process_https_proxy: None,
         ca_error: None,
     };

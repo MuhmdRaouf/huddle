@@ -37,7 +37,7 @@ pub fn enable(
     paths: &Paths,
     provider: &'static Provider,
 ) -> Result<ProviderEnabled, ProviderSetupError> {
-    huddle_config::providers_file::set_enabled(&paths.router_dir, provider.id, true)
+    huddle_config::providers_file::set_enabled(&paths.config_dir, provider.id, true)
         .map_err(|error| ProviderSetupError::Providers(error.to_string()))?;
     let outcome = model_entries::apply(paths, provider).map_err(ProviderSetupError::Settings)?;
     Ok(ProviderEnabled {

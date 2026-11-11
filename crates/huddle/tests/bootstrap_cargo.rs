@@ -56,7 +56,6 @@ fn run(
     let mut cmd = Command::new("sh");
     cmd.arg(script).args(args);
     cmd.env_clear().envs(home.env());
-    cmd.env_remove("HUDDLE_HOME"); // the default layout, ~/.agents/huddle/bin
     cmd.env("PATH", format!("{}:/usr/bin:/bin", shim_dir.display()));
     cmd.env("HUDDLE_DOWNLOAD_BASE", base);
     if let Some(s) = source {
@@ -136,7 +135,6 @@ fn run_env(
     let mut cmd = Command::new("sh");
     cmd.arg(script).args(args);
     cmd.env_clear().envs(home.env());
-    cmd.env_remove("HUDDLE_HOME"); // the default layout, ~/.agents/huddle/bin
     cmd.env("PATH", format!("{}:/usr/bin:/bin", shim_dir.display()));
     cmd.env("HUDDLE_DOWNLOAD_BASE", base);
     if let Some(s) = source {
@@ -166,7 +164,7 @@ fn no_release_builds_with_cargo_and_marks_the_binary_local() {
         String::from_utf8_lossy(&out.stderr)
     );
     assert_eq!(String::from_utf8_lossy(&out.stdout), "local huddle setup\n");
-    let bin_dir = root.join(".agents/huddle/bin");
+    let bin_dir = root.join(".local/share/huddle/bin");
     assert!(bin_dir.join(format!("huddle-{version}")).exists());
     assert!(bin_dir.join(format!("huddle-{version}.local")).exists());
     assert!(cargo_calls(&root).contains("build --release -p huddle"));

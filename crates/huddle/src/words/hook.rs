@@ -71,7 +71,7 @@ fn session_start(env: &Env, paths: &Paths, exe: &Path) {
 /// stays silent: a hook never disturbs the session it observes.
 fn session_providers(env: &Env, paths: &Paths, exe: &Path) -> Vec<String> {
     let enabled = huddle_config::providers_file::read_enabled(
-        &paths.router_dir,
+        &paths.config_dir,
         &huddle_catalog::providers::provider_ids(),
     )
     .unwrap_or_default();

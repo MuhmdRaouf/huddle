@@ -447,10 +447,10 @@ fn ledger_lines(ledger: &ModelLedger) -> Vec<String> {
     lines
 }
 
-/// `<huddle_dir>/providers/<provider>-ledger.json`.
+/// `<state_dir>/providers/<provider>-ledger.json`.
 pub fn ledger_path(paths: &Paths, provider: &str) -> PathBuf {
     paths
-        .huddle_dir
+        .state_dir
         .join("providers")
         .join(format!("{provider}-ledger.json"))
 }

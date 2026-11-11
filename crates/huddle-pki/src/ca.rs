@@ -41,7 +41,7 @@ const END_CERTIFICATE: &[u8] = b"-----END CERTIFICATE-----";
 pub enum PkiError {
     /// A path another user can read or replace; the CA is not used.
     Insecure { path: String, reason: String },
-    /// `ca.key` does not hold a CA this module made.
+    /// `huddle-ca-key.pem` does not hold a CA this module made.
     Invalid { path: String, reason: String },
     /// A file operation failed.
     Io { path: String, message: String },
@@ -124,9 +124,9 @@ impl RouterCa {
     }
 }
 
-/// `<dir>/ca.pem`, whether or not a CA exists there: the path the proxy keys name.
+/// `<dir>/huddle-ca.pem`, whether or not a CA exists there: the path the proxy keys name.
 pub fn ca_cert_path(dir: &Path) -> PathBuf {
-    dir.join("ca.pem")
+    dir.join("huddle-ca.pem")
 }
 
 /// Reads the facts a loaded CA is judged by out of a certificate's DER.
@@ -329,10 +329,10 @@ fn permitted_dns_names(value: &[u8]) -> Option<Vec<String>> {
 }
 
 /// Returns the CA kept in `dir`, creating it on first use. Several routers may call this at
-/// once: the first to link its `ca.key` wins and the others load that one.
+/// once: the first to link its `huddle-ca-key.pem` wins and the others load that one.
 pub fn load_or_create(dir: &Path, now: SystemTime) -> Result<RouterCa, PkiError> {
     ensure_dir(dir)?;
-    let key_path = dir.join("ca.key");
+    let key_path = dir.join("huddle-ca-key.pem");
     let ca = match load(&key_path)? {
         Some(ca) => ca,
         None => create(dir, &key_path, now)?,
@@ -352,7 +352,7 @@ pub fn load_or_create(dir: &Path, now: SystemTime) -> Result<RouterCa, PkiError>
     })
 }
 
-/// A parsed `ca.key`: the certificate in both forms, its key and the facts read from it.
+/// A parsed `huddle-ca-key.pem`: the certificate in both forms, its key and the facts read from it.
 struct Loaded {
     cert_pem: String,
     cert_der: Vec<u8>,
@@ -371,7 +371,7 @@ fn ensure_dir(dir: &Path) -> Result<(), PkiError> {
     check_owned_private(dir, 0o022)
 }
 
-/// Reads `ca.key`: `Ok(None)` when it is missing, the parsed CA when it holds one.
+/// Reads `huddle-ca-key.pem`: `Ok(None)` when it is missing, the parsed CA when it holds one.
 fn load(key_path: &Path) -> Result<Option<Loaded>, PkiError> {
     let meta = match fs::symlink_metadata(key_path) {
         Ok(meta) => meta,
@@ -387,7 +387,7 @@ fn load(key_path: &Path) -> Result<Option<Loaded>, PkiError> {
     parse_ca(key_path, &bytes).map(Some)
 }
 
-/// Parses a `ca.key` file: a PKCS#8 `PRIVATE KEY` or SEC1 `EC PRIVATE KEY` PEM block followed by
+/// Parses a `huddle-ca-key.pem` file: a PKCS#8 `PRIVATE KEY` or SEC1 `EC PRIVATE KEY` PEM block followed by
 /// the `CERTIFICATE` block, judged by the rules the CA store keeps.
 fn parse_ca(key_path: &Path, bytes: &[u8]) -> Result<Loaded, PkiError> {
     let invalid = |reason: String| PkiError::Invalid {
@@ -638,7 +638,7 @@ fn days_from_civil(year: i64, month: u8, day: u8) -> i64 {
     era * 146_097 + day_of_era - 719_468
 }
 
-/// Writes `ca.pem` from `ca.key` as it stands when it is missing or differs, so the two files
+/// Writes `huddle-ca.pem` from `huddle-ca-key.pem` as it stands when it is missing or differs, so the two files
 /// agree even when another router renamed a new key in between.
 fn ensure_cert_file(dir: &Path, key_path: &Path) -> Result<(), PkiError> {
     let bytes = fs::read(key_path).map_err(|e| io_error(key_path, e))?;

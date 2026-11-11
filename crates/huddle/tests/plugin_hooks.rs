@@ -28,7 +28,6 @@ fn run_line(line: &str, home: &TempHome, plugin_root: &PathBuf) -> Output {
         .arg(line)
         .env_clear()
         .envs(home.env())
-        .env_remove("HUDDLE_HOME") // the default layout
         .env("PATH", "/usr/bin:/bin")
         .env("CLAUDE_PLUGIN_ROOT", plugin_root)
         .output()
@@ -68,7 +67,7 @@ fn hooks_json_wires_session_start_and_the_prompt_probe() {
     assert_eq!(entry["timeout"], 15);
     assert_eq!(
         hook_command(),
-        "h=\"${HUDDLE_HOME:-$HOME/.agents/huddle}/bin/huddle\"; [ -x \"$h\" ] && exec \"$h\" hook session-start; exec sh \"${CLAUDE_PLUGIN_ROOT}/dist/run\" hook session-start"
+        "h=\"${HUDDLE_DATA_HOME:-${XDG_DATA_HOME:-$HOME/.local/share}/huddle}/bin/huddle\"; [ -x \"$h\" ] && exec \"$h\" hook session-start; exec sh \"${CLAUDE_PLUGIN_ROOT}/dist/run\" hook session-start"
     );
 }
 
@@ -97,13 +96,13 @@ fn the_hook_line_with_no_binary_exits_zero_silently_and_starts_nothing() {
     );
     assert_eq!(String::from_utf8_lossy(&out.stdout), "");
     assert_eq!(String::from_utf8_lossy(&out.stderr), "");
-    assert!(!home.root().join(".agents/huddle/bin").exists());
+    assert!(!home.root().join(".local/share/huddle/bin").exists());
 }
 
 #[test]
 fn the_hook_line_runs_the_installed_binary_even_after_its_plugin_directory_is_gone() {
     let home = TempHome::new();
-    let bin_dir = home.root().join(".agents/huddle/bin");
+    let bin_dir = home.root().join(".local/share/huddle/bin");
     fs::create_dir_all(&bin_dir).expect("mkdir");
     let fake = bin_dir.join("huddle");
     write_executable(&fake, "#!/bin/sh\necho \"huddle ran $*\"\n").expect("write");
@@ -116,4 +115,15 @@ fn the_hook_line_runs_the_installed_binary_even_after_its_plugin_directory_is_go
         String::from_utf8_lossy(&out.stdout),
         "huddle ran hook session-start\n"
     );
+}
+
+#[test]
+fn t1_both_hook_lines_name_the_installed_binary_in_the_data_folder() {
+    let text = fs::read_to_string(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../plugin/hooks/hooks.json"),
+    )
+    .expect("hooks");
+    let form = "${HUDDLE_DATA_HOME:-${XDG_DATA_HOME:-$HOME/.local/share}/huddle}/bin/huddle";
+    assert_eq!(text.matches(form).count(), 2, "{text}");
+    assert!(!text.contains(".agents"), "{text}");
 }

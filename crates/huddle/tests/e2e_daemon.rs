@@ -14,7 +14,7 @@ struct Fixture {
 impl Fixture {
     fn new() -> Fixture {
         let home = TempHome::new();
-        let router = home.root().join("rh");
+        let router = home.root().join(".config/huddle");
         fs::create_dir_all(&router).expect("mkdir");
         fs::write(router.join("providers.json"), "{\"providers\":[\"zai\"]}").expect("write");
         Fixture {
@@ -29,7 +29,6 @@ impl Fixture {
             .env_clear()
             .envs(self.home.env())
             .env("HUDDLE_ROUTER_PORT", self.port.to_string())
-            .env("HUDDLE_ROUTER_HOME", self.home.root().join("rh"))
             .env("ZAI_API_KEY", "abcdefghijklmnop");
         cmd
     }
@@ -125,12 +124,14 @@ fn a_second_start_spawns_nothing() {
         String::from_utf8_lossy(&first.stderr)
     );
     assert!(f.wait_port(true));
-    let before = fs::read_to_string(f.home.root().join("rh/run/router.json")).expect("record");
+    let before = fs::read_to_string(f.home.root().join(".local/state/huddle/run/router.json"))
+        .expect("record");
 
     let second = f.run(&["router", "start"]);
     assert_eq!(second.status.code(), Some(0));
     assert_eq!(
-        fs::read_to_string(f.home.root().join("rh/run/router.json")).expect("record"),
+        fs::read_to_string(f.home.root().join(".local/state/huddle/run/router.json"))
+            .expect("record"),
         before
     );
 }

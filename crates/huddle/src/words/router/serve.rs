@@ -25,7 +25,7 @@ pub fn run(args: &[String], env: &Env) -> i32 {
         }
     };
     let log = crashlog::rotating_log(
-        &paths.router_dir.join("router.log"),
+        &paths.state_dir.join("router.log"),
         crashlog::ROUTER_LOG_LIMIT,
     );
     crashlog::install_crash_hook(&log);

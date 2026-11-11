@@ -11,7 +11,6 @@ fn huddle(home: &TempHome, port: u16, args: &[&str]) -> Output {
         .args(args)
         .env_clear()
         .envs(home.env())
-        .env_remove("HUDDLE_HOME") // the default layout under HOME
         .env("CLAUDE_CONFIG_DIR", home.root().join(".claude"))
         .env("HUDDLE_ROUTER_PORT", port.to_string())
         .output()
@@ -66,7 +65,7 @@ fn install_starts_the_router_patches_settings_and_says_restart_once() {
         format!("http://127.0.0.1:{port}")
     );
     let ca = doc["env"]["NODE_EXTRA_CA_CERTS"].as_str().expect("ca path");
-    assert!(ca.ends_with("/ca.pem"), "{ca}");
+    assert!(ca.ends_with("/huddle-ca.pem"), "{ca}");
     assert!(
         std::path::Path::new(ca).exists(),
         "the CA file exists: {ca}"
@@ -89,13 +88,42 @@ fn install_starts_the_router_patches_settings_and_says_restart_once() {
 }
 
 #[test]
+fn t1_install_keeps_the_ca_and_the_router_record_in_the_xdg_folders() {
+    let home = TempHome::new();
+    let port = free_port();
+    let _stop = StopOnDrop(&home, port);
+    let settings = home.root().join(".claude/settings.json");
+
+    let out = huddle(&home, port, &["setup", "--install"]);
+    assert_eq!(out.status.code(), Some(0));
+    assert!(wait_for_port(port), "the router answers on the port");
+
+    let doc: serde_json::Value =
+        serde_json::from_slice(&fs::read(&settings).expect("settings")).expect("json");
+    let ca = doc["env"]["NODE_EXTRA_CA_CERTS"].as_str().expect("ca path");
+    assert_eq!(
+        std::path::Path::new(ca),
+        home.root().join(".local/share/huddle/ca/huddle-ca.pem")
+    );
+    assert!(
+        home.root()
+            .join(".local/state/huddle/run/router.json")
+            .exists(),
+        "the router record is in the state folder"
+    );
+    assert!(
+        !home.root().join(".agents").exists(),
+        "nothing under .agents"
+    );
+}
+
+#[test]
 fn a_bad_port_is_refused_before_anything_changes() {
     let home = TempHome::new();
     let out = Command::new(env!("CARGO_BIN_EXE_huddle"))
         .args(["setup", "--install"])
         .env_clear()
         .envs(home.env())
-        .env_remove("HUDDLE_HOME")
         .env("HUDDLE_ROUTER_PORT", "not-a-port")
         .output()
         .expect("run huddle");

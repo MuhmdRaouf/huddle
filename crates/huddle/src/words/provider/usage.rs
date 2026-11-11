@@ -53,7 +53,7 @@ pub fn run(provider: &'static Provider, env: &Env) -> i32 {
             rows: BTreeMap::new(),
         });
     let events = match Paths::from_env(env) {
-        Ok(paths) => paths.router_dir.join("events"),
+        Ok(paths) => paths.state_dir.join("events"),
         Err(err) => {
             let _ = writeln!(
                 std::io::stderr(),

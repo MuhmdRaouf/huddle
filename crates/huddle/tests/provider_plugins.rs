@@ -109,10 +109,21 @@ fn dist_run_execs_the_installed_binary() {
     let script = read(REFERENCE, Path::new("dist/run"));
     assert!(script.contains("exec \"$bin\" \"$@\""), "{script}");
     assert!(
-        script.contains("${HUDDLE_HOME:-$HOME/.agents/huddle}/bin/huddle"),
+        script.contains(
+            "${HUDDLE_DATA_HOME:-${XDG_DATA_HOME:-$HOME/.local/share}/huddle}/bin/huddle"
+        ),
         "{script}"
     );
     assert!(script.contains("run /huddle:setup first"), "{script}");
+    for sibling in SIBLINGS {
+        let text = read(sibling, Path::new("dist/run"));
+        assert!(
+            text.contains(
+                "${HUDDLE_DATA_HOME:-${XDG_DATA_HOME:-$HOME/.local/share}/huddle}/bin/huddle"
+            ),
+            "{sibling}: {text}"
+        );
+    }
     use std::os::unix::fs::PermissionsExt;
     assert_ne!(
         fs::metadata(plugin_dir(REFERENCE).join("dist/run"))
@@ -357,4 +368,17 @@ fn the_five_provider_plugins_stay_copies_of_zai() {
         }
     }
     assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+#[test]
+fn t1_every_dist_run_names_the_installed_binary_in_the_data_folder() {
+    let home = "${HUDDLE_DATA_HOME:-${XDG_DATA_HOME:-$HOME/.local/share}/huddle}";
+    for name in std::iter::once(&REFERENCE).chain(SIBLINGS) {
+        let text = read(name, Path::new("dist/run"));
+        assert!(text.contains(&format!("bin={home}/bin/huddle")), "{name}");
+    }
+    let script =
+        fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("../../plugin/dist/run"))
+            .expect("plugin dist/run");
+    assert!(script.contains(&format!("bin_dir={home}/bin")), "{script}");
 }

@@ -41,10 +41,10 @@ pub const DRAIN_BUDGET: Duration = Duration::from_secs(600);
 /// drains: the drain's budget plus a minute of margin.
 pub const TAKEOVER_LOCK_WAIT: Duration = Duration::from_secs(660);
 
-/// The record under the run dir, `<router_dir>/run/router.json`.
+/// The record under the run dir, `<run_dir>/router.json`.
 const RECORD_FILE: &str = "router.json";
 
-/// The lock under the run dir, `<router_dir>/run/router.lock`.
+/// The lock under the run dir, `<run_dir>/router.lock`.
 const LOCK_FILE: &str = "router.lock";
 
 /// The Anthropic the Claude models go to when no override is set.
@@ -122,8 +122,8 @@ pub async fn run(
         Err(text) => return Err(ServeError::BadAnthropicUrl(text)),
     };
 
-    let router_dir = paths.router_dir.clone();
-    let run_dir = router_dir.join("run");
+    let config_dir = paths.config_dir.clone();
+    let run_dir = paths.run_dir.clone();
     make_run_dir(&run_dir, &log);
 
     // A takeover serves the taken socket at once and catches up with the lock in the
@@ -204,8 +204,8 @@ pub async fn run(
 
     // The baseline is taken before the first read: a provider enabled while the daemon starts
     // changes the file after this snapshot, so the first tick swaps instead of missing it.
-    let mut providers_watch = ProvidersWatch::new(router_dir.clone(), provider_ids().to_vec());
-    let initial_enabled = match read_enabled(&router_dir, &provider_ids()) {
+    let mut providers_watch = ProvidersWatch::new(config_dir.clone(), provider_ids().to_vec());
+    let initial_enabled = match read_enabled(&config_dir, &provider_ids()) {
         Ok(names) => names,
         Err(error) => {
             log(format!("huddle-router: {error}"));
@@ -231,7 +231,7 @@ pub async fn run(
             port,
             anthropic_url,
             log: Arc::clone(&log),
-            events: Some(EventSink::start(router_dir.join("events"))),
+            events: Some(EventSink::start(paths.state_dir.join("events"))),
             dashboard,
         },
         &initial_enabled,

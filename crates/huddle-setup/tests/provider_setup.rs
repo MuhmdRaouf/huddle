@@ -180,6 +180,6 @@ fn enable_records_the_lane_and_the_models() {
     let zai = provider_by_id("zai").expect("zai");
     let enabled = enable(&paths, zai).expect("enable");
     assert!(enabled.changed);
-    let providers = fs::read_to_string(paths.router_dir.join("providers.json")).expect("providers");
+    let providers = fs::read_to_string(paths.config_dir.join("providers.json")).expect("providers");
     assert!(providers.contains("\"zai\""), "{providers}");
 }

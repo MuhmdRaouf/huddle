@@ -10,7 +10,7 @@
 
 version=0.0.4
 base=${HUDDLE_DOWNLOAD_BASE:-https://github.com/MuhmdRaouf/huddle/releases/download}
-bin_dir=${HUDDLE_HOME:-$HOME/.agents/huddle}/bin
+bin_dir=${HUDDLE_DATA_HOME:-${XDG_DATA_HOME:-$HOME/.local/share}/huddle}/bin
 link=$bin_dir/huddle
 target=$bin_dir/huddle-$version
 word=${1:-}

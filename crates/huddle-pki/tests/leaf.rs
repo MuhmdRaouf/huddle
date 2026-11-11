@@ -10,7 +10,11 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 fn ca(home: &TempHome) -> RouterCa {
-    load_or_create(&home.root().join(".agents/ca"), SystemTime::now()).expect("ca")
+    load_or_create(
+        &home.root().join(".local/share/huddle/ca"),
+        SystemTime::now(),
+    )
+    .expect("ca")
 }
 
 fn handshake(leaf: &Leaf, ca: &RouterCa, name: &str) -> Result<(), rustls::Error> {
@@ -140,7 +144,7 @@ fn the_cache_keeps_one_leaf_until_a_day_is_left() {
     let notes: Arc<Mutex<Vec<String>>> = Arc::default();
     let sink = notes.clone();
     let cache = LeafCache::new(
-        home.root().join(".agents/ca"),
+        home.root().join(".local/share/huddle/ca"),
         Arc::new(move |l: &str| sink.lock().unwrap().push(l.to_string())),
     );
     let now = SystemTime::now();
@@ -162,7 +166,7 @@ fn the_cache_keeps_one_leaf_until_a_day_is_left() {
 #[test]
 fn a_ca_that_cannot_load_logs_once_and_retries_after_a_minute() {
     let home = TempHome::new();
-    let dir: PathBuf = home.root().join(".agents/ca");
+    let dir: PathBuf = home.root().join(".local/share/huddle/ca");
     fs::create_dir_all(&dir).expect("mkdir");
     fs::set_permissions(&dir, fs::Permissions::from_mode(0o770)).expect("chmod group-writable");
     let notes: Arc<Mutex<Vec<String>>> = Arc::default();

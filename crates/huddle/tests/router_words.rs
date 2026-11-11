@@ -211,7 +211,7 @@ impl Drop for StopOnDrop<'_> {
 }
 
 fn write_record(home: &TempHome, port: u16, pid: u32) {
-    let run_dir = home.root().join("rh").join("run");
+    let run_dir = home.root().join(".local/state/huddle/run");
     fs::create_dir_all(&run_dir).expect("run dir");
     let record = format!(
         "{{\"pid\":{pid},\"port\":{port},\"version\":\"1.0.0\",\"started\":\"2026-11-09T00:00:00Z\"}}"
@@ -220,13 +220,12 @@ fn write_record(home: &TempHome, port: u16, pid: u32) {
 }
 
 /// Runs a word in its own process group, so a stray group signal reaches only the word.
-fn huddle_with_router_home(home: &TempHome, port: u16, args: &[&str]) -> Output {
+fn huddle_in_own_group(home: &TempHome, port: u16, args: &[&str]) -> Output {
     Command::new(env!("CARGO_BIN_EXE_huddle"))
         .args(args)
         .env_clear()
         .envs(home.env())
         .env("HUDDLE_ROUTER_PORT", port.to_string())
-        .env("HUDDLE_ROUTER_HOME", home.root().join("rh"))
         .process_group(0)
         .stdin(Stdio::null())
         .output()
@@ -240,7 +239,7 @@ fn stop_sends_no_signal_when_the_record_names_no_live_daemon() {
     let port = listener.local_addr().expect("addr").port();
     let _fake = HealthFake::start(listener);
     write_record(&home, port, 0);
-    let output = huddle_with_router_home(&home, port, &["router", "stop"]);
+    let output = huddle_in_own_group(&home, port, &["router", "stop"]);
     assert_eq!(output.status.code(), Some(6), "{output:?}");
     assert_eq!(stdout(&output), "huddle-router: not running\n");
 }
@@ -255,7 +254,7 @@ fn stop_sends_no_signal_when_the_record_names_another_port() {
     let _fake = HealthFake::start(listener);
     let mut sleeper = Sleeper::start();
     write_record(&home, other, sleeper.0.id());
-    let output = huddle_with_router_home(&home, port, &["router", "stop"]);
+    let output = huddle_in_own_group(&home, port, &["router", "stop"]);
     assert_eq!(output.status.code(), Some(6), "{output:?}");
     assert_eq!(stdout(&output), "huddle-router: not running\n");
     thread::sleep(Duration::from_millis(200));
@@ -282,8 +281,8 @@ fn stop_waits_out_a_handover_and_signals_the_fresh_record() {
     }
 
     // The handover window: the port answers while no record names the daemon.
-    let record = home.root().join(".agents/huddle-router/run/router.json");
-    let parked = home.root().join(".agents/huddle-router/run/router.parked");
+    let record = home.root().join(".local/state/huddle/run/router.json");
+    let parked = home.root().join(".local/state/huddle/run/router.parked");
     fs::rename(&record, &parked).expect("park record");
     let restorer = thread::spawn(move || {
         thread::sleep(Duration::from_millis(200));

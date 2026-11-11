@@ -1,26 +1,30 @@
 //! Every state path huddle uses, derived from one environment map.
 
 use std::fmt;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use crate::env::Env;
 
 /// The port huddle-router serves when no override names one.
 pub const DEFAULT_ROUTER_PORT: u16 = 4835;
 
-/// The state roots: `HOME` and its overrides, read once and passed down.
+/// The folders huddle uses, read once and passed down. Each kind (config, data, state) takes
+/// `HUDDLE_<KIND>_HOME`, else `$XDG_<KIND>_HOME/huddle`, else its XDG default under `HOME`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Paths {
     pub home: PathBuf,
-    pub agents: PathBuf,
-    pub router_dir: PathBuf,
-    pub ca_dir: PathBuf,
-    pub huddle_dir: PathBuf,
-    pub jobs_root: PathBuf,
-    pub bin_dir: PathBuf,
-    pub claude_dir: PathBuf,
-    /// `$XDG_CONFIG_HOME/huddle`, else `$HOME/.config/huddle`: the user-edited config.
+    /// User-edited config.
     pub config_dir: PathBuf,
+    /// Installed binaries and the local CA.
+    pub data_dir: PathBuf,
+    /// Logs, ledgers, jobs and the running router's files.
+    pub state_dir: PathBuf,
+    pub bin_dir: PathBuf,
+    pub ca_dir: PathBuf,
+    /// The router record, lock and handover socket.
+    pub run_dir: PathBuf,
+    pub jobs_root: PathBuf,
+    pub claude_dir: PathBuf,
 }
 
 /// What reading the paths can refuse.
@@ -49,34 +53,33 @@ impl std::error::Error for PathsError {}
 impl Paths {
     pub fn from_env(env: &Env) -> Result<Paths, PathsError> {
         let home = PathBuf::from(set(env, "HOME").ok_or(PathsError::NoHome)?);
-        let agents = home.join(".agents");
-        let router_dir = set(env, "HUDDLE_ROUTER_HOME")
-            .map(PathBuf::from)
-            .unwrap_or_else(|| agents.join("huddle-router"));
-        let ca_dir = match router_dir.parent() {
-            Some(parent) => parent.join("ca"),
-            None => router_dir.join("ca"),
-        };
-        let huddle_dir = set(env, "HUDDLE_HOME")
-            .map(PathBuf::from)
-            .unwrap_or_else(|| agents.join("huddle"));
-        let config_dir = match set(env, "XDG_CONFIG_HOME") {
-            Some(xdg) => PathBuf::from(xdg).join("huddle"),
-            None => home.join(".config").join("huddle"),
-        };
+        let config_dir = kind_dir(env, &home, "CONFIG", ".config");
+        let data_dir = kind_dir(env, &home, "DATA", ".local/share");
+        let state_dir = kind_dir(env, &home, "STATE", ".local/state");
         Ok(Paths {
-            config_dir,
-            jobs_root: huddle_dir.join("jobs"),
-            bin_dir: huddle_dir.join("bin"),
+            bin_dir: data_dir.join("bin"),
+            ca_dir: data_dir.join("ca"),
+            run_dir: state_dir.join("run"),
+            jobs_root: state_dir.join("jobs"),
             claude_dir: set(env, "CLAUDE_CONFIG_DIR")
                 .map(PathBuf::from)
                 .unwrap_or_else(|| home.join(".claude")),
+            config_dir,
+            data_dir,
+            state_dir,
             home,
-            agents,
-            router_dir,
-            ca_dir,
-            huddle_dir,
         })
+    }
+}
+
+/// One kind's folder: `HUDDLE_<KIND>_HOME`, else `$XDG_<KIND>_HOME/huddle`, else `HOME/<default>/huddle`.
+fn kind_dir(env: &Env, home: &Path, kind: &str, default: &str) -> PathBuf {
+    if let Some(own) = set(env, &format!("HUDDLE_{kind}_HOME")) {
+        return PathBuf::from(own);
+    }
+    match set(env, &format!("XDG_{kind}_HOME")) {
+        Some(xdg) => PathBuf::from(xdg).join("huddle"),
+        None => home.join(default).join("huddle"),
     }
 }
 

@@ -56,9 +56,9 @@ impl fmt::Display for ProvidersFileError {
 
 impl std::error::Error for ProvidersFileError {}
 
-/// `<router_dir>/providers.json`.
-pub fn providers_path(router_dir: &Path) -> PathBuf {
-    router_dir.join(PROVIDERS_FILE)
+/// `<config_dir>/providers.json`.
+pub fn providers_path(dir: &Path) -> PathBuf {
+    dir.join(PROVIDERS_FILE)
 }
 
 /// The file's shape. `serde(default)` keeps a missing key from failing the parse; a key that is
@@ -72,8 +72,8 @@ struct FileShape {
 /// Reads providers.json and answers the enabled providers filtered to `known`, in `known`
 /// order. A missing file is an empty list; any other read error, or JSON of the wrong shape, is
 /// an error.
-pub fn read_enabled(router_dir: &Path, known: &[&str]) -> Result<Vec<String>, ProvidersFileError> {
-    let path = providers_path(router_dir);
+pub fn read_enabled(dir: &Path, known: &[&str]) -> Result<Vec<String>, ProvidersFileError> {
+    let path = providers_path(dir);
     let parsed = parse_file(&path)?;
     Ok(known
         .iter()
@@ -85,16 +85,16 @@ pub fn read_enabled(router_dir: &Path, known: &[&str]) -> Result<Vec<String>, Pr
 /// Turns a provider on or off. The read-modify-write runs under the lock file, and the write
 /// itself is atomic, so a reader sees the whole old file or the whole new one. No write, and no
 /// mtime change, when the provider is already in the wanted state.
-pub fn set_enabled(router_dir: &Path, name: &str, on: bool) -> Result<(), ProvidersFileError> {
-    let path = providers_path(router_dir);
-    let lock_path = router_dir.join(LOCK_FILE);
+pub fn set_enabled(dir: &Path, name: &str, on: bool) -> Result<(), ProvidersFileError> {
+    let path = providers_path(dir);
+    let lock_path = dir.join(LOCK_FILE);
     let file_text = path.display().to_string();
     let lock_text = lock_path.display().to_string();
 
     fs::DirBuilder::new()
         .recursive(true)
         .mode(0o700)
-        .create(router_dir)
+        .create(dir)
         .map_err(|err| ProvidersFileError::Write {
             file: file_text.clone(),
             message: err.to_string(),

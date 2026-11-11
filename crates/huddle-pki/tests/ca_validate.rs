@@ -10,14 +10,14 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 fn fresh_dir(home: &TempHome) -> PathBuf {
-    let dir = home.root().join(".agents/ca");
+    let dir = home.root().join(".local/share/huddle/ca");
     fs::create_dir_all(&dir).expect("mkdir");
     fs::set_permissions(&dir, fs::Permissions::from_mode(0o700)).expect("chmod");
     dir
 }
 
 fn write_key(dir: &Path, text: &str) {
-    let path = dir.join("ca.key");
+    let path = dir.join("huddle-ca-key.pem");
     fs::write(&path, text).expect("write");
     fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).expect("chmod");
 }
@@ -97,7 +97,7 @@ fn now() -> SystemTime {
 #[test]
 fn cert_facts_read_a_real_ca() {
     let home = TempHome::new();
-    let ca = load_or_create(&home.root().join(".agents/ca"), now()).expect("ca");
+    let ca = load_or_create(&home.root().join(".local/share/huddle/ca"), now()).expect("ca");
     let facts = cert_facts(ca.cert_der()).expect("facts");
     assert!(facts.is_ca);
     assert!(facts.name_constraints_critical);
@@ -143,7 +143,7 @@ fn a_key_of_another_ca_is_refused() {
     assert_eq!(
         err,
         PkiError::Invalid {
-            path: dir.join("ca.key").display().to_string(),
+            path: dir.join("huddle-ca-key.pem").display().to_string(),
             reason: "the key does not match the certificate".into(),
         }
     );
@@ -212,7 +212,7 @@ fn a_certificate_that_is_not_a_constrained_ca_is_refused() {
 #[test]
 fn a_ca_with_under_eight_days_left_is_replaced() {
     let home = TempHome::new();
-    let dir = home.root().join(".agents/ca");
+    let dir = home.root().join(".local/share/huddle/ca");
     let original = load_or_create(&dir, now()).expect("ca");
     let original_der = original.cert_der().to_vec();
     let almost_expired = now() + Duration::from_secs(3650 * 86400 - 3 * 86400);
@@ -230,7 +230,7 @@ fn a_ca_with_under_eight_days_left_is_replaced() {
     assert_eq!(
         fs::read_to_string(ca_cert_path(&dir)).expect("read"),
         replaced.cert_pem(),
-        "ca.pem follows the new key"
+        "huddle-ca.pem follows the new key"
     );
 }
 
@@ -241,7 +241,7 @@ fn an_expiring_ca_that_cannot_be_replaced_is_an_error() {
         return;
     }
     let home = TempHome::new();
-    let dir = home.root().join(".agents/ca");
+    let dir = home.root().join(".local/share/huddle/ca");
     load_or_create(&dir, now()).expect("ca");
     fs::set_permissions(&dir, fs::Permissions::from_mode(0o500)).expect("chmod");
     let almost_expired = now() + Duration::from_secs(3650 * 86400 - 3 * 86400);
@@ -271,13 +271,13 @@ fn runs_as_root() -> bool {
 #[test]
 fn ca_pem_is_written_from_the_key_file_as_it_stands() {
     let home = TempHome::new();
-    let dir = home.root().join(".agents/ca");
+    let dir = home.root().join(".local/share/huddle/ca");
     load_or_create(&dir, now()).expect("ca");
     let key = KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256).expect("key");
     let newer = constrained_params("huddle local CA for api.anthropic.com")
         .self_signed(&key)
         .expect("cert");
-    let path = dir.join("ca.key");
+    let path = dir.join("huddle-ca-key.pem");
     fs::write(&path, format!("{}{}", key.serialize_pem(), newer.pem())).expect("write");
     fs::remove_file(ca_cert_path(&dir)).expect("remove");
     load_or_create(&dir, now()).expect("reload");

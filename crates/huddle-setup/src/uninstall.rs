@@ -21,7 +21,7 @@ pub struct UninstallReport {
 pub fn run(paths: &Paths, exe: &Path) -> UninstallReport {
     let mut lines = Vec::new();
     // No providers file (or an unreadable one) means nothing was ever set up.
-    let enabled = read_enabled(&paths.router_dir, &provider_ids()).unwrap_or_default();
+    let enabled = read_enabled(&paths.config_dir, &provider_ids()).unwrap_or_default();
     for id in &enabled {
         match Command::new(exe)
             .args(["provider", id.as_str(), "remove"])

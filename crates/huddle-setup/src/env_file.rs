@@ -197,7 +197,7 @@ mod tests {
         RouterTarget {
             port: 18999,
             router_url: "http://127.0.0.1:18999".into(),
-            ca_pem: "/h/.agents/ca/ca.pem".into(),
+            ca_pem: "/h/.local/share/huddle/ca/huddle-ca.pem".into(),
             process_https_proxy: None,
             ca_error: None,
         }
@@ -216,7 +216,7 @@ mod tests {
                 ),
                 (
                     "NODE_EXTRA_CA_CERTS".to_string(),
-                    "/h/.agents/ca/ca.pem".to_string()
+                    "/h/.local/share/huddle/ca/huddle-ca.pem".to_string()
                 ),
                 ("NO_PROXY".to_string(), "localhost,127.0.0.1".to_string()),
                 ("ENABLE_TOOL_SEARCH".to_string(), "true".to_string()),
@@ -233,7 +233,7 @@ mod tests {
     fn a_keep_with_no_user_no_proxy_starts_none() {
         let view = EnvView {
             https_proxy: Some("http://127.0.0.1:18999".into()),
-            node_ca: Some("/h/.agents/ca/ca.pem".into()),
+            node_ca: Some("/h/.local/share/huddle/ca/huddle-ca.pem".into()),
             tool_search: Some("true".into()),
             ..EnvView::default()
         };

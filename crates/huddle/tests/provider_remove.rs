@@ -55,8 +55,8 @@ fn removing_the_provider_restores_settings_byte_for_byte() {
         "{stdout}"
     );
     assert_eq!(fs::read_to_string(settings(&home)).expect("read"), ODD);
-    let providers = fs::read_to_string(home.root().join(".agents/huddle-router/providers.json"))
-        .expect("providers");
+    let providers =
+        fs::read_to_string(home.root().join(".config/huddle/providers.json")).expect("providers");
     assert!(!providers.contains("zai"), "{providers}");
     assert!(
         !home.root().join(".config/zai-plugin-cc/env").exists(),

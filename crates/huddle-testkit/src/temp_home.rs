@@ -42,7 +42,6 @@ impl TempHome {
         }
         let root = make_root(&temp)?;
         for dir in [
-            ".agents/huddle",
             ".claude",
             ".config",
             ".local/state",
@@ -125,7 +124,6 @@ pub fn child_env(
         .collect();
     for (name, value) in [
         ("HOME", root.display().to_string()),
-        ("HUDDLE_HOME", path(".agents/huddle")),
         ("CLAUDE_CONFIG_DIR", path(".claude")),
         ("XDG_CONFIG_HOME", path(".config")),
         ("XDG_STATE_HOME", path(".local/state")),

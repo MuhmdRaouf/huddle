@@ -88,7 +88,7 @@ fn fake_release(root: &Path, version: &str, bad_digest: bool) -> String {
 
 /// A home with `version` installed, linked and running as the router.
 fn install(root: &Path, version: &str) {
-    let bin = root.join(".agents/huddle/bin");
+    let bin = root.join(".local/share/huddle/bin");
     fs::create_dir_all(&bin).expect("mkdir bin");
     write_executable(
         &bin.join(format!("huddle-{version}")),
@@ -103,7 +103,6 @@ fn update(home: &TempHome, base: &str) -> Output {
     let mut cmd = Command::new("sh");
     cmd.arg(dist_run()).arg("update");
     cmd.env_clear().envs(home.env());
-    cmd.env_remove("HUDDLE_HOME");
     cmd.env(
         "PATH",
         format!("{}:/usr/bin:/bin", shims(home.root()).display()),
@@ -117,7 +116,7 @@ fn stdout_of(out: &Output) -> String {
 }
 
 fn link_of(root: &Path) -> PathBuf {
-    fs::read_link(root.join(".agents/huddle/bin/huddle")).expect("huddle is a symlink")
+    fs::read_link(root.join(".local/share/huddle/bin/huddle")).expect("huddle is a symlink")
 }
 
 fn router_calls(root: &Path) -> String {
@@ -138,7 +137,7 @@ fn update_switches_the_link_hands_the_router_over_and_prints_the_arrow() {
     assert_eq!(stdout_of(&out), format!("huddle {OLD} → {new}\n"));
     assert_eq!(link_of(&root), PathBuf::from(format!("huddle-{new}")));
     assert!(
-        root.join(format!(".agents/huddle/bin/huddle-{OLD}"))
+        root.join(format!(".local/share/huddle/bin/huddle-{OLD}"))
             .exists()
     );
     assert_eq!(router_calls(&root), format!("start {new}\n"));
@@ -195,7 +194,7 @@ fn a_bad_checksum_exits_non_zero_and_leaves_the_link_alone() {
     assert_eq!(link_of(&root), PathBuf::from(format!("huddle-{OLD}")));
     assert!(
         !root
-            .join(format!(".agents/huddle/bin/huddle-{new}"))
+            .join(format!(".local/share/huddle/bin/huddle-{new}"))
             .exists()
     );
     assert_eq!(router_calls(&root), "");

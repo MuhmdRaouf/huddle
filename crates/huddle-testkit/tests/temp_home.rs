@@ -18,7 +18,6 @@ fn every_state_variable_points_inside_the_home() {
     let env = home.env();
     for name in [
         "HOME",
-        "HUDDLE_HOME",
         "CLAUDE_CONFIG_DIR",
         "XDG_CONFIG_HOME",
         "XDG_STATE_HOME",
@@ -30,6 +29,17 @@ fn every_state_variable_points_inside_the_home() {
         let dir = value(&env, name).unwrap_or_else(|| panic!("{name} missing"));
         assert!(dir.starts_with(&root), "{name}={dir} is outside {root}");
         assert!(Path::new(dir).is_dir(), "{name}={dir} is not a directory");
+    }
+}
+
+#[test]
+fn t1_a_fresh_home_has_the_xdg_folders_and_no_agents_folder() {
+    let home = TempHome::new();
+    let env = home.env();
+    assert_eq!(value(&env, "HUDDLE_HOME"), None);
+    assert!(!home.root().join(".agents").exists());
+    for dir in [".config", ".local/share", ".local/state"] {
+        assert!(home.root().join(dir).is_dir(), "{dir}");
     }
 }
 
@@ -62,8 +72,8 @@ fn owner_variables_never_reach_a_child() {
         ("HTTPS_PROXY", "http://127.0.0.1:4835"),
         ("https_proxy", "http://127.0.0.1:4835"),
         ("CLAUDE_CODE_ENTRYPOINT", "cli"),
-        ("HUDDLE_ROUTER_HOME", "/real"),
-        ("AGENTS_HUDDLE_HOME", "/real"),
+        ("HUDDLE_DATA_HOME", "/real"),
+        ("HUDDLE_STATE_HOME", "/real"),
         ("XDG_CONFIG_HOME", "/real"),
     ]
     .iter()
@@ -78,8 +88,8 @@ fn owner_variables_never_reach_a_child() {
         "HTTPS_PROXY",
         "https_proxy",
         "CLAUDE_CODE_ENTRYPOINT",
-        "HUDDLE_ROUTER_HOME",
-        "AGENTS_HUDDLE_HOME",
+        "HUDDLE_DATA_HOME",
+        "HUDDLE_STATE_HOME",
     ] {
         assert!(!names.contains(&banned), "{banned} leaked: {names:?}");
     }

@@ -85,7 +85,7 @@ async fn the_record_lands_before_the_first_health_answer_and_goes_on_stop() {
     let home = TempHome::new();
     let (env, paths) = fixture(&home);
     let port = free_port();
-    let record = paths.router_dir.join("run/router.json");
+    let record = paths.run_dir.join("router.json");
     let (opts, _lines) = options(env, paths.clone(), port, false);
     let (stop_tx, stop_rx) = watch::channel(false);
     let task = tokio::spawn(run(opts, stop_rx));
@@ -161,8 +161,9 @@ async fn enabling_a_provider_adds_its_lane_within_one_poll() {
     let (stop_tx, stop_rx) = watch::channel(false);
     let task = tokio::spawn(run(opts, stop_rx));
     wait_for_health(port).await;
+    fs::create_dir_all(&paths.config_dir).expect("mkdir");
     fs::write(
-        paths.router_dir.join("providers.json"),
+        paths.config_dir.join("providers.json"),
         "{\"providers\":[\"zai\"]}",
     )
     .expect("write");

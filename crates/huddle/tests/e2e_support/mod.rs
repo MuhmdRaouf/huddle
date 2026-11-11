@@ -15,7 +15,7 @@ use std::time::{Duration, Instant};
 pub struct Daemon {
     pub home: TempHome,
     pub port: u16,
-    pub router_home: PathBuf,
+    pub config_dir: PathBuf,
     child: Child,
 }
 
@@ -44,11 +44,11 @@ impl Daemon {
     fn try_start(providers: &[&str], extra: &[(&str, String)]) -> Result<Daemon, String> {
         let home = TempHome::new();
         let port = free_port();
-        let router_home = home.root().join("rh");
-        fs::create_dir_all(&router_home).expect("mkdir router home");
+        let config_dir = home.root().join(".config/huddle");
+        fs::create_dir_all(&config_dir).expect("mkdir router home");
         let list: Vec<String> = providers.iter().map(|p| format!("\"{p}\"")).collect();
         fs::write(
-            router_home.join("providers.json"),
+            config_dir.join("providers.json"),
             format!("{{\"providers\":[{}]}}", list.join(",")),
         )
         .expect("write providers");
@@ -58,7 +58,6 @@ impl Daemon {
             .env_clear()
             .envs(home.env())
             .env("HUDDLE_ROUTER_PORT", port.to_string())
-            .env("HUDDLE_ROUTER_HOME", &router_home)
             .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::piped());
@@ -90,7 +89,7 @@ impl Daemon {
                 return Ok(Daemon {
                     home,
                     port,
-                    router_home,
+                    config_dir,
                     child,
                 });
             }
@@ -216,7 +215,7 @@ pub fn raw_exchange(port: u16, request: &str) -> String {
 pub fn wait_drivers_done(home_root: &std::path::Path) {
     // A detached driver writes its record within moments of the word that spawned it.
     std::thread::sleep(std::time::Duration::from_millis(300));
-    let jobs = home_root.join(".agents/huddle/jobs");
+    let jobs = home_root.join(".local/state/huddle/jobs");
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
     while std::time::Instant::now() < deadline {
         let mut live = 0;

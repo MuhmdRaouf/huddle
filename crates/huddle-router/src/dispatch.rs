@@ -139,7 +139,7 @@ impl Router {
         // The event writer makes its own directory, but not its parents; the router home is
         // the router's to make. A failure leaves the writer its stderr line.
         if events.is_some() {
-            let _ = std::fs::create_dir_all(config.paths.router_dir.join("events"));
+            let _ = std::fs::create_dir_all(config.paths.state_dir.join("events"));
         }
         let roots = os_roots(&*log);
         let client = Arc::new(UpstreamClient::new(UpstreamConfig {

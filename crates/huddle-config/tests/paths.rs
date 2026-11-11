@@ -5,44 +5,76 @@ use huddle_testkit::temp_home::TempHome;
 use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
 
+fn paths(vars: &[(&str, &str)]) -> Paths {
+    let mut all = vec![("HOME", "/home/u")];
+    all.extend_from_slice(vars);
+    Paths::from_env(&Env::with(&all)).expect("paths")
+}
+
 #[test]
-fn every_path_comes_from_home() {
-    let p = Paths::from_env(&Env::with(&[("HOME", "/home/u")])).expect("paths");
+fn t1_defaults_sit_in_the_xdg_default_folders() {
+    let p = paths(&[]);
     assert_eq!(p.home, PathBuf::from("/home/u"));
-    assert_eq!(p.agents, PathBuf::from("/home/u/.agents"));
-    assert_eq!(p.router_dir, PathBuf::from("/home/u/.agents/huddle-router"));
-    assert_eq!(p.ca_dir, PathBuf::from("/home/u/.agents/ca"));
-    assert_eq!(p.huddle_dir, PathBuf::from("/home/u/.agents/huddle"));
-    assert_eq!(p.jobs_root, PathBuf::from("/home/u/.agents/huddle/jobs"));
-    assert_eq!(p.bin_dir, PathBuf::from("/home/u/.agents/huddle/bin"));
+    assert_eq!(p.config_dir, PathBuf::from("/home/u/.config/huddle"));
+    assert_eq!(p.data_dir, PathBuf::from("/home/u/.local/share/huddle"));
+    assert_eq!(p.state_dir, PathBuf::from("/home/u/.local/state/huddle"));
     assert_eq!(p.claude_dir, PathBuf::from("/home/u/.claude"));
 }
 
 #[test]
-fn overrides_move_the_router_home_and_the_ca_stays_beside_it() {
-    let env = Env::with(&[
-        ("HOME", "/home/u"),
-        ("HUDDLE_ROUTER_HOME", "/x/r"),
-        ("HUDDLE_HOME", "/x/h"),
-        ("CLAUDE_CONFIG_DIR", "/x/c"),
-    ]);
-    let p = Paths::from_env(&env).expect("paths");
-    assert_eq!(p.router_dir, PathBuf::from("/x/r"));
-    assert_eq!(p.ca_dir, PathBuf::from("/x/ca"));
-    assert_eq!(p.huddle_dir, PathBuf::from("/x/h"));
-    assert_eq!(p.jobs_root, PathBuf::from("/x/h/jobs"));
-    assert_eq!(p.claude_dir, PathBuf::from("/x/c"));
+fn t1_derived_dirs_follow_their_parents() {
+    let p = paths(&[("HUDDLE_DATA_HOME", "/x/d"), ("HUDDLE_STATE_HOME", "/x/s")]);
+    assert_eq!(p.bin_dir, PathBuf::from("/x/d/bin"));
+    assert_eq!(p.ca_dir, PathBuf::from("/x/d/ca"));
+    assert_eq!(p.run_dir, PathBuf::from("/x/s/run"));
+    assert_eq!(p.jobs_root, PathBuf::from("/x/s/jobs"));
 }
 
 #[test]
-fn an_empty_override_counts_as_unset() {
-    let env = Env::with(&[
-        ("HOME", "/home/u"),
-        ("HUDDLE_ROUTER_HOME", ""),
+fn t1_each_xdg_variable_moves_its_kind() {
+    let p = paths(&[
+        ("XDG_CONFIG_HOME", "/xc"),
+        ("XDG_DATA_HOME", "/xd"),
+        ("XDG_STATE_HOME", "/xs"),
+    ]);
+    assert_eq!(p.config_dir, PathBuf::from("/xc/huddle"));
+    assert_eq!(p.data_dir, PathBuf::from("/xd/huddle"));
+    assert_eq!(p.state_dir, PathBuf::from("/xs/huddle"));
+    assert_eq!(p.ca_dir, PathBuf::from("/xd/huddle/ca"));
+    assert_eq!(p.run_dir, PathBuf::from("/xs/huddle/run"));
+}
+
+#[test]
+fn t1_each_huddle_variable_wins_over_xdg() {
+    let p = paths(&[
+        ("XDG_CONFIG_HOME", "/xc"),
+        ("XDG_DATA_HOME", "/xd"),
+        ("XDG_STATE_HOME", "/xs"),
+        ("HUDDLE_CONFIG_HOME", "/hc"),
+        ("HUDDLE_DATA_HOME", "/hd"),
+        ("HUDDLE_STATE_HOME", "/hs"),
+        ("CLAUDE_CONFIG_DIR", "/cc"),
+    ]);
+    assert_eq!(p.config_dir, PathBuf::from("/hc"));
+    assert_eq!(p.data_dir, PathBuf::from("/hd"));
+    assert_eq!(p.state_dir, PathBuf::from("/hs"));
+    assert_eq!(p.claude_dir, PathBuf::from("/cc"));
+}
+
+#[test]
+fn t1_an_empty_value_counts_as_unset() {
+    let p = paths(&[
+        ("HUDDLE_CONFIG_HOME", ""),
+        ("HUDDLE_DATA_HOME", ""),
+        ("HUDDLE_STATE_HOME", ""),
+        ("XDG_CONFIG_HOME", ""),
+        ("XDG_DATA_HOME", ""),
+        ("XDG_STATE_HOME", ""),
         ("CLAUDE_CONFIG_DIR", ""),
     ]);
-    let p = Paths::from_env(&env).expect("paths");
-    assert_eq!(p.router_dir, PathBuf::from("/home/u/.agents/huddle-router"));
+    assert_eq!(p.config_dir, PathBuf::from("/home/u/.config/huddle"));
+    assert_eq!(p.data_dir, PathBuf::from("/home/u/.local/share/huddle"));
+    assert_eq!(p.state_dir, PathBuf::from("/home/u/.local/state/huddle"));
     assert_eq!(p.claude_dir, PathBuf::from("/home/u/.claude"));
 }
 

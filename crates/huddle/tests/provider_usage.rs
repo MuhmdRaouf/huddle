@@ -35,7 +35,7 @@ fn an_empty_home_reports_no_requests() {
 #[test]
 fn only_this_providers_provider_route_counts() {
     let home = TempHome::new();
-    let dir = home.root().join(".agents/huddle-router/events");
+    let dir = home.root().join(".local/state/huddle/events");
     fs::create_dir_all(&dir).expect("mkdir");
     let now = now_ms();
     let ts = iso_utc_ms(now);
@@ -61,7 +61,7 @@ fn only_this_providers_provider_route_counts() {
 #[test]
 fn an_event_outside_the_window_is_not_in_today() {
     let home = TempHome::new();
-    let dir = home.root().join(".agents/huddle-router/events");
+    let dir = home.root().join(".local/state/huddle/events");
     fs::create_dir_all(&dir).expect("mkdir");
     let now = now_ms();
     let ten_days_ago = now - 10 * 86_400_000;
@@ -81,7 +81,7 @@ fn an_event_outside_the_window_is_not_in_today() {
 #[test]
 fn a_torn_last_line_is_not_counted() {
     let home = TempHome::new();
-    let dir = home.root().join(".agents/huddle-router/events");
+    let dir = home.root().join(".local/state/huddle/events");
     fs::create_dir_all(&dir).expect("mkdir");
     let now = now_ms();
     let ts = iso_utc_ms(now);
@@ -111,7 +111,7 @@ fn a_torn_last_line_is_not_counted() {
 #[test]
 fn a_line_that_does_not_parse_is_skipped() {
     let home = TempHome::new();
-    let dir = home.root().join(".agents/huddle-router/events");
+    let dir = home.root().join(".local/state/huddle/events");
     fs::create_dir_all(&dir).expect("mkdir");
     let now = now_ms();
     let ts = iso_utc_ms(now);

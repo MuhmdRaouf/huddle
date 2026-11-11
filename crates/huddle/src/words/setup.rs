@@ -50,7 +50,7 @@ pub fn run(args: &[String], env: &Env) -> i32 {
             return 1;
         }
     };
-    let entries = match all_entries(&paths.huddle_dir.join("harnesses.json")) {
+    let entries = match all_entries(&paths.config_dir.join("harnesses.json")) {
         Ok(entries) => entries,
         Err(error) => {
             let _ = writeln!(std::io::stderr(), "huddle: {error}");
@@ -78,7 +78,7 @@ pub fn run(args: &[String], env: &Env) -> i32 {
     let smoke: Option<&dyn SmokeRunner> = if parsed.has("smoke") {
         runner = TurnSmoke {
             env,
-            dir: paths.huddle_dir.join("smoke"),
+            dir: paths.state_dir.join("smoke"),
         };
         Some(&runner)
     } else {

@@ -22,9 +22,9 @@ fn paths(home: &TempHome) -> Paths {
 }
 
 fn enable_zai(paths: &Paths) {
-    fs::create_dir_all(&paths.router_dir).expect("mkdir");
+    fs::create_dir_all(&paths.config_dir).expect("mkdir");
     fs::write(
-        paths.router_dir.join("providers.json"),
+        paths.config_dir.join("providers.json"),
         "{\"providers\":[\"zai\"]}",
     )
     .expect("write");
@@ -167,8 +167,8 @@ fn a_start_with_no_provider_still_starts_the_daemon() {
 fn a_malformed_providers_file_is_an_error_before_any_spawn() {
     let home = TempHome::new();
     let paths = paths(&home);
-    fs::create_dir_all(&paths.router_dir).expect("mkdir");
-    fs::write(paths.router_dir.join("providers.json"), "not json").expect("write");
+    fs::create_dir_all(&paths.config_dir).expect("mkdir");
+    fs::write(paths.config_dir.join("providers.json"), "not json").expect("write");
     let marker = home.root().join("spawned");
     let script = write_script(&home, &format!("touch '{}'", marker.display()));
     let env = home_env(&home);
@@ -247,11 +247,11 @@ fn a_start_spawns_the_binary_and_waits_for_its_health() {
     assert!(
         text.contains(&format!(
             "dir={}",
-            paths.router_dir.canonicalize().expect("canon").display()
+            paths.state_dir.canonicalize().expect("canon").display()
         )),
         "{text}"
     );
-    let log = fs::read_to_string(paths.router_dir.join("router.log")).expect("log");
+    let log = fs::read_to_string(paths.state_dir.join("router.log")).expect("log");
     assert!(log.contains("log-line"), "{log}");
 }
 
@@ -279,7 +279,7 @@ fn a_daemon_that_never_answers_names_its_log() {
         error.to_string(),
         format!(
             "huddle-router: the daemon never answered at http://127.0.0.1:{free} (its log: {})",
-            paths.router_dir.join("router.log").display()
+            paths.state_dir.join("router.log").display()
         )
     );
 }

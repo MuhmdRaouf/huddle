@@ -42,7 +42,7 @@ pub struct EventSink {
 }
 
 impl EventSink {
-    /// `dir` is `<router_dir>/events`. Spawns the writer thread.
+    /// `dir` is `<state_dir>/events`. Spawns the writer thread.
     pub fn start(dir: PathBuf) -> EventSink {
         let (sender, receiver) = sync_channel(QUEUE_CAPACITY);
         let dropped = Arc::new(AtomicU64::new(0));

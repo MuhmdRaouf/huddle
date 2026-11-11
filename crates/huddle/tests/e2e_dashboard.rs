@@ -46,7 +46,7 @@ fn fixture_with(anthropic: &FakeUpstream, zai: &FakeUpstream) -> Daemon {
 }
 
 fn ca_dir(daemon: &Daemon) -> PathBuf {
-    daemon.router_home.parent().expect("parent").join("ca")
+    daemon.home.root().join(".local/share/huddle/ca")
 }
 
 fn state(port: u16) -> Value {
@@ -414,7 +414,7 @@ impl Drop for Prepared {
 fn start_prepared(providers: &str, prepare: impl FnOnce(&TempHome, u16)) -> Prepared {
     let home = TempHome::new();
     let port = free_port();
-    let router_home = home.root().join("rh");
+    let router_home = home.root().join(".config/huddle");
     std::fs::create_dir_all(&router_home).expect("mkdir router home");
     std::fs::write(
         router_home.join("providers.json"),
@@ -427,7 +427,6 @@ fn start_prepared(providers: &str, prepare: impl FnOnce(&TempHome, u16)) -> Prep
         .env_clear()
         .envs(home.env())
         .env("HUDDLE_ROUTER_PORT", port.to_string())
-        .env("HUDDLE_ROUTER_HOME", &router_home)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())

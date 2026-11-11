@@ -210,7 +210,7 @@ fn os_roots_read_the_platform_trust_store_and_nothing_bundled() {
         return;
     }
     let home = TempHome::new();
-    let dir = home.root().join(".agents/ca");
+    let dir = home.root().join(".local/share/huddle/ca");
     huddle_pki::ca::load_or_create(&dir, std::time::SystemTime::now()).expect("ca");
     // The probe reads the system cert directory when SSL_CERT_DIR is unset:
     // point it at an empty one so the file names the whole store.

@@ -49,7 +49,7 @@ async fn rig(
     limit: u64,
 ) -> Rig {
     let home = TempHome::new();
-    let dir = home.root().join(".agents/ca");
+    let dir = home.root().join(".local/share/huddle/ca");
     let ca = load_or_create(&dir, SystemTime::now()).expect("ca");
     let upstream = FakeUpstream::start(plan).await;
     let client = Arc::new(UpstreamClient::new(UpstreamConfig {

@@ -330,7 +330,7 @@ fn forward_request(a: &mut Box<dyn Conn>, b: &mut Box<dyn Conn>) -> io::Result<(
 }
 
 fn start_router(home: &TempHome, port: u16, upstream: &str) {
-    let dir = home.root().join(".agents/huddle-router");
+    let dir = home.root().join(".config/huddle");
     fs::create_dir_all(&dir).expect("mkdir");
     fs::write(dir.join("providers.json"), "{\"providers\":[\"zai\"]}").expect("write");
     let started = Command::new(env!("CARGO_BIN_EXE_huddle"))
@@ -389,7 +389,7 @@ fn read_connect(
 #[cfg_attr(debug_assertions, ignore = "the budget is for the release build")]
 fn the_router_stays_under_its_latency_budget() {
     let home = TempHome::new();
-    let ca_dir = home.root().join(".agents/ca");
+    let ca_dir = home.root().join(".local/share/huddle/ca");
     let ca = ca::load_or_create(&ca_dir, SystemTime::now()).expect("ca");
     let router_tls = tls_client_config(ca.cert_der());
     let base = Instant::now();
@@ -511,7 +511,7 @@ fn the_router_stays_under_its_latency_budget() {
 
 /// R-057: every routed event carries the router's own time, at least one microsecond.
 fn assert_router_us(home: &TempHome) {
-    let dir = home.root().join(".agents/huddle-router/events");
+    let dir = home.root().join(".local/state/huddle/events");
     let mut routed = 0usize;
     for entry in fs::read_dir(&dir).expect("events dir") {
         let text = fs::read_to_string(entry.expect("entry").path()).expect("read");

@@ -10,7 +10,6 @@ fn huddle(home: &TempHome, port: u16, args: &[&str]) -> Output {
         .args(args)
         .env_clear()
         .envs(home.env())
-        .env_remove("HUDDLE_HOME") // the default layout under HOME
         .env("CLAUDE_CONFIG_DIR", home.root().join(".claude"))
         .env("HUDDLE_ROUTER_PORT", port.to_string())
         .output()
@@ -78,7 +77,7 @@ fn before_setup_a_session_start_changes_nothing() {
     assert_silent(&out);
     assert!(!port_open(port), "no router before setup");
     assert!(
-        !home.root().join(".agents/huddle-router").exists(),
+        !home.root().join(".config/huddle").exists(),
         "no state written"
     );
 }

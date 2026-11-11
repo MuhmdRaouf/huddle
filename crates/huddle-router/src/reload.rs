@@ -23,7 +23,7 @@ pub enum ReloadAction {
 /// what the read brought becomes a lane change, while every read is taken so a broken file is
 /// noticed and logged.
 pub struct ProvidersWatch {
-    router_dir: PathBuf,
+    config_dir: PathBuf,
     known: Vec<&'static str>,
     baseline: Fingerprint,
     last_error: Option<String>,
@@ -32,10 +32,10 @@ pub struct ProvidersWatch {
 impl ProvidersWatch {
     /// Takes the baseline fingerprint before the first read: a provider enabled while the daemon
     /// starts changes the file after this snapshot, so the first tick swaps instead of missing it.
-    pub fn new(router_dir: PathBuf, known: Vec<&'static str>) -> ProvidersWatch {
-        let baseline = fingerprint(&providers_path(&router_dir));
+    pub fn new(config_dir: PathBuf, known: Vec<&'static str>) -> ProvidersWatch {
+        let baseline = fingerprint(&providers_path(&config_dir));
         ProvidersWatch {
-            router_dir,
+            config_dir,
             known,
             baseline,
             last_error: None,
@@ -45,7 +45,7 @@ impl ProvidersWatch {
     /// One poll. `log` is called at most once per distinct error: the same bad file logs one
     /// line, and a read that succeeds resets the log so a later break is reported again.
     pub fn tick(&mut self, log: &dyn Fn(String)) -> ReloadAction {
-        match read_enabled(&self.router_dir, &self.known) {
+        match read_enabled(&self.config_dir, &self.known) {
             Err(err) => {
                 let line = format!("huddle-router: {err}");
                 if self.last_error.as_deref() != Some(line.as_str()) {
@@ -56,7 +56,7 @@ impl ProvidersWatch {
             }
             Ok(names) => {
                 self.last_error = None;
-                let now = fingerprint(&providers_path(&self.router_dir));
+                let now = fingerprint(&providers_path(&self.config_dir));
                 let changed = now != self.baseline;
                 self.baseline = now;
                 if changed && !names.is_empty() {

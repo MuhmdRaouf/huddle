@@ -45,7 +45,6 @@ impl Rig {
             .args(args)
             .env_clear()
             .envs(self.home.env())
-            .env_remove("HUDDLE_HOME")
             .env("CLAUDE_CONFIG_DIR", self.home.root().join(".claude"))
             .env("HUDDLE_ROUTER_PORT", self.port.to_string())
             .env("HUDDLE_ROUTER_ANTHROPIC_URL", self.anthropic.url())
@@ -174,9 +173,8 @@ fn remove_and_uninstall_restore_settings_byte_for_byte() {
         "{}",
         String::from_utf8_lossy(&remove.stderr)
     );
-    let providers =
-        fs::read_to_string(rig.home.root().join(".agents/huddle-router/providers.json"))
-            .expect("providers");
+    let providers = fs::read_to_string(rig.home.root().join(".config/huddle/providers.json"))
+        .expect("providers");
     assert!(!providers.contains("zai"), "{providers}");
 
     let uninstall = rig.run(&["uninstall"]);

@@ -34,7 +34,7 @@ async fn rig(anthropic: FakeUpstream, zai: FakeUpstream) -> Rig {
     ]);
     let paths = Paths::from_env(&env).expect("paths");
     let port = free_port();
-    let dir = paths.router_dir.join("events");
+    let dir = paths.state_dir.join("events");
     let config = RouterConfig {
         env,
         paths,
@@ -72,7 +72,7 @@ async fn post(port: u16, body: &str) {
 }
 
 async fn events(home: &TempHome, want: usize) -> Vec<serde_json::Value> {
-    let dir = home.root().join(".agents/huddle-router/events");
+    let dir = home.root().join(".local/state/huddle/events");
     let deadline = std::time::Instant::now() + Duration::from_secs(3);
     loop {
         let mut lines: Vec<serde_json::Value> = Vec::new();

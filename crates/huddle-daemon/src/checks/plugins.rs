@@ -65,7 +65,7 @@ pub fn read(
         carried: &carried,
         settings: settings.as_deref(),
         wiring,
-        enabled: providers_file::read_enabled(&paths.router_dir, &known)
+        enabled: providers_file::read_enabled(&paths.config_dir, &known)
             .map_err(|error| error.to_string()),
         config_hosts: dashboard_hosts::read(&dashboard_hosts::config_path(paths))
             .map(|hosts| hosts.len())
@@ -413,7 +413,7 @@ mod tests {
         )
         .expect("installed");
         fs::write(paths.claude_dir.join("settings.json"), SETTINGS).expect("settings");
-        providers_file::set_enabled(&paths.router_dir, "zai", true).expect("providers.json");
+        providers_file::set_enabled(&paths.config_dir, "zai", true).expect("providers.json");
         fs::create_dir_all(&paths.config_dir).expect("config dir");
         fs::write(
             paths.config_dir.join("config.toml"),

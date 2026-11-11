@@ -69,7 +69,6 @@ impl Env<'_> {
         let mut cmd = Command::new(program);
         cmd.env_clear()
             .envs(self.home.env())
-            .env_remove("HUDDLE_HOME")
             .env("CLAUDE_CONFIG_DIR", self.home.root().join(".claude"))
             .env("PATH", "/usr/bin:/bin:/usr/sbin:/sbin")
             .env("HUDDLE_ROUTER_PORT", self.port.to_string())
@@ -86,7 +85,7 @@ impl Env<'_> {
     }
 
     fn installed(&self, args: &[&str]) -> Output {
-        let link = self.home.root().join(".agents/huddle/bin/huddle");
+        let link = self.home.root().join(".local/share/huddle/bin/huddle");
         self.command(&link)
             .args(args)
             .output()
@@ -110,10 +109,7 @@ impl Env<'_> {
     }
 
     fn daemon_pid(&self) -> u32 {
-        let path = self
-            .home
-            .root()
-            .join(".agents/huddle-router/run/router.json");
+        let path = self.home.root().join(".local/state/huddle/run/router.json");
         let doc: serde_json::Value =
             serde_json::from_slice(&fs::read(path).expect("router record")).expect("json");
         doc["pid"].as_u64().expect("pid") as u32
@@ -177,7 +173,7 @@ fn the_full_flow_from_bootstrap_to_uninstall() {
     );
     assert!(env.wait_port(true), "the router serves after setup");
 
-    let bin_dir = home.root().join(".agents/huddle/bin");
+    let bin_dir = home.root().join(".local/share/huddle/bin");
     assert!(bin_dir.join("huddle").exists());
 
     // A later session finds the server stopped and brings it back.

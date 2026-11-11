@@ -11,7 +11,6 @@ fn huddle(home: &TempHome, port: u16, args: &[&str]) -> Output {
         .args(args)
         .env_clear()
         .envs(home.env())
-        .env_remove("HUDDLE_HOME") // the default layout under HOME
         .env("CLAUDE_CONFIG_DIR", home.root().join(".claude"))
         .env("HUDDLE_ROUTER_PORT", port.to_string())
         .output()
@@ -76,7 +75,7 @@ fn uninstall_restores_settings_byte_for_byte_and_stops_the_router() {
     assert!(
         !home
             .root()
-            .join(".agents/huddle/settings-ledger.json")
+            .join(".local/state/huddle/settings-ledger.json")
             .exists()
     );
 }

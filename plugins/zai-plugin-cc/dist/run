@@ -1,6 +1,6 @@
 #!/bin/sh
 # Runs huddle at its installed path. /huddle:setup installs it and points the link at this build.
-bin=${HUDDLE_HOME:-$HOME/.agents/huddle}/bin/huddle
+bin=${HUDDLE_DATA_HOME:-${XDG_DATA_HOME:-$HOME/.local/share}/huddle}/bin/huddle
 if [ ! -x "$bin" ]; then
   echo "huddle is not installed: run /huddle:setup first" >&2
   exit 127

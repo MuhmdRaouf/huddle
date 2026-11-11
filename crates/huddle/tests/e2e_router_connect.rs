@@ -20,7 +20,7 @@ fn fixture() -> (FakeUpstream, FakeUpstream, Daemon) {
         ],
     );
     load_or_create(
-        &daemon.router_home.parent().expect("parent").join("ca"),
+        &daemon.home.root().join(".local/share/huddle/ca"),
         SystemTime::now(),
     )
     .expect("create CA");
@@ -28,7 +28,7 @@ fn fixture() -> (FakeUpstream, FakeUpstream, Daemon) {
 }
 
 fn ca_path(daemon: &Daemon) -> PathBuf {
-    ca_cert_path(&daemon.router_home.parent().expect("parent").join("ca"))
+    ca_cert_path(&daemon.home.root().join(".local/share/huddle/ca"))
 }
 
 fn curl_through_proxy(port: u16, ca: &Path, body: &str) -> (String, String) {

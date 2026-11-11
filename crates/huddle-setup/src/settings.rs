@@ -90,13 +90,13 @@ pub fn backup_path(paths: &Paths) -> PathBuf {
 }
 
 pub fn ledger_path(paths: &Paths) -> PathBuf {
-    paths.huddle_dir.join("settings-ledger.json")
+    paths.state_dir.join("settings-ledger.json")
 }
 
 /// `settings.json.pristine` in the huddle dir: settings.json as the user had it before
 /// huddle's first write, whatever wrote the file since.
 pub fn pristine_path(paths: &Paths) -> PathBuf {
-    paths.huddle_dir.join("settings.json.pristine")
+    paths.state_dir.join("settings.json.pristine")
 }
 
 /// Saves the untouched settings.json bytes once, before huddle's first write. A settings.json
@@ -130,7 +130,7 @@ fn any_ledger(paths: &Paths) -> bool {
     if ledger_path(paths).exists() {
         return true;
     }
-    let Ok(entries) = fs::read_dir(paths.huddle_dir.join("providers")) else {
+    let Ok(entries) = fs::read_dir(paths.state_dir.join("providers")) else {
         return false;
     };
     entries.filter_map(Result::ok).any(|entry| {

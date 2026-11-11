@@ -42,7 +42,7 @@ pub const NO_DAEMON_ENV: &str = "HUDDLE_NO_DAEMON";
 /// The file under the router dir the spawned daemon's output appends to.
 const LOG_NAME: &str = "router.log";
 
-/// The record under the run dir, `<router_dir>/run/router.json`.
+/// The record under the run dir, `<run_dir>/router.json`.
 const RECORD_NAME: &str = "router.json";
 
 /// The running router's health answer, as the probe reads it.
@@ -115,7 +115,7 @@ impl std::error::Error for StartError {}
 pub struct StartOptions<'a> {
     /// The environment the port override and the daemon's own environment come from.
     pub env: &'a Env,
-    /// The state roots; the daemon's working directory and log live in `router_dir`.
+    /// The state roots; the daemon's working directory and log live in `state_dir`.
     pub paths: &'a Paths,
     /// The port the daemon serves, from `huddle_config::paths::router_port`.
     pub port: u16,
@@ -178,7 +178,7 @@ pub fn up_line(port: u16, answer: &HealthAnswer) -> String {
 
 /// The record the running daemon publishes, `None` when the file is missing or malformed.
 pub fn read_record(paths: &Paths) -> Option<RouterRecord> {
-    let path = paths.router_dir.join("run").join(RECORD_NAME);
+    let path = paths.run_dir.join(RECORD_NAME);
     let text = fs::read_to_string(path).ok()?;
     serde_json::from_str(&text).ok()
 }
@@ -253,11 +253,11 @@ pub fn spawn_serve(
             .to_string();
         return Err(refusal(&base));
     }
-    let log = paths.router_dir.join(LOG_NAME);
+    let log = paths.state_dir.join(LOG_NAME);
     DirBuilder::new()
         .recursive(true)
         .mode(0o700)
-        .create(&paths.router_dir)
+        .create(&paths.state_dir)
         .map_err(|source| StartError::Log {
             path: log.clone(),
             source,
@@ -271,7 +271,7 @@ pub fn spawn_serve(
             .collect(),
         env: daemon_env(env, port),
         log_file: Some(log),
-        cwd: paths.router_dir.clone(),
+        cwd: paths.state_dir.clone(),
     };
     start_detached(&spec).map_err(|error| match error {
         DetachError::Log { path, source } => StartError::Log { path, source },
@@ -340,7 +340,7 @@ fn updated_or_up(opts: &StartOptions<'_>, answer: &HealthAnswer) -> Result<Strin
             return Err(StartError::Spawn(format!(
                 "huddle-router: the daemon (pid {old}) never handed over to {} (its log: {})",
                 opts.executable.display(),
-                opts.paths.router_dir.join(LOG_NAME).display(),
+                opts.paths.state_dir.join(LOG_NAME).display(),
             )));
         }
         thread::sleep(SPAWN_POLL);
@@ -356,7 +356,7 @@ pub fn start(opts: &StartOptions<'_>) -> Result<String, StartError> {
         return updated_or_up(opts, &answer);
     }
     // An empty list still spawns: the router serves Anthropic with no provider enabled.
-    let _providers = read_enabled(&opts.paths.router_dir, &provider_ids())
+    let _providers = read_enabled(&opts.paths.config_dir, &provider_ids())
         .map_err(|error| StartError::ProvidersFile(error.to_string()))?;
     spawn_serve(opts.env, opts.paths, opts.port, &opts.executable, &[])?;
     let deadline = Instant::now() + opts.budget;
@@ -367,7 +367,7 @@ pub fn start(opts: &StartOptions<'_>) -> Result<String, StartError> {
         if Instant::now() >= deadline {
             return Err(StartError::NeverAnswered {
                 port: opts.port,
-                log: opts.paths.router_dir.join(LOG_NAME),
+                log: opts.paths.state_dir.join(LOG_NAME),
             });
         }
         thread::sleep(SPAWN_POLL);
@@ -454,7 +454,7 @@ mod tests {
         let paths = Paths::from_env(&Env::with(&[("HOME", home.root().to_str().expect("utf8"))]))
             .expect("paths");
         assert_eq!(read_record(&paths), None);
-        let run = paths.router_dir.join("run");
+        let run = paths.run_dir.clone();
         fs::create_dir_all(&run).expect("mkdir");
         let record = RouterRecord {
             pid: 42,
