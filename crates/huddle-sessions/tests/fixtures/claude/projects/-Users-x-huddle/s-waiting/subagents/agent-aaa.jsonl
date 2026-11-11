@@ -1,0 +1,2 @@
+{"type":"user","agentId":"aaa","timestamp":"2026-11-11T11:20:00.000Z","message":{"content":"SECRET SUBAGENT PROMPT"}}
+{"type":"assistant","agentId":"aaa","timestamp":"2026-11-11T11:30:00.000Z","requestId":"req_a1","cwd":"/Users/x/huddle","message":{"model":"claude-sonnet-5-5","stop_reason":"end_turn","usage":{"input_tokens":2,"cache_creation_input_tokens":100,"cache_read_input_tokens":1000,"output_tokens":10,"cache_creation":{"ephemeral_1h_input_tokens":100,"ephemeral_5m_input_tokens":0}},"content":[]}}

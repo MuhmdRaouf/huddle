@@ -1,0 +1,2 @@
+{"type":"ai-title","sessionId":"s-working","aiTitle":"Only an AI title"}
+{"type":"assistant","timestamp":"2026-11-11T11:59:57.000Z","cwd":"/Users/x/huddle","gitBranch":"dev","sessionId":"s-working","requestId":"req_w1","message":{"model":"claude-sonnet-5-5[1m]","stop_reason":"tool_use","usage":{"input_tokens":5,"cache_creation_input_tokens":50,"cache_read_input_tokens":500,"output_tokens":7,"cache_creation":{"ephemeral_1h_input_tokens":0,"ephemeral_5m_input_tokens":50}},"content":[{"type":"tool_use","input":{"command":"SECRET-TOOL-INPUT"}}]}}

@@ -36,6 +36,7 @@ huddle-procs = { path = "crates/huddle-procs" }
 huddle-harness = { path = "crates/huddle-harness" }
 huddle-jobs = { path = "crates/huddle-jobs" }
 huddle-setup = { path = "crates/huddle-setup" }
+huddle-sessions = { path = "crates/huddle-sessions" }
 
 [profile.release]
 lto = "fat"

@@ -1,0 +1,2 @@
+{"type":"user","agentId":"bbb","timestamp":"2026-11-11T11:45:00.000Z","message":{"content":"SECRET"}}
+{"type":"assistant","agentId":"bbb","timestamp":"2026-11-11T11:49:00.000Z","requestId":"req_b1","message":{"model":"claude-haiku-5-5","stop_reason":"end_turn","usage":{"input_tokens":2,"cache_creation_input_tokens":100,"cache_read_input_tokens":1000,"output_tokens":10,"cache_creation":{"ephemeral_1h_input_tokens":100,"ephemeral_5m_input_tokens":0}},"content":[]}}
