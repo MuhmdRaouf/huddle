@@ -48,16 +48,19 @@ pub struct DashboardInputs {
     pub key_present: KeyPresent,
     /// The delegated jobs that are live or waiting for review.
     pub jobs: Arc<dyn Fn() -> Vec<JobRow> + Send + Sync>,
+    /// The hosts besides the loopback that may reach the dashboard's read-only paths.
+    pub hosts: Arc<dyn Fn() -> Vec<String> + Send + Sync>,
 }
 
 impl Default for DashboardInputs {
-    /// Nothing known: no wiring, no key answers, no jobs.
+    /// Nothing known: no wiring, no key answers, no jobs, no extra hosts.
     fn default() -> Self {
         DashboardInputs {
             version: String::new(),
             wiring: Arc::new(Wiring::default),
             key_present: Arc::new(|_| None),
             jobs: Arc::new(Vec::new),
+            hosts: Arc::new(Vec::new),
         }
     }
 }

@@ -209,26 +209,66 @@ pub struct EntryCtx {
     pub providers: Arc<dyn Fn() -> Vec<String> + Send + Sync>,
     /// The page, the state and the live feed; `None` leaves those paths to `forward`.
     pub dashboard: Option<Arc<Dashboard>>,
+    /// The hosts besides the loopback that may reach the dashboard's read-only paths, read
+    /// fresh per request so a config change applies without a restart.
+    pub dashboard_hosts: Arc<dyn Fn() -> Vec<String> + Send + Sync>,
 }
 
-/// True, after answering 421, when the request does not name this port on the loopback: a
-/// DNS-rebinding guard. The compare ignores case and accepts the IPv6 loopback; a missing Host
-/// header is a mismatch.
-fn refuse_host(req: &Request<Incoming>, port: u16) -> bool {
-    let accepted = req
-        .headers()
-        .get(HOST)
-        .and_then(|v| v.to_str().ok())
-        .is_some_and(|host| {
-            host.eq_ignore_ascii_case(&format!("127.0.0.1:{port}"))
-                || host.eq_ignore_ascii_case(&format!("localhost:{port}"))
-                || host.eq_ignore_ascii_case(&format!("[::1]:{port}"))
-        });
-    !accepted
+/// What a request's Host header says about who is asking.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HostKind {
+    /// The loopback on this port: full access.
+    Local,
+    /// A configured dashboard host: the dashboard's read-only paths only.
+    Dashboard,
+    /// Anything else, a missing header included.
+    Refused,
 }
 
-/// The entry flow: CONNECT first, then the Host guard, then the health path (never forwarded),
-/// then the dashboard's paths, then forward.
+/// Classifies the Host header: a DNS-rebinding guard. The loopback names must carry this port;
+/// a dashboard host matches bare or with this port. Compares ignore case and accept the IPv6
+/// loopback.
+pub fn classify_host(host: Option<&str>, port: u16, dashboard_hosts: &[String]) -> HostKind {
+    let Some(host) = host else {
+        return HostKind::Refused;
+    };
+    let host = host.to_ascii_lowercase();
+    if [
+        format!("127.0.0.1:{port}"),
+        format!("localhost:{port}"),
+        format!("[::1]:{port}"),
+    ]
+    .contains(&host)
+    {
+        return HostKind::Local;
+    }
+    let bare = host
+        .strip_suffix(&format!(":{port}"))
+        .unwrap_or(host.as_str());
+    if dashboard_hosts.iter().any(|listed| listed == bare) {
+        HostKind::Dashboard
+    } else {
+        HostKind::Refused
+    }
+}
+
+fn wrong_host() -> Response<RespBody> {
+    anthropic_error(
+        StatusCode::MISDIRECTED_REQUEST,
+        "invalid_request_error",
+        "huddle-router router: wrong Host",
+    )
+}
+
+/// True for the only requests a dashboard host may make: a GET of the page, the state or the
+/// live feed.
+fn is_dashboard_read(req: &Request<Incoming>) -> bool {
+    req.method() == Method::GET && matches!(req.uri().path(), PAGE_PATH | STATE_PATH | LIVE_PATH)
+}
+
+/// The entry flow: CONNECT first, then the Host guard (a dashboard host stops here unless it
+/// asks for a dashboard read), then the health path (never forwarded), then the dashboard's
+/// paths, then forward.
 pub fn entry_handler(ctx: Arc<EntryCtx>) -> Handler {
     Arc::new(move |req: Request<Incoming>| {
         let ctx = ctx.clone();
@@ -238,12 +278,13 @@ pub fn entry_handler(ctx: Arc<EntryCtx>) -> Handler {
             if req.method() == Method::CONNECT {
                 return (ctx.connect)(req).await;
             }
-            if ctx.port.is_some_and(|port| refuse_host(&req, port)) {
-                return anthropic_error(
-                    StatusCode::MISDIRECTED_REQUEST,
-                    "invalid_request_error",
-                    "huddle-router router: wrong Host",
-                );
+            if let Some(port) = ctx.port {
+                let host = req.headers().get(HOST).and_then(|v| v.to_str().ok());
+                match classify_host(host, port, &(ctx.dashboard_hosts)()) {
+                    HostKind::Local => {}
+                    HostKind::Dashboard if is_dashboard_read(&req) => {}
+                    HostKind::Dashboard | HostKind::Refused => return wrong_host(),
+                }
             }
             // The health path is answered here, whatever the method: nothing is forwarded from it.
             if req.uri().path() == HEALTH_PATH {
@@ -336,5 +377,55 @@ async fn wait_stop(stop: &mut watch::Receiver<bool>) {
     if stop.wait_for(|v| *v).await.is_err() {
         // A dropped sender means nobody can stop this server, so it never fires.
         std::future::pending::<()>().await;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn hosts() -> Vec<String> {
+        vec!["hub.raouf.me".to_string()]
+    }
+
+    #[test]
+    fn the_loopback_names_need_this_port_in_any_case() {
+        for host in ["127.0.0.1:4835", "LOCALHOST:4835", "[::1]:4835"] {
+            assert_eq!(classify_host(Some(host), 4835, &hosts()), HostKind::Local);
+        }
+        assert_eq!(
+            classify_host(Some("127.0.0.1"), 4835, &hosts()),
+            HostKind::Refused
+        );
+        assert_eq!(
+            classify_host(Some("127.0.0.1:1"), 4835, &hosts()),
+            HostKind::Refused
+        );
+    }
+
+    #[test]
+    fn a_listed_host_matches_bare_or_with_this_port_in_any_case() {
+        for host in ["hub.raouf.me", "HUB.raouf.me", "hub.raouf.me:4835"] {
+            assert_eq!(
+                classify_host(Some(host), 4835, &hosts()),
+                HostKind::Dashboard
+            );
+        }
+    }
+
+    #[test]
+    fn an_unlisted_host_a_wrong_port_and_no_header_are_refused() {
+        for host in [
+            Some("hub.raouf.me:9999"),
+            Some("other.example"),
+            Some(""),
+            None,
+        ] {
+            assert_eq!(classify_host(host, 4835, &hosts()), HostKind::Refused);
+        }
+        assert_eq!(
+            classify_host(Some("hub.raouf.me"), 4835, &[]),
+            HostKind::Refused
+        );
     }
 }

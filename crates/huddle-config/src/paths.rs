@@ -19,6 +19,8 @@ pub struct Paths {
     pub jobs_root: PathBuf,
     pub bin_dir: PathBuf,
     pub claude_dir: PathBuf,
+    /// `$XDG_CONFIG_HOME/huddle`, else `$HOME/.config/huddle`: the user-edited config.
+    pub config_dir: PathBuf,
 }
 
 /// What reading the paths can refuse.
@@ -58,7 +60,12 @@ impl Paths {
         let huddle_dir = set(env, "HUDDLE_HOME")
             .map(PathBuf::from)
             .unwrap_or_else(|| agents.join("huddle"));
+        let config_dir = match set(env, "XDG_CONFIG_HOME") {
+            Some(xdg) => PathBuf::from(xdg).join("huddle"),
+            None => home.join(".config").join("huddle"),
+        };
         Ok(Paths {
+            config_dir,
             jobs_root: huddle_dir.join("jobs"),
             bin_dir: huddle_dir.join("bin"),
             claude_dir: set(env, "CLAUDE_CONFIG_DIR")

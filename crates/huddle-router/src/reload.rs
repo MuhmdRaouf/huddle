@@ -5,6 +5,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
+use huddle_config::dashboard_hosts;
 use huddle_config::providers_file::{providers_path, read_enabled};
 
 /// How often the daemon polls providers.json.
@@ -65,6 +66,42 @@ impl ProvidersWatch {
                     // at the router, and an empty answer would cut them off.
                     ReloadAction::Keep
                 }
+            }
+        }
+    }
+}
+
+/// Watches config.toml's dashboard hosts. Every tick re-reads the file, so an added host applies
+/// within one poll.
+pub struct DashboardHostsWatch {
+    path: PathBuf,
+    last_error: Option<String>,
+}
+
+impl DashboardHostsWatch {
+    pub fn new(path: PathBuf) -> DashboardHostsWatch {
+        DashboardHostsWatch {
+            path,
+            last_error: None,
+        }
+    }
+
+    /// One poll: the hosts the file lists now. A file that cannot be read or parsed lists none,
+    /// so the router accepts the loopback only, and `log` gets the error once per distinct
+    /// error; a good read resets that, so a later break is reported again.
+    pub fn tick(&mut self, log: &dyn Fn(String)) -> Vec<String> {
+        match dashboard_hosts::read(&self.path) {
+            Ok(hosts) => {
+                self.last_error = None;
+                hosts
+            }
+            Err(err) => {
+                let line = format!("huddle-router: {err}");
+                if self.last_error.as_deref() != Some(line.as_str()) {
+                    log(line.clone());
+                    self.last_error = Some(line);
+                }
+                Vec::new()
             }
         }
     }
@@ -215,5 +252,49 @@ mod tests {
         write_providers(&dir, "not json");
         watch.tick(&log);
         assert_eq!(lines.borrow().len(), 2);
+    }
+
+    fn write_config(path: &PathBuf, text: &str) {
+        fs::create_dir_all(path.parent().expect("parent")).expect("mkdir");
+        fs::write(path, text).expect("write");
+    }
+
+    #[test]
+    fn the_hosts_watch_follows_the_file() {
+        let home = TempHome::new();
+        let path = home.root().join("cfg").join("config.toml");
+        let mut watch = DashboardHostsWatch::new(path.clone());
+        let (_lines, log) = logged();
+        assert_eq!(watch.tick(&log), Vec::<String>::new(), "no file yet");
+        write_config(&path, "[dashboard]\nhosts = [\"hub.raouf.me\"]\n");
+        assert_eq!(watch.tick(&log), vec!["hub.raouf.me".to_string()]);
+        write_config(&path, "[dashboard]\nhosts = []\n");
+        assert_eq!(watch.tick(&log), Vec::<String>::new());
+    }
+
+    #[test]
+    fn a_broken_hosts_file_lists_none_and_logs_once_per_distinct_error() {
+        let home = TempHome::new();
+        let path = home.root().join("cfg").join("config.toml");
+        let mut watch = DashboardHostsWatch::new(path.clone());
+        let (lines, log) = logged();
+        write_config(&path, "[dashboard]\nhosts = [\"hub.raouf.me\"]\n");
+        assert_eq!(watch.tick(&log), vec!["hub.raouf.me".to_string()]);
+        write_config(&path, "not = [toml");
+        assert_eq!(watch.tick(&log), Vec::<String>::new());
+        assert_eq!(watch.tick(&log), Vec::<String>::new());
+        let logged = lines.borrow().clone();
+        assert_eq!(logged.len(), 1, "one line, not one per poll: {logged:?}");
+        assert!(logged[0].starts_with("huddle-router: "), "{logged:?}");
+        assert!(logged[0].contains("config.toml"), "{logged:?}");
+        write_config(&path, "[dashboard]\nhosts = []\n");
+        watch.tick(&log);
+        write_config(&path, "not = [toml");
+        watch.tick(&log);
+        assert_eq!(
+            lines.borrow().len(),
+            2,
+            "a new break after a good read logs again"
+        );
     }
 }

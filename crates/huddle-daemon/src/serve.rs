@@ -9,17 +9,18 @@ use std::net::TcpListener;
 use std::os::fd::FromRawFd;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant};
 
 use huddle_catalog::providers::provider_ids;
 use huddle_config::atomic::write_atomic;
+use huddle_config::dashboard_hosts;
 use huddle_config::env::Env;
 use huddle_config::paths::Paths;
 use huddle_config::providers_file::read_enabled;
 use huddle_router::dispatch::{Router, RouterConfig};
 use huddle_router::events::{EventSink, iso_utc_ms, now_ms};
-use huddle_router::reload::{POLL, ProvidersWatch, ReloadAction};
+use huddle_router::reload::{DashboardHostsWatch, POLL, ProvidersWatch, ReloadAction};
 use huddle_router::server::{ROUTER_NAME, ServerLimits, serve as serve_http};
 use tokio::sync::{mpsc, watch};
 
@@ -212,8 +213,17 @@ pub async fn run(
         }
     };
 
+    let mut hosts_watch = DashboardHostsWatch::new(dashboard_hosts::config_path(&paths));
+    let dashboard_hosts_now = Arc::new(RwLock::new(hosts_watch.tick(&*log)));
+
     let executable = executable_resolved();
-    let dashboard = dashboard_inputs::start(version.clone(), cleaned.clone(), paths.clone(), port);
+    let mut dashboard =
+        dashboard_inputs::start(version.clone(), cleaned.clone(), paths.clone(), port);
+    dashboard.hosts = {
+        let hosts = Arc::clone(&dashboard_hosts_now);
+        // The guard is never held across an await; a poisoned lock still holds a whole list.
+        Arc::new(move || hosts.read().unwrap_or_else(|e| e.into_inner()).clone())
+    };
     let router = Router::new(
         RouterConfig {
             env: cleaned.clone(),
@@ -304,6 +314,8 @@ pub async fn run(
                 break;
             }
             _ = reload_timer.tick() => {
+                let hosts = hosts_watch.tick(&*log);
+                *dashboard_hosts_now.write().unwrap_or_else(|e| e.into_inner()) = hosts;
                 if let ReloadAction::Swap(names) = providers_watch.tick(&*log) {
                     router.reload(&names);
                     log(format!("huddle-router: now serving {}", names.join(", ")));

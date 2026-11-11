@@ -389,6 +389,7 @@ impl Router {
             forward,
             providers,
             dashboard: Some(dashboard),
+            dashboard_hosts: Arc::clone(&self.dashboard.hosts),
         }))
     }
 

@@ -108,6 +108,7 @@ pub fn start(version: String, env: Env, paths: Paths, port: u16) -> DashboardInp
             move |id| cache.latest().keys.get(id).copied()
         }),
         jobs: Arc::new(move || cache.latest().jobs.clone()),
+        hosts: Arc::new(Vec::new),
     }
 }
 

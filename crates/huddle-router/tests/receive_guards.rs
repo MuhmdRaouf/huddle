@@ -1,4 +1,6 @@
+use huddle_router::dashboard::{Dashboard, DashboardInputs};
 use huddle_router::health::HEALTH_PATH;
+use huddle_router::live::LiveState;
 use huddle_router::server::{
     BODY_LIMIT, EntryCtx, Handler, ServerLimits, anthropic_error, bind, entry_handler, full_body,
     receive, safe_path, serve,
@@ -51,6 +53,7 @@ async fn entry() -> Rig {
         forward: counting("forward", forwards.clone()),
         providers: Arc::new(|| vec!["zai".to_string()]),
         dashboard: None,
+        dashboard_hosts: Arc::new(Vec::new),
     }));
     let (_tx, rx) = watch::channel(false);
     tokio::spawn(async move {
@@ -263,4 +266,133 @@ async fn a_client_that_stops_mid_body_gets_no_answer_and_nothing_is_delivered() 
         "no complete answer"
     );
     assert!(got.lock().await.is_empty());
+}
+
+const DASHBOARD_HOST: &str = "hub.raouf.me";
+
+/// An entry flow with the real dashboard and `hub.raouf.me` listed as a dashboard host.
+async fn dashboard_entry() -> Rig {
+    let connects = Arc::new(AtomicUsize::new(0));
+    let forwards = Arc::new(AtomicUsize::new(0));
+    let listener = bind(0).await.expect("bind");
+    let port = listener.local_addr().expect("addr").port();
+    let providers: Arc<dyn Fn() -> Vec<String> + Send + Sync> =
+        Arc::new(|| vec!["zai".to_string()]);
+    let dashboard = Dashboard::new(
+        Arc::new(LiveState::new(0)),
+        DashboardInputs::default(),
+        Arc::clone(&providers),
+    );
+    let handler = entry_handler(Arc::new(EntryCtx {
+        port: Some(port),
+        connect: counting("connect", connects.clone()),
+        forward: counting("forward", forwards.clone()),
+        providers,
+        dashboard: Some(Arc::new(dashboard)),
+        dashboard_hosts: Arc::new(|| vec![DASHBOARD_HOST.to_string()]),
+    }));
+    let (_tx, rx) = watch::channel(false);
+    tokio::spawn(async move {
+        serve(listener, handler, ServerLimits::default(), rx)
+            .await
+            .expect("serve")
+    });
+    Rig {
+        port,
+        connects,
+        forwards,
+    }
+}
+
+const WRONG_HOST_BODY: &str = r#"{"type":"error","error":{"type":"invalid_request_error","message":"huddle-router router: wrong Host"}}"#;
+
+#[tokio::test]
+async fn a_dashboard_host_reaches_the_page_and_the_state_in_any_case_with_or_without_the_port() {
+    let rig = dashboard_entry().await;
+    for host in [
+        DASHBOARD_HOST.to_string(),
+        format!("HUB.raouf.me:{}", rig.port),
+    ] {
+        for path in ["/", "/huddle-router/state"] {
+            let resp = raw(rig.port, close_req("GET", path, &host, "", "")).await;
+            assert!(resp.starts_with("HTTP/1.1 200"), "{host} {path}: {resp}");
+        }
+    }
+    assert_eq!(rig.forwards.load(Ordering::SeqCst), 0);
+}
+
+#[tokio::test]
+async fn a_dashboard_host_gets_the_live_feed() {
+    let rig = dashboard_entry().await;
+    let mut s = TcpStream::connect(("127.0.0.1", rig.port))
+        .await
+        .expect("connect");
+    s.write_all(close_req("GET", "/huddle-router/live", DASHBOARD_HOST, "", "").as_bytes())
+        .await
+        .expect("write");
+    let mut buf = vec![0_u8; 1024];
+    let n = tokio::time::timeout(Duration::from_secs(5), s.read(&mut buf))
+        .await
+        .expect("head in time")
+        .expect("read");
+    let head = String::from_utf8_lossy(&buf[..n]).to_lowercase();
+    assert!(head.starts_with("http/1.1 200"), "{head}");
+    assert!(head.contains("content-type: text/event-stream"), "{head}");
+}
+
+#[tokio::test]
+async fn a_dashboard_host_reaches_nothing_else_and_no_upstream_sees_a_request() {
+    let rig = dashboard_entry().await;
+    let attempts = [
+        ("POST", "/v1/messages"),
+        ("GET", "/v1/messages"),
+        ("POST", "/"),
+        ("POST", "/huddle-router/state"),
+        ("DELETE", "/huddle-router/live"),
+        ("GET", HEALTH_PATH),
+        ("POST", HEALTH_PATH),
+        ("GET", "/anything"),
+        ("GET", "//evil.example/x"),
+    ];
+    for (method, path) in attempts {
+        let resp = raw(rig.port, close_req(method, path, DASHBOARD_HOST, "", "{}")).await;
+        assert!(resp.starts_with("HTTP/1.1 421"), "{method} {path}: {resp}");
+        assert_eq!(body_of(&resp), WRONG_HOST_BODY, "{method} {path}");
+    }
+    assert_eq!(rig.forwards.load(Ordering::SeqCst), 0, "nothing forwarded");
+    assert_eq!(rig.connects.load(Ordering::SeqCst), 0);
+}
+
+#[tokio::test]
+async fn a_dashboard_host_on_the_wrong_port_and_an_unlisted_host_get_421_everywhere() {
+    let rig = dashboard_entry().await;
+    for host in [
+        "hub.raouf.me:9999".to_string(),
+        "other.example".to_string(),
+        format!("other.example:{}", rig.port),
+    ] {
+        for (method, path) in [
+            ("GET", "/"),
+            ("GET", "/huddle-router/state"),
+            ("GET", "/huddle-router/live"),
+            ("POST", "/v1/messages"),
+        ] {
+            let resp = raw(rig.port, close_req(method, path, &host, "", "{}")).await;
+            assert!(
+                resp.starts_with("HTTP/1.1 421"),
+                "{host} {method} {path}: {resp}"
+            );
+        }
+    }
+    assert_eq!(rig.forwards.load(Ordering::SeqCst), 0);
+}
+
+#[tokio::test]
+async fn the_loopback_keeps_full_access_beside_a_dashboard_host() {
+    let rig = dashboard_entry().await;
+    let host = format!("127.0.0.1:{}", rig.port);
+    let post = raw(rig.port, close_req("POST", "/v1/messages", &host, "", "{}")).await;
+    assert_eq!(body_of(&post), "forward", "{post}");
+    let health = raw(rig.port, close_req("GET", HEALTH_PATH, &host, "", "")).await;
+    assert!(health.starts_with("HTTP/1.1 200"), "{health}");
 }
