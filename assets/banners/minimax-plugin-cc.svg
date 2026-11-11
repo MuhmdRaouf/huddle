@@ -1,0 +1,55 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 320" role="img" aria-label="minimax-plugin-cc: MiniMax models in Claude Code, through huddle.">
+  <title>minimax-plugin-cc: MiniMax models in Claude Code, through huddle.</title>
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%"   stop-color="#0E2F38"/>
+      <stop offset="100%" stop-color="#061A20"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="26%" cy="42%" r="58%">
+      <stop offset="0%"   stop-color="#E08AC0" stop-opacity="0.34"/>
+      <stop offset="45%"  stop-color="#E08AC0" stop-opacity="0.11"/>
+      <stop offset="100%" stop-color="#E08AC0" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="hero" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%"   stop-color="#FFFFFF"/>
+      <stop offset="100%" stop-color="#F3C8E2"/>
+    </linearGradient>
+    <linearGradient id="spectrum" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#2FB8B0"/>
+      <stop offset="100%" stop-color="#E08AC0"/>
+    </linearGradient>
+    <linearGradient id="rule" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#E08AC0"/>
+      <stop offset="100%" stop-color="#FF8A6B"/>
+    </linearGradient>
+    <clipPath id="frame"><rect width="1200" height="320"/></clipPath>
+  </defs>
+  <g clip-path="url(#frame)">
+    <rect width="1200" height="320" fill="url(#bg)"/>
+    <rect width="1200" height="320" fill="url(#glow)"/>
+    <g transform="translate(0, -18)">
+    <text x="92" y="84" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif" font-size="16" font-weight="800" letter-spacing="6" fill="#FFFFFF" opacity="0.72">HUDDLE&#160;&#160;PROVIDER&#160;&#160;PLUGIN</text>
+    <!-- the huddle mark, then the provider's name -->
+    <g transform="translate(78 120.48) scale(1.15)">
+      <circle cx="32" cy="32" r="26" fill="none" stroke="#CFE8EA" stroke-width="1.5" stroke-opacity="0.5"/>
+      <path d="M19.9 16L26.4 16L26.4 28.8L38.5 28.8L38.5 32L19.9 32Z" fill="#2FB8B0"/><path d="M19.9 32L38.5 32L38.5 35.2L26.4 35.2L26.4 48L19.9 48Z" fill="#17857F"/><path d="M37.9 16L44.1 16L44.1 32L37.9 32Z" fill="#FF8A6B"/><path d="M37.9 32L44.1 32L44.1 48L37.9 48Z" fill="#E8623F"/>
+      <circle cx="15.29" cy="51.92" r="3.6" fill="#FF8A6B"/>
+      <circle cx="56.43" cy="40.89" r="2.4" fill="#CFE8EA"/>
+      <circle cx="23.11" cy="7.57" r="1.7" fill="#CFE8EA"/>
+    </g>
+    <text x="172" y="180" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif" font-size="60" font-weight="800" fill="url(#hero)" letter-spacing="-1.5">MiniMax</text>
+    <rect x="92" y="228" width="360" height="6" rx="3" fill="url(#spectrum)"/>
+    <circle cx="92" cy="231" r="5" fill="#2FB8B0"/>
+    <circle cx="452" cy="231" r="5" fill="#E08AC0"/>
+    <text x="92" y="266" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif" font-size="20" font-weight="500" fill="#FFFFFF" opacity="0.82">MiniMax models in Claude Code, through huddle.</text>
+    <text x="92" y="292" font-family="Georgia, 'Times New Roman', serif" font-size="16" font-style="italic" fill="#FFFFFF" opacity="0.55">One key in the keystore, one lane in the router, its models in /model.</text>
+    <rect x="800" y="112" width="3" height="194" rx="1.5" fill="url(#rule)"/>
+    <text x="824" y="130" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="14"><tspan fill="#FF8A6B">127.0.0.1:4835</tspan></text>
+    <text x="824" y="152" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="13" xml:space="preserve"><tspan fill="#C9D9DC">  ├─ </tspan><tspan fill="#E08AC0">MiniMax-M3              </tspan><tspan fill="#C9D9DC" fill-opacity="0.6">→ minimax</tspan></text>
+    <text x="824" y="174" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="13" xml:space="preserve"><tspan fill="#C9D9DC">  ├─ </tspan><tspan fill="#E08AC0">MiniMax-M2.7-highspeed  </tspan><tspan fill="#C9D9DC" fill-opacity="0.6">→ minimax</tspan></text>
+    <text x="824" y="196" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="13" xml:space="preserve"><tspan fill="#C9D9DC">  ├─ </tspan><tspan fill="#FF8A6B">claude-*                </tspan><tspan fill="#C9D9DC" fill-opacity="0.6">→ anthropic, untouched</tspan></text>
+    <text x="824" y="218" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="13" xml:space="preserve"><tspan fill="#C9D9DC">  └─ </tspan><tspan fill="#E08AC0">api.minimax.io</tspan></text>
+    </g>
+    <rect x="10" y="10" width="1180" height="300" rx="18" fill="none" stroke="#E08AC0" stroke-opacity="0.2" stroke-width="1.5"/>
+  </g>
+</svg>

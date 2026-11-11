@@ -1,8 +1,68 @@
+<p align="center">
+  <img src="../../assets/banners/deepseek-plugin-cc.svg" alt="deepseek-plugin-cc — DeepSeek models in Claude Code, through huddle" width="100%"/>
+</p>
+
+<p align="center">
+  <a href="https://www.gnu.org/licenses/gpl-3.0"><img src="https://img.shields.io/badge/License-GPL--3.0--or--later-blue.svg" alt="License: GPL-3.0-or-later"></a>
+  <a href="https://code.claude.com/docs/en/plugins"><img src="https://img.shields.io/badge/Claude_Code-plugin-cba6f7" alt="Claude Code plugin"></a>
+  <a href="https://github.com/MuhmdRaouf/huddle/actions/workflows/ci.yml"><img src="https://github.com/MuhmdRaouf/huddle/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI"></a>
+</p>
+
+<p align="center">Built with ❤️ for the Claude Code community.</p>
+
 # deepseek
 
-Routes DeepSeek models through huddle-router inside Claude Code. Install the `huddle` plugin first, then run `/huddle:setup` and restart Claude Code once.
+Routes DeepSeek models through huddle-router inside Claude Code. Pick
+`deepseek-v4-pro` or `deepseek-flash` in `/model`, or hand work to their agents by name; every
+`claude-*` request still reaches Anthropic untouched.
 
-- `/deepseek:setup` checks the key, adds the provider to huddle-router and the DeepSeek models to `/model`. The key comes from `DEEPSEEK_API_KEY`, `~/.config/deepseek-plugin-cc/env` or `huddle provider deepseek key`.
-- `/deepseek:usage` shows tokens and estimated cost per day and window.
-- `/deepseek:board` and `/deepseek:review` show delegated jobs and take decisions.
-- `/deepseek:remove` undoes the setup. Run it before `/plugin uninstall deepseek-plugin-cc@muhmdraouf`.
+This plugin depends on [`huddle`](../../plugin/README.md): install it first,
+run `/huddle:setup` and restart Claude Code once.
+
+## Commands
+
+| Command | What it does |
+|---|---|
+| `/deepseek:setup` | Check the key with DeepSeek, add the `deepseek-*` lane to huddle-router and the models to `/model` |
+| `/deepseek:usage` | Requests, tokens and estimated cost per model, today and the last 7 and 30 days |
+| `/deepseek:board` | What delegated jobs are doing now |
+| `/deepseek:review` | Review a delegated job and accept it or return it with feedback |
+| `/deepseek:remove` | Take the lane, the `/model` entries and the stored key back out |
+
+## Models
+
+| Model | Agent | Upstream |
+|---|---|---|
+| `deepseek-v4-pro` | `deepseek:deepseek-v4-pro` | `api.deepseek.com` |
+| `deepseek-flash` | `deepseek:deepseek-flash` | `api.deepseek.com` |
+
+## Quick start
+
+1. Install huddle and this plugin:
+
+   ```text
+   /plugin install huddle@muhmdraouf
+   /huddle:setup
+   /plugin install deepseek-plugin-cc@muhmdraouf
+   ```
+
+2. Restart Claude Code once, if `/huddle:setup` asked for it.
+3. Get a key from [DeepSeek](https://platform.deepseek.com/api_keys). Then run `/deepseek:setup`.
+4. Pick `deepseek-v4-pro` in `/model`.
+
+## Key
+
+The key comes from `DEEPSEEK_API_KEY`, `~/.config/deepseek-plugin-cc/env` or
+`huddle provider deepseek key`, which reads hidden stdin. It is stored in the OS
+keystore: the macOS Keychain, or the Secret Service on Linux. It never travels
+in a chat, an argument or an output line. The huddle dashboard shows whether a
+key is stored, never the key.
+
+## Remove
+
+Run `/deepseek:remove`, then `/plugin uninstall deepseek-plugin-cc@muhmdraouf`. The other
+providers keep serving.
+
+## License
+
+[GPL-3.0-or-later](LICENSE).
