@@ -32,7 +32,7 @@ plugins from this repository. The five provider plugins depend on `huddle`.
 
 | Plugin | What it is | Models |
 |---|---|---|
-| [`huddle`](plugin/README.md) | The router, the session hooks and the delegation commands (`/huddle:setup`, `/huddle:run`, `/huddle:status`, `/huddle:result`, `/huddle:cancel`, `/huddle:add-dashboard-host`, `/huddle:remove-dashboard-host`) | every `claude-*` model, to Anthropic |
+| [`huddle`](plugin/README.md) | The router, the session hooks and the delegation commands (`/huddle:setup`, `/huddle:run`, `/huddle:status`, `/huddle:result`, `/huddle:cancel`, `/huddle:update`, `/huddle:add-dashboard-host`, `/huddle:remove-dashboard-host`) | every `claude-*` model, to Anthropic |
 | [`zai-plugin-cc`](plugins/zai-plugin-cc/README.md) | Z.ai GLM lane, key and `/model` entries | `glm-5.3`, `glm-5.3-flash` |
 | [`kimi-plugin-cc`](plugins/kimi-plugin-cc/README.md) | Moonshot Kimi lane, key and `/model` entries | `kimi-k3`, `kimi-k2.6` |
 | [`deepseek-plugin-cc`](plugins/deepseek-plugin-cc/README.md) | DeepSeek lane, key and `/model` entries | `deepseek-v4-pro`, `deepseek-flash` |
@@ -187,6 +187,15 @@ harness can still reach the rest of the machine as this user.
    A hook exits 0 on any failure and never blocks a session.
 5. `huddle uninstall` undoes every patch and restores `settings.json` byte for
    byte.
+
+### Update
+
+`/huddle:update` installs the binary of the version the plugin carries: it
+downloads the release, checks it against `SHA256SUMS`, switches the `huddle`
+link and hands the running router to the new binary without dropping a
+connection. It prints `huddle 0.0.2 → 0.0.3`, or `huddle 0.0.3 is the latest`.
+It does not touch `settings.json`. Update the plugin first (`/plugin`), then run
+`/huddle:update`.
 
 ## Quick start
 

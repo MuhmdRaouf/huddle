@@ -11,6 +11,7 @@ Routes Claude Code's requests to Z.ai, Kimi, DeepSeek, MiniMax and Qwen through 
 | `/huddle:status [job-id]` | Show every job, or one job in full |
 | `/huddle:result <job-id>` | Read a job's report and diff, then accept it or return it with feedback |
 | `/huddle:cancel <job-id>` | Stop a job and remove its worktree |
+| `/huddle:update` | Install the binary of the version this plugin carries and hand the router over |
 | `/huddle:add-dashboard-host <host>` | Let a domain such as `huddle.example.com` open the dashboard |
 | `/huddle:remove-dashboard-host <host>` | Stop that domain from opening the dashboard |
 

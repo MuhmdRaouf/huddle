@@ -1,9 +1,11 @@
 #!/bin/sh
 # Gets the huddle binary for this OS and CPU, then runs it.
 #   sh "${CLAUDE_PLUGIN_ROOT}/dist/run" <word> [args...]
-# Only the word `setup` installs the binary: it downloads the release, or builds the checkout
-# with cargo while no release is published. Every other word runs the installed binary. A hook
-# does nothing and exits 0 until /huddle:setup has installed a binary.
+# The words `setup` and `update` install the binary: they download the release, or build the
+# checkout with cargo while no release is published. `update` then switches the link, hands the
+# running router to the new binary and prints the version change; it leaves settings.json alone.
+# Every other word runs the installed binary. A hook does nothing and exits 0 until
+# /huddle:setup has installed a binary.
 # HUDDLE_DOWNLOAD_BASE moves the release URL for tests.
 
 version=0.0.2
@@ -18,7 +20,7 @@ case "$word" in
     [ -x "$link" ] && exec "$link" "$@"
     exit 0
     ;;
-  setup)
+  setup | update)
     ;;
   run | status | result | cancel | add-dashboard-host | remove-dashboard-host | uninstall | router | provider | --version)
     [ -x "$link" ] && exec "$link" "$@"
@@ -160,6 +162,35 @@ build_local() {
   mv -f "$tmp" "$target" && : >"$target.local"
 }
 
+# The version of the router that answers on the port; empty when none does or it does not say.
+router_version() {
+  [ -x "$link" ] || return 0
+  "$link" router status --json 2>/dev/null | sed -n 's/.*"version":"\([^"]*\)".*/\1/p'
+}
+
+router_running() {
+  [ -x "$link" ] && "$link" router status --json >/dev/null 2>&1
+}
+
+from=
+if [ "$word" = update ]; then
+  if [ -L "$link" ]; then
+    from=$(readlink "$link")
+    from=${from#huddle-}
+  fi
+  running_version=$(router_version)
+  if [ -x "$target" ] && [ ! -e "$target.local" ] && [ "$from" = "$version" ]; then
+    if [ -z "$running_version" ] || [ "$running_version" = "$version" ]; then
+      printf 'huddle %s is the latest\n' "$version"
+      exit 0
+    fi
+    from=$running_version
+  fi
+  [ -n "$from" ] || from=none
+  was_running=0
+  router_running && was_running=1
+fi
+
 # A local build carries no version, so its .local marker makes every setup try the release
 # first, then rebuild.
 if [ ! -x "$target" ] || [ -e "$target.local" ]; then
@@ -170,4 +201,12 @@ if [ ! -x "$target" ] || [ -e "$target.local" ]; then
   fi
 fi
 point_link
+if [ "$word" = update ]; then
+  if [ "$was_running" = 1 ] && ! "$target" router start >/dev/null; then
+    printf 'huddle: huddle %s is installed but the router did not hand over; run huddle router start\n' "$version" >&2
+    exit 1
+  fi
+  printf 'huddle %s → %s\n' "$from" "$version"
+  exit 0
+fi
 exec "$target" "$@"
