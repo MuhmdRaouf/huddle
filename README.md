@@ -333,7 +333,9 @@ Files huddle writes on your machine:
 |---|---|
 | `~/.config/huddle/` | `config.toml` (dashboard hosts, `[history] keep_days`), `providers.toml`, `harnesses.toml` |
 | `~/.local/share/huddle/` | `bin/` (the binaries and the `huddle` link), `ca/` (`huddle-ca.pem`, `huddle-ca-key.pem`) |
-| `~/.local/state/huddle/` | `huddle.db`, `router.log`, `run/`, the settings and provider ledgers, `jobs/` |
+| `~/.local/state/huddle/` | `huddle.db`, `router.log`, the settings and provider ledgers, `jobs/` |
+| `$XDG_RUNTIME_DIR/huddle/` (else `~/.local/state/huddle/run/`) | `router.toml`, `router.lock`, `handover.sock` |
+| `~/.cache/huddle/` | the launcher's download in flight and `build.log` |
 | `~/.claude/settings.json` | the proxy and CA settings, undone by `huddle uninstall` |
 
 ## Automation

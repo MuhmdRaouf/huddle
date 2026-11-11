@@ -1,5 +1,6 @@
 //! The one way a state file is written: a fresh temp file, an fsync, a rename.
 
+use crate::files::DIR_MODE;
 use std::ffi::OsStr;
 use std::fs::{self, OpenOptions};
 use std::io::{self, Write};
@@ -17,8 +18,7 @@ pub fn write_atomic(path: &Path, data: &[u8], mode: u32) -> io::Result<()> {
         _ => PathBuf::from("."),
     };
     if !parent.is_dir() {
-        fs::create_dir_all(&parent)?;
-        set_mode(&parent, 0o700)?;
+        crate::files::create_dir(&parent, DIR_MODE)?;
     }
     let (temp, mut file) = open_temp(&parent, path.file_name().unwrap_or_default())?;
     if let Err(err) = land(&temp, path, &mut file, data, mode) {

@@ -6,7 +6,7 @@
 use std::fmt;
 use std::fs::{self, OpenOptions};
 use std::io;
-use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt};
+use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Path, PathBuf};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -15,6 +15,7 @@ use serde::Deserialize;
 use toml::{Table, Value};
 
 use crate::atomic::write_atomic;
+use crate::files::DIR_MODE;
 
 /// The file's name inside the config dir.
 pub const PROVIDERS_FILE: &str = "providers.toml";
@@ -97,14 +98,10 @@ pub fn set_enabled(dir: &Path, name: &str, on: bool) -> Result<(), ProvidersFile
     let file_text = path.display().to_string();
     let lock_text = lock_path.display().to_string();
 
-    fs::DirBuilder::new()
-        .recursive(true)
-        .mode(0o700)
-        .create(dir)
-        .map_err(|err| ProvidersFileError::Write {
-            file: file_text.clone(),
-            message: err.to_string(),
-        })?;
+    crate::files::create_dir(dir, DIR_MODE).map_err(|err| ProvidersFileError::Write {
+        file: file_text.clone(),
+        message: err.to_string(),
+    })?;
     let lock = OpenOptions::new()
         .create(true)
         .truncate(false)
@@ -137,9 +134,11 @@ pub fn set_enabled(dir: &Path, name: &str, on: bool) -> Result<(), ProvidersFile
         file: file_text.clone(),
         message: err.to_string(),
     })?;
-    write_atomic(&path, text.as_bytes(), 0o600).map_err(|err| ProvidersFileError::Write {
-        file: file_text,
-        message: err.to_string(),
+    write_atomic(&path, text.as_bytes(), crate::files::FILE_MODE).map_err(|err| {
+        ProvidersFileError::Write {
+            file: file_text,
+            message: err.to_string(),
+        }
     })
 }
 

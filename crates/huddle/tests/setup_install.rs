@@ -106,10 +106,8 @@ fn t1_install_keeps_the_ca_and_the_router_record_in_the_xdg_folders() {
         home.root().join(".local/share/huddle/ca/huddle-ca.pem")
     );
     assert!(
-        home.root()
-            .join(".local/state/huddle/run/router.toml")
-            .exists(),
-        "the router record is in the state folder"
+        home.root().join("r/huddle/router.toml").exists(),
+        "the router record is in the runtime folder"
     );
     assert!(
         !home.root().join(".agents").exists(),
@@ -154,4 +152,50 @@ fn t2_install_writes_config_toml_with_defaults_and_never_rewrites_it() {
         fs::read_to_string(&config).expect("read"),
         "[history]\nkeep_days = 7\n"
     );
+}
+
+#[test]
+fn t12_install_sets_the_folder_and_file_modes_and_puts_runtime_files_in_the_runtime_dir() {
+    use std::os::unix::fs::PermissionsExt;
+    let home = TempHome::new();
+    let port = free_port();
+    let _stop = StopOnDrop(&home, port);
+
+    let out = huddle(&home, port, &["setup", "--install"]);
+    assert_eq!(out.status.code(), Some(0));
+    assert!(wait_for_port(port), "the router answers on the port");
+
+    let mode_of = |rel: &str| {
+        fs::metadata(home.root().join(rel))
+            .unwrap_or_else(|e| panic!("{rel}: {e}"))
+            .permissions()
+            .mode()
+            & 0o777
+    };
+    for dir in [
+        ".config/huddle",
+        ".local/share/huddle",
+        ".local/state/huddle",
+        "r/huddle",
+    ] {
+        assert_eq!(mode_of(dir), 0o755, "{dir}");
+    }
+    assert_eq!(mode_of(".local/share/huddle/ca"), 0o700);
+    for file in [
+        ".config/huddle/config.toml",
+        ".config/huddle/providers.toml",
+        ".local/state/huddle/huddle.db",
+    ] {
+        assert_eq!(mode_of(file), 0o644, "{file}");
+    }
+    for file in [
+        ".local/share/huddle/ca/huddle-ca-key.pem",
+        ".local/state/huddle/settings-ledger.toml",
+    ] {
+        assert_eq!(mode_of(file), 0o600, "{file}");
+    }
+    let run = home.root().join("r/huddle");
+    assert!(run.join("router.lock").exists());
+    assert!(run.join("handover.sock").exists());
+    assert!(!home.root().join(".local/state/huddle/run").exists());
 }

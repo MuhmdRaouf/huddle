@@ -62,9 +62,10 @@ Inside Claude Code the plugin's commands run the words for you. The launcher ans
 | `~/.config/huddle/harnesses.toml` | You: one entry per extra CLI | `setup`, `run`, `status`, the driver |
 | `~/.local/share/huddle/bin/` | The launcher on `/huddle:setup`: `huddle-<version>` and the `huddle` link to it | Every word and hook |
 | `~/.local/share/huddle/ca/` | `setup --install`, or the daemon's first start: `huddle-ca.pem` and `huddle-ca-key.pem`, the local CA | Claude Code through `NODE_EXTRA_CA_CERTS`, the daemon's leaf signer |
+| `~/.cache/huddle/` | The launcher: the download in flight and `build.log` of a local build | You, when a build fails |
 | `~/.local/state/huddle/huddle.db` | The daemon: one row per finished request (no prompt, key or header value), pruned past `keep_days` | `provider <p> usage`, the dashboard's history views |
 | `~/.local/state/huddle/router.log` | The daemon: the rotating log | You, when the router misbehaves |
-| `~/.local/state/huddle/run/` | The daemon: `router.toml` (pid, port, version, binary, start time), `router.lock`, `handover.sock` | `router start`, `status`, `stop` |
+| `$XDG_RUNTIME_DIR/huddle/` (else `~/.local/state/huddle/run/`) | The daemon: `router.toml` (pid, port, version, binary, start time), `router.lock`, `handover.sock` | `router start`, `status`, `stop` |
 | `~/.local/state/huddle/settings-ledger.toml` | `setup --install`: what the proxy patch changed | `uninstall` |
 | `~/.local/state/huddle/settings.json.pristine` | `setup --install`: settings.json as the user had it | `uninstall`, byte for byte |
 | `~/.local/state/huddle/providers/<p>-ledger.toml` | `provider <p> setup`: the `/model` entries it added | `provider <p> remove`, `uninstall` |
@@ -79,8 +80,11 @@ Inside Claude Code the plugin's commands run the words for you. The launcher ans
 | `HUDDLE_ROUTER_PORT` | The port the router serves, `4835` by default. Plain digits 1-65535; setup writes the matching URL, so the two always agree. |
 | `HUDDLE_CONFIG_HOME` | huddle's own config folder, `~/.config/huddle` by default. Else `$XDG_CONFIG_HOME/huddle`. |
 | `HUDDLE_DATA_HOME` | huddle's own data folder (`bin/`, `ca/`), `~/.local/share/huddle` by default. Else `$XDG_DATA_HOME/huddle`. |
-| `HUDDLE_STATE_HOME` | huddle's own state folder (`huddle.db`, log, `run/`, ledgers, `jobs/`), `~/.local/state/huddle` by default. Else `$XDG_STATE_HOME/huddle`. |
-| `XDG_CONFIG_HOME`, `XDG_DATA_HOME`, `XDG_STATE_HOME` | Move that kind's parent folder when the matching `HUDDLE_*_HOME` is unset; huddle uses `<value>/huddle`. An empty value counts as unset. |
+| `HUDDLE_STATE_HOME` | huddle's own state folder (`huddle.db`, log, ledgers, `jobs/`, and `run/` when no runtime folder is set), `~/.local/state/huddle` by default. Else `$XDG_STATE_HOME/huddle`. |
+| `HUDDLE_CACHE_HOME` | huddle's own cache folder, `~/.cache/huddle` by default. Else `$XDG_CACHE_HOME/huddle`. |
+| `HUDDLE_RUNTIME_DIR` | The folder for `router.toml`, `router.lock` and `handover.sock`. Else `$XDG_RUNTIME_DIR/huddle`, else `run/` under the state folder (macOS sets no `XDG_RUNTIME_DIR`). |
+| `XDG_CONFIG_HOME`, `XDG_DATA_HOME`, `XDG_STATE_HOME`, `XDG_CACHE_HOME` | Move that kind's parent folder when the matching `HUDDLE_*_HOME` is unset; huddle uses `<value>/huddle`. An empty or relative value counts as unset. |
+| `XDG_RUNTIME_DIR` | The parent of huddle's runtime folder, when `HUDDLE_RUNTIME_DIR` is unset. A relative value counts as unset. |
 | `HUDDLE_ROUTER_ANTHROPIC_URL` | Where `claude-*` requests go, Anthropic by default. Must name a scheme and a host; the daemon checks it before it binds. |
 | `HUDDLE_ROUTER_RSS_CEILING_MB` | The resident size in MiB at which the daemon hands its socket over, `1024` by default. A value that is not a positive integer keeps the default. |
 | `HUDDLE_DOWNLOAD_BASE` | Moves the release URL the launcher downloads from. |

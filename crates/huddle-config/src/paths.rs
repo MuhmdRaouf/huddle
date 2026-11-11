@@ -8,8 +8,9 @@ use crate::env::Env;
 /// The port huddle-router serves when no override names one.
 pub const DEFAULT_ROUTER_PORT: u16 = 4835;
 
-/// The folders huddle uses, read once and passed down. Each kind (config, data, state) takes
-/// `HUDDLE_<KIND>_HOME`, else `$XDG_<KIND>_HOME/huddle`, else its XDG default under `HOME`.
+/// The folders huddle uses, read once and passed down. Each kind (config, data, state, cache)
+/// takes `HUDDLE_<KIND>_HOME`, else `$XDG_<KIND>_HOME/huddle`, else its XDG default under `HOME`.
+/// A relative value is invalid and ignored, as the XDG Base Directory spec says.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Paths {
     pub home: PathBuf,
@@ -21,7 +22,10 @@ pub struct Paths {
     pub state_dir: PathBuf,
     pub bin_dir: PathBuf,
     pub ca_dir: PathBuf,
-    /// The router record, lock and handover socket.
+    /// Files that can be rebuilt: the install's download and build log.
+    pub cache_dir: PathBuf,
+    /// The router record, lock and handover socket: `HUDDLE_RUNTIME_DIR`, else
+    /// `$XDG_RUNTIME_DIR/huddle`, else `state_dir/run` (macOS sets no `XDG_RUNTIME_DIR`).
     pub run_dir: PathBuf,
     pub jobs_root: PathBuf,
     pub claude_dir: PathBuf,
@@ -56,10 +60,20 @@ impl Paths {
         let config_dir = kind_dir(env, &home, "CONFIG", ".config");
         let data_dir = kind_dir(env, &home, "DATA", ".local/share");
         let state_dir = kind_dir(env, &home, "STATE", ".local/state");
+        let cache_dir = kind_dir(env, &home, "CACHE", ".cache");
+        let run_dir = match (
+            absolute(env, "HUDDLE_RUNTIME_DIR"),
+            absolute(env, "XDG_RUNTIME_DIR"),
+        ) {
+            (Some(own), _) => PathBuf::from(own),
+            (None, Some(xdg)) => PathBuf::from(xdg).join("huddle"),
+            (None, None) => state_dir.join("run"),
+        };
         Ok(Paths {
             bin_dir: data_dir.join("bin"),
             ca_dir: data_dir.join("ca"),
-            run_dir: state_dir.join("run"),
+            run_dir,
+            cache_dir,
             jobs_root: state_dir.join("jobs"),
             claude_dir: set(env, "CLAUDE_CONFIG_DIR")
                 .map(PathBuf::from)
@@ -74,10 +88,10 @@ impl Paths {
 
 /// One kind's folder: `HUDDLE_<KIND>_HOME`, else `$XDG_<KIND>_HOME/huddle`, else `HOME/<default>/huddle`.
 fn kind_dir(env: &Env, home: &Path, kind: &str, default: &str) -> PathBuf {
-    if let Some(own) = set(env, &format!("HUDDLE_{kind}_HOME")) {
+    if let Some(own) = absolute(env, &format!("HUDDLE_{kind}_HOME")) {
         return PathBuf::from(own);
     }
-    match set(env, &format!("XDG_{kind}_HOME")) {
+    match absolute(env, &format!("XDG_{kind}_HOME")) {
         Some(xdg) => PathBuf::from(xdg).join("huddle"),
         None => home.join(default).join("huddle"),
     }
@@ -109,4 +123,9 @@ pub fn router_url(env: &Env) -> Result<String, PathsError> {
 /// The variable's value when it is set and not empty; an empty value counts as unset.
 fn set<'e>(env: &'e Env, name: &str) -> Option<&'e str> {
     env.get(name).filter(|value| !value.is_empty())
+}
+
+/// Like `set`, for a folder variable: a relative path is invalid and counts as unset.
+fn absolute<'e>(env: &'e Env, name: &str) -> Option<&'e str> {
+    set(env, name).filter(|value| Path::new(value).is_absolute())
 }

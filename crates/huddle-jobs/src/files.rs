@@ -19,8 +19,8 @@ pub fn read<T: DeserializeOwned>(path: &Path) -> io::Result<Option<T>> {
         .map_err(|error| io::Error::other(format!("{}: {error}", path.display())))
 }
 
-/// Writes the value as TOML, mode 0600, atomically.
+/// Writes the value as TOML, mode 0644, atomically.
 pub fn write<T: Serialize>(path: &Path, value: &T) -> io::Result<()> {
     let text = toml::to_string(value).map_err(io::Error::other)?;
-    write_atomic(path, text.as_bytes(), 0o600)
+    write_atomic(path, text.as_bytes(), huddle_config::files::FILE_MODE)
 }

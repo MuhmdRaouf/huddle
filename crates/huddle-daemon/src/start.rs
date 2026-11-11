@@ -4,10 +4,9 @@
 //! daemon. All of it is synchronous: it runs in a word or a hook, never on an async task.
 
 use std::fmt;
-use std::fs::{self, DirBuilder};
+use std::fs;
 use std::io::{Read, Write};
 use std::net::{SocketAddr, TcpStream};
-use std::os::unix::fs::DirBuilderExt;
 use std::path::{Path, PathBuf};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -19,6 +18,7 @@ use huddle_config::providers_file::read_enabled;
 use huddle_procs::detached::{DetachError, DetachSpec, start_detached};
 
 use crate::nochain::{PROXY_VARS, is_router_proxy};
+use huddle_config::files::{DIR_MODE, create_dir};
 
 /// The probe every start begins with: a daemon answering within it is up.
 pub const HEALTH_WAIT: Duration = Duration::from_millis(300);
@@ -254,14 +254,10 @@ pub fn spawn_serve(
         return Err(refusal(&base));
     }
     let log = paths.state_dir.join(LOG_NAME);
-    DirBuilder::new()
-        .recursive(true)
-        .mode(0o700)
-        .create(&paths.state_dir)
-        .map_err(|source| StartError::Log {
-            path: log.clone(),
-            source,
-        })?;
+    create_dir(&paths.state_dir, DIR_MODE).map_err(|source| StartError::Log {
+        path: log.clone(),
+        source,
+    })?;
     let spec = DetachSpec {
         program: executable.to_path_buf(),
         args: std::iter::once("router")

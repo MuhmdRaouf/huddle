@@ -10,7 +10,23 @@
 
 version=0.0.4
 base=${HUDDLE_DOWNLOAD_BASE:-https://github.com/MuhmdRaouf/huddle/releases/download}
-bin_dir=${HUDDLE_DATA_HOME:-${XDG_DATA_HOME:-$HOME/.local/share}/huddle}/bin
+# A relative XDG or HUDDLE value is invalid and ignored, as the XDG Base Directory spec says.
+absolute() {
+  case "$1" in
+    /*) printf '%s\n' "$1" ;;
+  esac
+}
+data_home=$(absolute "${HUDDLE_DATA_HOME:-}")
+if [ -z "$data_home" ]; then
+  data_home=$(absolute "${XDG_DATA_HOME:-}")
+  data_home=${data_home:-$HOME/.local/share}/huddle
+fi
+cache_home=$(absolute "${HUDDLE_CACHE_HOME:-}")
+if [ -z "$cache_home" ]; then
+  cache_home=$(absolute "${XDG_CACHE_HOME:-}")
+  cache_home=${cache_home:-$HOME/.cache}/huddle
+fi
+bin_dir=$data_home/bin
 link=$bin_dir/huddle
 target=$bin_dir/huddle-$version
 word=${1:-}
@@ -62,6 +78,11 @@ sha256_of() {
   fi
 }
 
+# Folders get mode 0755 whatever the umask.
+make_dir() {
+  (umask 022 && mkdir -p "$1")
+}
+
 point_link() {
   ln -sf "huddle-$version" "$bin_dir/.huddle.$$.link" && mv -f "$bin_dir/.huddle.$$.link" "$link"
 }
@@ -81,9 +102,9 @@ fetch_release() {
   else
     curl_bin=curl
   fi
-  mkdir -p "$bin_dir" || fail_download
-  tmp=$bin_dir/.huddle.$$.download
-  sums=$bin_dir/.huddle.$$.sums
+  make_dir "$bin_dir" && make_dir "$cache_home" || fail_download
+  tmp=$cache_home/.huddle.$$.download
+  sums=$cache_home/.huddle.$$.sums
   # curl's own diagnostics stay off stderr: the failure message below names the URL.
   if ! "$curl_bin" -fsSL --max-time 120 -o "$tmp" "$url" 2>/dev/null ||
     ! "$curl_bin" -fsSL --max-time 30 -o "$sums" "$sums_url" 2>/dev/null; then
@@ -114,7 +135,8 @@ fetch_release() {
     printf 'huddle: huddle download failed its checksum\n' >&2
     exit 127
   fi
-  chmod 755 "$tmp" && mv -f "$tmp" "$target"
+  # The rename into place stays inside bin_dir, so a reader never sees a half-copied binary.
+  chmod 755 "$tmp" && mv -f "$tmp" "$bin_dir/.huddle.$$.landing" && mv -f "$bin_dir/.huddle.$$.landing" "$target"
   rm -f "$target.local"
 }
 
@@ -148,8 +170,8 @@ build_local() {
     printf 'huddle: no huddle checkout found to build from; set HUDDLE_SOURCE\n' >&2
     exit 1
   }
-  mkdir -p "$bin_dir" || exit 1
-  log=$bin_dir/build.log
+  make_dir "$bin_dir" && make_dir "$cache_home" || exit 1
+  log=$cache_home/build.log
   if ! (cd "$root" && cargo build --release -p huddle) >"$log" 2>&1; then
     printf 'huddle: building huddle from %s failed; see %s\n' "$root" "$log" >&2
     exit 1

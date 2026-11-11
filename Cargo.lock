@@ -368,6 +368,7 @@ dependencies = [
 name = "huddle-history"
 version = "0.0.4"
 dependencies = [
+ "huddle-config",
  "huddle-testkit",
  "rusqlite",
 ]
@@ -415,6 +416,7 @@ dependencies = [
 name = "huddle-procs"
 version = "0.0.4"
 dependencies = [
+ "huddle-config",
  "huddle-testkit",
  "libc",
 ]

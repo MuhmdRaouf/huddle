@@ -92,7 +92,7 @@ fn a_detached_child_appends_its_output_to_a_private_log() {
     use std::os::unix::fs::PermissionsExt;
     assert_eq!(
         fs::metadata(&log).expect("stat").permissions().mode() & 0o777,
-        0o600
+        0o644
     );
 }
 

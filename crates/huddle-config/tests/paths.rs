@@ -150,7 +150,7 @@ fn an_atomic_write_replaces_the_file_with_the_mode_and_leaves_no_temp() {
     );
     assert_eq!(
         std::fs::metadata(&dir).expect("meta").permissions().mode() & 0o777,
-        0o700
+        0o755
     );
     write_atomic(&path, b"second", 0o644).expect("write");
     assert_eq!(std::fs::read(&path).expect("read"), b"second");
@@ -192,4 +192,89 @@ fn a_write_that_cannot_land_removes_its_temp_file() {
         .map(|e| e.expect("e").file_name())
         .collect();
     assert_eq!(names.len(), 1, "only the directory remains: {names:?}");
+}
+
+#[test]
+fn t12_a_relative_xdg_or_huddle_value_is_ignored() {
+    let p = paths(&[
+        ("XDG_DATA_HOME", "rel/data"),
+        ("HUDDLE_STATE_HOME", "rel/state"),
+        ("XDG_STATE_HOME", "/xs"),
+        ("XDG_CONFIG_HOME", "./c"),
+    ]);
+    assert_eq!(p.data_dir, PathBuf::from("/home/u/.local/share/huddle"));
+    assert_eq!(p.state_dir, PathBuf::from("/xs/huddle"));
+    assert_eq!(p.config_dir, PathBuf::from("/home/u/.config/huddle"));
+}
+
+#[test]
+fn t12_the_run_dir_follows_the_runtime_variables() {
+    assert_eq!(
+        paths(&[]).run_dir,
+        PathBuf::from("/home/u/.local/state/huddle/run")
+    );
+    assert_eq!(
+        paths(&[("XDG_RUNTIME_DIR", "/run/user/1")]).run_dir,
+        PathBuf::from("/run/user/1/huddle")
+    );
+    assert_eq!(
+        paths(&[
+            ("XDG_RUNTIME_DIR", "/run/user/1"),
+            ("HUDDLE_RUNTIME_DIR", "/rt")
+        ])
+        .run_dir,
+        PathBuf::from("/rt")
+    );
+    assert_eq!(
+        paths(&[
+            ("XDG_RUNTIME_DIR", "relative"),
+            ("HUDDLE_RUNTIME_DIR", "also/rel")
+        ])
+        .run_dir,
+        PathBuf::from("/home/u/.local/state/huddle/run")
+    );
+}
+
+#[test]
+fn t12_the_cache_dir_defaults_and_overrides() {
+    assert_eq!(paths(&[]).cache_dir, PathBuf::from("/home/u/.cache/huddle"));
+    assert_eq!(
+        paths(&[("XDG_CACHE_HOME", "/xc")]).cache_dir,
+        PathBuf::from("/xc/huddle")
+    );
+    assert_eq!(
+        paths(&[("XDG_CACHE_HOME", "/xc"), ("HUDDLE_CACHE_HOME", "/hc")]).cache_dir,
+        PathBuf::from("/hc")
+    );
+    assert_eq!(
+        paths(&[("XDG_CACHE_HOME", "rel")]).cache_dir,
+        PathBuf::from("/home/u/.cache/huddle")
+    );
+}
+
+#[test]
+fn t12_create_dir_uses_the_given_mode_and_keeps_an_existing_one() {
+    let home = TempHome::new();
+    let deep = home.root().join("a/b/c");
+    huddle_config::files::create_dir(&deep, 0o755).expect("create");
+    for dir in ["a", "a/b", "a/b/c"] {
+        let mode = std::fs::metadata(home.root().join(dir))
+            .expect("meta")
+            .permissions()
+            .mode();
+        assert_eq!(mode & 0o777, 0o755, "{dir}");
+    }
+    let private = home.root().join("p/q");
+    huddle_config::files::create_dir(&private, 0o700).expect("private");
+    let mode = std::fs::metadata(&private)
+        .expect("meta")
+        .permissions()
+        .mode();
+    assert_eq!(mode & 0o777, 0o700);
+    let open = home.root().join("open");
+    std::fs::create_dir(&open).expect("mkdir");
+    std::fs::set_permissions(&open, std::fs::Permissions::from_mode(0o750)).expect("chmod");
+    huddle_config::files::create_dir(&open, 0o755).expect("existing");
+    let mode = std::fs::metadata(&open).expect("meta").permissions().mode();
+    assert_eq!(mode & 0o777, 0o750);
 }

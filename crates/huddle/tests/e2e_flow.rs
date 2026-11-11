@@ -109,7 +109,7 @@ impl Env<'_> {
     }
 
     fn daemon_pid(&self) -> u32 {
-        let path = self.home.root().join(".local/state/huddle/run/router.toml");
+        let path = self.home.root().join("r/huddle/router.toml");
         let doc: toml::Table =
             toml::from_str(&fs::read_to_string(path).expect("router record")).expect("toml");
         doc["pid"].as_integer().expect("pid") as u32

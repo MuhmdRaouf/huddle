@@ -7,12 +7,10 @@ use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::port::{Keystore, KeystoreError, SecretString, assert_valid_key, service_name};
+use huddle_config::files::{PRIVATE_DIR_MODE, create_dir};
 
 /// The mode every key file is written with.
 const PRIVATE_FILE: u32 = 0o600;
-
-/// The mode every key file directory is written with.
-const PRIVATE_DIR: u32 = 0o700;
 
 /// The key file as a store: always available, the first key variable name is the line it writes.
 pub struct FileStore {
@@ -208,9 +206,7 @@ fn write_private(path: &Path, text: &str) -> Result<(), KeystoreError> {
     let dir = path
         .parent()
         .ok_or_else(|| write_error(path, no_parent()))?;
-    fs::create_dir_all(dir).map_err(|source| write_error(path, source))?;
-    fs::set_permissions(dir, fs::Permissions::from_mode(PRIVATE_DIR))
-        .map_err(|source| write_error(path, source))?;
+    create_dir(dir, PRIVATE_DIR_MODE).map_err(|source| write_error(path, source))?;
     let temp = temp_path(path);
     let write = || -> io::Result<()> {
         let mut file = OpenOptions::new()

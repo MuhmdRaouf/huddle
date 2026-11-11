@@ -2,12 +2,13 @@
 //! response shape, the command-id counter, the abort soft stop, the attempt logs, and the
 //! single-threaded connection that writes commands, decodes stdout and matches responses by id.
 
+use huddle_config::files::{DIR_MODE, create_dir};
 use huddle_procs::group::group_alive;
 use huddle_procs::stream::{InputHandle, NextLine, ProcExit, SoftStop, Streaming};
 use serde_json::Value;
-use std::fs::{DirBuilder, File, OpenOptions};
+use std::fs::{File, OpenOptions};
 use std::io::Write;
-use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt};
+use std::os::unix::fs::OpenOptionsExt;
 use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -417,10 +418,7 @@ fn open_append(path: &Path) -> Result<File, String> {
         Some(parent) if !parent.as_os_str().is_empty() => parent,
         _ => Path::new("."),
     };
-    DirBuilder::new()
-        .recursive(true)
-        .mode(0o700)
-        .create(parent)
+    create_dir(parent, DIR_MODE)
         .map_err(|err| format!("cannot open log {}: {err}", path.display()))?;
     OpenOptions::new()
         .append(true)

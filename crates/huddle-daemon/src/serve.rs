@@ -7,7 +7,6 @@ use std::fs;
 use std::io;
 use std::net::TcpListener;
 use std::os::fd::FromRawFd;
-use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant};
@@ -33,6 +32,7 @@ use crate::nochain::clean_proxy_env;
 use crate::rss::{RssDecision, RssWatch, ceiling_of, interval_of, read_rss};
 use crate::singleton::{self, SingletonError};
 use crate::start::{RouterRecord, spawn_serve};
+use huddle_config::files::{DIR_MODE, FILE_MODE, create_dir};
 
 /// How long a clean stop keeps the requests it already accepted.
 pub const STOP_BUDGET: Duration = Duration::from_secs(10);
@@ -459,19 +459,11 @@ fn anthropic_url(env: &Env) -> Result<hyper::Uri, String> {
     Ok(url)
 }
 
-/// Makes the run dir, 0700, and its parent with it; a failure is logged and the daemon still
-/// serves without record, lock and handover socket.
+/// Makes the run dir, 0700 when missing, and its parent with it; a failure is logged and the
+/// daemon still serves without record, lock and handover socket.
 fn make_run_dir(run_dir: &Path, log: &Logger) {
-    if let Err(error) = fs::create_dir_all(run_dir) {
+    if let Err(error) = create_dir(run_dir, DIR_MODE) {
         log(format!("huddle-router: {error}"));
-        return;
-    }
-    if let Ok(permissions) = fs::metadata(run_dir) {
-        let mut mode = permissions.permissions();
-        mode.set_mode(0o700);
-        if let Err(error) = fs::set_permissions(run_dir, mode) {
-            log(format!("huddle-router: {error}"));
-        }
     }
 }
 
@@ -496,7 +488,7 @@ fn write_record(path: &Path, port: u16, version: &str, executable: Option<&Path>
     };
     match toml::to_string(&record) {
         Ok(text) => {
-            if let Err(error) = write_atomic(path, text.as_bytes(), 0o600) {
+            if let Err(error) = write_atomic(path, text.as_bytes(), FILE_MODE) {
                 log(format!("huddle-router: {error}"));
             }
         }

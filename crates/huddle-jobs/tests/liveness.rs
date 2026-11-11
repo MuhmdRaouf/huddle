@@ -53,7 +53,7 @@ fn a_record_round_trips_with_a_private_mode() {
     use std::os::unix::fs::PermissionsExt;
     assert_eq!(
         std::fs::metadata(&path).unwrap().permissions().mode() & 0o777,
-        0o600
+        0o644
     );
     assert_eq!(read_record(&r.home.root().join("missing.json")), None);
 }

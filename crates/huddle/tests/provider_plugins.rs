@@ -380,5 +380,12 @@ fn t1_every_dist_run_names_the_installed_binary_in_the_data_folder() {
     let script =
         fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("../../plugin/dist/run"))
             .expect("plugin dist/run");
-    assert!(script.contains(&format!("bin_dir={home}/bin")), "{script}");
+    for part in [
+        "HUDDLE_DATA_HOME",
+        "XDG_DATA_HOME",
+        "$HOME/.local/share",
+        "bin_dir=$data_home/bin",
+    ] {
+        assert!(script.contains(part), "{part}");
+    }
 }

@@ -124,14 +124,12 @@ fn a_second_start_spawns_nothing() {
         String::from_utf8_lossy(&first.stderr)
     );
     assert!(f.wait_port(true));
-    let before = fs::read_to_string(f.home.root().join(".local/state/huddle/run/router.toml"))
-        .expect("record");
+    let before = fs::read_to_string(f.home.root().join("r/huddle/router.toml")).expect("record");
 
     let second = f.run(&["router", "start"]);
     assert_eq!(second.status.code(), Some(0));
     assert_eq!(
-        fs::read_to_string(f.home.root().join(".local/state/huddle/run/router.toml"))
-            .expect("record"),
+        fs::read_to_string(f.home.root().join("r/huddle/router.toml")).expect("record"),
         before
     );
 }

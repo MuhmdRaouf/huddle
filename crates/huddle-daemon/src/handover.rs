@@ -4,12 +4,12 @@
 //! acknowledges the handover.
 
 use std::fmt;
-use std::fs::{self, DirBuilder, Permissions};
+use std::fs::{self, Permissions};
 use std::io::{self, BufRead, BufReader, Read, Write};
 use std::mem;
 use std::net::TcpListener;
 use std::os::fd::{AsRawFd, FromRawFd, OwnedFd, RawFd};
-use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
+use std::os::unix::fs::PermissionsExt;
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
 use std::ptr;
@@ -18,6 +18,7 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 
+use huddle_config::files::{DIR_MODE, create_dir};
 use tokio::sync::mpsc;
 
 /// The unix socket in the run dir a takeover dials.
@@ -84,11 +85,7 @@ pub fn serve_handover(
     log: Logger,
 ) -> HandoverListener {
     let path = run_dir.join(HANDOVER_SOCKET);
-    if let Err(source) = DirBuilder::new()
-        .mode(0o700)
-        .recursive(true)
-        .create(run_dir)
-    {
+    if let Err(source) = create_dir(run_dir, DIR_MODE) {
         return cannot_serve(source, log);
     }
     // A stale file from a killed daemon never blocks the listen.

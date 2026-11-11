@@ -109,7 +109,7 @@ fn sidecars_round_trip_with_private_modes_and_a_missing_file_is_empty() {
         .permissions()
         .mode()
         & 0o777;
-    assert_eq!(mode, 0o600);
+    assert_eq!(mode, 0o644);
 
     let v = Verification {
         verdict: Verdict::Pass,

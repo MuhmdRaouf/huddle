@@ -3,10 +3,11 @@
 //! dies, however it dies, so a stale file never blocks a start. The file is never deleted:
 //! deleting it would let a racing starter lock a fresh inode while the old lock is still held.
 
+use huddle_config::files::{DIR_MODE, create_dir};
 use std::fmt;
-use std::fs::{DirBuilder, File, OpenOptions, TryLockError};
+use std::fs::{File, OpenOptions, TryLockError};
 use std::io::{self, Read, Write};
-use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt};
+use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Path, PathBuf};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -54,14 +55,10 @@ pub struct LockGuard {
 /// the holder wrote and answers [`SingletonError::Held`].
 pub fn lock(path: &Path, holder: &str) -> Result<LockGuard, SingletonError> {
     let parent = path.parent().unwrap_or_else(|| Path::new(""));
-    DirBuilder::new()
-        .mode(0o700)
-        .recursive(true)
-        .create(parent)
-        .map_err(|source| SingletonError::Io {
-            path: parent.to_path_buf(),
-            source,
-        })?;
+    create_dir(parent, DIR_MODE).map_err(|source| SingletonError::Io {
+        path: parent.to_path_buf(),
+        source,
+    })?;
     let mut file = OpenOptions::new()
         .read(true)
         .write(true)
@@ -187,7 +184,7 @@ mod tests {
     }
 
     #[test]
-    fn lock_creates_the_lock_files_directory_private() {
+    fn lock_creates_the_lock_files_directory_with_the_folder_mode() {
         let home = TempHome::new();
         let path = home.root().join("a/b/router.lock");
         let _held = lock(&path, "").expect("lock");
@@ -197,7 +194,7 @@ mod tests {
             .permissions()
             .mode()
             & 0o777;
-        assert_eq!(mode, 0o700);
+        assert_eq!(mode, 0o755);
     }
 
     #[test]

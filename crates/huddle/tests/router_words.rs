@@ -211,7 +211,7 @@ impl Drop for StopOnDrop<'_> {
 }
 
 fn write_record(home: &TempHome, port: u16, pid: u32) {
-    let run_dir = home.root().join(".local/state/huddle/run");
+    let run_dir = home.root().join("r/huddle");
     fs::create_dir_all(&run_dir).expect("run dir");
     let record = format!(
         "pid = {pid}\nport = {port}\nversion = \"1.0.0\"\nstarted = \"2026-11-09T00:00:00Z\"\n"
@@ -281,8 +281,8 @@ fn stop_waits_out_a_handover_and_signals_the_fresh_record() {
     }
 
     // The handover window: the port answers while no record names the daemon.
-    let record = home.root().join(".local/state/huddle/run/router.toml");
-    let parked = home.root().join(".local/state/huddle/run/router.parked");
+    let record = home.root().join("r/huddle/router.toml");
+    let parked = home.root().join("r/huddle/router.parked");
     fs::rename(&record, &parked).expect("park record");
     let restorer = thread::spawn(move || {
         thread::sleep(Duration::from_millis(200));

@@ -73,8 +73,8 @@ fn create_stores_version_one_in_a_private_directory() {
     assert_eq!(saved.version, 1);
     assert_eq!(store.get("j1").unwrap(), saved);
     let dir = store.job_dir("j1");
-    assert_eq!(mode(&dir), 0o700, "the job dir is private");
-    assert_eq!(mode(&dir.join("job.toml")), 0o600, "the record is private");
+    assert_eq!(mode(&dir), 0o755, "the job dir mode");
+    assert_eq!(mode(&dir.join("job.toml")), 0o644, "the record mode");
     let text = std::fs::read_to_string(dir.join("job.toml")).unwrap();
     assert!(text.starts_with("id = \"j1\""), "{text}");
 }

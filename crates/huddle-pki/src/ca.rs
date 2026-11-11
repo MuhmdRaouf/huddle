@@ -8,10 +8,11 @@ use std::fmt;
 use std::fs;
 use std::io;
 use std::io::Write as _;
-use std::os::unix::fs::{DirBuilderExt, MetadataExt, OpenOptionsExt, PermissionsExt};
+use std::os::unix::fs::{MetadataExt, OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+use huddle_config::files::{DIR_MODE, PRIVATE_DIR_MODE, create_dir};
 use rcgen::{
     BasicConstraints, Certificate, CertificateParams, DistinguishedName, DnType, GeneralSubtree,
     IsCa, KeyPair, KeyUsagePurpose, NameConstraints, PKCS_ECDSA_P256_SHA256, PublicKeyData,
@@ -360,14 +361,13 @@ struct Loaded {
     key: KeyPair,
 }
 
-/// Makes `dir` (0700 when created; an existing dir keeps its mode) and refuses one other users
+/// Makes `dir` (0700 when created, its missing parents 0755; an existing dir keeps its mode) and refuses one other users
 /// can write into.
 fn ensure_dir(dir: &Path) -> Result<(), PkiError> {
-    fs::DirBuilder::new()
-        .mode(0o700)
-        .recursive(true)
-        .create(dir)
-        .map_err(|e| io_error(dir, e))?;
+    if let Some(parent) = dir.parent() {
+        create_dir(parent, DIR_MODE).map_err(|e| io_error(parent, e))?;
+    }
+    create_dir(dir, PRIVATE_DIR_MODE).map_err(|e| io_error(dir, e))?;
     check_owned_private(dir, 0o022)
 }
 

@@ -320,3 +320,40 @@ fn linux_downloads_through_the_curl_on_the_path() {
     assert_eq!(String::from_utf8_lossy(&out.stdout), "fake huddle setup\n");
     assert!(!root.join("curl-saw-call").exists(), "the failing curl ran");
 }
+
+#[test]
+fn t12_the_cargo_build_log_lives_in_the_cache_folder() {
+    let home = TempHome::new();
+    let root = home.root().to_path_buf();
+    let shim_dir = shims(&root, true);
+    let src = checkout(&root, "src");
+    let base = format!("file://{}", root.join("none").display());
+
+    let out = run(&home, &shim_dir, &base, Some(&src), &dist_run(), &["setup"]);
+
+    assert_eq!(out.status.code(), Some(0));
+    assert!(root.join(".cache/huddle/build.log").exists());
+    assert!(!root.join(".local/share/huddle/bin/build.log").exists());
+}
+
+#[test]
+fn t12_a_relative_cache_variable_is_ignored_by_the_script() {
+    let home = TempHome::new();
+    let root = home.root().to_path_buf();
+    let shim_dir = shims(&root, true);
+    let src = checkout(&root, "src");
+    let base = format!("file://{}", root.join("none").display());
+
+    let out = run_env(
+        &home,
+        &shim_dir,
+        &base,
+        Some(&src),
+        &dist_run(),
+        &["setup"],
+        &[("XDG_CACHE_HOME", "relative-cache")],
+    );
+
+    assert_eq!(out.status.code(), Some(0));
+    assert!(root.join(".cache/huddle/build.log").exists());
+}

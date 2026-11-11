@@ -2,10 +2,10 @@
 //! an unbounded queue and is teed raw to a log, the end of its stderr is kept for the crash
 //! report, stdin can be fed line by line, and the exit says how it ended.
 
-use std::fs::{DirBuilder, File, OpenOptions};
+use std::fs::{File, OpenOptions};
 use std::io::{self, Write};
 use std::os::fd::{AsRawFd, RawFd};
-use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt};
+use std::os::unix::fs::OpenOptionsExt;
 use std::os::unix::process::{CommandExt, ExitStatusExt};
 use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStderr, ChildStdin, ChildStdout, Command, ExitStatus, Stdio};
@@ -17,6 +17,7 @@ use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
 use crate::group::{signal_group, signal_name, terminate_group};
+use huddle_config::files::{DIR_MODE, create_dir};
 
 /// The default line budget: one MiB, a worker's longest single frame. A stderr line past it is
 /// cut, never dropped from the stream.
@@ -512,10 +513,7 @@ fn open_log(path: Option<&Path>) -> io::Result<Option<File>> {
     if let Some(parent) = path.parent()
         && !parent.as_os_str().is_empty()
     {
-        DirBuilder::new()
-            .recursive(true)
-            .mode(0o700)
-            .create(parent)?;
+        create_dir(parent, DIR_MODE)?;
     }
     let file = OpenOptions::new()
         .append(true)

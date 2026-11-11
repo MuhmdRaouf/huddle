@@ -7,6 +7,7 @@ use rusqlite::{Connection, params};
 use crate::error::HistoryError;
 use crate::row::{Credit, Row};
 use crate::schema;
+use huddle_config::files::DIR_MODE;
 
 const DAY_MS: u64 = 86_400_000;
 
@@ -28,13 +29,16 @@ pub(crate) fn from_db(value: i64) -> u64 {
 }
 
 impl History {
-    /// Opens the file, creating its folder, the file (mode 0600) and the schema when missing.
+    /// Opens the file, creating its folder, the file (mode 0644) and the schema when missing.
     pub fn open(path: &Path) -> Result<History, HistoryError> {
         if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent)?;
+            huddle_config::files::create_dir(parent, DIR_MODE)?;
         }
         let conn = Connection::open(path)?;
-        fs::set_permissions(path, fs::Permissions::from_mode(0o600))?;
+        fs::set_permissions(
+            path,
+            fs::Permissions::from_mode(huddle_config::files::FILE_MODE),
+        )?;
         conn.busy_timeout(std::time::Duration::from_secs(5))?;
         conn.pragma_update_and_check(None, "journal_mode", "WAL", |_| Ok(()))?;
         schema::migrate(&conn)?;

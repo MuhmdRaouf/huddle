@@ -40,7 +40,7 @@ pub fn start_detached(spec: &DetachSpec) -> Result<(), DetachError> {
             let stdout = OpenOptions::new()
                 .append(true)
                 .create(true)
-                .mode(0o600)
+                .mode(huddle_config::files::FILE_MODE)
                 .open(path)
                 .map_err(|source| DetachError::Log {
                     path: path.clone(),

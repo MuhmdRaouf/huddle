@@ -31,7 +31,7 @@ pub fn rotating_log(path: &Path, limit: u64) -> Logger {
         let opened = fs::OpenOptions::new()
             .append(true)
             .create(true)
-            .mode(0o600)
+            .mode(huddle_config::files::FILE_MODE)
             .open(&path);
         if let Ok(mut file) = opened {
             let _ = file.write_all(text.as_bytes());
@@ -96,7 +96,7 @@ mod tests {
         );
         assert_eq!(
             fs::metadata(&path).expect("stat").permissions().mode() & 0o777,
-            0o600
+            0o644
         );
     }
 

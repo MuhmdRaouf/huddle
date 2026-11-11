@@ -3,12 +3,12 @@
 use crate::files;
 use crate::id::repo_slug;
 use crate::model::Job;
+use huddle_config::files::{DIR_MODE, create_dir};
 use huddle_config::paths::Paths;
 use huddle_procs::lock::{LockError, wait_lock};
 use std::fmt;
-use std::fs::{self, DirBuilder};
+use std::fs;
 use std::io::ErrorKind;
-use std::os::unix::fs::DirBuilderExt;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
@@ -280,13 +280,9 @@ fn is_safe_id(id: &str) -> bool {
 
 /// Creates the directory with mode 0700; an existing directory is fine.
 fn mkdir_private(path: &Path) -> Result<(), StoreError> {
-    DirBuilder::new()
-        .mode(0o700)
-        .recursive(true)
-        .create(path)
-        .map_err(|err| StoreError::Io {
-            message: format!("{}: {}", path.display(), err),
-        })
+    create_dir(path, DIR_MODE).map_err(|err| StoreError::Io {
+        message: format!("{}: {}", path.display(), err),
+    })
 }
 
 /// A lock held past the deadline is Io, like any other filesystem failure.

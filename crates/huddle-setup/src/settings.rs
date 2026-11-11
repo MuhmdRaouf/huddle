@@ -13,6 +13,7 @@ use serde_json::{Map, Value};
 
 use crate::env_file::{EnvPlan, EnvView, RouteMode, RouterTarget, plan_env};
 use crate::ledger_file;
+use huddle_config::files::{DIR_MODE, create_dir};
 
 /// The env keys this patch reads; a present one that is not a string refuses the patch.
 const ENV_KEYS: [&str; 6] = [
@@ -398,7 +399,7 @@ fn read_ledger(path: &Path) -> Result<Option<Ledger>, SettingsError> {
 
 fn write_ledger(path: &Path, ledger: &Ledger) -> Result<(), SettingsError> {
     if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).map_err(|source| SettingsError::Io {
+        create_dir(parent, DIR_MODE).map_err(|source| SettingsError::Io {
             path: parent.to_path_buf(),
             source,
         })?;

@@ -6,8 +6,8 @@ use crate::resolve;
 use crate::runner::{RunCtx, new_session_key, run_turn};
 use crate::table::{Access, Brief, Entry, ReportKind, RunStats, SessionRef};
 use huddle_config::env::Env;
+use huddle_config::files::{DIR_MODE, create_dir};
 use huddle_procs::stream::tool_version;
-use std::fs;
 use std::path::PathBuf;
 use std::time::Duration;
 
@@ -61,7 +61,7 @@ impl SmokeRunner for TurnSmoke<'_> {
             )
         };
         let work = self.dir.join(&entry.id);
-        fs::create_dir_all(&work)
+        create_dir(&work, DIR_MODE)
             .map_err(|err| hint(format!("cannot make {}: {err}", work.display())))?;
         let key = new_session_key().map_err(|err| hint(err.to_string()))?;
         let access = if entry.run.accepted_access().contains(&Access::Readonly) {

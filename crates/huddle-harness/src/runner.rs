@@ -26,13 +26,13 @@ use crate::wire_stream_json::StreamJsonReader;
 use crate::wire_text::TextReader;
 use huddle_config::atomic::write_atomic;
 use huddle_config::env::Env;
+use huddle_config::files::{DIR_MODE, create_dir};
 use huddle_procs::stream::{
     Forced, Limits, NextLine, ProcExit, Spec, Stdin, StopHandle, Streaming, spawn_streaming,
 };
 use std::fmt;
 use std::fs;
 use std::io;
-use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
 use std::sync::{Arc, atomic::AtomicU64};
 use std::time::Duration;
@@ -113,8 +113,7 @@ impl std::error::Error for RunError {}
 /// settles and closes stdin.
 pub fn run_turn(entry: &Entry, brief: &Brief, ctx: &RunCtx) -> Result<Outcome, RunError> {
     let resolved = resolve(entry, ctx.env).map_err(RunError::Resolve)?;
-    fs::create_dir_all(&ctx.log_dir)
-        .and_then(|()| fs::set_permissions(&ctx.log_dir, fs::Permissions::from_mode(0o700)))
+    create_dir(&ctx.log_dir, DIR_MODE)
         .map_err(|err| RunError::Io(format!("cannot create {}: {err}", ctx.log_dir.display())))?;
     let launch = build(entry, brief, &ctx.cwd, &ctx.log_dir).map_err(RunError::Argv)?;
     write_prompt_file(&launch)?;
