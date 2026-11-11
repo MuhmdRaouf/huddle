@@ -8,20 +8,19 @@ use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
 
+use toml_edit::{Array, DocumentMut, Item};
+
 use crate::atomic::write_atomic;
 use crate::paths::Paths;
 
-const MANAGED_LINE: &str =
-    "# Managed by huddle: huddle add-dashboard-host / remove-dashboard-host rewrite this file.";
-
-/// The file `setup --install` creates when `config.toml` is missing: every setting at its default,
-/// commented where a default is the absence of a value.
+/// The file `setup --install` creates when `config.toml` is missing: every setting at its default.
 pub const DEFAULT_CONFIG: &str = "\
 # huddle settings. A missing line means its default.
 
 [dashboard]
-# Names besides the loopback that may reach the dashboard's read-only paths.
-# hosts = [\"huddle.example\"]
+# Names besides the loopback that may reach the dashboard's read-only paths,
+# such as \"huddle.example\". huddle add-dashboard-host and remove-dashboard-host edit this list.
+hosts = []
 
 [history]
 # Days of request history to keep.
@@ -164,18 +163,13 @@ pub fn remove(path: &Path, raw: &str) -> Result<Change, DashboardHostsError> {
     Ok(Change::Removed(host))
 }
 
-/// Writes the hosts into `dashboard.hosts` and keeps every other table and key of the file.
-/// Comments are not kept: the file is parsed and written back as a table.
+/// Sets `dashboard.hosts` in place: every other key, comment and blank line of the file stays as
+/// the user wrote it. A missing file starts from [`DEFAULT_CONFIG`].
 fn write(path: &Path, hosts: &[String]) -> Result<(), DashboardHostsError> {
     let file = path.display().to_string();
-    let mut table = match fs::read_to_string(path) {
-        Ok(text) => {
-            toml::from_str::<toml::Table>(&text).map_err(|err| DashboardHostsError::Invalid {
-                file: file.clone(),
-                detail: err.message().to_string(),
-            })?
-        }
-        Err(err) if err.kind() == io::ErrorKind::NotFound => toml::Table::new(),
+    let text = match fs::read_to_string(path) {
+        Ok(text) => text,
+        Err(err) if err.kind() == io::ErrorKind::NotFound => DEFAULT_CONFIG.to_string(),
         Err(err) => {
             return Err(DashboardHostsError::Read {
                 file,
@@ -183,24 +177,37 @@ fn write(path: &Path, hosts: &[String]) -> Result<(), DashboardHostsError> {
             });
         }
     };
-    let values = hosts.iter().cloned().map(toml::Value::String).collect();
-    let section = table
+    let mut doc = text
+        .parse::<DocumentMut>()
+        .map_err(|err| DashboardHostsError::Invalid {
+            file: file.clone(),
+            detail: err.message().to_string(),
+        })?;
+    let Some(section) = doc
         .entry("dashboard")
-        .or_insert_with(|| toml::Value::Table(toml::Table::new()));
-    let Some(section) = section.as_table_mut() else {
+        .or_insert(toml_edit::table())
+        .as_table_like_mut()
+    else {
         return Err(DashboardHostsError::Invalid {
             file,
             detail: "dashboard is not a table".to_string(),
         });
     };
-    section.insert("hosts".to_string(), toml::Value::Array(values));
-    let body = toml::to_string(&table).map_err(|err| DashboardHostsError::Write {
-        file: file.clone(),
-        message: err.to_string(),
-    })?;
-    let text = format!("{MANAGED_LINE}\n{body}");
-    write_atomic(path, text.as_bytes(), 0o644).map_err(|err| DashboardHostsError::Write {
-        file,
-        message: err.to_string(),
+    match section.get_mut("hosts").and_then(Item::as_array_mut) {
+        Some(array) => {
+            array.clear();
+            array.extend(hosts.iter().map(String::as_str));
+            array.fmt();
+        }
+        None => {
+            let array: Array = hosts.iter().map(String::as_str).collect();
+            section.insert("hosts", toml_edit::value(array));
+        }
+    }
+    write_atomic(path, doc.to_string().as_bytes(), 0o644).map_err(|err| {
+        DashboardHostsError::Write {
+            file,
+            message: err.to_string(),
+        }
     })
 }

@@ -43,7 +43,7 @@ fn add_and_remove_report_each_change_and_keep_the_file_in_step() {
         "huddle: hub.raouf.me added to the dashboard hosts\n"
     );
     let text = fs::read_to_string(&file).expect("config file");
-    assert!(text.starts_with("# Managed by huddle"), "{text}");
+    assert!(text.starts_with("# huddle settings."), "{text}");
     assert!(text.contains("hosts = [\"hub.raouf.me\"]"), "{text}");
 
     let again = huddle(&home, port, &["add-dashboard-host", "hub.raouf.me"]);

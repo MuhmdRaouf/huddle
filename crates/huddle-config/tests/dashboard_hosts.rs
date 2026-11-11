@@ -1,14 +1,11 @@
 use std::fs;
 
 use huddle_config::dashboard_hosts::{
-    Change, add, config_path, normalize, read, remove, write_default_if_missing,
+    Change, DEFAULT_CONFIG, add, config_path, normalize, read, remove, write_default_if_missing,
 };
 use huddle_config::env::Env;
 use huddle_config::paths::Paths;
 use huddle_testkit::temp_home::TempHome;
-
-const MANAGED: &str =
-    "# Managed by huddle: huddle add-dashboard-host / remove-dashboard-host rewrite this file.\n";
 
 #[test]
 fn normalize_lowercases() {
@@ -36,8 +33,10 @@ fn add_writes_the_exact_file_and_a_repeat_changes_nothing() {
         add(&path, "HUB.raouf.me"),
         Ok(Change::Added("hub.raouf.me".into()))
     );
-    let expected = format!("{MANAGED}[dashboard]\nhosts = [\"hub.raouf.me\"]\n");
-    assert_eq!(fs::read_to_string(&path).expect("file"), expected);
+    let expected = fs::read_to_string(&path).expect("file");
+    assert!(expected.starts_with("# huddle settings."), "{expected}");
+    assert!(expected.contains("keep_days = 90"), "{expected}");
+    assert_eq!(read(&path), Ok(vec!["hub.raouf.me".into()]));
     assert_eq!(
         add(&path, "hub.raouf.me"),
         Ok(Change::Unchanged("hub.raouf.me".into()))
@@ -163,4 +162,47 @@ fn t2_adding_a_dashboard_host_keeps_the_other_settings() {
     assert_eq!(table["note"].as_str(), Some("mine"));
     assert_eq!(table["extra"]["flag"].as_bool(), Some(true));
     assert_eq!(read(&path), Ok(vec![]));
+}
+
+#[test]
+fn a_host_change_edits_the_file_in_place_and_keeps_comments_and_order() {
+    let home = TempHome::new();
+    let path = home.root().join("config.toml");
+    let hand = "\
+# my notes on top
+
+[history]
+# a month is enough
+keep_days = 30
+
+[dashboard]
+# reached over tailscale
+hosts = [\"a.example\"] # first host
+
+[extra]
+flag = true
+";
+    fs::write(&path, hand).expect("write");
+
+    add(&path, "b.example").expect("add");
+    assert_eq!(
+        fs::read_to_string(&path).expect("read"),
+        hand.replace("[\"a.example\"]", "[\"a.example\", \"b.example\"]")
+    );
+
+    remove(&path, "b.example").expect("remove");
+    assert_eq!(fs::read_to_string(&path).expect("read"), hand);
+}
+
+#[test]
+fn a_host_added_to_the_default_config_keeps_its_comments() {
+    let home = TempHome::new();
+    let path = home.root().join("config.toml");
+    write_default_if_missing(&path).expect("default");
+
+    add(&path, "hub.example").expect("add");
+    assert_eq!(
+        fs::read_to_string(&path).expect("read"),
+        DEFAULT_CONFIG.replace("hosts = []", "hosts = [\"hub.example\"]")
+    );
 }
