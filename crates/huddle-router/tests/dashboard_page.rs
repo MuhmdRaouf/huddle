@@ -208,6 +208,8 @@ fn t8_names_the_real_file_layout_and_no_agents_folder() {
         "~/.local/state/huddle/huddle.db",
         "~/.local/state/huddle/router.log",
         "~/.local/state/huddle/run/",
+        "$XDG_RUNTIME_DIR/huddle/",
+        "~/.cache/huddle/",
         "~/.local/state/huddle/settings-ledger.toml",
         "~/.local/state/huddle/jobs/",
     ] {

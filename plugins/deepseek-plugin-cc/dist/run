@@ -1,6 +1,17 @@
 #!/bin/sh
 # Runs huddle at its installed path. /huddle:setup installs it and points the link at this build.
-bin=${HUDDLE_DATA_HOME:-${XDG_DATA_HOME:-$HOME/.local/share}/huddle}/bin/huddle
+# A relative XDG or HUDDLE value is invalid and ignored, as the XDG Base Directory spec says.
+absolute() {
+  case "$1" in
+    /*) printf '%s\n' "$1" ;;
+  esac
+}
+data_home=$(absolute "${HUDDLE_DATA_HOME:-}")
+if [ -z "$data_home" ]; then
+  data_home=$(absolute "${XDG_DATA_HOME:-}")
+  data_home=${data_home:-$HOME/.local/share}/huddle
+fi
+bin=$data_home/bin/huddle
 if [ ! -x "$bin" ]; then
   echo "huddle is not installed: run /huddle:setup first" >&2
   exit 127

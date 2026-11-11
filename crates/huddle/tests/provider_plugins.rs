@@ -1,4 +1,5 @@
 use huddle_catalog::providers::{Provider, provider_by_id};
+use huddle_testkit::temp_home::TempHome;
 use std::{
     collections::BTreeMap,
     fs,
@@ -105,22 +106,43 @@ fn every_plugin_license_equals_the_repository_license() {
 }
 
 #[test]
+fn t12_dist_run_ignores_a_relative_data_home() {
+    use std::os::unix::fs::PermissionsExt;
+    let home = TempHome::new();
+    let bin_dir = home.root().join(".local/share/huddle/bin");
+    fs::create_dir_all(&bin_dir).expect("bin dir");
+    let fake = bin_dir.join("huddle");
+    fs::write(&fake, "#!/bin/sh\necho \"ran $*\"\n").expect("fake huddle");
+    fs::set_permissions(&fake, fs::Permissions::from_mode(0o755)).expect("chmod");
+    for plugin in std::iter::once(&REFERENCE).chain(SIBLINGS) {
+        let out = home
+            .command("sh")
+            .arg(plugin_dir(plugin).join("dist/run"))
+            .arg("status")
+            .env_remove("HUDDLE_DATA_HOME")
+            .env("XDG_DATA_HOME", "relative-data")
+            .env("HOME", home.root())
+            .output()
+            .expect("run dist/run");
+        assert_eq!(
+            String::from_utf8_lossy(&out.stdout),
+            "ran status\n",
+            "{plugin}: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+    }
+}
+
+#[test]
 fn dist_run_execs_the_installed_binary() {
     let script = read(REFERENCE, Path::new("dist/run"));
     assert!(script.contains("exec \"$bin\" \"$@\""), "{script}");
-    assert!(
-        script.contains(
-            "${HUDDLE_DATA_HOME:-${XDG_DATA_HOME:-$HOME/.local/share}/huddle}/bin/huddle"
-        ),
-        "{script}"
-    );
+    assert!(script.contains("bin=$data_home/bin/huddle"), "{script}");
     assert!(script.contains("run /huddle:setup first"), "{script}");
     for sibling in SIBLINGS {
         let text = read(sibling, Path::new("dist/run"));
         assert!(
-            text.contains(
-                "${HUDDLE_DATA_HOME:-${XDG_DATA_HOME:-$HOME/.local/share}/huddle}/bin/huddle"
-            ),
+            text.contains("bin=$data_home/bin/huddle"),
             "{sibling}: {text}"
         );
     }
@@ -372,10 +394,16 @@ fn the_five_provider_plugins_stay_copies_of_zai() {
 
 #[test]
 fn t1_every_dist_run_names_the_installed_binary_in_the_data_folder() {
-    let home = "${HUDDLE_DATA_HOME:-${XDG_DATA_HOME:-$HOME/.local/share}/huddle}";
     for name in std::iter::once(&REFERENCE).chain(SIBLINGS) {
         let text = read(name, Path::new("dist/run"));
-        assert!(text.contains(&format!("bin={home}/bin/huddle")), "{name}");
+        for part in [
+            "HUDDLE_DATA_HOME",
+            "XDG_DATA_HOME",
+            "$HOME/.local/share",
+            "bin=$data_home/bin/huddle",
+        ] {
+            assert!(text.contains(part), "{name}: {part}");
+        }
     }
     let script =
         fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("../../plugin/dist/run"))
