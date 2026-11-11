@@ -14,8 +14,7 @@ RUN rustup component add rustfmt clippy \
 
 # ┌ zig is the C cross-compiler behind cargo zigbuild. 0.16.0 is the release
 # │ the pinned cargo-zigbuild documents. Each tarball is checked against the
-# │ sha256 ziglang.org publishes for that release. CI pins the same release
-# └ in .github/install-zigbuild.sh; bump both together.
+# └ sha256 ziglang.org publishes for that release.
 ARG ZIG_VERSION=0.16.0
 RUN set -eux; \
     case "$(dpkg --print-architecture)" in \
