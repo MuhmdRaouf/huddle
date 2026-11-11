@@ -17,13 +17,13 @@ use huddle_config::atomic::write_atomic;
 use huddle_config::env::Env;
 use huddle_config::paths::Paths;
 use huddle_config::providers_file::read_enabled;
-use huddle_router::dashboard::DashboardInputs;
 use huddle_router::dispatch::{Router, RouterConfig};
 use huddle_router::events::{EventSink, iso_utc_ms, now_ms};
 use huddle_router::reload::{POLL, ProvidersWatch, ReloadAction};
 use huddle_router::server::{ROUTER_NAME, ServerLimits, serve as serve_http};
 use tokio::sync::{mpsc, watch};
 
+use crate::dashboard_inputs;
 use crate::handover::{serve_handover, takeover as take_over_socket};
 use crate::nochain::clean_proxy_env;
 use crate::rss::{RssDecision, RssWatch, ceiling_of, interval_of, read_rss};
@@ -213,6 +213,7 @@ pub async fn run(
     };
 
     let executable = executable_resolved();
+    let dashboard = dashboard_inputs::start(version.clone(), cleaned.clone(), paths.clone(), port);
     let router = Router::new(
         RouterConfig {
             env: cleaned.clone(),
@@ -221,10 +222,7 @@ pub async fn run(
             anthropic_url,
             log: Arc::clone(&log),
             events: Some(EventSink::start(router_dir.join("events"))),
-            dashboard: DashboardInputs {
-                version: version.clone(),
-                ..DashboardInputs::default()
-            },
+            dashboard,
         },
         &initial_enabled,
     );

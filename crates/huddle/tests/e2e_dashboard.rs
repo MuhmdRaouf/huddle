@@ -3,6 +3,8 @@ mod e2e_support;
 use e2e_support::{Daemon, raw_exchange, request};
 use huddle_pki::ca::{ca_cert_path, load_or_create};
 use huddle_testkit::fake_upstream::{FakeUpstream, Step};
+use huddle_testkit::ports::free_port;
+use huddle_testkit::temp_home::TempHome;
 use serde_json::Value;
 use std::io::{BufRead, BufReader, Write};
 use std::net::TcpStream;
@@ -392,4 +394,200 @@ fn the_health_answer_keeps_its_shape() {
         reply.body,
         r#"{"ok":true,"name":"huddle-router","providers":["zai"],"components":[]}"#
     );
+}
+
+/// A router started from a home the test prepared first: `prepare` runs before the spawn with
+/// the home and the port the router will take. No provider key is in the environment.
+struct Prepared {
+    _home: TempHome,
+    port: u16,
+    child: std::process::Child,
+}
+
+impl Drop for Prepared {
+    fn drop(&mut self) {
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+    }
+}
+
+fn start_prepared(providers: &str, prepare: impl FnOnce(&TempHome, u16)) -> Prepared {
+    let home = TempHome::new();
+    let port = free_port();
+    let router_home = home.root().join("rh");
+    std::fs::create_dir_all(&router_home).expect("mkdir router home");
+    std::fs::write(
+        router_home.join("providers.json"),
+        format!("{{\"providers\":[{providers}]}}"),
+    )
+    .expect("write providers");
+    prepare(&home, port);
+    let child = Command::new(env!("CARGO_BIN_EXE_huddle"))
+        .args(["router", "serve"])
+        .env_clear()
+        .envs(home.env())
+        .env("HUDDLE_ROUTER_PORT", port.to_string())
+        .env("HUDDLE_ROUTER_HOME", &router_home)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("spawn router");
+    let prepared = Prepared {
+        _home: home,
+        port,
+        child,
+    };
+    wait_for("health", || {
+        request_ok(port, "/huddle-router/health").then_some(())
+    });
+    prepared
+}
+
+fn request_ok(port: u16, path: &str) -> bool {
+    e2e_support::try_request(port, "GET", path, &[], b"").is_some_and(|reply| reply.status == 200)
+}
+
+fn write_settings(home: &TempHome, text: &str) {
+    let dir = home.root().join(".claude");
+    std::fs::create_dir_all(&dir).expect("mkdir claude");
+    std::fs::write(dir.join("settings.json"), text).expect("write settings");
+}
+
+fn wiring_of(prepared: &Prepared) -> Value {
+    wait_for("a cached wiring answer", || {
+        let wiring = state(prepared.port)["wiring"].clone();
+        (wiring["proxy"] == true || wiring["ca"] == true).then_some(wiring)
+    })
+}
+
+#[test]
+fn settings_that_point_at_this_router_show_as_wired() {
+    let prepared = start_prepared("", |home, port| {
+        let ca = home.root().join("ca.pem");
+        std::fs::write(&ca, "pem").expect("write ca");
+        write_settings(
+            home,
+            &format!(
+                r#"{{"env":{{"HTTPS_PROXY":"http://127.0.0.1:{port}","NODE_EXTRA_CA_CERTS":"{}"}}}}"#,
+                ca.display()
+            ),
+        );
+    });
+    let wiring = wiring_of(&prepared);
+    assert_eq!(wiring["proxy"], true);
+    assert_eq!(wiring["ca"], true);
+}
+
+#[test]
+fn a_proxy_on_another_port_or_a_missing_ca_file_shows_as_not_wired() {
+    let prepared = start_prepared("", |home, port| {
+        write_settings(
+            home,
+            &format!(
+                r#"{{"env":{{"HTTPS_PROXY":"http://127.0.0.1:{}","NODE_EXTRA_CA_CERTS":"/nowhere/ca.pem"}}}}"#,
+                port.wrapping_add(1)
+            ),
+        );
+    });
+    // The first request starts the read; the second sees its result.
+    state(prepared.port);
+    std::thread::sleep(Duration::from_millis(1500));
+    let wiring = state(prepared.port)["wiring"].clone();
+    assert_eq!(wiring["proxy"], false);
+    assert_eq!(wiring["ca"], false);
+}
+
+#[test]
+fn no_settings_file_shows_as_not_wired() {
+    let prepared = start_prepared("", |_, _| {});
+    // The first request starts the read; the second sees its result.
+    state(prepared.port);
+    std::thread::sleep(Duration::from_millis(1500));
+    let wiring = state(prepared.port)["wiring"].clone();
+    assert_eq!(wiring["proxy"], false);
+    assert_eq!(wiring["ca"], false);
+}
+
+fn lane_of<'a>(snapshot: &'a Value, id: &str) -> &'a Value {
+    snapshot["lanes"]
+        .as_array()
+        .expect("lanes")
+        .iter()
+        .find(|lane| lane["id"] == id)
+        .expect("lane")
+}
+
+#[test]
+fn a_stored_key_shows_as_yes_and_a_missing_one_as_no() {
+    use std::os::unix::fs::PermissionsExt;
+    let prepared = start_prepared("\"zai\",\"kimi\"", |home, _| {
+        let dir = home.root().join(".config/zai-plugin-cc");
+        std::fs::create_dir_all(&dir).expect("mkdir");
+        std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700)).expect("chmod");
+        let file = dir.join("env");
+        std::fs::write(&file, "ZAI_API_KEY=abcdefghijklmnop\n").expect("write key");
+        std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o600)).expect("chmod");
+    });
+    let snapshot = wait_for("a cached key answer", || {
+        let snapshot = state(prepared.port);
+        (lane_of(&snapshot, "zai")["key"] == true).then_some(snapshot)
+    });
+    assert_eq!(lane_of(&snapshot, "kimi")["key"], false);
+    assert!(lane_of(&snapshot, "anthropic")["key"].is_null());
+    assert!(!snapshot.to_string().contains("abcdefghijklmnop"));
+}
+
+#[test]
+fn a_running_job_with_a_live_driver_is_listed() {
+    use huddle_jobs::id::iso_ms;
+    use huddle_jobs::liveness::{ProcessRecord, driver_record_path, write_record};
+    use huddle_jobs::model::{Access, Job, JobState};
+    use huddle_jobs::store::JobStore;
+    let prepared = start_prepared("", |home, _| {
+        let vars = home.env();
+        let borrowed: Vec<(&str, &str)> =
+            vars.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
+        let paths =
+            huddle_config::paths::Paths::from_env(&huddle_config::env::Env::with(&borrowed))
+                .expect("paths");
+        let now = huddle_jobs::id::now_ms();
+        let job = Job {
+            id: "j-e2e".to_string(),
+            harness: "opencode".to_string(),
+            title: "add lane tests".to_string(),
+            task: "add lane tests".to_string(),
+            access: Access::Readonly,
+            effort: None,
+            state: JobState::Running,
+            repo_root: "/work/huddle".to_string(),
+            base_sha: "0".repeat(40),
+            base_branch: None,
+            worktree: String::new(),
+            branch: None,
+            attempts: Vec::new(),
+            failure: None,
+            decision: None,
+            created_at: iso_ms(now),
+            updated_at: iso_ms(now),
+            version: 0,
+        };
+        let store = JobStore::for_repo(&paths, std::path::Path::new("/work/huddle"));
+        store.create(&job).expect("create job");
+        let pid = std::process::id();
+        let record = ProcessRecord {
+            pid,
+            start_token: huddle_procs::live::start_token(pid).expect("token"),
+        };
+        write_record(&driver_record_path(&store.job_dir("j-e2e")), &record).expect("record");
+    });
+    let snapshot = wait_for("the job row", || {
+        let snapshot = state(prepared.port);
+        (!snapshot["jobs"].as_array().expect("jobs").is_empty()).then_some(snapshot)
+    });
+    let job = &snapshot["jobs"][0];
+    assert_eq!(job["id"], "j-e2e");
+    assert_eq!(job["harness"], "opencode");
+    assert_eq!(job["repo"], "huddle");
+    assert_eq!(job["state"], "running");
 }

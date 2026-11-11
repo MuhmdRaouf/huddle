@@ -9,7 +9,6 @@ fn read(rel: &str) -> String {
 }
 
 const RETIRED: &[&str] = &[
-    "dashboard",
     "channel",
     "passkey",
     "Sign in",

@@ -101,6 +101,24 @@ adding or removing a provider needs no restart. A binary update, or a resident
 size past 1 GiB, hands the socket to a new process while the requests in flight
 drain.
 
+### Dashboard
+
+Open `http://127.0.0.1:4835/` while the router runs. The page updates live.
+
+- **Health**: the router's version and uptime, whether Claude Code points at it
+  (`HTTPS_PROXY` and the local CA in `settings.json`), requests per second and
+  recent errors.
+- **Lanes**: Anthropic and each provider, with requests, errors, time to first
+  byte, tokens, and whether a key is stored (yes or no, never the key).
+- **Requests**: the 200 latest model requests and the ones in flight, with
+  model, lane, status, time and tokens.
+- **Jobs**: delegated jobs that are queued, running, waiting for review, or
+  dead (their driver is gone).
+
+The page keeps everything in the router's memory. A restart clears it. It
+shows no prompts and no keys. A different `HUDDLE_ROUTER_PORT` moves the page
+with the router.
+
 ### Providers
 
 - `/<p>:setup` checks the key with the provider, enables the lane, starts the

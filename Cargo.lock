@@ -318,6 +318,8 @@ dependencies = [
  "http-body-util",
  "huddle-catalog",
  "huddle-config",
+ "huddle-jobs",
+ "huddle-keystore",
  "huddle-procs",
  "huddle-router",
  "huddle-testkit",
