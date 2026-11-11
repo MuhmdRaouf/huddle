@@ -42,8 +42,8 @@ pub const NO_DAEMON_ENV: &str = "HUDDLE_NO_DAEMON";
 /// The file under the router dir the spawned daemon's output appends to.
 const LOG_NAME: &str = "router.log";
 
-/// The record under the run dir, `<run_dir>/router.json`.
-const RECORD_NAME: &str = "router.json";
+/// The record under the run dir, `<run_dir>/router.toml`.
+const RECORD_NAME: &str = "router.toml";
 
 /// The running router's health answer, as the probe reads it.
 #[derive(Debug, Clone, serde::Deserialize, PartialEq, Eq)]
@@ -75,7 +75,7 @@ pub enum StartError {
         path: PathBuf,
         source: std::io::Error,
     },
-    /// providers.json does not hold up; nothing is spawned.
+    /// providers.toml does not hold up; nothing is spawned.
     ProvidersFile(String),
     /// The daemon could not be started.
     Spawn(String),
@@ -180,7 +180,7 @@ pub fn up_line(port: u16, answer: &HealthAnswer) -> String {
 pub fn read_record(paths: &Paths) -> Option<RouterRecord> {
     let path = paths.run_dir.join(RECORD_NAME);
     let text = fs::read_to_string(path).ok()?;
-    serde_json::from_str(&text).ok()
+    toml::from_str(&text).ok()
 }
 
 /// Equal strings, or both paths resolve to one file; a path that no longer resolves names only
@@ -464,12 +464,17 @@ mod tests {
             started: "2026-11-09T12:00:00Z".into(),
         };
         fs::write(
-            run.join("router.json"),
-            serde_json::to_string(&record).expect("json"),
+            run.join("router.toml"),
+            toml::to_string(&record).expect("toml"),
         )
         .expect("write");
         assert_eq!(read_record(&paths), Some(record));
-        fs::write(run.join("router.json"), "not json").expect("write");
+        fs::write(run.join("router.toml"), "not toml =").expect("write");
         assert_eq!(read_record(&paths), None);
+    }
+
+    #[test]
+    fn t2_the_record_is_router_toml_in_the_run_dir() {
+        assert_eq!(RECORD_NAME, "router.toml");
     }
 }

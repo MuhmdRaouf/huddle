@@ -173,7 +173,7 @@ fn remove_and_uninstall_restore_settings_byte_for_byte() {
         "{}",
         String::from_utf8_lossy(&remove.stderr)
     );
-    let providers = fs::read_to_string(rig.home.root().join(".config/huddle/providers.json"))
+    let providers = fs::read_to_string(rig.home.root().join(".config/huddle/providers.toml"))
         .expect("providers");
     assert!(!providers.contains("zai"), "{providers}");
 

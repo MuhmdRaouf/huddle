@@ -153,7 +153,7 @@ fn log_tail(store: &JobStore, paths: &Paths, job: &Job) -> Vec<String> {
 /// The harness speaks the RPC protocol: its attempt log is the frame file, not stdout. An
 /// unreadable harness list or an unknown harness id reads as a text harness.
 fn is_rpc_harness(paths: &Paths, harness: &str) -> bool {
-    let Ok(entries) = all_entries(&paths.config_dir.join("harnesses.json")) else {
+    let Ok(entries) = all_entries(&paths.config_dir.join("harnesses.toml")) else {
         return false;
     };
     match entries.iter().find(|entry| entry.id == harness) {

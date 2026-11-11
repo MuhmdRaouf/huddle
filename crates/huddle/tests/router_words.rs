@@ -214,9 +214,9 @@ fn write_record(home: &TempHome, port: u16, pid: u32) {
     let run_dir = home.root().join(".local/state/huddle/run");
     fs::create_dir_all(&run_dir).expect("run dir");
     let record = format!(
-        "{{\"pid\":{pid},\"port\":{port},\"version\":\"1.0.0\",\"started\":\"2026-11-09T00:00:00Z\"}}"
+        "pid = {pid}\nport = {port}\nversion = \"1.0.0\"\nstarted = \"2026-11-09T00:00:00Z\"\n"
     );
-    fs::write(run_dir.join("router.json"), record).expect("record");
+    fs::write(run_dir.join("router.toml"), record).expect("record");
 }
 
 /// Runs a word in its own process group, so a stray group signal reaches only the word.
@@ -281,7 +281,7 @@ fn stop_waits_out_a_handover_and_signals_the_fresh_record() {
     }
 
     // The handover window: the port answers while no record names the daemon.
-    let record = home.root().join(".local/state/huddle/run/router.json");
+    let record = home.root().join(".local/state/huddle/run/router.toml");
     let parked = home.root().join(".local/state/huddle/run/router.parked");
     fs::rename(&record, &parked).expect("park record");
     let restorer = thread::spawn(move || {

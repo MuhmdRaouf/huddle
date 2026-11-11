@@ -43,7 +43,8 @@ fn a_fresh_file_is_patched_then_a_second_run_changes_nothing() {
 
     let bytes = fs::read(&settings).expect("settings bytes");
     let ledger_bytes = fs::read(ledger_path(&paths)).expect("ledger bytes");
-    let ledger: Ledger = serde_json::from_slice(&ledger_bytes).expect("ledger json");
+    let ledger: Ledger =
+        huddle_setup::ledger_file::parse(&ledger_path(&paths), &ledger_bytes).expect("ledger toml");
     assert!(ledger.created_file);
     assert_eq!(ledger.after_sha256, sha256_hex(&bytes));
     assert_eq!(ledger.before.get("HTTPS_PROXY"), Some(&None));

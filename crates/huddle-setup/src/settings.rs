@@ -12,6 +12,7 @@ use huddle_config::paths::Paths;
 use serde_json::{Map, Value};
 
 use crate::env_file::{EnvPlan, EnvView, RouteMode, RouterTarget, plan_env};
+use crate::ledger_file;
 
 /// The env keys this patch reads; a present one that is not a string refuses the patch.
 const ENV_KEYS: [&str; 6] = [
@@ -34,6 +35,10 @@ pub enum SettingsError {
         path: PathBuf,
         message: String,
     },
+    Toml {
+        path: PathBuf,
+        message: String,
+    },
     Shape {
         path: PathBuf,
         what: String,
@@ -49,6 +54,9 @@ impl std::fmt::Display for SettingsError {
             SettingsError::Io { path, source } => write!(f, "{}: {source}", path.display()),
             SettingsError::Json { path, message } => {
                 write!(f, "{}: not valid JSON ({message})", path.display())
+            }
+            SettingsError::Toml { path, message } => {
+                write!(f, "{}: not valid TOML ({message})", path.display())
             }
             SettingsError::Shape { path, what } => write!(f, "{}: {what}", path.display()),
             SettingsError::Changed { path } => write!(
@@ -74,7 +82,9 @@ pub struct PatchOutcome {
 pub struct Ledger {
     pub created_file: bool,
     pub created_env: bool,
-    /// key -> value before huddle wrote it; None means the key was absent.
+    /// key -> value before huddle wrote it; None means the key was absent. TOML has no null,
+    /// so the map is stored as a JSON string.
+    #[serde(with = "crate::ledger_file::json_string")]
     pub before: BTreeMap<String, Option<String>>,
     pub after_sha256: String,
 }
@@ -90,7 +100,7 @@ pub fn backup_path(paths: &Paths) -> PathBuf {
 }
 
 pub fn ledger_path(paths: &Paths) -> PathBuf {
-    paths.state_dir.join("settings-ledger.json")
+    paths.state_dir.join("settings-ledger.toml")
 }
 
 /// `settings.json.pristine` in the huddle dir: settings.json as the user had it before
@@ -137,7 +147,7 @@ fn any_ledger(paths: &Paths) -> bool {
         entry
             .file_name()
             .to_string_lossy()
-            .ends_with("-ledger.json")
+            .ends_with("-ledger.toml")
     })
 }
 
@@ -377,12 +387,7 @@ fn before_values(doc: &Map<String, Value>, plan: &EnvPlan) -> Vec<(String, Optio
 
 fn read_ledger(path: &Path) -> Result<Option<Ledger>, SettingsError> {
     match fs::read(path) {
-        Ok(bytes) => serde_json::from_slice(&bytes)
-            .map(Some)
-            .map_err(|err| SettingsError::Json {
-                path: path.to_path_buf(),
-                message: err.to_string(),
-            }),
+        Ok(bytes) => ledger_file::parse(path, &bytes).map(Some),
         Err(source) if source.kind() == io::ErrorKind::NotFound => Ok(None),
         Err(source) => Err(SettingsError::Io {
             path: path.to_path_buf(),
@@ -398,12 +403,8 @@ fn write_ledger(path: &Path, ledger: &Ledger) -> Result<(), SettingsError> {
             source,
         })?;
     }
-    let mut json = serde_json::to_string_pretty(ledger).map_err(|err| SettingsError::Json {
-        path: path.to_path_buf(),
-        message: err.to_string(),
-    })?;
-    json.push('\n');
-    write_atomic(path, json.as_bytes(), 0o600)
+    let text = ledger_file::render(path, ledger)?;
+    write_atomic(path, text.as_bytes(), 0o600)
 }
 
 /// The path with symlinks resolved: a symlinked settings.json is written through its target.

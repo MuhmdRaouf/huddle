@@ -24,8 +24,8 @@ fn paths(home: &TempHome) -> Paths {
 fn enable_zai(paths: &Paths) {
     fs::create_dir_all(&paths.config_dir).expect("mkdir");
     fs::write(
-        paths.config_dir.join("providers.json"),
-        "{\"providers\":[\"zai\"]}",
+        paths.config_dir.join("providers.toml"),
+        "providers = [\"zai\"]\n",
     )
     .expect("write");
 }
@@ -168,7 +168,7 @@ fn a_malformed_providers_file_is_an_error_before_any_spawn() {
     let home = TempHome::new();
     let paths = paths(&home);
     fs::create_dir_all(&paths.config_dir).expect("mkdir");
-    fs::write(paths.config_dir.join("providers.json"), "not json").expect("write");
+    fs::write(paths.config_dir.join("providers.toml"), "providers = [").expect("write");
     let marker = home.root().join("spawned");
     let script = write_script(&home, &format!("touch '{}'", marker.display()));
     let env = home_env(&home);

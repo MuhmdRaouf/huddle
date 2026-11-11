@@ -127,21 +127,21 @@ fn providers_file(facts: &Facts) -> Check {
     match &facts.enabled {
         Err(why) => check(
             "providers",
-            "providers.json",
+            "providers.toml",
             Level::Fail,
             "unreadable".into(),
             why,
         ),
         Ok(enabled) if enabled.is_empty() => check(
             "providers",
-            "providers.json",
+            "providers.toml",
             Level::Warn,
             "none enabled".into(),
             "run /<provider>:setup to add a lane",
         ),
         Ok(enabled) => check(
             "providers",
-            "providers.json",
+            "providers.toml",
             Level::Pass,
             enabled.join(", "),
             "",

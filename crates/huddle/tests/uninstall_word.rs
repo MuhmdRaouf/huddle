@@ -75,7 +75,7 @@ fn uninstall_restores_settings_byte_for_byte_and_stops_the_router() {
     assert!(
         !home
             .root()
-            .join(".local/state/huddle/settings-ledger.json")
+            .join(".local/state/huddle/settings-ledger.toml")
             .exists()
     );
 }
@@ -93,4 +93,30 @@ fn uninstall_twice_says_nothing_to_undo_and_exits_zero() {
         stdout.contains("nothing to undo in settings.json"),
         "{stdout}"
     );
+}
+
+#[test]
+fn t2_install_leaves_toml_ledgers_and_uninstall_restores_the_bytes() {
+    let home = TempHome::new();
+    let port = free_port();
+    let _stop = StopOnDrop(&home, port);
+    let claude_dir = home.root().join(".claude");
+    fs::create_dir_all(&claude_dir).expect("mkdir");
+    let settings = claude_dir.join("settings.json");
+    let original =
+        "{\n  \"env\": {\"HTTPS_PROXY\": \"http://corp:3128\"},\n  \"theme\":   \"dark\"\n}\n";
+    fs::write(&settings, original).expect("write");
+    let state = home.root().join(".local/state/huddle");
+
+    let install = huddle(&home, port, &["setup", "--install"]);
+    assert_eq!(install.status.code(), Some(0));
+    assert!(state.join("settings-ledger.toml").exists());
+    assert!(!state.join("settings-ledger.json").exists());
+    assert!(state.join("settings.json.pristine").exists());
+
+    let out = huddle(&home, port, &["uninstall"]);
+
+    assert_eq!(out.status.code(), Some(0), "{out:?}");
+    assert_eq!(fs::read_to_string(&settings).expect("read"), original);
+    assert!(!state.join("settings-ledger.toml").exists());
 }

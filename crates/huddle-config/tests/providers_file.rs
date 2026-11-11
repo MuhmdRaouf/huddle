@@ -26,7 +26,7 @@ fn names_come_back_in_the_compiled_order_and_unknown_names_drop() {
     let home = TempHome::new();
     write_file(
         home.root(),
-        r#"{"providers":["qwen","zai","madeup","kimi"]}"#,
+        "providers = [\"qwen\", \"zai\", \"madeup\", \"kimi\"]\n",
     );
     assert_eq!(
         read_enabled(home.root(), &KNOWN).expect("read"),
@@ -37,12 +37,12 @@ fn names_come_back_in_the_compiled_order_and_unknown_names_drop() {
 #[test]
 fn a_malformed_file_is_an_error_naming_the_file() {
     let home = TempHome::new();
-    write_file(home.root(), "not json");
+    write_file(home.root(), "providers = [");
     let err = read_enabled(home.root(), &KNOWN).unwrap_err();
     let text = err.to_string();
     let path = providers_path(home.root());
     assert!(
-        text.starts_with(&format!("{}: not valid providers.json (", path.display())),
+        text.starts_with(&format!("{}: not valid providers.toml (", path.display())),
         "{text}"
     );
     assert!(matches!(err, ProvidersFileError::Invalid { .. }));
@@ -51,7 +51,7 @@ fn a_malformed_file_is_an_error_naming_the_file() {
 #[test]
 fn a_wrong_shaped_file_is_an_error() {
     let home = TempHome::new();
-    write_file(home.root(), r#"{"providers":"zai"}"#);
+    write_file(home.root(), "providers = \"zai\"\n");
     assert!(matches!(
         read_enabled(home.root(), &KNOWN),
         Err(ProvidersFileError::Invalid { .. })
@@ -87,15 +87,21 @@ fn an_enable_keeps_lanes_and_any_other_key_the_user_added() {
     let home = TempHome::new();
     write_file(
         home.root(),
-        r#"{"providers":["zai"],"lanes":{"zai":{"model":"glm-5.3"}},"note":"keep me"}"#,
+        "providers = [\"zai\"]\nnote = \"keep me\"\n\n[lanes.zai]\nmodel = \"glm-5.3\"\n",
     );
     set_enabled(home.root(), "kimi", true).expect("on");
-    let value: serde_json::Value =
-        serde_json::from_slice(&fs::read(providers_path(home.root())).expect("read"))
-            .expect("json");
-    assert_eq!(value["note"], "keep me");
-    assert_eq!(value["lanes"]["zai"]["model"], "glm-5.3");
-    assert_eq!(value["providers"], serde_json::json!(["zai", "kimi"]));
+    let table: toml::Table =
+        toml::from_str(&fs::read_to_string(providers_path(home.root())).expect("read"))
+            .expect("toml");
+    assert_eq!(table["note"].as_str(), Some("keep me"));
+    assert_eq!(table["lanes"]["zai"]["model"].as_str(), Some("glm-5.3"));
+    let providers: Vec<&str> = table["providers"]
+        .as_array()
+        .expect("array")
+        .iter()
+        .filter_map(toml::Value::as_str)
+        .collect();
+    assert_eq!(providers, ["zai", "kimi"]);
 }
 
 #[test]
@@ -142,9 +148,44 @@ fn a_lock_held_past_the_wait_is_a_typed_error() {
         .truncate(false)
         .read(true)
         .write(true)
-        .open(home.root().join("providers.json.lock"))
+        .open(home.root().join("providers.toml.lock"))
         .expect("lock file");
     lock.lock().expect("take lock");
     let err = set_enabled(home.root(), "zai", true).unwrap_err();
     assert!(matches!(err, ProvidersFileError::Locked { .. }), "{err:?}");
+}
+
+#[test]
+fn t2_providers_are_toml_and_an_enable_keeps_the_users_keys() {
+    let home = TempHome::new();
+    write_file(
+        home.root(),
+        "providers = [\"zai\"]\nnote = \"keep me\"\n\n[lanes.zai]\nmodel = \"glm-5.3\"\n",
+    );
+    set_enabled(home.root(), "kimi", true).expect("on");
+
+    assert!(providers_path(home.root()).ends_with("providers.toml"));
+    let table: toml::Table =
+        toml::from_str(&fs::read_to_string(providers_path(home.root())).expect("read"))
+            .expect("toml");
+    assert_eq!(table["note"].as_str(), Some("keep me"));
+    assert_eq!(table["lanes"]["zai"]["model"].as_str(), Some("glm-5.3"));
+    assert_eq!(
+        read_enabled(home.root(), &KNOWN).expect("read"),
+        vec!["zai", "kimi"]
+    );
+}
+
+#[test]
+fn t2_a_broken_providers_toml_names_the_file() {
+    let home = TempHome::new();
+    write_file(home.root(), "providers = [");
+    let text = read_enabled(home.root(), &KNOWN).unwrap_err().to_string();
+    assert!(
+        text.starts_with(&format!(
+            "{}: not valid providers.toml (",
+            providers_path(home.root()).display()
+        )),
+        "{text}"
+    );
 }

@@ -48,8 +48,8 @@ impl Daemon {
         fs::create_dir_all(&config_dir).expect("mkdir router home");
         let list: Vec<String> = providers.iter().map(|p| format!("\"{p}\"")).collect();
         fs::write(
-            config_dir.join("providers.json"),
-            format!("{{\"providers\":[{}]}}", list.join(",")),
+            config_dir.join("providers.toml"),
+            format!("providers = [{}]\n", list.join(", ")),
         )
         .expect("write providers");
 

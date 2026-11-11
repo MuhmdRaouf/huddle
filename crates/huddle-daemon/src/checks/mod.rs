@@ -50,7 +50,7 @@ pub struct Facts<'a> {
     /// `<claude_dir>/settings.json`.
     pub settings: Option<&'a str>,
     pub wiring: Wiring,
-    /// The providers `providers.json` enables, or why it could not be read.
+    /// The providers `providers.toml` enables, or why it could not be read.
     pub enabled: Result<Vec<String>, String>,
     /// How many dashboard hosts `config.toml` lists, or why it could not be read.
     pub config_hosts: Result<usize, String>,

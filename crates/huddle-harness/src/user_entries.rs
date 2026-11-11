@@ -1,4 +1,4 @@
-//! User harness entries: any other CLI, loaded from `harnesses.json` in the huddle home.
+//! User harness entries: any other CLI, loaded from `harnesses.toml` in the huddle config dir.
 //!
 //! Every user entry is a text-wire, write-only harness: stdout is the report, there is no session
 //! to resume, and the access map holds only `write`, so `readonly` and `exec` are refused.
@@ -50,7 +50,7 @@ impl std::fmt::Display for UserEntriesError {
 
 impl std::error::Error for UserEntriesError {}
 
-/// The file's top level: `{"harnesses": [...]}`. A missing `harnesses` member means no entries.
+/// The file's top level: an array of `[[harnesses]]` tables. A missing `harnesses` member means no entries.
 #[derive(Deserialize)]
 struct RawFile {
     #[serde(default)]
@@ -87,9 +87,9 @@ pub fn load(path: &Path) -> Result<Vec<Entry>, UserEntriesError> {
             });
         }
     };
-    let file: RawFile = serde_json::from_str(&text).map_err(|err| UserEntriesError::Parse {
+    let file: RawFile = toml::from_str(&text).map_err(|err| UserEntriesError::Parse {
         path: shown.clone(),
-        message: err.to_string(),
+        message: err.message().to_string(),
     })?;
     let table = builtin();
     let mut entries = Vec::with_capacity(file.harnesses.len());

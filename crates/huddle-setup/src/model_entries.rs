@@ -12,6 +12,7 @@ use huddle_config::atomic::write_atomic;
 use huddle_config::paths::Paths;
 use serde_json::{Map, Value};
 
+use crate::ledger_file;
 use crate::settings::{
     SettingsError, drop_pristine, load_doc, pristine_doc, save_pristine, settings_path, sha256_hex,
     write_doc,
@@ -447,12 +448,12 @@ fn ledger_lines(ledger: &ModelLedger) -> Vec<String> {
     lines
 }
 
-/// `<state_dir>/providers/<provider>-ledger.json`.
+/// `<state_dir>/providers/<provider>-ledger.toml`.
 pub fn ledger_path(paths: &Paths, provider: &str) -> PathBuf {
     paths
         .state_dir
         .join("providers")
-        .join(format!("{provider}-ledger.json"))
+        .join(format!("{provider}-ledger.toml"))
 }
 
 /// `settings.json.<provider>-backup`, beside settings.json.
@@ -472,12 +473,7 @@ fn shape(path: PathBuf, what: impl Into<String>) -> SettingsError {
 
 fn read_ledger(path: &Path) -> Result<Option<ModelLedger>, SettingsError> {
     match fs::read(path) {
-        Ok(bytes) => serde_json::from_slice(&bytes)
-            .map(Some)
-            .map_err(|err| SettingsError::Json {
-                path: path.to_path_buf(),
-                message: err.to_string(),
-            }),
+        Ok(bytes) => ledger_file::parse(path, &bytes).map(Some),
         Err(source) if source.kind() == io::ErrorKind::NotFound => Ok(None),
         Err(source) => Err(SettingsError::Io {
             path: path.to_path_buf(),
@@ -487,12 +483,8 @@ fn read_ledger(path: &Path) -> Result<Option<ModelLedger>, SettingsError> {
 }
 
 fn write_ledger(path: &Path, ledger: &ModelLedger) -> Result<(), SettingsError> {
-    let mut json = serde_json::to_string_pretty(ledger).map_err(|err| SettingsError::Json {
-        path: path.to_path_buf(),
-        message: err.to_string(),
-    })?;
-    json.push('\n');
-    write_atomic(path, json.as_bytes(), 0o600).map_err(|source| SettingsError::Io {
+    let text = ledger_file::render(path, ledger)?;
+    write_atomic(path, text.as_bytes(), 0o600).map_err(|source| SettingsError::Io {
         path: path.to_path_buf(),
         source,
     })

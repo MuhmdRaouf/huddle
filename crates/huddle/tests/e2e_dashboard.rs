@@ -417,8 +417,8 @@ fn start_prepared(providers: &str, prepare: impl FnOnce(&TempHome, u16)) -> Prep
     let router_home = home.root().join(".config/huddle");
     std::fs::create_dir_all(&router_home).expect("mkdir router home");
     std::fs::write(
-        router_home.join("providers.json"),
-        format!("{{\"providers\":[{providers}]}}"),
+        router_home.join("providers.toml"),
+        format!("providers = [{providers}]\n"),
     )
     .expect("write providers");
     prepare(&home, port);

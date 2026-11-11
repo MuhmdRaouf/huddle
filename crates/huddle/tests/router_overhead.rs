@@ -332,7 +332,7 @@ fn forward_request(a: &mut Box<dyn Conn>, b: &mut Box<dyn Conn>) -> io::Result<(
 fn start_router(home: &TempHome, port: u16, upstream: &str) {
     let dir = home.root().join(".config/huddle");
     fs::create_dir_all(&dir).expect("mkdir");
-    fs::write(dir.join("providers.json"), "{\"providers\":[\"zai\"]}").expect("write");
+    fs::write(dir.join("providers.toml"), "providers = [\"zai\"]\n").expect("write");
     let started = Command::new(env!("CARGO_BIN_EXE_huddle"))
         .args(["router", "start"])
         .env_clear()

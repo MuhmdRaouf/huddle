@@ -16,7 +16,7 @@ impl Fixture {
         let home = TempHome::new();
         let router = home.root().join(".config/huddle");
         fs::create_dir_all(&router).expect("mkdir");
-        fs::write(router.join("providers.json"), "{\"providers\":[\"zai\"]}").expect("write");
+        fs::write(router.join("providers.toml"), "providers = [\"zai\"]\n").expect("write");
         Fixture {
             home,
             port: free_port(),
@@ -124,13 +124,13 @@ fn a_second_start_spawns_nothing() {
         String::from_utf8_lossy(&first.stderr)
     );
     assert!(f.wait_port(true));
-    let before = fs::read_to_string(f.home.root().join(".local/state/huddle/run/router.json"))
+    let before = fs::read_to_string(f.home.root().join(".local/state/huddle/run/router.toml"))
         .expect("record");
 
     let second = f.run(&["router", "start"]);
     assert_eq!(second.status.code(), Some(0));
     assert_eq!(
-        fs::read_to_string(f.home.root().join(".local/state/huddle/run/router.json"))
+        fs::read_to_string(f.home.root().join(".local/state/huddle/run/router.toml"))
             .expect("record"),
         before
     );

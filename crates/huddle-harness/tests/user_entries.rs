@@ -4,10 +4,10 @@ use huddle_harness::user_entries::{UserEntriesError, all_entries, load};
 use huddle_testkit::temp_home::TempHome;
 use std::fs;
 
-const AIDER: &str = r#"{"harnesses":[{"id":"aider","label":"Aider","command":"aider","args":["--yes"],"prompt_flag":"--message"}]}"#;
+const AIDER: &str = "[[harnesses]]\nid = \"aider\"\nlabel = \"Aider\"\ncommand = \"aider\"\nargs = [\"--yes\"]\nprompt_flag = \"--message\"\n";
 
 fn path_in(home: &TempHome, text: &str) -> std::path::PathBuf {
-    let path = home.root().join("harnesses.json");
+    let path = home.root().join("harnesses.toml");
     fs::write(&path, text).expect("write");
     path
 }
@@ -15,7 +15,7 @@ fn path_in(home: &TempHome, text: &str) -> std::path::PathBuf {
 #[test]
 fn a_missing_file_is_no_entries() {
     let home = TempHome::new();
-    assert_eq!(load(&home.root().join("harnesses.json")), Ok(vec![]));
+    assert_eq!(load(&home.root().join("harnesses.toml")), Ok(vec![]));
 }
 
 #[test]
@@ -41,7 +41,8 @@ fn a_user_entry_is_text_wire_write_only() {
 #[test]
 fn defaults_fill_label_args_prompt_and_version() {
     let home = TempHome::new();
-    let text = r#"{"harnesses":[{"id":"mytool","command":"/opt/bin/mytool","prompt":"stdin"}]}"#;
+    let text =
+        "[[harnesses]]\nid = \"mytool\"\ncommand = \"/opt/bin/mytool\"\nprompt = \"stdin\"\n";
     let loaded = load(&path_in(&home, text)).expect("load");
     assert_eq!(loaded[0].label, "mytool");
     assert_eq!(loaded[0].run.prompt.transport, Transport::Stdin);
@@ -52,12 +53,12 @@ fn defaults_fill_label_args_prompt_and_version() {
 #[test]
 fn bad_files_and_ids_are_values() {
     let home = TempHome::new();
-    let err = load(&path_in(&home, "not json")).expect_err("parse");
+    let err = load(&path_in(&home, "[[harnesses]")).expect_err("parse");
     assert!(matches!(err, UserEntriesError::Parse { .. }));
 
     let err = load(&path_in(
         &home,
-        r#"{"harnesses":[{"id":"Bad_Id","command":"x"}]}"#,
+        "[[harnesses]]\nid = \"Bad_Id\"\ncommand = \"x\"\n",
     ))
     .expect_err("id");
     assert_eq!(
@@ -73,7 +74,7 @@ fn bad_files_and_ids_are_values() {
 
     let err = load(&path_in(
         &home,
-        r#"{"harnesses":[{"id":"omp","command":"x"}]}"#,
+        "[[harnesses]]\nid = \"omp\"\ncommand = \"x\"\n",
     ))
     .expect_err("clash");
     assert_eq!(
@@ -83,14 +84,14 @@ fn bad_files_and_ids_are_values() {
 
     let err = load(&path_in(
         &home,
-        r#"{"harnesses":[{"id":"a1","command":"x"},{"id":"a1","command":"y"}]}"#,
+        "[[harnesses]]\nid = \"a1\"\ncommand = \"x\"\n\n[[harnesses]]\nid = \"a1\"\ncommand = \"y\"\n",
     ))
     .expect_err("dup");
     assert_eq!(err, UserEntriesError::Duplicate { id: "a1".into() });
 
     let err = load(&path_in(
         &home,
-        r#"{"harnesses":[{"id":"a1","command":""}]}"#,
+        "[[harnesses]]\nid = \"a1\"\ncommand = \"\"\n",
     ))
     .expect_err("empty");
     assert!(matches!(err, UserEntriesError::Parse { .. }));
@@ -104,4 +105,32 @@ fn all_entries_lists_builtins_then_user_entries() {
     assert_eq!(all.len(), builtin().len() + 1);
     assert_eq!(all[0].id, builtin()[0].id);
     assert_eq!(all.last().expect("last").id, "aider");
+}
+
+#[test]
+fn t2_user_entries_load_from_harnesses_toml() {
+    let home = TempHome::new();
+    let path = home.root().join("harnesses.toml");
+    fs::write(
+        &path,
+        "[[harnesses]]\nid = \"aider\"\nlabel = \"Aider\"\ncommand = \"aider\"\nargs = [\"--yes\"]\nprompt_flag = \"--message\"\n",
+    )
+    .expect("write");
+    let loaded = load(&path).expect("load");
+    assert_eq!(loaded.len(), 1);
+    assert_eq!(loaded[0].id, "aider");
+    assert_eq!(loaded[0].run.args, vec!["--yes"]);
+    assert_eq!(loaded[0].run.prompt.flag.as_deref(), Some("--message"));
+}
+
+#[test]
+fn t2_a_broken_harnesses_toml_is_a_parse_error_naming_the_file() {
+    let home = TempHome::new();
+    let path = home.root().join("harnesses.toml");
+    fs::write(&path, "[[harnesses]\n").expect("write");
+    let text = load(&path).unwrap_err().to_string();
+    assert!(
+        text.starts_with(&format!("{} is not valid: ", path.display())),
+        "{text}"
+    );
 }

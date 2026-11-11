@@ -30,8 +30,8 @@ async fn an_idle_daemon_costs_under_half_a_percent_of_one_core() {
     let paths = Paths::from_env(&env).expect("paths");
     fs::create_dir_all(&paths.config_dir).expect("mkdir");
     fs::write(
-        paths.config_dir.join("providers.json"),
-        "{\"providers\":[\"zai\"]}",
+        paths.config_dir.join("providers.toml"),
+        "providers = [\"zai\"]\n",
     )
     .expect("write");
     let (stop_tx, stop_rx) = watch::channel(false);

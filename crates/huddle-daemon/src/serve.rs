@@ -1,5 +1,5 @@
 //! huddle-daemon: serve. The daemon's run loop: one lock, one port, one record, the handover
-//! socket, the lanes following providers.json, the memory ceiling, and a clean stop or handover
+//! socket, the lanes following providers.toml, the memory ceiling, and a clean stop or handover
 //! at the end.
 
 use std::fmt;
@@ -41,8 +41,8 @@ pub const DRAIN_BUDGET: Duration = Duration::from_secs(600);
 /// drains: the drain's budget plus a minute of margin.
 pub const TAKEOVER_LOCK_WAIT: Duration = Duration::from_secs(660);
 
-/// The record under the run dir, `<run_dir>/router.json`.
-const RECORD_FILE: &str = "router.json";
+/// The record under the run dir, `<run_dir>/router.toml`.
+const RECORD_FILE: &str = "router.toml";
 
 /// The lock under the run dir, `<run_dir>/router.lock`.
 const LOCK_FILE: &str = "router.lock";
@@ -460,9 +460,9 @@ fn write_record(path: &Path, port: u16, version: &str, executable: Option<&Path>
             .unwrap_or_default(),
         started: iso_utc_ms(now_ms()),
     };
-    match serde_json::to_string_pretty(&record) {
+    match toml::to_string(&record) {
         Ok(text) => {
-            if let Err(error) = write_atomic(path, format!("{text}\n").as_bytes(), 0o600) {
+            if let Err(error) = write_atomic(path, text.as_bytes(), 0o600) {
                 log(format!("huddle-router: {error}"));
             }
         }

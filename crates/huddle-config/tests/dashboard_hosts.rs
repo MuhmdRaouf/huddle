@@ -1,6 +1,8 @@
 use std::fs;
 
-use huddle_config::dashboard_hosts::{Change, add, config_path, normalize, read, remove};
+use huddle_config::dashboard_hosts::{
+    Change, add, config_path, normalize, read, remove, write_default_if_missing,
+};
 use huddle_config::env::Env;
 use huddle_config::paths::Paths;
 use huddle_testkit::temp_home::TempHome;
@@ -115,4 +117,50 @@ fn config_dir_falls_back_to_home_config() {
             Some("/home/u/.config/huddle/config.toml")
         );
     }
+}
+
+#[test]
+fn t2_the_default_config_is_written_once_and_a_hand_edit_stays() {
+    let home = TempHome::new();
+    let path = home.root().join("config.toml");
+
+    assert!(write_default_if_missing(&path).expect("first"));
+    let text = fs::read_to_string(&path).expect("read");
+    assert!(text.contains("[history]"), "{text}");
+    assert!(text.contains("keep_days = 90"), "{text}");
+    assert_eq!(read(&path).expect("parses"), Vec::<String>::new());
+
+    fs::write(&path, "[history]\nkeep_days = 7\n").expect("edit");
+    assert!(!write_default_if_missing(&path).expect("second"));
+    assert_eq!(
+        fs::read_to_string(&path).expect("read"),
+        "[history]\nkeep_days = 7\n"
+    );
+}
+
+#[test]
+fn t2_adding_a_dashboard_host_keeps_the_other_settings() {
+    let home = TempHome::new();
+    let path = home.root().join("config.toml");
+    fs::write(
+        &path,
+        "note = \"mine\"\n\n[history]\nkeep_days = 30\n\n[extra]\nflag = true\n",
+    )
+    .expect("write");
+
+    add(&path, "a.example").expect("add");
+    let table: toml::Table =
+        toml::from_str(&fs::read_to_string(&path).expect("read")).expect("toml");
+    assert_eq!(table["history"]["keep_days"].as_integer(), Some(30));
+    assert_eq!(table["note"].as_str(), Some("mine"));
+    assert_eq!(table["extra"]["flag"].as_bool(), Some(true));
+    assert_eq!(read(&path), Ok(vec!["a.example".into()]));
+
+    remove(&path, "a.example").expect("remove");
+    let table: toml::Table =
+        toml::from_str(&fs::read_to_string(&path).expect("read")).expect("toml");
+    assert_eq!(table["history"]["keep_days"].as_integer(), Some(30));
+    assert_eq!(table["note"].as_str(), Some("mine"));
+    assert_eq!(table["extra"]["flag"].as_bool(), Some(true));
+    assert_eq!(read(&path), Ok(vec![]));
 }

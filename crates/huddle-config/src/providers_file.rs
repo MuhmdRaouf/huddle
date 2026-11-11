@@ -1,4 +1,4 @@
-//! providers.json: the providers huddle-router serves, re-read on every poll so enabling a
+//! providers.toml: the providers huddle-router serves, re-read on every poll so enabling a
 //! provider needs no restart. The names are recorded as they are given and dropped when no
 //! compiled provider owns them, so the file can never turn a typo into a lane. Every write is
 //! locked and atomic, and every key the user added to the file survives it.
@@ -12,15 +12,15 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use serde::Deserialize;
-use serde_json::Value;
+use toml::{Table, Value};
 
 use crate::atomic::write_atomic;
 
-/// The file's name inside the router dir.
-pub const PROVIDERS_FILE: &str = "providers.json";
-/// The file the lock is taken on: the write replaces providers.json's inode, so a lock on it
+/// The file's name inside the config dir.
+pub const PROVIDERS_FILE: &str = "providers.toml";
+/// The file the lock is taken on: the write replaces providers.toml's inode, so a lock on it
 /// would not survive the rename.
-pub const LOCK_FILE: &str = "providers.json.lock";
+pub const LOCK_FILE: &str = "providers.toml.lock";
 
 /// How long `set_enabled` waits for the lock. The critical section is a read-modify-write of a
 /// file of a few names, so a longer wait hides a stuck writer.
@@ -28,12 +28,12 @@ const LOCK_WAIT: Duration = Duration::from_secs(5);
 /// The pause between lock tries.
 const LOCK_RETRY: Duration = Duration::from_millis(50);
 
-/// What reading or writing providers.json can refuse.
+/// What reading or writing providers.toml can refuse.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ProvidersFileError {
     /// Any read error other than a missing file: `<file>: <message>`.
     Read { file: String, message: String },
-    /// Malformed or wrong-shape file: `<file>: not valid providers.json (<detail>)`.
+    /// Malformed or wrong-shape file: `<file>: not valid providers.toml (<detail>)`.
     Invalid { file: String, detail: String },
     /// The lock is held past the 5 s wait: `<file>: lock held past 5 s`.
     Locked { file: String },
@@ -46,7 +46,7 @@ impl fmt::Display for ProvidersFileError {
         match self {
             ProvidersFileError::Read { file, message } => write!(f, "{file}: {message}"),
             ProvidersFileError::Invalid { file, detail } => {
-                write!(f, "{file}: not valid providers.json ({detail})")
+                write!(f, "{file}: not valid providers.toml ({detail})")
             }
             ProvidersFileError::Locked { file } => write!(f, "{file}: lock held past 5 s"),
             ProvidersFileError::Write { file, message } => write!(f, "{file}: {message}"),
@@ -56,7 +56,7 @@ impl fmt::Display for ProvidersFileError {
 
 impl std::error::Error for ProvidersFileError {}
 
-/// `<config_dir>/providers.json`.
+/// `<config_dir>/providers.toml`.
 pub fn providers_path(dir: &Path) -> PathBuf {
     dir.join(PROVIDERS_FILE)
 }
@@ -69,8 +69,8 @@ struct FileShape {
     providers: Vec<String>,
 }
 
-/// Reads providers.json and answers the enabled providers filtered to `known`, in `known`
-/// order. A missing file is an empty list; any other read error, or JSON of the wrong shape, is
+/// Reads providers.toml and answers the enabled providers filtered to `known`, in `known`
+/// order. A missing file is an empty list; any other read error, or TOML of the wrong shape, is
 /// an error.
 pub fn read_enabled(dir: &Path, known: &[&str]) -> Result<Vec<String>, ProvidersFileError> {
     let path = providers_path(dir);
@@ -112,17 +112,8 @@ pub fn set_enabled(dir: &Path, name: &str, on: bool) -> Result<(), ProvidersFile
         })?;
     take_lock(&lock, &lock_text)?;
 
-    let mut value = read_current(&path)?;
-    let object = match value.as_object_mut() {
-        Some(object) => object,
-        None => {
-            return Err(ProvidersFileError::Invalid {
-                file: file_text,
-                detail: "the file is not a JSON object".to_string(),
-            });
-        }
-    };
-    let mut providers = providers_of(object, &file_text)?;
+    let mut table = read_current(&path)?;
+    let mut providers = providers_of(&table, &file_text)?;
     let has = providers.iter().any(|kept| kept == name);
     if has == on {
         return Ok(());
@@ -132,21 +123,21 @@ pub fn set_enabled(dir: &Path, name: &str, on: bool) -> Result<(), ProvidersFile
     } else {
         providers.retain(|kept| kept != name);
     }
-    object.insert(
+    table.insert(
         "providers".to_string(),
         Value::Array(providers.into_iter().map(Value::String).collect()),
     );
-    let bytes = serde_json::to_vec_pretty(&value).map_err(|err| ProvidersFileError::Write {
+    let text = toml::to_string_pretty(&table).map_err(|err| ProvidersFileError::Write {
         file: file_text.clone(),
         message: err.to_string(),
     })?;
-    write_atomic(&path, &bytes, 0o600).map_err(|err| ProvidersFileError::Write {
+    write_atomic(&path, text.as_bytes(), 0o600).map_err(|err| ProvidersFileError::Write {
         file: file_text,
         message: err.to_string(),
     })
 }
 
-/// Parses providers.json into the file's shape, telling a missing file from a broken one.
+/// Parses providers.toml into the file's shape, telling a missing file from a broken one.
 fn parse_file(path: &Path) -> Result<FileShape, ProvidersFileError> {
     let text = path.display().to_string();
     let raw = match fs::read(path) {
@@ -159,32 +150,33 @@ fn parse_file(path: &Path) -> Result<FileShape, ProvidersFileError> {
             });
         }
     };
-    serde_json::from_slice(&raw).map_err(|err| ProvidersFileError::Invalid {
+    let raw = String::from_utf8_lossy(&raw);
+    toml::from_str(&raw).map_err(|err| ProvidersFileError::Invalid {
         file: text,
-        detail: err.to_string(),
+        detail: err.message().to_string(),
     })
 }
 
-/// Reads the current file as JSON, starting from an empty object when the file is missing or
-/// unreadable, so a fresh router dir is a valid starting point.
-fn read_current(path: &Path) -> Result<Value, ProvidersFileError> {
+/// Reads the current file as a table, starting from an empty one when the file is missing or
+/// unreadable, so a fresh config dir is a valid starting point. The table keeps every key the
+/// user added.
+fn read_current(path: &Path) -> Result<Table, ProvidersFileError> {
     let text = path.display().to_string();
     match fs::read(path) {
-        Ok(raw) => serde_json::from_slice(&raw).map_err(|err| ProvidersFileError::Invalid {
-            file: text,
-            detail: err.to_string(),
+        Ok(raw) => toml::from_str(&String::from_utf8_lossy(&raw)).map_err(|err| {
+            ProvidersFileError::Invalid {
+                file: text,
+                detail: err.message().to_string(),
+            }
         }),
-        Err(_) => Ok(Value::Object(serde_json::Map::new())),
+        Err(_) => Ok(Table::new()),
     }
 }
 
 /// The `providers` list of the current object, refusing a value of the wrong shape.
-fn providers_of(
-    object: &serde_json::Map<String, Value>,
-    file: &str,
-) -> Result<Vec<String>, ProvidersFileError> {
-    match object.get("providers") {
-        None | Some(Value::Null) => Ok(Vec::new()),
+fn providers_of(table: &Table, file: &str) -> Result<Vec<String>, ProvidersFileError> {
+    match table.get("providers") {
+        None => Ok(Vec::new()),
         Some(Value::Array(items)) => items
             .iter()
             .map(|item| match item.as_str() {

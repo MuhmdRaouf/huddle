@@ -109,10 +109,10 @@ impl Env<'_> {
     }
 
     fn daemon_pid(&self) -> u32 {
-        let path = self.home.root().join(".local/state/huddle/run/router.json");
-        let doc: serde_json::Value =
-            serde_json::from_slice(&fs::read(path).expect("router record")).expect("json");
-        doc["pid"].as_u64().expect("pid") as u32
+        let path = self.home.root().join(".local/state/huddle/run/router.toml");
+        let doc: toml::Table =
+            toml::from_str(&fs::read_to_string(path).expect("router record")).expect("toml");
+        doc["pid"].as_integer().expect("pid") as u32
     }
 
     fn wait_new_pid(&self, old: u32) -> bool {

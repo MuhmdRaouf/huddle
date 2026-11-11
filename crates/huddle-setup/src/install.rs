@@ -19,6 +19,7 @@ const PROBE_STEP: Duration = Duration::from_millis(50);
 #[derive(Debug)]
 pub enum InstallError {
     Port(String),
+    Config(String),
     Router(String),
     Settings(SettingsError),
 }
@@ -27,6 +28,7 @@ impl std::fmt::Display for InstallError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             InstallError::Port(message) => write!(f, "huddle setup: {message}"),
+            InstallError::Config(message) => write!(f, "huddle setup: {message}"),
             InstallError::Router(message) => {
                 write!(f, "huddle setup: the router did not start: {message}")
             }
@@ -54,6 +56,11 @@ pub fn run(env: &Env, paths: &Paths, exe: &Path) -> Result<InstallReport, Instal
         Ok(_) => None,
         Err(error) => Some(error.to_string()),
     };
+
+    huddle_config::dashboard_hosts::write_default_if_missing(
+        &huddle_config::dashboard_hosts::config_path(paths),
+    )
+    .map_err(|error| InstallError::Config(error.to_string()))?;
 
     start_router(exe)?;
     if !router_answers(port) {

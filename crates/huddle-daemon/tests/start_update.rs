@@ -51,8 +51,8 @@ fn write_record(paths: &Paths, pid: u32, port: u16, executable: &str) {
         started: "t".into(),
     };
     fs::write(
-        dir.join("router.json"),
-        serde_json::to_string_pretty(&record).expect("json"),
+        dir.join("router.toml"),
+        toml::to_string(&record).expect("toml"),
     )
     .expect("write");
 }
@@ -94,19 +94,19 @@ fn a_record_naming_another_binary_is_taken_over() {
     write_record(&paths, 1234, port, "/old/huddle");
     let args = home.root().join("args");
     let record_dir = paths.run_dir.clone();
-    let new_record = serde_json::to_string_pretty(&RouterRecord {
+    let new_record = toml::to_string(&RouterRecord {
         pid: 5678,
         port,
         version: "2".into(),
         executable: "/new/huddle".into(),
         started: "t".into(),
     })
-    .expect("json");
+    .expect("toml");
     let exe = script(
         &home,
         "huddle",
         &format!(
-            "echo \"$@\" > '{}'\ncat > '{}/router.json' <<'EOF'\n{new_record}\nEOF",
+            "echo \"$@\" > '{}'\ncat > '{}/router.toml' <<'EOF'\n{new_record}\nEOF",
             args.display(),
             record_dir.display()
         ),

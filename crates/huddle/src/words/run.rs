@@ -85,7 +85,7 @@ pub fn run(args: &[String], env: &Env) -> i32 {
             return 1;
         }
     };
-    let entries = match all_entries(&paths.config_dir.join("harnesses.json")) {
+    let entries = match all_entries(&paths.config_dir.join("harnesses.toml")) {
         Ok(entries) => entries,
         Err(error) => {
             let _ = writeln!(std::io::stderr(), "huddle: {error}");

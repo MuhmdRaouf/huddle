@@ -71,10 +71,10 @@ pub fn row(report: &Report) -> HarnessRow {
 
 /// Checks every harness, builtin then user entries, with no smoke run. Each version probe is
 /// capped by the harness crate's own timeout, so one hung binary cannot hold the page. An
-/// unreadable `harnesses.json` leaves the builtin table.
+/// unreadable `harnesses.toml` leaves the builtin table.
 pub fn read(env: &Env, paths: &Paths) -> HarnessesReport {
     let entries =
-        all_entries(&paths.config_dir.join("harnesses.json")).unwrap_or_else(|_| builtin());
+        all_entries(&paths.config_dir.join("harnesses.toml")).unwrap_or_else(|_| builtin());
     HarnessesReport {
         state: Phase::Ready,
         rows: check_all(&entries, env).iter().map(row).collect(),

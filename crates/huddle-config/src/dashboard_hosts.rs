@@ -3,7 +3,7 @@
 
 use std::fmt;
 use std::fs;
-use std::io;
+use std::io::{self, Write as _};
 use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
@@ -13,6 +13,20 @@ use crate::paths::Paths;
 
 const MANAGED_LINE: &str =
     "# Managed by huddle: huddle add-dashboard-host / remove-dashboard-host rewrite this file.";
+
+/// The file `setup --install` creates when `config.toml` is missing: every setting at its default,
+/// commented where a default is the absence of a value.
+pub const DEFAULT_CONFIG: &str = "\
+# huddle settings. A missing line means its default.
+
+[dashboard]
+# Names besides the loopback that may reach the dashboard's read-only paths.
+# hosts = [\"huddle.example\"]
+
+[history]
+# Days of request history to keep.
+keep_days = 90
+";
 
 /// What an add or a remove did, with the normalized host.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -68,6 +82,30 @@ struct DashboardSection {
 /// `<config_dir>/config.toml`.
 pub fn config_path(paths: &Paths) -> PathBuf {
     paths.config_dir.join("config.toml")
+}
+
+/// Creates `path` with [`DEFAULT_CONFIG`] when it does not exist; an existing file is never
+/// touched. Answers whether the file was written.
+pub fn write_default_if_missing(path: &Path) -> Result<bool, DashboardHostsError> {
+    let failed = |err: io::Error| DashboardHostsError::Write {
+        file: path.display().to_string(),
+        message: err.to_string(),
+    };
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(failed)?;
+    }
+    match fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(path)
+    {
+        Ok(mut file) => {
+            file.write_all(DEFAULT_CONFIG.as_bytes()).map_err(failed)?;
+            Ok(true)
+        }
+        Err(err) if err.kind() == io::ErrorKind::AlreadyExists => Ok(false),
+        Err(err) => Err(failed(err)),
+    }
 }
 
 /// The lowercase form of a bare host name: letters, digits, dots and hyphens, no empty label.
@@ -141,15 +179,43 @@ pub fn remove(path: &Path, raw: &str) -> Result<Change, DashboardHostsError> {
     Ok(Change::Removed(host))
 }
 
-/// The hosts hold only `[a-z0-9.-]`, so they need no TOML escaping.
+/// Writes the hosts into `dashboard.hosts` and keeps every other table and key of the file.
+/// Comments are not kept: the file is parsed and written back as a table.
 fn write(path: &Path, hosts: &[String]) -> Result<(), DashboardHostsError> {
-    let quoted: Vec<String> = hosts.iter().map(|host| format!("\"{host}\"")).collect();
-    let text = format!(
-        "{MANAGED_LINE}\n[dashboard]\nhosts = [{}]\n",
-        quoted.join(", ")
-    );
+    let file = path.display().to_string();
+    let mut table = match fs::read_to_string(path) {
+        Ok(text) => {
+            toml::from_str::<toml::Table>(&text).map_err(|err| DashboardHostsError::Invalid {
+                file: file.clone(),
+                detail: err.message().to_string(),
+            })?
+        }
+        Err(err) if err.kind() == io::ErrorKind::NotFound => toml::Table::new(),
+        Err(err) => {
+            return Err(DashboardHostsError::Read {
+                file,
+                message: err.to_string(),
+            });
+        }
+    };
+    let values = hosts.iter().cloned().map(toml::Value::String).collect();
+    let section = table
+        .entry("dashboard")
+        .or_insert_with(|| toml::Value::Table(toml::Table::new()));
+    let Some(section) = section.as_table_mut() else {
+        return Err(DashboardHostsError::Invalid {
+            file,
+            detail: "dashboard is not a table".to_string(),
+        });
+    };
+    section.insert("hosts".to_string(), toml::Value::Array(values));
+    let body = toml::to_string(&table).map_err(|err| DashboardHostsError::Write {
+        file: file.clone(),
+        message: err.to_string(),
+    })?;
+    let text = format!("{MANAGED_LINE}\n{body}");
     write_atomic(path, text.as_bytes(), 0o644).map_err(|err| DashboardHostsError::Write {
-        file: path.display().to_string(),
+        file,
         message: err.to_string(),
     })
 }

@@ -64,7 +64,7 @@ fn setup_without_a_key_reports_not_ready_and_names_the_key_word() {
     assert!(stdout.contains("no Z.ai GLM key"), "{stdout}");
     assert!(stdout.contains("provider zai key"), "{stdout}");
     assert!(
-        !home.root().join(".config/huddle/providers.json").exists(),
+        !home.root().join(".config/huddle/providers.toml").exists(),
         "no key, no lane"
     );
     stop(&home, port);
@@ -93,7 +93,7 @@ fn setup_with_a_key_enables_the_lane_and_serves_the_provider() {
     assert!(stdout.contains("huddle-router serves Z.ai GLM"), "{stdout}");
     assert!(stdout.contains("run /huddle:setup first"), "{stdout}");
     let providers =
-        fs::read_to_string(home.root().join(".config/huddle/providers.json")).expect("providers");
+        fs::read_to_string(home.root().join(".config/huddle/providers.toml")).expect("providers");
     assert!(providers.contains("zai"), "{providers}");
 }
 
@@ -121,7 +121,7 @@ fn a_ready_setup_says_so_and_asks_for_one_restart() {
     let port = free_port();
     stored_zai_key(&home);
     // /huddle:setup's ledger: any file at the path counts for this word.
-    let ledger = state_home(&home).join("settings-ledger.json");
+    let ledger = state_home(&home).join("settings-ledger.toml");
     fs::create_dir_all(ledger.parent().expect("parent")).expect("mkdir");
     fs::write(&ledger, "{}").expect("write");
     let output = huddle_with(
@@ -157,7 +157,7 @@ fn a_refused_key_stops_setup_before_it_enables_anything() {
     assert_eq!(output.status.code(), Some(6), "{stdout}");
     assert!(stdout.contains("refused the stored key"), "{stdout}");
     assert!(
-        !home.root().join(".config/huddle/providers.json").exists(),
+        !home.root().join(".config/huddle/providers.toml").exists(),
         "a refused key enables nothing"
     );
 }
@@ -169,7 +169,7 @@ fn a_limited_key_keeps_setup_ready_and_names_the_billing_page() {
     let fake = fake_answering(429);
     stored_zai_key(&home);
     // /huddle:setup's ledger: any file at the path counts for this word.
-    let ledger = state_home(&home).join("settings-ledger.json");
+    let ledger = state_home(&home).join("settings-ledger.toml");
     fs::create_dir_all(ledger.parent().expect("parent")).expect("mkdir");
     fs::write(&ledger, "{}").expect("write");
     let output = huddle_with(

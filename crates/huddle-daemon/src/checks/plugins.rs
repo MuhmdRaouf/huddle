@@ -413,7 +413,7 @@ mod tests {
         )
         .expect("installed");
         fs::write(paths.claude_dir.join("settings.json"), SETTINGS).expect("settings");
-        providers_file::set_enabled(&paths.config_dir, "zai", true).expect("providers.json");
+        providers_file::set_enabled(&paths.config_dir, "zai", true).expect("providers.toml");
         fs::create_dir_all(&paths.config_dir).expect("config dir");
         fs::write(
             paths.config_dir.join("config.toml"),

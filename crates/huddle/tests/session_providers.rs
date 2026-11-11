@@ -67,10 +67,10 @@ fn wait_running(home: &TempHome, port: u16) -> bool {
 fn set_up_state(home: &TempHome) {
     let huddle_dir = home.root().join(".local/state/huddle");
     fs::create_dir_all(&huddle_dir).expect("mkdir huddle");
-    fs::write(huddle_dir.join("settings-ledger.json"), "{}\n").expect("ledger");
+    fs::write(huddle_dir.join("settings-ledger.toml"), "{}\n").expect("ledger");
     let router = home.root().join(".config/huddle");
     fs::create_dir_all(&router).expect("mkdir router");
-    fs::write(router.join("providers.json"), "{\"providers\":[\"zai\"]}").expect("providers");
+    fs::write(router.join("providers.toml"), "providers = [\"zai\"]\n").expect("providers");
     fs::create_dir_all(home.root().join(".claude")).expect("mkdir claude");
 }
 
@@ -148,7 +148,7 @@ fn a_provider_with_no_plugin_entry_is_cleaned_up() {
 
     assert_eq!(out.status.code(), Some(0));
     let enabled =
-        fs::read_to_string(home.root().join(".config/huddle/providers.json")).expect("providers");
+        fs::read_to_string(home.root().join(".config/huddle/providers.toml")).expect("providers");
     assert!(!enabled.contains("zai"), "{enabled}");
     wait_running(&home, port);
 }

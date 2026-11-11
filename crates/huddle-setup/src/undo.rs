@@ -13,6 +13,7 @@ use serde_json::{Map, Value};
 
 use huddle_config::paths::Paths;
 
+use crate::ledger_file;
 use crate::settings::{
     Ledger, SettingsError, backup_path, drop_pristine, ledger_path, load_doc, pristine_doc,
     settings_path, sha256_hex, write_doc,
@@ -220,12 +221,7 @@ fn remove_file_if_there(path: &Path) -> Result<(), SettingsError> {
 
 fn read_ledger(path: &Path) -> Result<Option<Ledger>, SettingsError> {
     match fs::read(path) {
-        Ok(bytes) => serde_json::from_slice(&bytes)
-            .map(Some)
-            .map_err(|err| SettingsError::Json {
-                path: path.to_path_buf(),
-                message: err.to_string(),
-            }),
+        Ok(bytes) => ledger_file::parse(path, &bytes).map(Some),
         Err(source) if source.kind() == io::ErrorKind::NotFound => Ok(None),
         Err(source) => Err(SettingsError::Io {
             path: path.to_path_buf(),

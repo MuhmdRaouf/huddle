@@ -1,4 +1,4 @@
-//! A provider enabled on this machine: its lane in providers.json first, so huddle-router sees
+//! A provider enabled on this machine: its lane in providers.toml first, so huddle-router sees
 //! it as soon as it reloads, then its `/model` entries.
 
 use huddle_catalog::providers::Provider;
@@ -32,7 +32,7 @@ pub struct ProviderEnabled {
     pub changed: bool,
 }
 
-/// Records the provider in providers.json, then its /model entries.
+/// Records the provider in providers.toml, then its /model entries.
 pub fn enable(
     paths: &Paths,
     provider: &'static Provider,

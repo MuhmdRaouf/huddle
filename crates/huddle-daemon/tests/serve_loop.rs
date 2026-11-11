@@ -85,15 +85,18 @@ async fn the_record_lands_before_the_first_health_answer_and_goes_on_stop() {
     let home = TempHome::new();
     let (env, paths) = fixture(&home);
     let port = free_port();
-    let record = paths.run_dir.join("router.json");
+    let record = paths.run_dir.join("router.toml");
     let (opts, _lines) = options(env, paths.clone(), port, false);
     let (stop_tx, stop_rx) = watch::channel(false);
     let task = tokio::spawn(run(opts, stop_rx));
     wait_for_health(port).await;
-    let parsed: serde_json::Value =
-        serde_json::from_str(&fs::read_to_string(&record).expect("record")).expect("json");
-    assert_eq!(parsed["pid"], std::process::id());
-    assert_eq!(parsed["port"], port);
+    let parsed: toml::Table =
+        toml::from_str(&fs::read_to_string(&record).expect("record")).expect("toml");
+    assert_eq!(
+        parsed["pid"].as_integer(),
+        Some(i64::from(std::process::id()))
+    );
+    assert_eq!(parsed["port"].as_integer(), Some(i64::from(port)));
     stop_tx.send(true).expect("stop");
     task.await.expect("join").expect("serve");
     assert!(!record.exists(), "a clean stop removes the record");
@@ -163,8 +166,8 @@ async fn enabling_a_provider_adds_its_lane_within_one_poll() {
     wait_for_health(port).await;
     fs::create_dir_all(&paths.config_dir).expect("mkdir");
     fs::write(
-        paths.config_dir.join("providers.json"),
-        "{\"providers\":[\"zai\"]}",
+        paths.config_dir.join("providers.toml"),
+        "providers = [\"zai\"]\n",
     )
     .expect("write");
     let deadline = Instant::now() + Duration::from_secs(6);

@@ -1,4 +1,4 @@
-//! huddle-router: reload. The daemon's providers.json poll: re-read the file each tick, say
+//! huddle-router: reload. The daemon's providers.toml poll: re-read the file each tick, say
 //! when the lanes should change, and log a bad file once per distinct error.
 
 use std::fs;
@@ -8,7 +8,7 @@ use std::time::{Duration, SystemTime};
 use huddle_config::dashboard_hosts;
 use huddle_config::providers_file::{providers_path, read_enabled};
 
-/// How often the daemon polls providers.json.
+/// How often the daemon polls providers.toml.
 pub const POLL: Duration = Duration::from_secs(2);
 
 /// What one poll tells the daemon to do with its lanes.
@@ -19,7 +19,7 @@ pub enum ReloadAction {
     Swap(Vec<String>),
 }
 
-/// Watches the router dir's providers.json. One poll per tick; the fingerprint decides whether
+/// Watches the router dir's providers.toml. One poll per tick; the fingerprint decides whether
 /// what the read brought becomes a lane change, while every read is taken so a broken file is
 /// noticed and logged.
 pub struct ProvidersWatch {
@@ -147,7 +147,7 @@ mod tests {
 
     fn write_providers(dir: &PathBuf, text: &str) {
         fs::create_dir_all(dir).expect("mkdir");
-        fs::write(dir.join("providers.json"), text).expect("write");
+        fs::write(dir.join("providers.toml"), text).expect("write");
         // A second write in the same mtime tick must still move the fingerprint.
         thread::sleep(Duration::from_millis(20));
     }
@@ -165,7 +165,7 @@ mod tests {
         let mut watch = ProvidersWatch::new(dir.clone(), KNOWN.to_vec());
         let (_lines, log) = logged();
         assert_eq!(watch.tick(&log), ReloadAction::Keep, "no file yet");
-        write_providers(&dir, "{\"providers\":[\"zai\"]}");
+        write_providers(&dir, "providers = [\"zai\"]\n");
         assert_eq!(
             watch.tick(&log),
             ReloadAction::Swap(vec!["zai".to_string()])
@@ -176,7 +176,7 @@ mod tests {
     fn a_file_that_did_not_change_keeps_the_lanes() {
         let home = TempHome::new();
         let dir = home.root().join("router");
-        write_providers(&dir, "{\"providers\":[\"zai\"]}");
+        write_providers(&dir, "providers = [\"zai\"]\n");
         let mut watch = ProvidersWatch::new(dir.clone(), KNOWN.to_vec());
         let (_lines, log) = logged();
         assert_eq!(
@@ -193,12 +193,12 @@ mod tests {
         let dir = home.root().join("router");
         let mut watch = ProvidersWatch::new(dir.clone(), KNOWN.to_vec());
         let (_lines, log) = logged();
-        write_providers(&dir, "{\"providers\":[\"zai\"]}");
+        write_providers(&dir, "providers = [\"zai\"]\n");
         assert_eq!(
             watch.tick(&log),
             ReloadAction::Swap(vec!["zai".to_string()])
         );
-        write_providers(&dir, "{\"providers\":[\"zai\",\"kimi\"]}");
+        write_providers(&dir, "providers = [\"zai\", \"kimi\"]\n");
         assert_eq!(
             watch.tick(&log),
             ReloadAction::Swap(vec!["zai".to_string(), "kimi".to_string()])
@@ -211,12 +211,12 @@ mod tests {
         let dir = home.root().join("router");
         let mut watch = ProvidersWatch::new(dir.clone(), KNOWN.to_vec());
         let (_lines, log) = logged();
-        write_providers(&dir, "{\"providers\":[\"zai\"]}");
+        write_providers(&dir, "providers = [\"zai\"]\n");
         assert_eq!(
             watch.tick(&log),
             ReloadAction::Swap(vec!["zai".to_string()])
         );
-        write_providers(&dir, "{\"providers\":[]}");
+        write_providers(&dir, "providers = []\n");
         assert_eq!(watch.tick(&log), ReloadAction::Keep);
     }
 
@@ -226,17 +226,17 @@ mod tests {
         let dir = home.root().join("router");
         let mut watch = ProvidersWatch::new(dir.clone(), KNOWN.to_vec());
         let (lines, log) = logged();
-        write_providers(&dir, "{\"providers\":[\"zai\"]}");
+        write_providers(&dir, "providers = [\"zai\"]\n");
         assert_eq!(
             watch.tick(&log),
             ReloadAction::Swap(vec!["zai".to_string()])
         );
-        write_providers(&dir, "not json");
+        write_providers(&dir, "providers = [");
         assert_eq!(watch.tick(&log), ReloadAction::Keep);
         assert_eq!(watch.tick(&log), ReloadAction::Keep);
         let logged = lines.borrow().clone();
         assert_eq!(logged.len(), 1, "one line, not one per poll: {logged:?}");
-        assert!(logged[0].contains("not valid providers.json"), "{logged:?}");
+        assert!(logged[0].contains("not valid providers.toml"), "{logged:?}");
     }
 
     #[test]
@@ -245,11 +245,11 @@ mod tests {
         let dir = home.root().join("router");
         let mut watch = ProvidersWatch::new(dir.clone(), KNOWN.to_vec());
         let (lines, log) = logged();
-        write_providers(&dir, "not json");
+        write_providers(&dir, "providers = [");
         watch.tick(&log);
-        write_providers(&dir, "{\"providers\":[\"zai\"]}");
+        write_providers(&dir, "providers = [\"zai\"]\n");
         watch.tick(&log);
-        write_providers(&dir, "not json");
+        write_providers(&dir, "providers = [");
         watch.tick(&log);
         assert_eq!(lines.borrow().len(), 2);
     }

@@ -107,7 +107,7 @@ fn t1_install_keeps_the_ca_and_the_router_record_in_the_xdg_folders() {
     );
     assert!(
         home.root()
-            .join(".local/state/huddle/run/router.json")
+            .join(".local/state/huddle/run/router.toml")
             .exists(),
         "the router record is in the state folder"
     );
@@ -132,4 +132,26 @@ fn a_bad_port_is_refused_before_anything_changes() {
     assert!(stderr.starts_with("huddle setup: "), "{stderr}");
     assert!(stderr.contains("is not a port"), "{stderr}");
     assert!(!home.root().join(".claude/settings.json").exists());
+}
+
+#[test]
+fn t2_install_writes_config_toml_with_defaults_and_never_rewrites_it() {
+    let home = TempHome::new();
+    let port = free_port();
+    let _stop = StopOnDrop(&home, port);
+    let config = home.root().join(".config/huddle/config.toml");
+
+    let first = huddle(&home, port, &["setup", "--install"]);
+    assert_eq!(first.status.code(), Some(0));
+    let text = fs::read_to_string(&config).expect("config.toml");
+    assert!(text.contains("keep_days = 90"), "{text}");
+    assert!(text.contains('#'), "{text}");
+
+    fs::write(&config, "[history]\nkeep_days = 7\n").expect("edit");
+    let second = huddle(&home, port, &["setup", "--install"]);
+    assert_eq!(second.status.code(), Some(0));
+    assert_eq!(
+        fs::read_to_string(&config).expect("read"),
+        "[history]\nkeep_days = 7\n"
+    );
 }

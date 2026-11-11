@@ -217,7 +217,7 @@ fn run_attempt(job: &Job, index: usize, job_dir: &Path, env: &Env) -> Turn {
         Ok(paths) => paths,
         Err(err) => return Turn::failed(err.to_string()),
     };
-    let entries = match user_entries::all_entries(&paths.config_dir.join("harnesses.json")) {
+    let entries = match user_entries::all_entries(&paths.config_dir.join("harnesses.toml")) {
         Ok(entries) => entries,
         Err(err) => return Turn::failed(err.to_string()),
     };
