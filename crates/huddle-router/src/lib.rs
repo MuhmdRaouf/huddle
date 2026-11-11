@@ -1,4 +1,5 @@
 pub mod adapt;
+pub mod answer_facts;
 pub mod anthropic;
 pub mod body;
 pub mod connect;
@@ -15,4 +16,5 @@ pub mod refusal;
 pub mod reload;
 pub mod server;
 pub mod sse;
+pub mod stats;
 pub mod upstream;

@@ -147,6 +147,8 @@ pub fn start_with_state(
         }),
         jobs: Arc::new(move || cache.latest().jobs.clone()),
         hosts: Arc::new(Vec::new),
+        // The router counts its own connections.
+        connections: Arc::new(|| 0),
     };
     (inputs, wiring_state)
 }

@@ -3,6 +3,7 @@
 //! The router itself: it reads the model off the body, picks the lane or Anthropic, and wires
 //! the entry handler, the CONNECT handler, the Anthropic path and the lanes together.
 
+use crate::answer_facts::{self, AnswerFacts};
 use crate::anthropic::{
     AnswerOutcome, AnswerTap, AnthropicPath, OutcomeHook, PassCtx, PassEvent, PassHook, PassWord,
     StreamedRoute, WholeRoute, is_model_request, pass_through_handler,
@@ -378,9 +379,12 @@ impl Router {
             let router = Arc::clone(self);
             Arc::new(move || router.providers())
         };
+        let mut inputs = self.dashboard.clone();
+        let tunnels = Arc::clone(&self.tunnels);
+        inputs.connections = Arc::new(move || tunnels.count());
         let dashboard = Arc::new(Dashboard::new(
             Arc::clone(&self.live),
-            self.dashboard.clone(),
+            inputs,
             Arc::clone(&providers),
         ));
         entry_handler(Arc::new(EntryCtx {
@@ -498,6 +502,8 @@ pub struct RequestContext {
     /// `provider`, `anthropic` or `refused`.
     pub route: Mutex<String>,
     pub plugin: Mutex<String>,
+    /// The Anthropic answer's `request-id` and plan numbers.
+    pub answer_facts: Mutex<AnswerFacts>,
     /// Set for a request the dashboard lists.
     live: Option<LiveEntry>,
 }
@@ -533,12 +539,16 @@ impl RequestContext {
         let Some(id) = live.id.get() else {
             return;
         };
+        let facts = lock(&self.answer_facts).clone();
         live.state.finish(
             *id,
             Finish {
                 status,
                 error: lock(&self.error).clone(),
                 usage: lock(&self.usage).clone(),
+                upstream_id: facts.upstream_id,
+                plan: facts.plan,
+                router_ms: self.sent_us.get().map(|us| us / 1000),
                 now_ms: now_ms(),
             },
         );
@@ -644,6 +654,13 @@ impl RequestEvents {
             seen: false,
             inner,
         }))
+    }
+
+    /// Keeps the `request-id` and plan numbers an Anthropic answer's head carries.
+    pub fn note_answer(&self, headers: &HeaderMap) {
+        if let Some(context) = &self.context {
+            *lock(&context.answer_facts) = answer_facts::read(headers);
+        }
     }
 
     /// Marks the first attempt leaving.

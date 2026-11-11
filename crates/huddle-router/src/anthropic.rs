@@ -300,6 +300,7 @@ fn answer_shape(
     events: &RequestEvents,
     usage_out: Arc<Mutex<Option<Usage>>>,
 ) -> StreamShape {
+    events.note_answer(&answer.headers);
     let tap = (answer.status.is_success() && !compressed(&answer.headers))
         .then(|| Box::new(LaneTap::new(&answer.headers, usage_out)) as Box<dyn AnswerTap>);
     StreamShape {

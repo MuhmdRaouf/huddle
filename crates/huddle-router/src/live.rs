@@ -2,11 +2,14 @@
 //! The core takes every timestamp as a parameter and does no I/O.
 
 use std::collections::{HashMap, VecDeque};
-use std::sync::{Mutex, MutexGuard, PoisonError};
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use tokio::sync::watch;
 
+use crate::answer_facts::PlanUsage;
 use crate::sse::Usage;
+use crate::stats::{self, Buckets, MAX_MODELS, ModelRow, ModelSeries, Sample, percentile};
 
 /// Finished requests the ring keeps, newest first.
 const RING_CAPACITY: usize = 200;
@@ -30,12 +33,18 @@ pub struct RequestStart {
 }
 
 /// How a request ended.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct Finish {
     pub status: u16,
     /// One line on why the request failed, when it did; decides `timeout` and `refused`.
     pub error: Option<String>,
     pub usage: Option<Usage>,
+    /// The upstream's `request-id`, on the Anthropic lane.
+    pub upstream_id: Option<String>,
+    /// Plan usage the answer's headers carried.
+    pub plan: Option<PlanUsage>,
+    /// Milliseconds the router held the request before the first attempt left.
+    pub router_ms: Option<u64>,
     pub now_ms: u64,
 }
 
@@ -79,6 +88,8 @@ pub struct SnapshotInputs {
     pub wiring: Wiring,
     pub lanes: Vec<LaneMeta>,
     pub jobs: Vec<JobRow>,
+    /// Open connections to the router.
+    pub connections: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
@@ -102,8 +113,26 @@ pub struct LaneRow {
     pub errors: u64,
     pub ttft_p50_ms: Option<u64>,
     pub ttft_p95_ms: Option<u64>,
+    /// The same value as `ttft_p50_ms`.
+    pub ttft_p50: Option<u64>,
+    pub last: Option<LaneLast>,
     pub tokens_in: u64,
     pub tokens_out: u64,
+}
+
+/// The status of a lane's latest answer and when it ended.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+pub struct LaneLast {
+    pub status: u16,
+    pub at_ms: u64,
+}
+
+/// The router card's counters.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+pub struct RouterStats {
+    /// Dashboard live feeds open now.
+    pub viewers: usize,
+    pub connections: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
@@ -118,6 +147,15 @@ pub struct RecentRow {
     pub ttft_ms: Option<u64>,
     pub tokens_in: Option<u64>,
     pub tokens_out: Option<u64>,
+    /// The agent the request is credited to; filled from the session logs.
+    pub agent: Option<String>,
+    pub dur_ms: u64,
+    pub router_ms: Option<u64>,
+    pub cache_read: Option<u64>,
+    pub cache_write: Option<u64>,
+    pub stop: Option<String>,
+    /// The upstream's `request-id`, the key that joins a request to a session log line.
+    pub upstream_id: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
@@ -128,6 +166,7 @@ pub struct InFlightRow {
     pub session: Option<String>,
     pub model: String,
     pub lane: String,
+    pub agent: Option<String>,
 }
 
 /// The dashboard's JSON: `GET /huddle-router/state` and each `snapshot` event.
@@ -138,6 +177,12 @@ pub struct Snapshot {
     pub started_ms: u64,
     pub now_ms: u64,
     pub wiring: Wiring,
+    pub router: RouterStats,
+    /// Plan usage from the latest Anthropic answer that carried it.
+    pub plan: Option<PlanUsage>,
+    pub buckets: Buckets,
+    /// Per-model rows over the last 15 minutes.
+    pub models: Vec<ModelRow>,
     /// Requests started in each of the last 60 whole seconds, oldest first.
     pub per_second: Vec<u32>,
     pub errors_5m: u32,
@@ -164,6 +209,7 @@ struct LaneStats {
     tokens_in: u64,
     tokens_out: u64,
     ttfts: VecDeque<u64>,
+    last: Option<LaneLast>,
 }
 
 struct Inner {
@@ -171,6 +217,8 @@ struct Inner {
     active: HashMap<u64, Active>,
     recent: VecDeque<RecentRow>,
     lanes: HashMap<String, LaneStats>,
+    models: HashMap<String, ModelSeries>,
+    plan: Option<PlanUsage>,
     /// `(second, count)` slots indexed by `second % 60`; a slot counts only while its second matches.
     buckets: [(u64, u32); SECONDS],
     error_times: VecDeque<u64>,
@@ -182,6 +230,7 @@ pub struct LiveState {
     started_ms: u64,
     inner: Mutex<Inner>,
     changes: watch::Sender<u64>,
+    viewers: AtomicUsize,
 }
 
 impl LiveState {
@@ -193,11 +242,22 @@ impl LiveState {
                 active: HashMap::new(),
                 recent: VecDeque::new(),
                 lanes: HashMap::new(),
+                models: HashMap::new(),
+                plan: None,
                 buckets: [(0, 0); SECONDS],
                 error_times: VecDeque::new(),
                 last_error: None,
             }),
             changes: watch::channel(0).0,
+            viewers: AtomicUsize::new(0),
+        }
+    }
+
+    /// Counts one open dashboard feed until the guard drops.
+    pub fn viewer(self: &Arc<Self>) -> Viewer {
+        self.viewers.fetch_add(1, Ordering::Relaxed);
+        Viewer {
+            live: Arc::clone(self),
         }
     }
 
@@ -307,6 +367,7 @@ impl LiveState {
                 session: active.session.clone(),
                 model: active.model.clone(),
                 lane: active.lane.clone(),
+                agent: None,
             })
             .collect();
         in_flight.sort_by_key(|row| row.id);
@@ -315,12 +376,23 @@ impl LiveState {
             .iter()
             .map(|meta| lane_row(meta, inner.lanes.get(&meta.id)))
             .collect();
+        for series in inner.models.values_mut() {
+            series.prune(now_ms);
+        }
+        inner.models.retain(|_, series| !series.is_empty());
         Snapshot {
             version: inputs.version.clone(),
             pid: inputs.pid,
             started_ms: self.started_ms,
             now_ms,
             wiring: inputs.wiring,
+            router: RouterStats {
+                viewers: self.viewers.load(Ordering::Relaxed),
+                connections: inputs.connections,
+            },
+            plan: inner.plan,
+            buckets: stats::buckets(&inner.models, now_ms),
+            models: stats::model_rows(&inner.models, now_ms),
             per_second,
             errors_5m: inner.error_times.len() as u32,
             last_error: inner.last_error.clone(),
@@ -345,7 +417,51 @@ fn record(inner: &mut Inner, id: u64, active: Active, finish: Finish) {
         .as_ref()
         .and_then(|usage| usage.output_tokens)
         .map(non_negative);
+    let cache_read = finish
+        .usage
+        .as_ref()
+        .and_then(|usage| usage.cache_read_input_tokens)
+        .map(non_negative);
+    let cache_write = finish
+        .usage
+        .as_ref()
+        .and_then(|usage| usage.cache_creation_input_tokens)
+        .map(non_negative);
+    let stop = finish
+        .usage
+        .as_ref()
+        .and_then(|usage| usage.stop_reason.clone());
+    let ttft_ms = active
+        .first_byte_ms
+        .map(|at| at.saturating_sub(active.started_ms));
+    let dur_ms = finish.now_ms.saturating_sub(active.started_ms);
+    if finish.plan.is_some() {
+        inner.plan = finish.plan;
+    }
+    let session = active.session.map(|session| truncate(&session));
+    if inner.models.contains_key(&active.model) || inner.models.len() < MAX_MODELS {
+        let series = inner.models.entry(active.model.clone()).or_default();
+        series.push(
+            &active.lane,
+            Sample {
+                at_ms: finish.now_ms,
+                failed,
+                ttft_ms,
+                dur_ms,
+                tokens_in: tokens_in.unwrap_or(0),
+                cache_read: cache_read.unwrap_or(0),
+                cache_write: cache_write.unwrap_or(0),
+                tokens_out: tokens_out.unwrap_or(0),
+                session: session.clone(),
+            },
+        );
+        series.prune(finish.now_ms);
+    }
     let stats = inner.lanes.entry(active.lane.clone()).or_default();
+    stats.last = Some(LaneLast {
+        status: finish.status,
+        at_ms: finish.now_ms,
+    });
     stats.requests += 1;
     stats.tokens_in += tokens_in.unwrap_or(0);
     stats.tokens_out += tokens_out.unwrap_or(0);
@@ -363,16 +479,21 @@ fn record(inner: &mut Inner, id: u64, active: Active, finish: Finish) {
     inner.recent.push_front(RecentRow {
         id,
         at_ms: finish.now_ms,
-        session: active.session.map(|session| truncate(&session)),
+        session,
         model: active.model,
         lane: active.lane,
         status: finish.status,
         reason,
-        ttft_ms: active
-            .first_byte_ms
-            .map(|at| at.saturating_sub(active.started_ms)),
+        ttft_ms,
         tokens_in,
         tokens_out,
+        agent: None,
+        dur_ms,
+        router_ms: finish.router_ms,
+        cache_read,
+        cache_write,
+        stop,
+        upstream_id: finish.upstream_id,
     });
     inner.recent.truncate(RING_CAPACITY);
 }
@@ -443,18 +564,22 @@ fn lane_row(meta: &LaneMeta, stats: Option<&LaneStats>) -> LaneRow {
         errors: stats.errors,
         ttft_p50_ms: percentile(&sorted, 50),
         ttft_p95_ms: percentile(&sorted, 95),
+        ttft_p50: percentile(&sorted, 50),
+        last: stats.last,
         tokens_in: stats.tokens_in,
         tokens_out: stats.tokens_out,
     }
 }
 
-/// Nearest rank over an ascending list.
-fn percentile(sorted: &[u64], percent: usize) -> Option<u64> {
-    if sorted.is_empty() {
-        return None;
+/// One open dashboard feed; dropping it takes the feed from the viewer count.
+pub struct Viewer {
+    live: Arc<LiveState>,
+}
+
+impl Drop for Viewer {
+    fn drop(&mut self) {
+        self.live.viewers.fetch_sub(1, Ordering::Relaxed);
     }
-    let rank = (percent * sorted.len()).div_ceil(100).max(1);
-    sorted.get(rank - 1).copied()
 }
 
 /// A lock's guard, past a poisoned lock: the data is counters, sane to keep using.
@@ -465,6 +590,7 @@ fn lock<T>(value: &Mutex<T>) -> MutexGuard<'_, T> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Arc;
 
     const T0: u64 = 1_794_300_000_000;
 
@@ -481,8 +607,8 @@ mod tests {
         Finish {
             status,
             error: error.map(str::to_string),
-            usage: None,
             now_ms,
+            ..Finish::default()
         }
     }
 
@@ -507,6 +633,7 @@ mod tests {
             },
             lanes: lanes.iter().map(|id| meta(id)).collect(),
             jobs: Vec::new(),
+            connections: 3,
         }
     }
 
@@ -566,6 +693,7 @@ mod tests {
                     output_tokens: Some(5),
                     cache_creation_input_tokens: Some(100),
                     cache_read_input_tokens: Some(1000),
+                    ..Usage::default()
                 }),
                 ..end(200, None, T0 + 10)
             },
@@ -811,7 +939,11 @@ mod tests {
                 "lanes",
                 "recent",
                 "in_flight",
-                "jobs"
+                "jobs",
+                "router",
+                "plan",
+                "buckets",
+                "models"
             ])
         );
         assert_eq!(json["version"], "0.0.2");
@@ -840,6 +972,8 @@ mod tests {
                 "errors",
                 "ttft_p50_ms",
                 "ttft_p95_ms",
+                "ttft_p50",
+                "last",
                 "tokens_in",
                 "tokens_out"
             ])
@@ -860,7 +994,14 @@ mod tests {
                 "reason",
                 "ttft_ms",
                 "tokens_in",
-                "tokens_out"
+                "tokens_out",
+                "agent",
+                "dur_ms",
+                "router_ms",
+                "cache_read",
+                "cache_write",
+                "stop",
+                "upstream_id"
             ])
         );
         assert!(json["recent"][0]["tokens_in"].is_null());
@@ -872,7 +1013,8 @@ mod tests {
                 "last_byte_ms",
                 "session",
                 "model",
-                "lane"
+                "lane",
+                "agent"
             ])
         );
         assert_eq!(
@@ -880,5 +1022,163 @@ mod tests {
             sorted(&["id", "harness", "repo", "title", "state", "started_ms"])
         );
         assert_eq!(json["per_second"].as_array().expect("array").len(), 60);
+    }
+
+    fn answered(live: &LiveState, lane: &str, model: &str, at: u64, ttft: u64, finish: Finish) {
+        let id = begin(live, lane, model, at);
+        live.first_byte(id, at + ttft);
+        live.finish(id, finish);
+    }
+
+    #[test]
+    fn a_recent_row_carries_timing_cache_stop_and_the_upstream_id() {
+        let live = LiveState::new(T0);
+        let id = begin(&live, "anthropic", "claude-opus-5-5", T0);
+        live.first_byte(id, T0 + 400);
+        live.finish(
+            id,
+            Finish {
+                usage: Some(Usage {
+                    input_tokens: Some(10),
+                    output_tokens: Some(5),
+                    cache_creation_input_tokens: Some(100),
+                    cache_read_input_tokens: Some(1000),
+                    stop_reason: Some("end_turn".into()),
+                }),
+                upstream_id: Some("req_011CV".into()),
+                router_ms: Some(2),
+                ..end(200, None, T0 + 1500)
+            },
+        );
+        let row = &live.snapshot(T0 + 2000, &inputs(&["anthropic"])).recent[0];
+        assert_eq!(row.dur_ms, 1500);
+        assert_eq!(row.router_ms, Some(2));
+        assert_eq!((row.cache_read, row.cache_write), (Some(1000), Some(100)));
+        assert_eq!(row.stop.as_deref(), Some("end_turn"));
+        assert_eq!(row.upstream_id.as_deref(), Some("req_011CV"));
+        assert_eq!(row.agent, None);
+    }
+
+    #[test]
+    fn a_request_with_no_usage_has_null_cache_and_stop() {
+        let live = LiveState::new(T0);
+        let id = begin(&live, "zai", "glm-5.3", T0);
+        live.finish(id, end(200, None, T0 + 10));
+        let row = &live.snapshot(T0 + 20, &inputs(&["zai"])).recent[0];
+        assert_eq!(
+            (row.cache_read, row.cache_write, row.router_ms),
+            (None, None, None)
+        );
+        assert_eq!(
+            (row.stop.as_deref(), row.upstream_id.as_deref()),
+            (None, None)
+        );
+    }
+
+    #[test]
+    fn buckets_and_models_follow_finished_requests() {
+        let live = LiveState::new(T0);
+        let base = T0 - T0 % 30_000;
+        let ok = Finish {
+            usage: Some(usage(100, 40)),
+            ..end(200, None, base + 1_800)
+        };
+        answered(&live, "zai", "glm-5.3", base + 1_000, 300, ok);
+        answered(
+            &live,
+            "zai",
+            "glm-5.3",
+            base + 2_000,
+            500,
+            end(500, None, base + 2_500),
+        );
+        answered(
+            &live,
+            "zai",
+            "glm-5.3",
+            base + 3_000,
+            500,
+            end(499, None, base + 3_500),
+        );
+        let snapshot = live.snapshot(base + 10_000, &inputs(&["zai"]));
+        let last = &snapshot.buckets.models["glm-5.3"][29];
+        assert_eq!((last.n, last.err), (3, 1));
+        assert_eq!((last.tok_in, last.tok_out), (100, 40));
+        assert_eq!(snapshot.buckets.end_ms, base + 30_000);
+        let model = &snapshot.models[0];
+        assert_eq!((model.requests, model.errors), (3, 1));
+        assert_eq!(model.lane, "zai");
+        assert_eq!(model.last_ms, base + 3_500);
+    }
+
+    #[test]
+    fn a_lane_reports_its_last_answer_and_ttft_p50() {
+        let live = LiveState::new(T0);
+        answered(&live, "zai", "glm-5.3", T0, 200, end(200, None, T0 + 500));
+        answered(
+            &live,
+            "zai",
+            "glm-5.3",
+            T0 + 1000,
+            400,
+            end(429, None, T0 + 1500),
+        );
+        let snapshot = live.snapshot(T0 + 2000, &inputs(&["zai", "kimi"]));
+        let zai = &snapshot.lanes[0];
+        assert_eq!(zai.ttft_p50, zai.ttft_p50_ms);
+        assert_eq!(zai.ttft_p50, Some(200));
+        assert_eq!(
+            zai.last,
+            Some(LaneLast {
+                status: 429,
+                at_ms: T0 + 1500
+            })
+        );
+        assert_eq!(snapshot.lanes[1].last, None);
+    }
+
+    #[test]
+    fn the_plan_is_the_latest_one_an_answer_carried() {
+        let live = LiveState::new(T0);
+        assert_eq!(live.snapshot(T0, &inputs(&[])).plan, None);
+        let plan = |pct| PlanUsage {
+            five_hour_pct: Some(pct),
+            five_hour_reset_ms: Some(T0 + 1000),
+            week_pct: Some(10),
+            week_reset_ms: Some(T0 + 9000),
+        };
+        let id = begin(&live, "anthropic", "claude-opus-5-5", T0);
+        live.finish(
+            id,
+            Finish {
+                plan: Some(plan(50)),
+                ..end(200, None, T0 + 1)
+            },
+        );
+        let id = begin(&live, "anthropic", "claude-opus-5-5", T0 + 2);
+        live.finish(id, end(200, None, T0 + 3));
+        assert_eq!(live.snapshot(T0 + 4, &inputs(&[])).plan, Some(plan(50)));
+        let id = begin(&live, "anthropic", "claude-opus-5-5", T0 + 5);
+        live.finish(
+            id,
+            Finish {
+                plan: Some(plan(62)),
+                ..end(200, None, T0 + 6)
+            },
+        );
+        assert_eq!(live.snapshot(T0 + 7, &inputs(&[])).plan, Some(plan(62)));
+    }
+
+    #[test]
+    fn the_router_card_counts_open_feeds_and_connections() {
+        let live = Arc::new(LiveState::new(T0));
+        assert_eq!(live.snapshot(T0, &inputs(&[])).router.viewers, 0);
+        let first = live.viewer();
+        let second = live.viewer();
+        let router = live.snapshot(T0, &inputs(&[])).router;
+        assert_eq!((router.viewers, router.connections), (2, 3));
+        drop(first);
+        drop(second);
+        assert_eq!(live.snapshot(T0, &inputs(&[])).router.viewers, 0);
     }
 }

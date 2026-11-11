@@ -50,6 +50,8 @@ pub struct DashboardInputs {
     pub jobs: Arc<dyn Fn() -> Vec<JobRow> + Send + Sync>,
     /// The hosts besides the loopback that may reach the dashboard's read-only paths.
     pub hosts: Arc<dyn Fn() -> Vec<String> + Send + Sync>,
+    /// Connections open to the router now.
+    pub connections: Arc<dyn Fn() -> usize + Send + Sync>,
 }
 
 impl Default for DashboardInputs {
@@ -61,6 +63,7 @@ impl Default for DashboardInputs {
             key_present: Arc::new(|_| None),
             jobs: Arc::new(Vec::new),
             hosts: Arc::new(Vec::new),
+            connections: Arc::new(|| 0),
         }
     }
 }
@@ -120,6 +123,7 @@ impl Dashboard {
     }
 
     async fn feed(self: Arc<Self>, tx: mpsc::Sender<Result<Frame<Bytes>, crate::server::BodyCut>>) {
+        let _viewer = self.live.viewer();
         let mut changes = self.live.subscribe();
         let mut last_sent = Instant::now();
         let mut snapshot = self.snapshot();
@@ -195,6 +199,7 @@ impl Dashboard {
                 wiring: (self.inputs.wiring)(),
                 lanes,
                 jobs: (self.inputs.jobs)(),
+                connections: (self.inputs.connections)(),
             },
         )
     }

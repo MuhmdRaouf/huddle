@@ -14,6 +14,9 @@ pub struct Usage {
     pub cache_creation_input_tokens: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cache_read_input_tokens: Option<i64>,
+    /// Why the answer stopped; the dashboard's, never part of a route event.
+    #[serde(skip)]
+    pub stop_reason: Option<String>,
 }
 
 /// Reads usage off a passing stream. `feed` never delays or changes the caller's bytes.
@@ -94,8 +97,10 @@ impl JsonUsageTracker {
             return None;
         }
         let parsed: serde_json::Value = serde_json::from_slice(&self.buffer).ok()?;
-        let usage = parsed.as_object()?.get("usage")?.as_object()?;
-        Some(usage_from(usage))
+        let object = parsed.as_object()?;
+        let mut usage = usage_from(object.get("usage")?.as_object()?);
+        usage.stop_reason = stop_reason_of(object);
+        Some(usage)
     }
 }
 
@@ -119,10 +124,18 @@ fn take(line: &[u8]) -> (Option<Usage>, bool) {
             .and_then(|message| message.get("usage"))
             .and_then(|usage| usage.as_object())
             .map(usage_from),
-        Some("message_delta") => object
-            .get("usage")
-            .and_then(|usage| usage.as_object())
-            .map(usage_from),
+        Some("message_delta") => {
+            object
+                .get("usage")
+                .and_then(|usage| usage.as_object())
+                .map(|usage| Usage {
+                    stop_reason: object
+                        .get("delta")
+                        .and_then(|delta| delta.as_object())
+                        .and_then(stop_reason_of),
+                    ..usage_from(usage)
+                })
+        }
         _ => None,
     };
     (found, first_token)
@@ -133,12 +146,21 @@ fn integer_of(object: &serde_json::Map<String, serde_json::Value>, key: &str) ->
     object.get(key).and_then(|value| value.as_i64())
 }
 
+/// The `stop_reason` string of a message or a delta; null and other types count as absent.
+fn stop_reason_of(object: &serde_json::Map<String, serde_json::Value>) -> Option<String> {
+    object
+        .get("stop_reason")
+        .and_then(|value| value.as_str())
+        .map(str::to_owned)
+}
+
 fn usage_from(object: &serde_json::Map<String, serde_json::Value>) -> Usage {
     Usage {
         input_tokens: integer_of(object, "input_tokens"),
         output_tokens: integer_of(object, "output_tokens"),
         cache_creation_input_tokens: integer_of(object, "cache_creation_input_tokens"),
         cache_read_input_tokens: integer_of(object, "cache_read_input_tokens"),
+        stop_reason: None,
     }
 }
 
@@ -159,6 +181,9 @@ fn merge_into(usage: &mut Option<Usage>, found: Option<Usage>) {
     }
     if found.cache_read_input_tokens.is_some() {
         usage.cache_read_input_tokens = found.cache_read_input_tokens;
+    }
+    if found.stop_reason.is_some() {
+        usage.stop_reason = found.stop_reason;
     }
 }
 
@@ -251,5 +276,37 @@ mod tests {
             serde_json::to_string(&usage).expect("json"),
             "{\"input_tokens\":1}"
         );
+    }
+
+    #[test]
+    fn a_stream_reads_the_stop_reason_off_message_delta() {
+        let mut tracker = SseUsageTracker::new();
+        tracker.feed(
+            b"data: {\"type\":\"message_start\",\"message\":{\"usage\":{\"input_tokens\":1}}}\n\n",
+        );
+        assert_eq!(tracker.usage().expect("usage").stop_reason, None);
+        tracker.feed(b"data: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"tool_use\"},\"usage\":{\"output_tokens\":9}}\n\n");
+        let usage = tracker.usage().expect("usage");
+        assert_eq!(usage.stop_reason.as_deref(), Some("tool_use"));
+        assert_eq!(usage.input_tokens, Some(1));
+    }
+
+    #[test]
+    fn a_json_answer_reads_its_top_level_stop_reason() {
+        let mut tracker = JsonUsageTracker::new();
+        tracker.feed(b"{\"stop_reason\":\"end_turn\",\"usage\":{\"output_tokens\":4}}");
+        assert_eq!(
+            tracker.finish().expect("usage").stop_reason.as_deref(),
+            Some("end_turn")
+        );
+    }
+
+    #[test]
+    fn the_stop_reason_stays_out_of_the_serialized_usage() {
+        let usage = Usage {
+            stop_reason: Some("end_turn".into()),
+            ..Usage::default()
+        };
+        assert_eq!(serde_json::to_string(&usage).expect("json"), "{}");
     }
 }
