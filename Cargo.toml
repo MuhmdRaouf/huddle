@@ -24,6 +24,7 @@ serde = { version = "=1.0.229", default-features = false, features = ["std", "de
 serde_json = { version = "=1.0.154", default-features = false, features = ["std", "preserve_order"] }
 toml = { version = "=1.2.1", default-features = false, features = ["std", "parse", "serde"] }
 libc = { version = "=0.2.191", default-features = false, features = ["std"] }
+rusqlite = { version = "=0.41.1", default-features = false, features = ["bundled"] }
 
 huddle-testkit = { path = "crates/huddle-testkit" }
 huddle-config = { path = "crates/huddle-config" }
@@ -37,6 +38,7 @@ huddle-harness = { path = "crates/huddle-harness" }
 huddle-jobs = { path = "crates/huddle-jobs" }
 huddle-setup = { path = "crates/huddle-setup" }
 huddle-sessions = { path = "crates/huddle-sessions" }
+huddle-history = { path = "crates/huddle-history" }
 
 [profile.release]
 lto = "fat"
