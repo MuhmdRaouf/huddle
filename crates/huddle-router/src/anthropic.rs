@@ -76,6 +76,11 @@ pub fn event_of(outcome: AnswerOutcome) -> (u16, Option<String>) {
     }
 }
 
+/// True for the requests the router routes by model; every other request passes through.
+pub(crate) fn is_model_request<B>(req: &Request<B>) -> bool {
+    req.method() == Method::POST && MODEL_PATHS.contains(&req.uri().path())
+}
+
 /// The model requests of a decrypted conversation and their routes.
 pub struct AnthropicPath {
     pub client: Arc<UpstreamClient>,
@@ -108,8 +113,7 @@ impl AnthropicPath {
     }
 
     async fn serve(self: Arc<Self>, req: Request<Incoming>) -> Response<RespBody> {
-        let model_request = req.method() == Method::POST && MODEL_PATHS.contains(&req.uri().path());
-        if !model_request {
+        if !is_model_request(&req) {
             return (self.pass_through)(req).await;
         }
         self.model_request(req).await

@@ -168,3 +168,14 @@ Each incident, its cause, and the test that now stops it. A guard named here mus
 - **Guard:** crates/huddle-testkit/tests/script.rs:a_script_runs_right_after_its_write_while_other_threads_fork
 - **Rule:** a test writes a file it will execute through huddle_testkit::script::write_executable,
   which writes it from a child process, so the test process never holds a write handle on it.
+
+## 2026-11-11, intercepted model requests wrote no route events
+
+- **What happened:** `huddle provider <p> usage` and the events file showed a handful of requests
+  while router.log listed thousands: 2361 model requests, 4 events.
+- **Cause:** the request context and the event sink were put on a request only in the plain-HTTP
+  handler. Claude Code's traffic arrives through CONNECT and is decrypted, and that path built the
+  request without either, so every Anthropic and provider-lane model request skipped its event.
+- **Guard:** crates/huddle-router/tests/connect_decrypt.rs:decrypted_model_requests_write_route_events
+- **Rule:** a model request carries its context and the event sink from the moment it arrives,
+  whichever way it arrived.

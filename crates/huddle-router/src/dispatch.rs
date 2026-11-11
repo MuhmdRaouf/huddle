@@ -5,7 +5,7 @@
 
 use crate::anthropic::{
     AnswerOutcome, AnthropicPath, OutcomeHook, PassCtx, PassEvent, PassHook, PassWord,
-    StreamedRoute, WholeRoute, pass_through_handler,
+    StreamedRoute, WholeRoute, is_model_request, pass_through_handler,
 };
 use crate::body::model_of;
 use crate::connect::{ConnectCtx, Decrypt, TunnelTracker, connect_handler};
@@ -324,7 +324,7 @@ impl Router {
                     self.paths.ca_dir.clone(),
                     pass_note(Arc::clone(&self.log)),
                 )),
-                intercept: Arc::clone(&self.anthropic).intercept_handler(),
+                intercept: self.intercept_with_events(),
                 limits: ServerLimits::default(),
             })),
         }));
@@ -364,6 +364,25 @@ impl Router {
             forward,
             providers,
         }))
+    }
+
+    /// The decrypted conversation's handler. A model request carries its context and the event
+    /// sink from the moment it arrives, before its body is read, as a plain-HTTP one does.
+    fn intercept_with_events(&self) -> Handler {
+        let intercept = Arc::clone(&self.anthropic).intercept_handler();
+        let events = self.events.clone();
+        Arc::new(move |mut req| {
+            if is_model_request(&req) {
+                req.extensions_mut().insert(Arc::new(RequestContext {
+                    received: Some(Instant::now()),
+                    ..RequestContext::default()
+                }));
+                if let Some(events) = &events {
+                    req.extensions_mut().insert(events.clone());
+                }
+            }
+            intercept(req)
+        })
     }
 
     /// The CONNECT tunnel counter, for the update drain.

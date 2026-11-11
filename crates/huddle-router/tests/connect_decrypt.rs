@@ -1,10 +1,15 @@
 use huddle_config::env::Env;
+use huddle_config::paths::Paths;
 use huddle_pki::ca::{ROUTER_HOST, load_or_create};
 use huddle_pki::leaf::LeafCache;
 use huddle_router::connect::{
     ConnectCtx, Decrypt, DialFn, DrainOutcome, TunnelTracker, connect_handler,
 };
+use huddle_router::dispatch::{Router, RouterConfig};
+use huddle_router::events::EventSink;
 use huddle_router::server::{Handler, ServerLimits, bind, full_body, serve};
+use huddle_testkit::fake_upstream::{FakeUpstream, Step};
+use huddle_testkit::ports::free_port;
 use huddle_testkit::temp_home::TempHome;
 use hyper::{Request, Response};
 use rustls::pki_types::{CertificateDer, ServerName};
@@ -230,4 +235,94 @@ async fn a_drain_closes_an_idle_decrypted_conversation_at_once() {
         DrainOutcome::Finished,
         "an idle conversation closes when the drain starts"
     );
+}
+
+async fn model_request<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin>(
+    tls: &mut S,
+    body: &str,
+) {
+    let head = format!(
+        "POST /v1/messages HTTP/1.1\r\nHost: api.anthropic.com\r\nContent-Length: {}\r\n\r\n{body}",
+        body.len()
+    );
+    tls.write_all(head.as_bytes()).await.expect("write");
+    let mut seen = Vec::new();
+    let mut buf = [0u8; 1024];
+    while !String::from_utf8_lossy(&seen).contains("\r\n\r\n") {
+        let n = tls.read(&mut buf).await.expect("read");
+        assert!(n > 0, "answer head");
+        seen.extend_from_slice(&buf[..n]);
+    }
+    // The answers are one short line each; the next request waits for this one's end.
+    tokio::time::sleep(Duration::from_millis(100)).await;
+}
+
+fn written_events(home: &TempHome) -> Vec<serde_json::Value> {
+    let dir = home.root().join(".agents/huddle-router/events");
+    let mut lines = Vec::new();
+    for entry in std::fs::read_dir(dir).into_iter().flatten().flatten() {
+        let text = std::fs::read_to_string(entry.path()).expect("read");
+        lines.extend(text.lines().map(|l| serde_json::from_str(l).expect("json")));
+    }
+    lines
+}
+
+#[tokio::test]
+async fn decrypted_model_requests_write_route_events() {
+    let home = TempHome::new();
+    let root = home.root().to_str().expect("utf8").to_string();
+    let zai = FakeUpstream::start(|_, _| Step::answer(200, "x")).await;
+    let anthropic = FakeUpstream::start(|_, _| Step::answer(200, "ok")).await;
+    let zai_url = zai.url();
+    let env = Env::with(&[
+        ("HOME", root.as_str()),
+        ("ZAI_ROUTER_URL", zai_url.as_str()),
+        ("ZAI_API_KEY", "test-key-test-key"),
+    ]);
+    let paths = Paths::from_env(&env).expect("paths");
+    let ca = load_or_create(&paths.ca_dir, SystemTime::now()).expect("ca");
+    let port = free_port();
+    let router = Router::new(
+        RouterConfig {
+            env,
+            paths: paths.clone(),
+            port,
+            anthropic_url: anthropic.url().parse().expect("uri"),
+            log: Arc::new(|_| {}),
+            events: Some(EventSink::start(paths.router_dir.join("events"))),
+        },
+        &["zai".to_string()],
+    );
+    let listener = bind(port).await.expect("bind");
+    let (_stop, rx) = watch::channel(false);
+    let handler = router.handler();
+    tokio::spawn(async move {
+        serve(listener, handler, ServerLimits::default(), rx)
+            .await
+            .expect("serve")
+    });
+    let tcp = connect_ok(port, &format!("{ROUTER_HOST}:443")).await;
+    let name = ServerName::try_from(ROUTER_HOST.to_string()).expect("name");
+    let mut tls = tls_client(ca.cert_der())
+        .connect(name, tcp)
+        .await
+        .expect("handshake");
+    model_request(&mut tls, r#"{"model":"claude-opus-5-5","messages":[]}"#).await;
+    model_request(&mut tls, r#"{"model":"glm-5.3","messages":[]}"#).await;
+    let deadline = std::time::Instant::now() + Duration::from_secs(3);
+    while written_events(&home).len() < 2 && std::time::Instant::now() < deadline {
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    let events = written_events(&home);
+    let find = |route: &str| events.iter().find(|e| e["route"] == route);
+    let anthropic_event =
+        find("anthropic").unwrap_or_else(|| panic!("no anthropic event: {events:?}"));
+    assert_eq!(anthropic_event["model"], "claude-opus-5-5");
+    assert_eq!(anthropic_event["status"], 200);
+    let provider_event =
+        find("provider").unwrap_or_else(|| panic!("no provider event: {events:?}"));
+    assert_eq!(provider_event["model"], "glm-5.3");
+    assert_eq!(provider_event["status"], 200);
+    drop(zai);
+    drop(anthropic);
 }
