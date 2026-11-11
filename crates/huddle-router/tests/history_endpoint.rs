@@ -334,3 +334,20 @@ async fn t6_the_answer_holds_no_prompt_key_or_header_value() {
         );
     }
 }
+
+#[tokio::test]
+async fn t9_buckets_narrow_to_a_session_or_a_project() {
+    let rig = rig(true).await;
+    let n = |v: &Value| -> u64 {
+        v["buckets"]
+            .as_array()
+            .map(|all| all.iter().filter_map(|b| b["n"].as_u64()).sum())
+            .unwrap_or(0)
+    };
+    let all = json(&rig, "view=buckets&range=30d").await;
+    let s1 = json(&rig, "view=buckets&range=30d&session=s1").await;
+    let proj = json(&rig, "view=buckets&range=30d&project=%2Fwork%2Fa%20b").await;
+    let none = json(&rig, "view=buckets&range=30d&session=zzz").await;
+    assert_eq!((n(&all), n(&s1), n(&proj), n(&none)), (4, 1, 1, 0));
+    assert_eq!(s1["buckets"][0]["model"], "claude-opus-5-5");
+}

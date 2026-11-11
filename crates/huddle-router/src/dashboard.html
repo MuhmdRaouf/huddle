@@ -635,13 +635,47 @@ function histKpis(){if(!HIST.tot)return `<div class="card pad">${checking()}</di
   {k:'Tokens out',v:fmt(out),d:'generated'},
   {k:'Cache hit rate',v:tin?Math.round(cr/tin*100):'—',small:tin?'%':'',d:'read from cache / tokens in'},
   {k:'Estimated cost',v:usd(cost),d:aq?`includes Claude cost, ${apiq()}`:'from list prices'}],'k6')}
-function loadHistory(){if(liveRange())return;const r=HIST.range,get=u=>fetch(u,{cache:'no-store'}).then(x=>{if(!x.ok)throw new Error(String(x.status));return x.json()});
+const hget=u=>fetch(u,{cache:'no-store'}).then(x=>{if(!x.ok)throw new Error(String(x.status));return x.json()});
+function loadHistory(){if(liveRange())return;const r=HIST.range,get=hget;
  Promise.all([get('/huddle-router/history?view=buckets&range='+r),get('/huddle-router/history?view=totals&by=model&range='+r)]).then(([bk,tot])=>{if(HIST.range!==r)return;
   HIST.bk=bk;HIST.tot=tot;HIST.ser=histSeries(bk);HIST.err=false;HIST.ser.mn.forEach((m,i)=>{HCOLOR[m]='var(--c'+(i%6+1)+')'});paint()},()=>{if(HIST.range!==r)return;HIST.err=true;paint()})}
 function setRange(k){if(!RANGES.some(r=>r[0]===k))return;HIST.range=k;HIST.bk=HIST.tot=HIST.ser=null;HIST.err=false;CH.focus=null;if(liveRange()&&CH.metric==='cost')CH.metric='req';
  try{localStorage.setItem('huddle-range',k)}catch(e){}
  render();loadHistory()}
-const priceNote=()=>liveRange()||!HIST.bk?'':`<div class="legendrow">Estimated from list prices. Prices retrieved ${esc(HIST.bk.prices_retrieved)}; Claude prices retrieved ${esc(HIST.bk.claude_prices_retrieved)}.</div>`;
+const pricesLine=d=>d?`<div class="legendrow">Estimated from list prices. Prices retrieved ${esc(d.prices_retrieved)}; Claude prices retrieved ${esc(d.claude_prices_retrieved)}.</div>`:'';
+const priceNote=()=>liveRange()?'':pricesLine(HIST.bk);
+
+/* ---------- 30-day history of sessions and projects ---------- */
+const HT={ses:null,prj:null,meta:null,trend:{},err:false},HZERO={n:0,err:0,tok_in:0,cache_read:0,cache_write:0,tok_out:0,cost_usd:0,models:[]};
+const HQ='/huddle-router/history?view=';
+const hmap=d=>{const m={};arr(d&&d.totals).forEach(t=>{m[t.key]=t});return m};
+const hOf=(m,k)=>m?m[k]||HZERO:null;
+const hCell=(t,f)=>t?f(t):HT.err?NA:checking();
+const sheetKey=()=>DR&&(DR.k==='session'||DR.k==='project')?DR:null;
+const wantTotals=()=>page==='sessions'||page==='projects'||!!sheetKey();
+function loadTotals(){if(!wantTotals())return;const q=sheetKey(),key=q&&q.key;
+ Promise.all([hget(HQ+'totals&by=session&range=30d'),hget(HQ+'totals&by=project&range=30d'),q?hget(HQ+'buckets&range=30d&'+q.k+'='+encodeURIComponent(q.id)):null]).then(([s,p,t])=>{
+  HT.ses=hmap(s);HT.prj=hmap(p);HT.meta=s;if(t)HT.trend[key]=t;HT.err=false;paint()},()=>{HT.err=true;paint()})}
+const costCell=t=>`<span class="mono">${usd(t.cost_usd)}</span>${t.api_equivalent?' '+apiq():''}`;
+const histCols=get=>[
+ {k:'hreq',label:'Requests (30 d)',num:1,sm:1,v:x=>n0((get(x)||HZERO).n),h:x=>hCell(get(x),t=>t.n?fmt(t.n):'<span class="faint">0</span>')},
+ {k:'htok',label:'Tokens (30 d)',num:1,sm:1,v:x=>n0((get(x)||HZERO).tok_in)+n0((get(x)||HZERO).tok_out),h:x=>hCell(get(x),t=>t.n?`${fmt(t.tok_in)} <span class="faint">/</span> ${fmt(t.tok_out)}`:NA)},
+ {k:'hcost',label:'Cost (30 d)',num:1,v:x=>n0((get(x)||HZERO).cost_usd),h:x=>hCell(get(x),t=>t.n?costCell(t):NA)}];
+/* the History block of a session or project sheet: totals, a daily trend and the models used */
+function histBlock(key,t){const tr=HT.trend[key],head='<h4>History <span class="faint">last 30 days</span></h4>';
+ if(!t)return `<div>${head}<div class="card pad">${HT.err?'<span class="badc">Could not load history. Showing the last data.</span>':checking()}</div></div>`;
+ if(!t.n)return `<div>${head}<div class="card"><div class="allclear">${ic('info')} No requests in the last 30 d</div></div></div>`;
+ const tin=n0(t.tok_in),fact=(k,v)=>`<div class="fact"><div class="k">${k}</div><div class="v">${v}</div></div>`;
+ const mcols=[
+  {k:'model',label:'Model',v:m=>m.model,h:m=>modelTag(m.model)},
+  {k:'n',label:'Requests',num:1,v:m=>n0(m.n),h:m=>fmt(m.n)},
+  {k:'tok',label:'Tokens in / out',num:1,v:m=>n0(m.tok_in),h:m=>`${fmt(m.tok_in)} <span class="faint">/</span> ${fmt(m.tok_out)}`},
+  {k:'cost',label:'Cost',num:1,v:m=>n0(m.cost_usd),h:m=>`<span class="mono">${usd(m.cost_usd)}</span>`}];
+ return `<div>${head}<div class="facts">${fact('Requests',fmt(t.n)+' · '+fmt(t.err)+' errors')+fact('Tokens in',fmt(tin))+fact('Tokens out',fmt(t.tok_out))
+  +fact('Cache hit rate',tin?Math.round(n0(t.cache_read)/tin*100)+'%':'—')+fact('Estimated cost',costCell(t))+fact('First seen',new Date(t.first_ms).toLocaleDateString()+' · '+ago(t.first_ms))+fact('Last seen',new Date(t.last_ms).toLocaleDateString()+' · '+ago(t.last_ms))}</div>
+  <div class="card pad" style="margin-top:12px"><div class="legendrow" style="border:0;padding:0">Requests per day</div>${tr?spark(histSeries(tr).b.map(k=>k.n),'var(--c1)'):checking()}</div></div>
+  <div><h4>Models used <span class="faint">${arr(t.models).length}</span></h4><div class="card t">${table('d-hm',mcols,arr(t.models),{empty:'No models'})}</div>${pricesLine(HT.meta)}</div>`}
+
 
 /* ---------- overview ---------- */
 function attnItems(){const it=[];
@@ -735,7 +769,8 @@ const SESS_COLS=[
  {k:'ctx',label:'Context',num:1,v:s=>s.ctx==null?-1:s.ctx,h:ctxCell},
  {k:'cache',label:'Prompt cache',v:s=>{const l=cacheLeft(s);return l==null?-1e12:l},h:cacheCell,sm:1},
  {k:'req',label:'Requests',num:1,v:s=>sReq(s).length,h:s=>`<div>${sReq(s).length}</div><div class="cs">${fmt(tokInOf(sReq(s)))} in · ${fmt(tokOutOf(sReq(s)))} out</div>`,sm:1},
- {k:'last',label:'Last activity',num:1,v:s=>-(lastT(s)||0),h:s=>`<span class="muted">${ago(lastT(s))}</span>`}
+ {k:'last',label:'Last activity',num:1,v:s=>-(lastT(s)||0),h:s=>`<span class="muted">${ago(lastT(s))}</span>`},
+ ...histCols(s=>hOf(HT.ses,s.id))
 ];
 function lanesMini(){if(!LANES.length)return `<div class="allclear">${ic('info')} No lanes yet</div>`;return LANES.map(l=>{const live=l.state==='live';
  return `<div class="li"><span class="dot ${live?(l.err/Math.max(1,l.n)>.08?'warn':'ok'):'off'}"></span><div class="grow"><div>${esc(l.name)}</div><div class="sm mono">${esc(l.match)}</div></div>${live?`<span class="mono muted">${l.n} req · ${msf(l.p50)}</span>`:l.state==='off'?pill('warn','Not set up'):pill('off','Not installed')}</div>`}).join('')}
@@ -888,7 +923,8 @@ PAGES.projects={title:'Projects',body:()=>head('Projects','Grouped by repository
   {k:'req',label:'Requests',num:1,v:p=>p.reqs.length,h:p=>p.reqs.length||'<span class="faint">0</span>'},
   {k:'tok',label:'Tokens in / out',num:1,v:p=>p.tin,h:p=>p.reqs.length?`${fmt(p.tin)} <span class="faint">/</span> ${fmt(p.tout)}`:NA,sm:1},
   {k:'top',label:'Top model',v:p=>p.top||'',h:p=>modelTag(p.top),sm:1},
-  {k:'last',label:'Last activity',num:1,v:p=>-(p.last||0),h:p=>`<span class="muted">${p.last?ago(p.last):'—'}</span>`}
+  {k:'last',label:'Last activity',num:1,v:p=>-(p.last||0),h:p=>`<span class="muted">${p.last?ago(p.last):'—'}</span>`},
+  ...histCols(p=>hOf(HT.prj,p.name))
  ],projects().filter(p=>qmatch('proj',p.name+' '+tilde(p.path))),{row:p=>'project:'+p.name,sort:{k:'last',d:1},empty:'No projects yet'}))}</div>`};
 
 const kindPill=k=>k==='checkout'?pill('off','Checkout'):k==='agent'?`<span class="pill acc">${ic('agents')}Agent</span>`:`<span class="pill warn">${ic('jobs')}Job</span>`;
@@ -997,6 +1033,7 @@ const DRAWERS={
     <div class="fact"><div class="k">Tokens in</div><div class="v">${fmt(tokInOf(rs))}</div></div>
     <div class="fact"><div class="k">Cache read</div><div class="v">${fmt(sum(rs.map(r=>n0(r.cr))))}</div></div>
     <div class="fact"><div class="k">Tokens out</div><div class="v">${fmt(tokOutOf(rs))}</div></div></div></div>
+   ${histBlock('session:'+s.id,hOf(HT.ses,s.id))}
    <div><h4>Agents <span class="faint">${s.agents.length}</span></h4><div class="card t">${table('d-ag',AG_COLS.filter(c=>['agent','model','state','dur','req','wt'].includes(c.k)),s.agents,{})}</div></div>
    <div><h4>Timeline <span class="faint">each bar is one request · last 15 min</span></h4><div class="swim">${s.agents.map(a=>`<div class="row"><div class="who">${a.type==='main'?'<b style="font-weight:500">main</b>':esc(a.desc||a.type)}</div><div class="track">${lane(a).map(bar).join('')}</div></div>`).join('')}${unmatched.length?`<div class="row"><div class="who faint">not matched to an agent</div><div class="track">${unmatched.map(bar).join('')}</div></div>`:''}</div><div class="axis"><span>${clock(t0).slice(0,5)}</span><span>${clock(t0+5*MIN).slice(0,5)}</span><span>${clock(t0+10*MIN).slice(0,5)}</span><span>now</span></div></div>
    <div><h4>Recent requests</h4><div class="card t">${table('d-req',REQ_COLS.filter(c=>['time','status','model','ttft','in','out'].includes(c.k)),rs.slice().reverse(),{row:r=>'request:'+r.id,limit:12,empty:'No requests kept for this session'})}</div></div>
@@ -1023,12 +1060,13 @@ const DRAWERS={
   return `<div class="dh"><div class="grow"><span class="pill off">${ic('projects')}Project</span><h3>${esc(p.name)}</h3><div class="s">${cid(tilde(p.path))}</div></div>${closeBtn()}</div>
   <div class="db">
    <div class="facts"><div class="fact"><div class="k">Live sessions</div><div class="v">${p.live} of ${p.sessions.length}</div></div><div class="fact"><div class="k">Agents running</div><div class="v">${p.agentsRun}</div></div><div class="fact"><div class="k">Requests</div><div class="v">${p.reqs.length}</div></div><div class="fact"><div class="k">Tokens in / out</div><div class="v">${fmt(p.tin)} / ${fmt(p.tout)}</div></div></div>
+   ${histBlock('project:'+p.name,hOf(HT.prj,p.name))}
    <div><h4>Sessions</h4><div class="card t">${table('d-ps',SESS_COLS.filter(c=>['state','title','model','ctx','last'].includes(c.k)),p.sessions,{row:s=>'session:'+s.id,empty:'No sessions'})}</div></div>
    <div><h4>Worktrees <span class="faint">${p.wts.length}</span></h4><div class="card list">${p.wts.map(w=>`<div class="li">${kindPill(w.kind)}<div class="grow"><div class="mono">${esc(w.branch||'(detached)')}</div><div class="sm mono">${esc(tilde(w.path))}</div></div>${changesCell(w)}</div>`).join('')||`<div class="allclear">${ic('info')} No worktrees</div>`}</div></div>
    ${p.jobs.length?`<div><h4>Jobs</h4><div class="card list">${p.jobs.map(j=>`<div class="li"><div class="grow"><div><span class="mono">${esc(j.id)}</span> <span class="muted">· ${esc(j.h)}</span></div><div class="sm">${esc(j.task)}</div></div>${jobPill(j)}</div>`).join('')}</div></div>`:''}
   </div>`}
 };
-function openDrawer(key){const[k,id]=key.split(/:(.*)/s);if(!DRAWERS[k])return;DR={k,id,key};renderDrawer(false);$('#drawer').classList.add('on');$('#scrim').classList.add('on');refresh()}
+function openDrawer(key){const[k,id]=key.split(/:(.*)/s);if(!DRAWERS[k])return;DR={k,id,key};renderDrawer(false);$('#drawer').classList.add('on');$('#scrim').classList.add('on');refresh();loadTotals()}
 function closeDrawer(){DR=null;$('#drawer').classList.remove('on');if(!$('#sb').classList.contains('on'))$('#scrim').classList.remove('on');refresh()}
 function renderDrawer(keep){if(!DR)return;const body=$('#drawer .db'),top=keep&&body?body.scrollTop:0;setHtml($('#drawer'),DRAWERS[DR.k](DR.id));const nb=$('#drawer .db');if(nb)nb.scrollTop=top}
 
@@ -1068,7 +1106,7 @@ function render(){REG={};const h=(location.hash||'#overview').slice(1);page=PAGE
  const grp=NAV.find(([,its])=>its.some(([k])=>k===page))[0];
  setHtml($('#crumbs'),`<span class="c0">Huddle</span>${ic('chev')}<span>${grp}</span>${ic('chev')}<b>${p.title}</b>`);
  setHtml($('#content'),p.body()+`<div class="foot">${dot('ok',true)} Memory only. Restarting the router clears this page.</div>`);
- if(p.after)p.after();shell();closeSidebar();window.scrollTo(0,0)}
+ if(p.after)p.after();shell();closeSidebar();window.scrollTo(0,0);loadTotals()}
 window.addEventListener('hashchange',render);
 
 /* ---------- interactions ---------- */
@@ -1138,6 +1176,7 @@ let saved='system';try{saved=localStorage.getItem('huddle-admin-theme')||'system
 setTheme(saved);update({});
 setInterval(()=>update(SNAP),2000);
 setInterval(()=>{if(document.visibilityState==='visible')loadHistory()},60000);
+setInterval(()=>{if(document.visibilityState==='visible')loadTotals()},60000);
 loadHistory();
 })();
 </script>

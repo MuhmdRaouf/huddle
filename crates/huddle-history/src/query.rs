@@ -140,22 +140,40 @@ fn nearest_rank(sorted: &[u64], pct: usize) -> Option<u64> {
 
 impl History {
     /// Per bucket start (a multiple of `width_ms`) and model: counts, token sums, TTFT percentiles.
-    pub fn buckets(&self, range: Range, width_ms: u64) -> Result<Vec<Bucket>, HistoryError> {
+    /// `session` and `project` narrow the rows to one session or one project.
+    pub fn buckets(
+        &self,
+        range: Range,
+        width_ms: u64,
+        session: Option<&str>,
+        project: Option<&str>,
+    ) -> Result<Vec<Bucket>, HistoryError> {
         if width_ms == 0 {
             return Err(HistoryError::ZeroWidth);
         }
         let width = to_db(width_ms);
-        let bounds = [to_db(range.from_ms), to_db(range.to_ms)];
+        let mut args = vec![
+            Value::Integer(to_db(range.from_ms)),
+            Value::Integer(to_db(range.to_ms)),
+            Value::Integer(width),
+        ];
+        let mut narrow = String::new();
+        for (column, wanted) in [("session", session), ("project", project)] {
+            if let Some(value) = wanted {
+                args.push(Value::Text(value.to_owned()));
+                narrow.push_str(&format!(" AND {column} = ?{}", args.len()));
+            }
+        }
         let mut stmt = self.conn.prepare(&format!(
             "SELECT (at_ms / ?3) * ?3 AS start, model, COUNT(*),
                     COALESCE(SUM({IS_ERROR}), 0),
                     COALESCE(SUM(tokens_in), 0), COALESCE(SUM(cache_read), 0),
                     COALESCE(SUM(cache_write), 0), COALESCE(SUM(tokens_out), 0)
-             FROM requests WHERE at_ms >= ?1 AND at_ms < ?2
+             FROM requests WHERE at_ms >= ?1 AND at_ms < ?2{narrow}
              GROUP BY start, model ORDER BY start, model"
         ))?;
         let mut buckets = stmt
-            .query_map([bounds[0], bounds[1], width], |r| {
+            .query_map(params_from_iter(&args), |r| {
                 Ok(Bucket {
                     start_ms: count(r, 0)?,
                     model: r.get(1)?,
@@ -171,12 +189,12 @@ impl History {
             })?
             .collect::<Result<Vec<_>, _>>()?;
 
-        let mut ttft = self.conn.prepare(
+        let mut ttft = self.conn.prepare(&format!(
             "SELECT (at_ms / ?3) * ?3, model, ttft_ms FROM requests
-             WHERE at_ms >= ?1 AND at_ms < ?2 AND ttft_ms IS NOT NULL ORDER BY ttft_ms",
-        )?;
+             WHERE at_ms >= ?1 AND at_ms < ?2{narrow} AND ttft_ms IS NOT NULL ORDER BY ttft_ms"
+        ))?;
         let mut samples: BTreeMap<(u64, String), Vec<u64>> = BTreeMap::new();
-        let found = ttft.query_map([bounds[0], bounds[1], width], |r| {
+        let found = ttft.query_map(params_from_iter(&args), |r| {
             Ok((count(r, 0)?, r.get::<_, String>(1)?, count(r, 2)?))
         })?;
         for sample in found {

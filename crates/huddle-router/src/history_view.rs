@@ -77,7 +77,11 @@ impl Span {
 /// One parsed history question.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Query {
-    Buckets(Span),
+    Buckets {
+        span: Span,
+        session: Option<String>,
+        project: Option<String>,
+    },
     Totals(Span, GroupBy),
     Search {
         span: Span,
@@ -149,7 +153,11 @@ pub fn parse(query: &str, now_ms: u64) -> Result<Query, Refusal> {
     };
     match get("view") {
         None => Err(bad("view is required: buckets, totals or search")),
-        Some("buckets") => Ok(Query::Buckets(span)),
+        Some("buckets") => Ok(Query::Buckets {
+            span,
+            session: get("session").map(str::to_owned),
+            project: get("project").map(str::to_owned),
+        }),
         Some("totals") => {
             let by = match get("by") {
                 None => GroupBy::Model,
@@ -243,8 +251,17 @@ fn envelope(view: &str, span: Span, now_ms: u64) -> serde_json::Map<String, Valu
 /// The answer to `query` as JSON.
 pub fn answer(history: &History, query: &Query, now_ms: u64) -> Result<Value, HistoryError> {
     match query {
-        Query::Buckets(span) => {
-            let buckets = history.buckets(span.range(now_ms), span.width_ms())?;
+        Query::Buckets {
+            span,
+            session,
+            project,
+        } => {
+            let buckets = history.buckets(
+                span.range(now_ms),
+                span.width_ms(),
+                session.as_deref(),
+                project.as_deref(),
+            )?;
             let rows: Vec<Value> = buckets
                 .iter()
                 .map(|b| {
@@ -337,13 +354,13 @@ fn row_json(row: &Row) -> Value {
 /// The answer with no database: the same shape, no rows.
 pub fn empty_answer(query: &Query, now_ms: u64) -> Value {
     let (view, span) = match query {
-        Query::Buckets(span) => ("buckets", *span),
+        Query::Buckets { span, .. } => ("buckets", *span),
         Query::Totals(span, _) => ("totals", *span),
         Query::Search { span, .. } => ("search", *span),
     };
     let mut out = envelope(view, span, now_ms);
     match query {
-        Query::Buckets(span) => {
+        Query::Buckets { span, .. } => {
             out.insert("width_ms".into(), json!(span.width_ms()));
             out.insert("buckets".into(), json!([]));
         }

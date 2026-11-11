@@ -221,3 +221,66 @@ fn t8_remembers_the_range_and_shows_a_failed_fetch_without_dropping_data() {
     assert!(PAGE.contains("localStorage.getItem('huddle-range')"));
     assert!(PAGE.contains("Could not load history. Showing the last data."));
 }
+
+#[test]
+fn t9_fetches_30_day_totals_by_session_and_project_and_a_trend_per_sheet() {
+    assert!(PAGE.contains("/huddle-router/history?view="));
+    assert!(PAGE.contains("totals&by=session&range=30d"));
+    assert!(PAGE.contains("totals&by=project&range=30d"));
+    assert!(PAGE.contains("buckets&range=30d&'+q.k+'='+encodeURIComponent(q.id)"));
+    assert!(PAGE.contains("function loadTotals(){if(!wantTotals())return"));
+    assert!(
+        PAGE.contains(
+            "setInterval(()=>{if(document.visibilityState==='visible')loadTotals()},60000)"
+        )
+    );
+    assert_eq!(
+        PAGE.matches("fetch(u,{cache:'no-store'})").count(),
+        1,
+        "one shared fetch helper"
+    );
+}
+
+#[test]
+fn t9_tables_carry_the_three_30_day_columns() {
+    for label in ["Requests (30 d)", "Tokens (30 d)", "Cost (30 d)"] {
+        assert_eq!(PAGE.matches(label).count(), 1, "{label} defined once");
+    }
+    assert!(
+        PAGE.contains("const SESS_COLS=[") && PAGE.contains("...histCols(s=>hOf(HT.ses,s.id))")
+    );
+    assert!(PAGE.contains("...histCols(p=>hOf(HT.prj,p.name))"));
+}
+
+#[test]
+fn t9_session_and_project_sheets_carry_a_history_block() {
+    for sheet in [" session(id){", " project(name){"] {
+        let start = PAGE.find(sheet).expect("sheet");
+        let end = start + PAGE[start..].find("\n request(").unwrap_or(9000).min(9000);
+        assert!(PAGE[start..end].contains("histBlock("), "{sheet}");
+    }
+    assert!(PAGE.contains("function histBlock("));
+    for part in [
+        "Models used",
+        "Cache hit rate",
+        "First seen",
+        "Last seen",
+        "last 30 days",
+        "No requests in the last 30 d",
+    ] {
+        assert!(PAGE.contains(part), "history block lacks {part}");
+    }
+    assert!(PAGE.contains("spark(histSeries("));
+}
+
+#[test]
+fn t9_shows_loading_and_failed_states_and_reuses_the_cost_label() {
+    assert!(PAGE.contains("HT.err"));
+    assert!(
+        PAGE.matches("Could not load history. Showing the last data.")
+            .count()
+            >= 1
+    );
+    assert!(PAGE.contains("t.api_equivalent?' '+apiq()"));
+    assert_eq!(PAGE.matches("const FLAT=").count(), 1);
+}

@@ -38,7 +38,7 @@ fn t4_buckets_group_by_start_and_model_and_sum_tokens() {
         from_ms: 0,
         to_ms: 5_000,
     };
-    let buckets = history.buckets(range, 1_000).expect("buckets");
+    let buckets = history.buckets(range, 1_000, None, None).expect("buckets");
     let keys: Vec<(u64, &str)> = buckets
         .iter()
         .map(|b| (b.start_ms, b.model.as_str()))
@@ -76,6 +76,8 @@ fn t4_buckets_ttft_percentiles_use_nearest_rank() {
                 to_ms: 1_000,
             },
             1_000,
+            None,
+            None,
         )
         .expect("buckets");
     assert_eq!(
@@ -93,9 +95,9 @@ fn t4_buckets_without_ttft_have_no_percentiles_and_zero_width_fails() {
         from_ms: 0,
         to_ms: 10,
     };
-    let buckets = history.buckets(range, 10).expect("buckets");
+    let buckets = history.buckets(range, 10, None, None).expect("buckets");
     assert_eq!((buckets[0].ttft_p50, buckets[0].ttft_p95), (None, None));
-    assert!(history.buckets(range, 0).is_err());
+    assert!(history.buckets(range, 0, None, None).is_err());
 }
 
 fn seeded(home: &TempHome) -> huddle_history::History {
@@ -304,4 +306,39 @@ fn t4_search_filters_by_status_class() {
     assert_eq!(count(StatusClass::Ok), 2);
     assert_eq!(count(StatusClass::Error), 2);
     assert_eq!(count(StatusClass::ClientLeft), 1);
+}
+
+#[test]
+fn t9_buckets_narrow_to_one_session_and_one_project() {
+    let home = TempHome::new();
+    let mut history = open(&home);
+    let owned = |at_ms, session: &str, project: &str| Row {
+        session: Some(session.into()),
+        project: Some(project.into()),
+        ..row(at_ms, "m")
+    };
+    history
+        .insert(&[
+            owned(1, "s1", "p1"),
+            owned(2, "s1", "p2"),
+            owned(3, "s2", "p1"),
+        ])
+        .expect("insert");
+    let range = Range {
+        from_ms: 0,
+        to_ms: 10,
+    };
+    let n = |session, project| {
+        history
+            .buckets(range, 10, session, project)
+            .expect("buckets")
+            .iter()
+            .map(|b| b.n)
+            .sum::<u64>()
+    };
+    assert_eq!(n(None, None), 3);
+    assert_eq!(n(Some("s1"), None), 2);
+    assert_eq!(n(None, Some("p1")), 2);
+    assert_eq!(n(Some("s1"), Some("p1")), 1);
+    assert_eq!(n(Some("nope"), None), 0);
 }
