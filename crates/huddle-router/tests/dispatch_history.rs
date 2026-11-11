@@ -1,7 +1,7 @@
 use huddle_config::{env::Env, paths::Paths};
 use huddle_router::{
     dispatch::{Router, RouterConfig},
-    events::EventSink,
+    live::HistorySink,
     server::{ServerLimits, bind, serve},
 };
 use huddle_testkit::{
@@ -10,15 +10,31 @@ use huddle_testkit::{
     temp_home::TempHome,
 };
 use hyper::Uri;
-use std::{fs, sync::Arc, time::Duration};
+use std::{
+    sync::{Arc, Mutex},
+    time::Duration,
+};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::TcpStream,
     sync::watch,
 };
 
+#[derive(Default)]
+struct Collect {
+    rows: Mutex<Vec<huddle_history::Row>>,
+}
+
+impl HistorySink for Collect {
+    fn finished(&self, row: huddle_history::Row) {
+        self.rows.lock().unwrap().push(row);
+    }
+
+    fn credited(&self, _credits: Vec<huddle_history::Credit>) {}
+}
+
 struct Rig {
-    home: TempHome,
+    rows: Arc<Collect>,
     port: u16,
     stop: watch::Sender<bool>,
 }
@@ -34,14 +50,14 @@ async fn rig(anthropic: FakeUpstream, zai: FakeUpstream) -> Rig {
     ]);
     let paths = Paths::from_env(&env).expect("paths");
     let port = free_port();
-    let dir = paths.state_dir.join("events");
+    let rows = Arc::new(Collect::default());
     let config = RouterConfig {
         env,
         paths,
         port,
         anthropic_url: anthropic.url().parse::<Uri>().expect("uri"),
         log: Arc::new(|_| {}),
-        events: Some(EventSink::start(dir)),
+        history: Some(rows.clone()),
         dashboard: huddle_router::dashboard::DashboardInputs::default(),
     };
     let router = Router::new(config, &["zai".to_string()]);
@@ -55,7 +71,7 @@ async fn rig(anthropic: FakeUpstream, zai: FakeUpstream) -> Rig {
     });
     std::mem::forget(anthropic);
     std::mem::forget(zai);
-    Rig { home, port, stop }
+    Rig { rows, port, stop }
 }
 
 async fn post(port: u16, body: &str) {
@@ -71,31 +87,24 @@ async fn post(port: u16, body: &str) {
     stream.read_to_end(&mut out).await.expect("read");
 }
 
-async fn events(home: &TempHome, want: usize) -> Vec<serde_json::Value> {
-    let dir = home.root().join(".local/state/huddle/events");
+async fn rows(rig: &Rig, want: usize) -> Vec<huddle_history::Row> {
     let deadline = std::time::Instant::now() + Duration::from_secs(3);
     loop {
-        let mut lines: Vec<serde_json::Value> = Vec::new();
-        if let Ok(entries) = fs::read_dir(&dir) {
-            for entry in entries {
-                let text = fs::read_to_string(entry.expect("entry").path()).expect("read");
-                lines.extend(text.lines().map(|l| serde_json::from_str(l).expect("json")));
-            }
-        }
-        if lines.len() >= want {
-            return lines;
+        let rows = rig.rows.rows.lock().unwrap().clone();
+        if rows.len() >= want {
+            return rows;
         }
         assert!(
             std::time::Instant::now() < deadline,
-            "only {} events",
-            lines.len()
+            "only {} rows",
+            rows.len()
         );
         tokio::time::sleep(Duration::from_millis(20)).await;
     }
 }
 
 #[tokio::test]
-async fn a_provider_request_writes_one_event_with_router_us_and_usage() {
+async fn t5_a_provider_request_reaches_the_history_with_its_usage() {
     let sse = "data: {\"type\":\"message_start\",\"message\":{\"usage\":{\"input_tokens\":12,\"output_tokens\":1}}}\n\ndata: {\"type\":\"message_delta\",\"usage\":{\"output_tokens\":78}}\n\n";
     let zai = FakeUpstream::start(move |_, _| {
         Step::answer_with_headers(
@@ -108,36 +117,32 @@ async fn a_provider_request_writes_one_event_with_router_us_and_usage() {
     let anthropic = FakeUpstream::start(|_, _| Step::answer(200, "x")).await;
     let r = rig(anthropic, zai).await;
     post(r.port, r#"{"model":"glm-5.3","messages":[]}"#).await;
-    let lines = events(&r.home, 1).await;
-    let event = &lines[0];
-    assert_eq!(event["plugin"], "zai");
-    assert_eq!(event["model"], "glm-5.3");
-    assert_eq!(event["route"], "provider");
-    assert_eq!(event["status"], 200);
-    assert_eq!(event["usage"]["output_tokens"], 78);
-    assert!(
-        event["router_us"].as_u64().expect("router_us") >= 1,
-        "{event}"
-    );
-    assert!(event["latency_ms"].as_u64().is_some());
+    let rows = rows(&r, 1).await;
+    let row = &rows[0];
+    assert_eq!(row.lane, "zai");
+    assert_eq!(row.model, "glm-5.3");
+    assert_eq!(row.status, 200);
+    assert_eq!(row.tokens_out, Some(78));
+    assert_eq!(row.tokens_in, Some(12));
+    assert!(row.at_ms > 0);
     let _ = r.stop.send(true);
 }
 
 #[tokio::test]
-async fn a_claude_request_writes_its_own_event() {
+async fn t5_a_claude_request_reaches_the_history_on_the_anthropic_lane() {
     let zai = FakeUpstream::start(|_, _| Step::answer(200, "x")).await;
     let anthropic = FakeUpstream::start(|_, _| Step::answer(200, "ok")).await;
     let r = rig(anthropic, zai).await;
     post(r.port, r#"{"model":"claude-opus-5-5","messages":[]}"#).await;
-    let lines = events(&r.home, 1).await;
-    assert_eq!(lines[0]["plugin"], "huddle-router");
-    assert_eq!(lines[0]["route"], "anthropic");
-    assert_eq!(lines[0]["model"], "claude-opus-5-5");
+    let rows = rows(&r, 1).await;
+    assert_eq!(rows[0].lane, "anthropic");
+    assert_eq!(rows[0].model, "claude-opus-5-5");
+    assert_eq!(rows[0].status, 200);
     let _ = r.stop.send(true);
 }
 
 #[tokio::test]
-async fn a_refused_request_writes_route_refused_with_no_router_us() {
+async fn t5_a_refused_request_reaches_the_history_with_its_reason() {
     let zai = FakeUpstream::start(|_, _| Step::answer(200, "x")).await;
     let anthropic = FakeUpstream::start(|_, _| Step::answer(200, "x")).await;
     let r = rig(anthropic, zai).await;
@@ -153,10 +158,9 @@ async fn a_refused_request_writes_route_refused_with_no_router_us() {
     stream.write_all(head.as_bytes()).await.expect("write");
     let mut out = Vec::new();
     stream.read_to_end(&mut out).await.expect("read");
-    let lines = events(&r.home, 1).await;
-    assert_eq!(lines[0]["route"], "refused");
-    assert_eq!(lines[0]["status"], 400);
-    assert_eq!(lines[0]["error"], "message threads beta");
-    assert!(lines[0].get("router_us").is_none());
+    let rows = rows(&r, 1).await;
+    assert_eq!(rows[0].lane, "zai");
+    assert_eq!(rows[0].status, 400);
+    assert!(rows[0].reason.is_some(), "{:?}", rows[0]);
     let _ = r.stop.send(true);
 }

@@ -18,14 +18,17 @@ use huddle_config::dashboard_hosts;
 use huddle_config::env::Env;
 use huddle_config::paths::Paths;
 use huddle_config::providers_file::read_enabled;
+use huddle_history::History;
+use huddle_router::clock::{iso_utc_ms, now_ms};
 use huddle_router::dispatch::{Router, RouterConfig};
-use huddle_router::events::{EventSink, iso_utc_ms, now_ms};
 use huddle_router::reload::{DashboardHostsWatch, POLL, ProvidersWatch, ReloadAction};
 use huddle_router::server::{ROUTER_NAME, ServerLimits, serve as serve_http};
 use tokio::sync::{mpsc, watch};
 
 use crate::dashboard_inputs;
 use crate::handover::{serve_handover, takeover as take_over_socket};
+use crate::history_sink::HistoryBridge;
+use crate::history_upkeep;
 use crate::nochain::clean_proxy_env;
 use crate::rss::{RssDecision, RssWatch, ceiling_of, interval_of, read_rss};
 use crate::singleton::{self, SingletonError};
@@ -46,6 +49,12 @@ const RECORD_FILE: &str = "router.toml";
 
 /// The lock under the run dir, `<run_dir>/router.lock`.
 const LOCK_FILE: &str = "router.lock";
+
+/// The request history database in the state folder.
+const HISTORY_FILE: &str = "huddle.db";
+
+/// How often old history rows are pruned; the first run is at start.
+const PRUNE_EVERY: Duration = Duration::from_secs(24 * 3600);
 
 /// The Anthropic the Claude models go to when no override is set.
 const ANTHROPIC_DEFAULT: &str = "https://api.anthropic.com";
@@ -224,6 +233,20 @@ pub async fn run(
         // The guard is never held across an await; a poisoned lock still holds a whole list.
         Arc::new(move || hosts.read().unwrap_or_else(|e| e.into_inner()).clone())
     };
+    let history_db = paths.state_dir.join(HISTORY_FILE);
+    // The database is created and migrated once, here, so the writer threads that open it next
+    // never race to create it.
+    let opened = tokio::task::spawn_blocking({
+        let db = history_db.clone();
+        move || History::open(&db).map(drop)
+    })
+    .await;
+    match opened {
+        Ok(Ok(())) => {}
+        Ok(Err(error)) => log(format!("huddle-router: history: {error}")),
+        Err(error) => log(format!("huddle-router: history: {error}")),
+    }
+    let history = Arc::new(HistoryBridge::start(&history_db));
     let router = Router::new(
         RouterConfig {
             env: cleaned.clone(),
@@ -231,7 +254,7 @@ pub async fn run(
             port,
             anthropic_url,
             log: Arc::clone(&log),
-            events: Some(EventSink::start(paths.state_dir.join("events"))),
+            history: Some(history.clone()),
             dashboard,
         },
         &initial_enabled,
@@ -274,6 +297,7 @@ pub async fn run(
     rss_timer.tick().await;
 
     let mut stop = stop;
+    let mut prune_timer = tokio::time::interval(PRUNE_EVERY);
     let mut rss_watch = RssWatch::new(ceiling_of(&cleaned), rss_interval);
     let outcome;
     loop {
@@ -321,10 +345,14 @@ pub async fn run(
                     log(format!("huddle-router: now serving {}", names.join(", ")));
                 }
             }
+            _ = prune_timer.tick() => prune_history(&paths, &log).await,
             _ = rss_timer.tick() => rss_check(&mut rss_watch, &cleaned, &paths, port, executable.as_deref(), &log).await,
         }
     }
     handover.stop();
+    // The writer flushes its queue when the last handle drops.
+    drop(router);
+    drop(history);
     drop(lock_guard);
     drop(lock_release);
     outcome
@@ -467,6 +495,20 @@ fn write_record(path: &Path, port: u16, version: &str, executable: Option<&Path>
             }
         }
         Err(error) => log(format!("huddle-router: {error}")),
+    }
+}
+
+/// One prune of the history database, off the async runtime. A failure is one log line.
+async fn prune_history(paths: &Paths, log: &Logger) {
+    let db = paths.state_dir.join(HISTORY_FILE);
+    let config = dashboard_hosts::config_path(paths);
+    let now = u64::try_from(now_ms()).unwrap_or(0);
+    let pruned =
+        tokio::task::spawn_blocking(move || history_upkeep::prune(&db, &config, now)).await;
+    match pruned {
+        Ok(Ok(_)) => {}
+        Ok(Err(error)) => log(format!("huddle-router: history prune: {error}")),
+        Err(error) => log(format!("huddle-router: history prune: {error}")),
     }
 }
 

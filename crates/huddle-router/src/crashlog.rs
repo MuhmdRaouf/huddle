@@ -7,7 +7,7 @@ use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
-use crate::events;
+use crate::clock;
 
 /// The largest `router.log` in bytes before the next line rotates it to `router.log.1`.
 pub const ROUTER_LOG_LIMIT: u64 = 4 * 1024 * 1024;
@@ -22,7 +22,7 @@ pub fn rotating_log(path: &Path, limit: u64) -> Logger {
     let path = path.to_path_buf();
     let written = Mutex::new(fs::metadata(&path).map(|meta| meta.len()).unwrap_or(0));
     Arc::new(move |line: String| {
-        let text = format!("{} {}\n", events::iso_utc_ms(events::now_ms()), line);
+        let text = format!("{} {}\n", clock::iso_utc_ms(clock::now_ms()), line);
         let mut written = written.lock().unwrap_or_else(|locked| locked.into_inner());
         if *written + text.len() as u64 > limit {
             let _ = fs::rename(&path, rolled_path(&path));

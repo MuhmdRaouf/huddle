@@ -1,21 +1,18 @@
 //! `huddle provider <p> usage`: tokens and estimated cost per calendar window, read from the
-//! router's route events and priced at the catalog's list rates.
+//! request history database and priced at the catalog's list rates.
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::fs;
 use std::io::Write;
 
 use huddle_catalog::prices::{PRICES_RETRIEVED, TokenCounts, cost_usd, price_of};
 use huddle_catalog::providers::Provider;
 use huddle_config::env::Env;
 use huddle_config::paths::Paths;
-use huddle_router::events::{now_ms, utc_date};
+use huddle_history::{GroupBy, History, ModelUsage, Range};
+use huddle_router::clock::now_ms;
 
 /// One calendar day, in milliseconds.
 const DAY_MS: i64 = 86_400_000;
-
-/// How many days of event files the report reads back.
-const READ_DAYS: i64 = 30;
 
 /// One report window: its label, its inclusive start at UTC midnight, and its rows per model.
 struct Window {
@@ -42,7 +39,7 @@ impl Window {
     }
 }
 
-/// Prints the usage report. Exit 0 always; a missing events directory reads as empty.
+/// Prints the usage report. Exit 0 always; a missing database reads as empty.
 pub fn run(provider: &'static Provider, env: &Env) -> i32 {
     let now = now_ms();
     let day = now.div_euclid(DAY_MS);
@@ -52,136 +49,64 @@ pub fn run(provider: &'static Provider, env: &Env) -> i32 {
             start: (day - days + 1) * DAY_MS,
             rows: BTreeMap::new(),
         });
-    let events = match Paths::from_env(env) {
-        Ok(paths) => paths.state_dir.join("events"),
+    let paths = match Paths::from_env(env) {
+        Ok(paths) => paths,
         Err(err) => {
             let _ = writeln!(
                 std::io::stderr(),
-                "usage: no home to read events from: {err}"
+                "usage: no home to read the history from: {err}"
             );
             return 0;
         }
     };
-    for back in 0..READ_DAYS {
-        let path = events.join(format!("{}.jsonl", utc_date((day - back) * DAY_MS)));
-        let Ok(text) = fs::read_to_string(path) else {
-            continue;
-        };
-        for line in text.lines() {
-            count_line(&mut windows, provider.id, line);
+    let db = paths.state_dir.join("huddle.db");
+    if db.exists() {
+        match History::open(&db) {
+            Ok(history) => {
+                for window in &mut windows {
+                    fill(window, &history, provider.id, (day + 1) * DAY_MS);
+                }
+            }
+            Err(err) => {
+                let _ = writeln!(std::io::stderr(), "usage: cannot read the history: {err}");
+            }
         }
     }
     let _ = writeln!(std::io::stdout(), "{}", report(provider, &windows));
     0
 }
 
-/// Adds one event line to every window it falls in. A line that does not parse is skipped; only
-/// this provider's `provider`-route requests count; an unreadable `ts` counts in every window.
-fn count_line(windows: &mut [Window; 3], plugin: &str, line: &str) {
-    let Ok(event) = serde_json::from_str::<serde_json::Value>(line) else {
+/// Reads one window's per-model counts for the lane `lane` from the history.
+fn fill(window: &mut Window, history: &History, lane: &str, end: i64) {
+    let range = Range {
+        from_ms: u64::try_from(window.start).unwrap_or(0),
+        to_ms: u64::try_from(end).unwrap_or(0),
+    };
+    let Ok(totals) = history.totals(range, GroupBy::Lane) else {
         return;
     };
-    if str_field(&event, "plugin") != Some(plugin) || str_field(&event, "route") != Some("provider")
+    for usage in totals
+        .into_iter()
+        .filter(|total| total.key == lane)
+        .flat_map(|total| total.models)
     {
-        return;
-    }
-    let ts = str_field(&event, "ts").and_then(ts_ms);
-    let usage = event.get("usage");
-    let tokens = TokenCounts {
-        input: token_count(usage, "input_tokens"),
-        output: token_count(usage, "output_tokens"),
-        cache_read: token_count(usage, "cache_read_input_tokens"),
-        cache_write: token_count(usage, "cache_creation_input_tokens"),
-    };
-    let model = str_field(&event, "model").unwrap_or_default();
-    for window in windows {
-        if in_window(ts, window.start) {
-            let row = window.rows.entry(model.to_string()).or_default();
-            row.requests += 1;
-            row.tokens.input += tokens.input;
-            row.tokens.output += tokens.output;
-            row.tokens.cache_read += tokens.cache_read;
-            row.tokens.cache_write += tokens.cache_write;
-        }
+        window.rows.insert(usage.model.clone(), row_of(&usage));
     }
 }
 
-/// A string field of the event; missing or not a string reads as none.
-fn str_field<'a>(event: &'a serde_json::Value, key: &str) -> Option<&'a str> {
-    event.get(key).and_then(|value| value.as_str())
-}
-
-/// One usage counter as a non-negative integer; anything else counts as nothing.
-fn token_count(usage: Option<&serde_json::Value>, key: &str) -> u64 {
-    usage
-        .and_then(|usage| usage.get(key))
-        .and_then(|value| value.as_u64())
-        .unwrap_or(0)
-}
-
-/// A window covers its start and everything after it; an unreadable `ts` falls in every window.
-fn in_window(ts: Option<i64>, start: i64) -> bool {
-    ts.is_none_or(|ts| ts >= start)
-}
-
-/// Epoch milliseconds of a route event's `ts`, in the fixed shape the router writes:
-/// `2026-11-09T10:15:30.123Z`. None when it does not parse.
-fn ts_ms(ts: &str) -> Option<i64> {
-    let bytes = ts.as_bytes();
-    if bytes.len() != 24
-        || bytes[4] != b'-'
-        || bytes[7] != b'-'
-        || bytes[10] != b'T'
-        || bytes[13] != b':'
-        || bytes[16] != b':'
-        || bytes[19] != b'.'
-        || bytes[23] != b'Z'
-    {
-        return None;
+/// The history stores the prompt total in `tok_in`; the price table wants the plain input.
+fn row_of(usage: &ModelUsage) -> Row {
+    Row {
+        requests: usage.n,
+        tokens: TokenCounts {
+            input: usage
+                .tok_in
+                .saturating_sub(usage.cache_read + usage.cache_write),
+            output: usage.tok_out,
+            cache_read: usage.cache_read,
+            cache_write: usage.cache_write,
+        },
     }
-    let year = digits(bytes, 0, 4)?;
-    let month = digits(bytes, 5, 7)?;
-    let day = digits(bytes, 8, 10)?;
-    let hour = digits(bytes, 11, 13)?;
-    let minute = digits(bytes, 14, 16)?;
-    let second = digits(bytes, 17, 19)?;
-    let millis = digits(bytes, 20, 23)?;
-    if !(1..=12).contains(&month)
-        || !(1..=31).contains(&day)
-        || hour > 23
-        || minute > 59
-        || second > 60
-        || millis > 999
-    {
-        return None;
-    }
-    Some(
-        (days_from_civil(year, month, day) * 86_400 + hour * 3_600 + minute * 60 + second) * 1_000
-            + millis,
-    )
-}
-
-/// The digits between two offsets, as one number; None when a byte is not a digit.
-fn digits(bytes: &[u8], from: usize, to: usize) -> Option<i64> {
-    let mut value = 0i64;
-    for &byte in &bytes[from..to] {
-        if !byte.is_ascii_digit() {
-            return None;
-        }
-        value = value * 10 + i64::from(byte - b'0');
-    }
-    Some(value)
-}
-
-/// Days from 1970-01-01 for a civil date.
-fn days_from_civil(year: i64, month: i64, day: i64) -> i64 {
-    let year = if month <= 2 { year - 1 } else { year };
-    let era = if year >= 0 { year } else { year - 399 } / 400;
-    let year_of_era = year - era * 400;
-    let month_from_march = (month + 9) % 12;
-    let day_of_year = (153 * month_from_march + 2) / 5 + day - 1;
-    let day_of_era = year_of_era * 365 + year_of_era / 4 - year_of_era / 100 + day_of_year;
-    era * 146_097 + day_of_era - 719_468
 }
 
 /// The whole report, one line per element.
@@ -321,28 +246,5 @@ fn usd(amount: f64) -> String {
         format!("${amount:.2}")
     } else {
         format!("${amount:.4}")
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use huddle_router::events::iso_utc_ms;
-
-    #[test]
-    fn ts_ms_reads_the_stamp_the_router_writes() {
-        for ms in [0, 1, -1, 1_794_219_330_123] {
-            assert_eq!(ts_ms(&iso_utc_ms(ms)), Some(ms));
-        }
-        assert_eq!(ts_ms("not a stamp"), None);
-        assert_eq!(ts_ms("2026-11-09T10:15:30Z"), None);
-    }
-
-    #[test]
-    fn a_window_covers_its_start_and_an_unreadable_stamp() {
-        let start = 1_794_219_330_000;
-        assert!(in_window(Some(start), start));
-        assert!(!in_window(Some(start - 1), start));
-        assert!(in_window(None, start));
     }
 }

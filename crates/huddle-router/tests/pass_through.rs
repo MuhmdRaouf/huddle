@@ -1,7 +1,7 @@
 use huddle_config::env::Env;
-use huddle_router::anthropic::{PassCtx, PassEvent, PassWord, pass_through_handler};
+use huddle_router::anthropic::{PassCtx, pass_through_handler};
 use huddle_router::server::{BODY_LIMIT, ServerLimits, bind, serve};
-use huddle_router::upstream::{FailureCode, IDLE_TIMEOUT, UpstreamClient, UpstreamConfig};
+use huddle_router::upstream::{IDLE_TIMEOUT, UpstreamClient, UpstreamConfig};
 use huddle_testkit::fake_upstream::{FakeUpstream, Step};
 use rustls::RootCertStore;
 use std::sync::{Arc, Mutex};
@@ -15,7 +15,6 @@ struct Rig {
     upstream: Option<FakeUpstream>,
     target: String,
     notes: Arc<Mutex<Vec<String>>>,
-    events: Arc<Mutex<Vec<(u16, u64, PassWord)>>>,
 }
 
 async fn rig(upstream: FakeUpstream, idle: Duration) -> Rig {
@@ -26,17 +25,12 @@ async fn rig(upstream: FakeUpstream, idle: Duration) -> Rig {
         idle,
     }));
     let notes: Arc<Mutex<Vec<String>>> = Arc::default();
-    let events: Arc<Mutex<Vec<(u16, u64, PassWord)>>> = Arc::default();
     let sink = notes.clone();
-    let event_sink = events.clone();
     let ctx = Arc::new(PassCtx {
         client,
         target: target.parse().expect("target"),
         body_limit: BODY_LIMIT,
         note: Arc::new(move |l: &str| sink.lock().unwrap().push(l.to_string())),
-        on_pass: Some(Arc::new(move |e: &PassEvent| {
-            event_sink.lock().unwrap().push((e.status, e.bytes, e.word))
-        })),
     });
     let listener = bind(0).await.expect("bind");
     let port = listener.local_addr().expect("addr").port();
@@ -56,7 +50,6 @@ async fn rig(upstream: FakeUpstream, idle: Duration) -> Rig {
         upstream: Some(upstream),
         target,
         notes,
-        events,
     }
 }
 
@@ -120,7 +113,6 @@ async fn the_log_line_names_the_request_and_never_its_query() {
         "{line}"
     );
     assert!(!line.contains("secret"));
-    assert_eq!(rig.events.lock().unwrap()[0].0, 200);
 }
 
 #[tokio::test]
@@ -133,10 +125,6 @@ async fn a_cut_stream_logs_the_cut() {
     request(rig.port, &get("/v1/anything")).await;
     let line = last_note(&rig).await;
     assert!(line.contains("anthropic-pass cut (EABORTED)"), "{line}");
-    assert_eq!(
-        rig.events.lock().unwrap()[0].2,
-        PassWord::Cut(FailureCode::EAborted)
-    );
 }
 
 #[tokio::test]

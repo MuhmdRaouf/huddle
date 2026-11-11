@@ -5,16 +5,15 @@
 
 use crate::answer_facts::{self, AnswerFacts};
 use crate::anthropic::{
-    AnswerOutcome, AnswerTap, AnthropicPath, OutcomeHook, PassCtx, PassEvent, PassHook, PassWord,
-    StreamedRoute, WholeRoute, is_model_request, pass_through_handler,
+    AnswerOutcome, AnswerTap, AnthropicPath, OutcomeHook, PassCtx, StreamedRoute, WholeRoute,
+    is_model_request, pass_through_handler,
 };
 use crate::body::model_of;
 use crate::connect::{ConnectCtx, Decrypt, TunnelTracker, connect_handler};
 use crate::dashboard::{Dashboard, DashboardInputs};
-use crate::events::{EventSink, RouteEvent, iso_utc_ms};
 use crate::keycache::sources_for;
 use crate::lane::{Lane, LaneError, Logger};
-use crate::live::{Finish, LiveState, RequestStart};
+use crate::live::{Finish, HistorySink, LiveState, RequestStart};
 use crate::server::{
     BODY_LIMIT, EntryCtx, Handler, ServerLimits, cut_response, entry_handler, receive,
 };
@@ -102,15 +101,15 @@ pub fn os_roots(log: &dyn Fn(String)) -> RootCertStore {
 }
 
 /// The router's fixed wiring: the environment, the paths, the port, the Anthropic origin,
-/// where the metadata lines go, the route-event writer when events are on, and what the
-/// dashboard reads from outside the router.
+/// where the metadata lines go, the history sink when finished requests are recorded, and what
+/// the dashboard reads from outside the router.
 pub struct RouterConfig {
     pub env: Env,
     pub paths: Paths,
     pub port: u16,
     pub anthropic_url: hyper::Uri,
     pub log: Logger,
-    pub events: Option<EventSink>,
+    pub history: Option<Arc<dyn HistorySink>>,
     pub dashboard: DashboardInputs,
 }
 
@@ -125,7 +124,6 @@ pub struct Router {
     paths: Paths,
     port: u16,
     log: Logger,
-    events: Option<EventSink>,
     live: Arc<LiveState>,
     dashboard: DashboardInputs,
     tunnels: Arc<TunnelTracker>,
@@ -135,12 +133,6 @@ impl Router {
     /// Lanes for the given enabled providers; the rest of the wiring is fixed.
     pub fn new(config: RouterConfig, enabled: &[String]) -> Arc<Router> {
         let log = config.log;
-        let events = config.events.clone();
-        // The event writer makes its own directory, but not its parents; the router home is
-        // the router's to make. A failure leaves the writer its stderr line.
-        if events.is_some() {
-            let _ = std::fs::create_dir_all(config.paths.state_dir.join("events"));
-        }
         let roots = os_roots(&*log);
         let client = Arc::new(UpstreamClient::new(UpstreamConfig {
             env: config.env.clone(),
@@ -148,29 +140,9 @@ impl Router {
             idle: IDLE_TIMEOUT,
         }));
         let tunnels = TunnelTracker::new();
-        let live = Arc::new(LiveState::new(now_ms()));
-
-        // Every passed request writes one route event off the request path.
-        let on_pass: Option<PassHook> = events.clone().map(|sink| {
-            Arc::new(move |event: &PassEvent| {
-                let error = match event.word {
-                    PassWord::Finished => None,
-                    PassWord::Cut(code) => Some(format!("stream cut ({})", code.as_str())),
-                    PassWord::Error(code) => Some(format!("connection failed ({})", code.as_str())),
-                    PassWord::Cancelled => Some("client closed".to_owned()),
-                };
-                sink.send(RouteEvent {
-                    ts: iso_utc_ms(crate::events::now_ms()),
-                    plugin: "huddle-router".to_owned(),
-                    model: String::new(),
-                    route: "anthropic-pass".to_owned(),
-                    status: event.status,
-                    latency_ms: event.ms,
-                    usage: None,
-                    error,
-                    router_us: None,
-                });
-            }) as PassHook
+        let live = Arc::new(match config.history.clone() {
+            Some(sink) => LiveState::with_sink(now_ms(), sink),
+            None => LiveState::new(now_ms()),
         });
 
         // Inside a decrypted conversation every non-model request rides to the Anthropic
@@ -180,7 +152,6 @@ impl Router {
             target: config.anthropic_url.clone(),
             body_limit: BODY_LIMIT,
             note: pass_note(Arc::clone(&log)),
-            on_pass,
         }));
 
         // One line per raise and one per recovery: the third failure in a minute names the
@@ -252,9 +223,6 @@ impl Router {
                         match lane_for(&router, &model) {
                             Some(lane) => {
                                 let events = RequestEvents::from_parts(&parts);
-                                events.set_route("provider");
-                                events.set_plugin(lane.provider().id);
-                                events.set_asked_model(&model);
                                 events.track(lane.provider().id, &model);
                                 lane.forward_streamed(parts, body, &model).await
                             }
@@ -278,23 +246,14 @@ impl Router {
                         let (enabled, resolved) = lane_names(&router.lanes);
                         let events = RequestEvents::from_parts(&parts);
                         match decide_resolved(&model, &enabled, &resolved) {
-                            Route::Lane(provider) => {
-                                events.set_route("provider");
-                                events.set_plugin(provider.id);
-                                events.set_asked_model(&model);
-                                match lane_by_id(&router.lanes, provider.id) {
-                                    Some(lane) => {
-                                        events.track(provider.id, &model);
-                                        lane.forward(parts, body, &model).await
-                                    }
-                                    None => cut_response(),
+                            Route::Lane(provider) => match lane_by_id(&router.lanes, provider.id) {
+                                Some(lane) => {
+                                    events.track(provider.id, &model);
+                                    lane.forward(parts, body, &model).await
                                 }
-                            }
+                                None => cut_response(),
+                            },
                             Route::Anthropic => {
-                                events.set_route("anthropic");
-                                events.set_plugin("huddle-router");
-                                events.set_asked_model(&model);
-                                events.set_served_model(&model);
                                 events.track("anthropic", &model);
                                 let answer = router.anthropic.forward_whole(parts, body).await;
                                 (router.log)(format!(
@@ -328,7 +287,6 @@ impl Router {
                 paths: config.paths,
                 port: config.port,
                 log,
-                events,
                 live,
                 dashboard: config.dashboard,
                 tunnels,
@@ -348,7 +306,7 @@ impl Router {
                     self.paths.ca_dir.clone(),
                     pass_note(Arc::clone(&self.log)),
                 )),
-                intercept: self.intercept_with_events(),
+                intercept: self.intercept_with_context(),
                 limits: ServerLimits::default(),
             })),
         }));
@@ -366,9 +324,6 @@ impl Router {
                             &parts.headers,
                         );
                         parts.extensions.insert(context);
-                        if let Some(events) = &router.events {
-                            parts.extensions.insert(events.clone());
-                        }
                         (router.whole_route)(parts, body).await
                     }
                     Err(answer) => answer,
@@ -397,9 +352,9 @@ impl Router {
         }))
     }
 
-    /// The decrypted conversation's handler. A model request carries its context and the event
-    /// sink from the moment it arrives, before its body is read, as a plain-HTTP one does.
-    fn intercept_with_events(self: &Arc<Self>) -> Handler {
+    /// The decrypted conversation's handler. A model request carries its context from the
+    /// moment it arrives, before its body is read, as a plain-HTTP one does.
+    fn intercept_with_context(self: &Arc<Self>) -> Handler {
         let intercept = Arc::clone(&self.anthropic).intercept_handler();
         let router = Arc::clone(self);
         Arc::new(move |mut req| {
@@ -411,9 +366,6 @@ impl Router {
                     req.headers(),
                 );
                 req.extensions_mut().insert(context);
-                if let Some(events) = &router.events {
-                    req.extensions_mut().insert(events.clone());
-                }
             }
             intercept(req)
         })
@@ -493,15 +445,8 @@ pub struct RequestContext {
     pub received: Option<Instant>,
     /// `router_us`: microseconds from `received` to the first attempt leaving.
     pub sent_us: OnceLock<u64>,
-    /// The model the event names.
-    pub served_model: Mutex<String>,
-    /// Set by the route choice.
-    pub asked_model: Mutex<String>,
     pub usage: Mutex<Option<Usage>>,
     pub error: Mutex<Option<String>>,
-    /// `provider`, `anthropic` or `refused`.
-    pub route: Mutex<String>,
-    pub plugin: Mutex<String>,
     /// The Anthropic answer's `request-id` and plan numbers.
     pub answer_facts: Mutex<AnswerFacts>,
     /// Set for a request the dashboard lists.
@@ -562,43 +507,6 @@ impl RequestContext {
         let _ = self.sent_us.set(received.elapsed().as_micros() as u64);
     }
 
-    /// Milliseconds since the entry handler saw the request.
-    pub fn latency_ms(&self) -> u64 {
-        self.received
-            .map_or(0, |received| received.elapsed().as_millis() as u64)
-    }
-
-    /// The request's route event, as of now.
-    pub fn event(&self, status: u16, latency_ms: u64) -> RouteEvent {
-        RouteEvent {
-            ts: iso_utc_ms(crate::events::now_ms()),
-            plugin: lock(&self.plugin).clone(),
-            model: lock(&self.served_model).clone(),
-            route: lock(&self.route).clone(),
-            status,
-            latency_ms,
-            usage: lock(&self.usage).clone(),
-            error: lock(&self.error).clone(),
-            router_us: self.sent_us.get().copied(),
-        }
-    }
-
-    fn set_served_model(&self, model: &str) {
-        *lock(&self.served_model) = model.to_owned();
-    }
-
-    fn set_asked_model(&self, model: &str) {
-        *lock(&self.asked_model) = model.to_owned();
-    }
-
-    fn set_route(&self, route: &str) {
-        *lock(&self.route) = route.to_owned();
-    }
-
-    fn set_plugin(&self, plugin: &str) {
-        *lock(&self.plugin) = plugin.to_owned();
-    }
-
     fn set_error(&self, error: Option<String>) {
         *lock(&self.error) = error;
     }
@@ -608,25 +516,22 @@ impl RequestContext {
     }
 }
 
-/// The request's context and its event writer, read off the request's extensions. The
-/// `emit`s are no-ops when the request carries neither, so answers on eventless routers and
+/// The request's context, read off the request's extensions. `emit` is a no-op without it, so
 /// lanes built outside the dispatch cost nothing.
 #[derive(Clone)]
 pub struct RequestEvents {
     context: Option<Arc<RequestContext>>,
-    sink: Option<EventSink>,
 }
 
 impl RequestEvents {
-    /// Reads the context and the sink a request carries.
+    /// Reads the context a request carries.
     pub fn from_parts(parts: &Parts) -> RequestEvents {
         RequestEvents {
             context: parts.extensions.get::<Arc<RequestContext>>().cloned(),
-            sink: parts.extensions.get::<EventSink>().cloned(),
         }
     }
 
-    /// True when the request is followed: its end reaches the live state and the event file.
+    /// True when the request is followed: its end reaches the live state and the history.
     pub fn active(&self) -> bool {
         self.context.is_some()
     }
@@ -670,42 +575,14 @@ impl RequestEvents {
         }
     }
 
-    /// Ends the request: it leaves the live state and, with a sink, writes its route event.
+    /// Ends the request: it leaves the live state and the history sink gets its row.
     /// Nothing happens without the context.
     pub fn emit(&self, status: u16, error: Option<String>) {
         let Some(context) = &self.context else {
             return;
         };
         context.set_error(error);
-        let latency_ms = context.latency_ms();
         context.finish_live(status);
-        if let Some(sink) = &self.sink {
-            sink.send(context.event(status, latency_ms));
-        }
-    }
-
-    pub fn set_route(&self, route: &str) {
-        if let Some(context) = &self.context {
-            context.set_route(route);
-        }
-    }
-
-    pub fn set_plugin(&self, plugin: &str) {
-        if let Some(context) = &self.context {
-            context.set_plugin(plugin);
-        }
-    }
-
-    pub fn set_asked_model(&self, model: &str) {
-        if let Some(context) = &self.context {
-            context.set_asked_model(model);
-        }
-    }
-
-    pub fn set_served_model(&self, model: &str) {
-        if let Some(context) = &self.context {
-            context.set_served_model(model);
-        }
     }
 
     pub fn set_usage(&self, usage: Option<Usage>) {

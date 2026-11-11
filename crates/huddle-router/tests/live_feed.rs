@@ -41,7 +41,7 @@ async fn rig(anthropic: FakeUpstream) -> Rig {
             port,
             anthropic_url: anthropic.url().parse::<Uri>().expect("uri"),
             log: Arc::new(|_| {}),
-            events: None,
+            history: None,
             dashboard: DashboardInputs::default(),
         },
         &["zai".to_string()],

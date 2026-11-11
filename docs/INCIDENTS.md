@@ -176,6 +176,6 @@ Each incident, its cause, and the test that now stops it. A guard named here mus
 - **Cause:** the request context and the event sink were put on a request only in the plain-HTTP
   handler. Claude Code's traffic arrives through CONNECT and is decrypted, and that path built the
   request without either, so every Anthropic and provider-lane model request skipped its event.
-- **Guard:** crates/huddle-router/tests/connect_decrypt.rs:decrypted_model_requests_write_route_events
+- **Guard:** crates/huddle-router/tests/connect_decrypt.rs:t5_decrypted_model_requests_reach_the_history
 - **Rule:** a model request carries its context and the event sink from the moment it arrives,
   whichever way it arrived.

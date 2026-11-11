@@ -60,7 +60,7 @@ async fn rig(enabled: &[&str]) -> Rig {
         port,
         anthropic_url: anthropic.url().parse::<Uri>().expect("uri"),
         log: Arc::new(|_| {}),
-        events: None,
+        history: None,
         dashboard: huddle_router::dashboard::DashboardInputs::default(),
     };
     let enabled: Vec<String> = enabled.iter().map(|s| s.to_string()).collect();

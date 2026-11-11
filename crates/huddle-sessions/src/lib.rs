@@ -9,6 +9,7 @@ mod scan;
 mod state;
 mod tail;
 mod time;
+mod usage_for;
 mod worktrees;
 
 pub use model::{
@@ -16,4 +17,5 @@ pub use model::{
 };
 pub use scan::scan;
 pub use time::parse_iso_ms;
+pub use usage_for::{LogUsage, usage_for};
 pub use worktrees::worktrees;

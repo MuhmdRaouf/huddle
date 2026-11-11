@@ -6,7 +6,7 @@ use huddle_router::connect::{
     ConnectCtx, Decrypt, DialFn, DrainOutcome, TunnelTracker, connect_handler,
 };
 use huddle_router::dispatch::{Router, RouterConfig};
-use huddle_router::events::EventSink;
+use huddle_router::live::HistorySink;
 use huddle_router::server::{Handler, ServerLimits, bind, full_body, serve};
 use huddle_testkit::fake_upstream::{FakeUpstream, Step};
 use huddle_testkit::ports::free_port;
@@ -257,18 +257,21 @@ async fn model_request<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin>(
     tokio::time::sleep(Duration::from_millis(100)).await;
 }
 
-fn written_events(home: &TempHome) -> Vec<serde_json::Value> {
-    let dir = home.root().join(".local/state/huddle/events");
-    let mut lines = Vec::new();
-    for entry in std::fs::read_dir(dir).into_iter().flatten().flatten() {
-        let text = std::fs::read_to_string(entry.path()).expect("read");
-        lines.extend(text.lines().map(|l| serde_json::from_str(l).expect("json")));
+#[derive(Default)]
+struct Collect {
+    rows: std::sync::Mutex<Vec<huddle_history::Row>>,
+}
+
+impl HistorySink for Collect {
+    fn finished(&self, row: huddle_history::Row) {
+        self.rows.lock().unwrap().push(row);
     }
-    lines
+
+    fn credited(&self, _credits: Vec<huddle_history::Credit>) {}
 }
 
 #[tokio::test]
-async fn decrypted_model_requests_write_route_events() {
+async fn t5_decrypted_model_requests_reach_the_history() {
     let home = TempHome::new();
     let root = home.root().to_str().expect("utf8").to_string();
     let zai = FakeUpstream::start(|_, _| Step::answer(200, "x")).await;
@@ -282,6 +285,7 @@ async fn decrypted_model_requests_write_route_events() {
     let paths = Paths::from_env(&env).expect("paths");
     let ca = load_or_create(&paths.ca_dir, SystemTime::now()).expect("ca");
     let port = free_port();
+    let rows = Arc::new(Collect::default());
     let router = Router::new(
         RouterConfig {
             env,
@@ -289,7 +293,7 @@ async fn decrypted_model_requests_write_route_events() {
             port,
             anthropic_url: anthropic.url().parse().expect("uri"),
             log: Arc::new(|_| {}),
-            events: Some(EventSink::start(paths.state_dir.join("events"))),
+            history: Some(rows.clone()),
             dashboard: huddle_router::dashboard::DashboardInputs::default(),
         },
         &["zai".to_string()],
@@ -311,19 +315,17 @@ async fn decrypted_model_requests_write_route_events() {
     model_request(&mut tls, r#"{"model":"claude-opus-5-5","messages":[]}"#).await;
     model_request(&mut tls, r#"{"model":"glm-5.3","messages":[]}"#).await;
     let deadline = std::time::Instant::now() + Duration::from_secs(3);
-    while written_events(&home).len() < 2 && std::time::Instant::now() < deadline {
+    while rows.rows.lock().unwrap().len() < 2 && std::time::Instant::now() < deadline {
         tokio::time::sleep(Duration::from_millis(20)).await;
     }
-    let events = written_events(&home);
-    let find = |route: &str| events.iter().find(|e| e["route"] == route);
-    let anthropic_event =
-        find("anthropic").unwrap_or_else(|| panic!("no anthropic event: {events:?}"));
-    assert_eq!(anthropic_event["model"], "claude-opus-5-5");
-    assert_eq!(anthropic_event["status"], 200);
-    let provider_event =
-        find("provider").unwrap_or_else(|| panic!("no provider event: {events:?}"));
-    assert_eq!(provider_event["model"], "glm-5.3");
-    assert_eq!(provider_event["status"], 200);
+    let got = rows.rows.lock().unwrap().clone();
+    let find = |lane: &str| got.iter().find(|row| row.lane == lane);
+    let anthropic_row = find("anthropic").unwrap_or_else(|| panic!("no anthropic row: {got:?}"));
+    assert_eq!(anthropic_row.model, "claude-opus-5-5");
+    assert_eq!(anthropic_row.status, 200);
+    let provider_row = find("zai").unwrap_or_else(|| panic!("no provider row: {got:?}"));
+    assert_eq!(provider_row.model, "glm-5.3");
+    assert_eq!(provider_row.status, 200);
     drop(zai);
     drop(anthropic);
 }

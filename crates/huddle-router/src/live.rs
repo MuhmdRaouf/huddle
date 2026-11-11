@@ -5,6 +5,7 @@ use std::collections::{HashMap, VecDeque};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
+use huddle_history::{Credit, Row};
 use huddle_sessions::{RequestTag, Session, Worktree};
 use tokio::sync::watch;
 
@@ -20,6 +21,13 @@ const TTFT_SAMPLES: usize = 500;
 const SECONDS: usize = 60;
 /// The window `errors_5m` counts over.
 const ERROR_WINDOW_MS: u64 = 5 * 60 * 1000;
+
+/// Where finished requests and the credits applied to them go. Both calls run on the request
+/// path and must not block: an implementation queues the work and returns.
+pub trait HistorySink: Send + Sync {
+    fn finished(&self, row: Row);
+    fn credited(&self, credits: Vec<Credit>);
+}
 
 /// What the caller knows when a model request arrives.
 #[derive(Debug, Clone)]
@@ -277,10 +285,20 @@ pub struct LiveState {
     inner: Mutex<Inner>,
     changes: watch::Sender<u64>,
     viewers: AtomicUsize,
+    sink: Option<Arc<dyn HistorySink>>,
 }
 
 impl LiveState {
     pub fn new(started_ms: u64) -> LiveState {
+        LiveState::build(started_ms, None)
+    }
+
+    /// A live state that hands every finished request and every applied credit to `sink`.
+    pub fn with_sink(started_ms: u64, sink: Arc<dyn HistorySink>) -> LiveState {
+        LiveState::build(started_ms, Some(sink))
+    }
+
+    fn build(started_ms: u64, sink: Option<Arc<dyn HistorySink>>) -> LiveState {
         LiveState {
             started_ms,
             inner: Mutex::new(Inner {
@@ -296,6 +314,7 @@ impl LiveState {
             }),
             changes: watch::channel(0).0,
             viewers: AtomicUsize::new(0),
+            sink,
         }
     }
 
@@ -377,17 +396,15 @@ impl LiveState {
 
     /// Ends a request: it leaves the in-flight set and enters the ring and the lane counters.
     pub fn finish(&self, id: u64, finish: Finish) {
-        let changed = {
+        let finished = {
             let mut inner = lock(&self.inner);
-            match inner.active.remove(&id) {
-                Some(active) => {
-                    record(&mut inner, id, active, finish);
-                    true
-                }
-                None => false,
-            }
+            let active = inner.active.remove(&id);
+            active.map(|active| record(&mut inner, id, active, finish))
         };
-        if changed {
+        if let Some(row) = finished {
+            if let Some(sink) = &self.sink {
+                sink.finished(history_row(&row));
+            }
             self.bump();
         }
     }
@@ -397,18 +414,28 @@ impl LiveState {
     /// the model rows and the lane totals. The router's own reading wins; a request is counted
     /// once.
     pub fn credit(&self, sessions: &[Session]) {
-        let tags: HashMap<&str, (&str, &RequestTag)> = sessions
+        let credits = self.apply_credits(sessions);
+        if let Some(sink) = self.sink.as_ref().filter(|_| !credits.is_empty()) {
+            sink.credited(credits);
+        }
+    }
+
+    /// Applies the tags to the ring and the series and returns one credit per ring row that
+    /// gained an agent or its usage.
+    fn apply_credits(&self, sessions: &[Session]) -> Vec<Credit> {
+        let tags: HashMap<&str, (&Session, &RequestTag)> = sessions
             .iter()
             .flat_map(|session| {
                 session
                     .request_ids
                     .iter()
-                    .map(move |tag| (tag.request_id.as_str(), (session.id.as_str(), tag)))
+                    .map(move |tag| (tag.request_id.as_str(), (session, tag)))
             })
             .collect();
         if tags.is_empty() {
-            return;
+            return Vec::new();
         }
+        let mut credits = Vec::new();
         let mut inner = lock(&self.inner);
         let Inner {
             recent,
@@ -421,10 +448,24 @@ impl LiveState {
             else {
                 continue;
             };
-            if row.agent.is_none() {
-                row.agent = Some(format!("{session}:{}", tag.agent_id));
-            }
             let usage = tag.usage;
+            if row.agent.is_none() || row.tokens_out.is_none() {
+                credits.push(Credit {
+                    upstream_id: tag.request_id.clone(),
+                    agent: Some(format!("{}:{}", session.id, tag.agent_id)),
+                    project: session.project.clone(),
+                    usage: (
+                        usage.input + usage.cache_read + usage.cache_write,
+                        usage.cache_read,
+                        usage.cache_write,
+                        usage.output,
+                    ),
+                    stop: tag.stop.clone(),
+                });
+            }
+            if row.agent.is_none() {
+                row.agent = Some(format!("{}:{}", session.id, tag.agent_id));
+            }
             row.tokens_in = row
                 .tokens_in
                 .or(Some(usage.input + usage.cache_read + usage.cache_write));
@@ -452,6 +493,7 @@ impl LiveState {
                 lane.tokens_out += sample.tokens_out;
             }
         }
+        credits
     }
 
     pub fn snapshot(&self, now_ms: u64, inputs: &SnapshotInputs) -> Snapshot {
@@ -532,7 +574,9 @@ impl LiveState {
     }
 }
 
-fn record(inner: &mut Inner, id: u64, active: Active, finish: Finish) {
+/// Files the finished request in the ring, the series and the lane counters, and returns its
+/// ring row.
+fn record(inner: &mut Inner, id: u64, active: Active, finish: Finish) -> RecentRow {
     let failed = is_error(finish.status);
     let reason = reason(finish.status, finish.error.as_deref());
     let tokens_in = finish.usage.as_ref().map(prompt_tokens);
@@ -602,7 +646,7 @@ fn record(inner: &mut Inner, id: u64, active: Active, finish: Finish) {
             reason: reason.clone(),
         });
     }
-    inner.recent.push_front(RecentRow {
+    let row = RecentRow {
         id,
         at_ms: finish.now_ms,
         session,
@@ -620,8 +664,32 @@ fn record(inner: &mut Inner, id: u64, active: Active, finish: Finish) {
         cache_write,
         stop,
         upstream_id: finish.upstream_id,
-    });
+    };
+    inner.recent.push_front(row.clone());
     inner.recent.truncate(RING_CAPACITY);
+    row
+}
+
+/// The history row of a finished request; its project is unknown until a log names it.
+fn history_row(row: &RecentRow) -> Row {
+    Row {
+        at_ms: row.at_ms,
+        session: row.session.clone(),
+        project: None,
+        agent: row.agent.clone(),
+        model: row.model.clone(),
+        lane: row.lane.clone(),
+        status: row.status,
+        reason: row.reason.clone(),
+        ttft_ms: row.ttft_ms,
+        dur_ms: row.dur_ms,
+        tokens_in: row.tokens_in,
+        cache_read: row.cache_read,
+        cache_write: row.cache_write,
+        tokens_out: row.tokens_out,
+        stop: row.stop.clone(),
+        upstream_id: row.upstream_id.clone(),
+    }
 }
 
 /// The status the router records when the client left before the answer.
@@ -1459,5 +1527,92 @@ mod tests {
         drop(first);
         drop(second);
         assert_eq!(live.snapshot(T0, &inputs(&[])).router.viewers, 0);
+    }
+
+    #[derive(Default)]
+    struct Taken {
+        rows: Mutex<Vec<huddle_history::Row>>,
+        credits: Mutex<Vec<huddle_history::Credit>>,
+    }
+
+    impl HistorySink for Taken {
+        fn finished(&self, row: huddle_history::Row) {
+            lock(&self.rows).push(row);
+        }
+
+        fn credited(&self, credits: Vec<huddle_history::Credit>) {
+            lock(&self.credits).extend(credits);
+        }
+    }
+
+    fn live_with_sink() -> (LiveState, Arc<Taken>) {
+        let taken = Arc::new(Taken::default());
+        let sink: Arc<dyn HistorySink> = taken.clone();
+        (LiveState::with_sink(T0, sink), taken)
+    }
+
+    #[test]
+    fn t5_a_finished_request_reaches_the_sink_with_its_fields() {
+        let (live, taken) = live_with_sink();
+        let id = begin(&live, "zai", "glm-5.3", T0);
+        live.first_byte(id, T0 + 400);
+        live.finish(
+            id,
+            Finish {
+                usage: Some(Usage {
+                    input_tokens: Some(10),
+                    output_tokens: Some(5),
+                    cache_creation_input_tokens: Some(100),
+                    cache_read_input_tokens: Some(1000),
+                    stop_reason: Some("end_turn".into()),
+                }),
+                upstream_id: Some("req_1".into()),
+                ..end(200, None, T0 + 1500)
+            },
+        );
+        let rows = lock(&taken.rows);
+        assert_eq!(rows.len(), 1);
+        let row = &rows[0];
+        assert_eq!(
+            (row.at_ms, row.dur_ms, row.ttft_ms),
+            (T0 + 1500, 1500, Some(400))
+        );
+        assert_eq!(row.session.as_deref(), Some("cse_01JqXrugEVi7"));
+        assert_eq!((row.model.as_str(), row.lane.as_str()), ("glm-5.3", "zai"));
+        assert_eq!((row.status, row.reason.clone()), (200, None));
+        assert_eq!(row.tokens_in, Some(1110));
+        assert_eq!((row.cache_read, row.cache_write), (Some(1000), Some(100)));
+        assert_eq!(row.tokens_out, Some(5));
+        assert_eq!(row.stop.as_deref(), Some("end_turn"));
+        assert_eq!(row.upstream_id.as_deref(), Some("req_1"));
+        assert_eq!((row.agent.clone(), row.project.clone()), (None, None));
+    }
+
+    #[test]
+    fn t5_a_failed_request_reaches_the_sink_with_its_reason() {
+        let (live, taken) = live_with_sink();
+        let id = begin(&live, "zai", "glm-5.3", T0);
+        live.finish(id, end(500, Some("upstream exploded"), T0 + 10));
+        let rows = lock(&taken.rows);
+        assert_eq!(rows[0].status, 500);
+        assert!(rows[0].reason.is_some());
+        assert_eq!(rows[0].tokens_in, None);
+    }
+
+    #[test]
+    fn t5_credit_yields_each_credit_it_applied_once() {
+        let (live, taken) = live_with_sink();
+        unread(&live, "req_9", T0);
+        let mut session = logged("s1", "main", "req_9");
+        session.project = Some("huddle".into());
+        live.credit(&[session.clone()]);
+        live.credit(&[session]);
+        let credits = lock(&taken.credits);
+        assert_eq!(credits.len(), 1, "{credits:?}");
+        assert_eq!(credits[0].upstream_id, "req_9");
+        assert_eq!(credits[0].agent.as_deref(), Some("s1:main"));
+        assert_eq!(credits[0].project.as_deref(), Some("huddle"));
+        assert_eq!(credits[0].usage, (240, 200, 30, 70));
+        assert_eq!(credits[0].stop.as_deref(), Some("tool_use"));
     }
 }

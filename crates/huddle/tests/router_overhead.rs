@@ -504,25 +504,38 @@ fn the_router_stays_under_its_latency_budget() {
             "connect chunk {connect_chunk:.3} ms over {size} bytes"
         );
     }
-    assert_router_us(&home);
+    assert_rows_recorded(&home);
     drop(reference);
     stop_router(&home, port);
 }
 
-/// R-057: every routed event carries the router's own time, at least one microsecond.
-fn assert_router_us(home: &TempHome) {
-    let dir = home.root().join(".local/state/huddle/events");
-    let mut routed = 0usize;
-    for entry in fs::read_dir(&dir).expect("events dir") {
-        let text = fs::read_to_string(entry.expect("entry").path()).expect("read");
-        for line in text.lines() {
-            let event: serde_json::Value = serde_json::from_str(line).expect("event json");
-            if event["route"] == "provider" || event["route"] == "anthropic" {
-                routed += 1;
-                let router_us = event["router_us"].as_u64().unwrap_or(0);
-                assert!(router_us >= 1, "{line}");
-            }
+/// Every request the gate sent through the router is a row in the history.
+fn assert_rows_recorded(home: &TempHome) {
+    let db = home.root().join(".local/state/huddle/huddle.db");
+    let filter = huddle_history::Filter::new(huddle_history::Range {
+        from_ms: 0,
+        to_ms: u64::MAX / 2,
+    });
+    let deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        let rows = huddle_history::History::open(&db)
+            .and_then(|history| {
+                history.search(
+                    filter.clone(),
+                    huddle_history::Page {
+                        limit: 500,
+                        offset: 0,
+                    },
+                )
+            })
+            .map(|result| result.rows)
+            .unwrap_or_default();
+        let lane = rows.iter().any(|row| row.lane == "zai");
+        let anthropic = rows.iter().any(|row| row.lane == "anthropic");
+        if lane && anthropic {
+            return;
         }
+        assert!(Instant::now() < deadline, "no routed rows: {rows:?}");
+        thread::sleep(Duration::from_millis(100));
     }
-    assert!(routed > 0, "no routed events");
 }

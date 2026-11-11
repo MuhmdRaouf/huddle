@@ -71,7 +71,7 @@ fn recent_logs(projects: &Path, now_ms: u64, max_age_ms: u64) -> Vec<Log> {
     logs
 }
 
-fn modified_ms(path: &Path) -> Option<u64> {
+pub(crate) fn modified_ms(path: &Path) -> Option<u64> {
     let modified = fs::metadata(path).ok()?.modified().ok()?;
     let since_epoch = modified.duration_since(UNIX_EPOCH).ok()?;
     u64::try_from(since_epoch.as_millis()).ok()
@@ -139,7 +139,7 @@ fn session(log: &Log, now_ms: u64, tail_bytes: u64) -> Option<Session> {
     })
 }
 
-fn base_name(cwd: &str) -> Option<String> {
+pub(crate) fn base_name(cwd: &str) -> Option<String> {
     Path::new(cwd)
         .file_name()
         .map(|n| n.to_string_lossy().into_owned())

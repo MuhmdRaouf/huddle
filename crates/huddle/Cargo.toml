@@ -15,6 +15,7 @@ huddle-catalog.workspace = true
 huddle-config.workspace = true
 huddle-daemon.workspace = true
 huddle-harness.workspace = true
+huddle-history.workspace = true
 huddle-jobs.workspace = true
 huddle-keystore.workspace = true
 huddle-pki.workspace = true

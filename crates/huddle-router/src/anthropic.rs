@@ -157,10 +157,6 @@ impl AnthropicPath {
         tokio::spawn(fill(body, Arc::clone(&stream)));
         if (self.is_anthropic)(&model) {
             let events = RequestEvents::from_parts(&parts);
-            events.set_route("anthropic");
-            events.set_plugin("huddle-router");
-            events.set_asked_model(&model);
-            events.set_served_model(&model);
             events.track("anthropic", &model);
             self.forward_streamed(parts, stream).await
         } else {
@@ -611,42 +607,8 @@ fn failed(failure: Failure) -> Response<RespBody> {
     )
 }
 
-/// One passed request's metadata, told to the event record at the same moment as the log line.
-pub struct PassEvent {
-    /// The request's method.
-    pub method: String,
-    /// The request's path, never its query.
-    pub path: String,
-    /// The upstream authority the request rode to.
-    pub host: String,
-    /// The status the client saw; `0` before a head arrived.
-    pub status: u16,
-    /// The answer body's bytes.
-    pub bytes: u64,
-    /// The request's whole duration.
-    pub ms: u64,
-    /// How the pass-through ended.
-    pub word: PassWord,
-}
-
-/// How one passed request ended.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PassWord {
-    /// The answer ended and the client got all of it.
-    Finished,
-    /// The upstream's body broke after its head.
-    Cut(FailureCode),
-    /// The request never got a head from the upstream.
-    Error(FailureCode),
-    /// The client left before the answer ended.
-    Cancelled,
-}
-
-/// Told each passed request's metadata, exactly once per request.
-pub type PassHook = Arc<dyn Fn(&PassEvent) + Send + Sync>;
-
 /// What the pass-through needs: the upstream client, the Anthropic origin, the body limit,
-/// where the log line goes, and the event record.
+/// and where the log line goes.
 pub struct PassCtx {
     pub client: Arc<UpstreamClient>,
     /// The Anthropic origin every passed request rides to.
@@ -654,8 +616,6 @@ pub struct PassCtx {
     pub body_limit: u64,
     /// Receives one metadata-only log line per request.
     pub note: Arc<dyn Fn(&str) + Send + Sync>,
-    /// Receives the same request's metadata at the same moment.
-    pub on_pass: Option<PassHook>,
 }
 
 /// Serves every request that is not a model request: it reaches Anthropic with only its host
@@ -752,58 +712,25 @@ async fn pass(ctx: Arc<PassCtx>, req: Request<Incoming>) -> Response<RespBody> {
         Ok(answer) => {
             let status = answer.status.as_u16();
             let note = Arc::clone(&ctx.note);
-            let on_pass = ctx.on_pass.clone();
             let report = move |outcome: AnswerOutcome| {
                 let ms = started.elapsed().as_millis() as u64;
-                let (word, status, bytes, line) = match outcome {
-                    AnswerOutcome::Finished { status, bytes } => (
-                        PassWord::Finished,
-                        status,
-                        bytes,
-                        format!(
-                            "{method} {path} host={host} \u{2192} anthropic-pass {status} bytes={bytes} ms={ms}"
-                        ),
+                let line = match outcome {
+                    AnswerOutcome::Finished { status, bytes } => format!(
+                        "{method} {path} host={host} \u{2192} anthropic-pass {status} bytes={bytes} ms={ms}"
                     ),
-                    AnswerOutcome::Cut { code, bytes } => (
-                        PassWord::Cut(code),
-                        status,
-                        bytes,
-                        format!(
-                            "{method} {path} host={host} \u{2192} anthropic-pass cut ({}) status={status} bytes={bytes} ms={ms}",
-                            code.as_str()
-                        ),
+                    AnswerOutcome::Cut { code, bytes } => format!(
+                        "{method} {path} host={host} \u{2192} anthropic-pass cut ({}) status={status} bytes={bytes} ms={ms}",
+                        code.as_str()
                     ),
-                    AnswerOutcome::ClientClosed { bytes } => (
-                        PassWord::Cancelled,
-                        status,
-                        bytes,
-                        format!(
-                            "{method} {path} host={host} \u{2192} anthropic-pass cancelled bytes={bytes} ms={ms}"
-                        ),
+                    AnswerOutcome::ClientClosed { bytes } => format!(
+                        "{method} {path} host={host} \u{2192} anthropic-pass cancelled bytes={bytes} ms={ms}"
                     ),
-                    AnswerOutcome::Failed { code } => (
-                        PassWord::Error(code),
-                        0,
-                        0,
-                        format!(
-                            "{method} {path} host={host} \u{2192} anthropic-pass error {} ms={ms}",
-                            code.as_str()
-                        ),
+                    AnswerOutcome::Failed { code } => format!(
+                        "{method} {path} host={host} \u{2192} anthropic-pass error {} ms={ms}",
+                        code.as_str()
                     ),
-                };
-                let event = PassEvent {
-                    method: method.clone(),
-                    path: path.clone(),
-                    host: host.clone(),
-                    status,
-                    bytes,
-                    ms,
-                    word,
                 };
                 (note)(&line);
-                if let Some(on_pass) = &on_pass {
-                    (on_pass)(&event);
-                }
             };
             let done = OutcomeWatch::new(Some(Arc::new(report)));
             stream_answer(answer, ctx.client.idle(), done, StreamShape::default())
@@ -826,19 +753,7 @@ fn pass_error(
         "{method} {path} host={host} \u{2192} anthropic-pass error {} ms={ms}",
         code.as_str()
     );
-    let event = PassEvent {
-        method: method.to_owned(),
-        path: path.to_owned(),
-        host: host.to_owned(),
-        status: 0,
-        bytes: 0,
-        ms,
-        word: PassWord::Error(code),
-    };
     (ctx.note)(&line);
-    if let Some(on_pass) = &ctx.on_pass {
-        (on_pass)(&event);
-    }
     unreachable_answer()
 }
 

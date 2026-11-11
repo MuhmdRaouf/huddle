@@ -124,7 +124,6 @@ impl Lane {
         model: &str,
     ) -> Response<RespBody> {
         let events = RequestEvents::from_parts(&parts);
-        events.set_served_model(model);
         let method = parts.method.as_str();
         let path = parts.uri.path();
         // A message-threads beta has no provider answer; it is refused before anything goes out.
@@ -138,7 +137,6 @@ impl Lane {
         if !tokens.is_empty() {
             self.note(method, path, model, "-> refused: message threads");
             let answer = threads_beta_answer(self.provider.id, &tokens);
-            events.set_route("refused");
             events.emit(answer.status, Some("message threads beta".to_owned()));
             return respond(answer);
         }
@@ -147,21 +145,18 @@ impl Lane {
             KeyAnswer::NoKey => {
                 self.note(method, path, model, "-> provider: no key");
                 let answer = no_key_answer(&self.names());
-                events.set_route("refused");
                 events.emit(answer.status, Some("no key".to_owned()));
                 return respond(answer);
             }
             KeyAnswer::TimedOut => {
                 self.note(method, path, model, "-> provider: key lookup timed out");
                 let answer = key_timeout_answer(self.provider.id, self.provider.display);
-                events.set_route("refused");
                 events.emit(answer.status, Some("key lookup timed out".to_owned()));
                 return respond(answer);
             }
             KeyAnswer::Unusable(why) => {
                 self.note(method, path, model, "-> provider: no key");
                 let answer = unusable_key_answer(&self.names(), &why);
-                events.set_route("refused");
                 events.emit(answer.status, Some("no key".to_owned()));
                 return respond(answer);
             }
@@ -202,7 +197,6 @@ impl Lane {
                 &self.names(),
                 "the key holds characters a header cannot carry",
             );
-            events.set_route("refused");
             events.emit(answer.status, Some("no key".to_owned()));
             return respond(answer);
         };

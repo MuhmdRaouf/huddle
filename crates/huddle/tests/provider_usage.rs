@@ -1,9 +1,9 @@
-use huddle_router::events::{iso_utc_ms, now_ms, utc_date};
+use huddle_history::{History, Row};
+use huddle_router::clock::now_ms;
 use huddle_testkit::temp_home::TempHome;
-use std::{
-    fs,
-    process::{Command, Stdio},
-};
+use std::process::{Command, Stdio};
+
+const DAY_MS: u64 = 86_400_000;
 
 fn usage(home: &TempHome, provider: &str) -> String {
     let output = Command::new(env!("CARGO_BIN_EXE_huddle"))
@@ -17,8 +17,36 @@ fn usage(home: &TempHome, provider: &str) -> String {
     String::from_utf8(output.stdout).expect("utf8")
 }
 
+fn now() -> u64 {
+    u64::try_from(now_ms()).expect("clock")
+}
+
+/// A finished request on `lane`; `tokens_in` is the prompt total, cache tokens included.
+fn row(lane: &str, model: &str, at_ms: u64, tokens_in: Option<u64>, cache_read: u64) -> Row {
+    Row {
+        at_ms,
+        model: model.into(),
+        lane: lane.into(),
+        status: 200,
+        dur_ms: 1,
+        tokens_in,
+        cache_read: tokens_in.map(|_| cache_read),
+        cache_write: tokens_in.map(|_| 0),
+        tokens_out: tokens_in.map(|_| 100),
+        ..Row::default()
+    }
+}
+
+fn store(home: &TempHome, rows: &[Row]) {
+    let db = home.root().join(".local/state/huddle/huddle.db");
+    History::open(&db)
+        .expect("open")
+        .insert(rows)
+        .expect("insert");
+}
+
 #[test]
-fn an_empty_home_reports_no_requests() {
+fn t5_an_empty_home_reports_no_requests() {
     let home = TempHome::new();
     let text = usage(&home, "zai");
     assert!(text.starts_with("Z.ai GLM usage\n"), "{text}");
@@ -30,25 +58,21 @@ fn an_empty_home_reports_no_requests() {
         text.contains("Today: no agent or /model requests."),
         "{text}"
     );
+    assert!(!home.root().join(".local/state/huddle/huddle.db").exists());
 }
 
 #[test]
-fn only_this_providers_provider_route_counts() {
+fn t5_only_this_providers_lane_counts() {
     let home = TempHome::new();
-    let dir = home.root().join(".local/state/huddle/events");
-    fs::create_dir_all(&dir).expect("mkdir");
-    let now = now_ms();
-    let ts = iso_utc_ms(now);
-    let today = format!(
-        concat!(
-            "{{\"ts\":\"{ts}\",\"plugin\":\"zai\",\"model\":\"glm-5.3\",\"route\":\"provider\",\"status\":200,\"latency_ms\":1,\"usage\":{{\"input_tokens\":1000,\"output_tokens\":100,\"cache_read_input_tokens\":9000}}}}\n",
-            "{{\"ts\":\"{ts}\",\"plugin\":\"zai\",\"model\":\"claude-x\",\"route\":\"anthropic\",\"status\":200,\"latency_ms\":1,\"usage\":{{\"input_tokens\":99}}}}\n",
-            "{{\"ts\":\"{ts}\",\"plugin\":\"kimi\",\"model\":\"kimi-k3\",\"route\":\"provider\",\"status\":200,\"latency_ms\":1,\"usage\":{{\"input_tokens\":99}}}}\n",
-            "not json\n",
-        ),
-        ts = ts
+    let at = now();
+    store(
+        &home,
+        &[
+            row("zai", "glm-5.3", at, Some(10_000), 9_000),
+            row("anthropic", "claude-x", at, Some(99), 0),
+            row("kimi", "kimi-k3", at, Some(99), 0),
+        ],
     );
-    fs::write(dir.join(format!("{}.jsonl", utc_date(now))), today).expect("write");
     let text = usage(&home, "zai");
     assert!(
         text.contains("Est. cost: today $0.0042 \u{b7} 7 days $0.0042 \u{b7} 30 days $0.0042"),
@@ -59,17 +83,18 @@ fn only_this_providers_provider_route_counts() {
 }
 
 #[test]
-fn an_event_outside_the_window_is_not_in_today() {
+fn t5_a_request_outside_the_window_is_not_in_today() {
     let home = TempHome::new();
-    let dir = home.root().join(".local/state/huddle/events");
-    fs::create_dir_all(&dir).expect("mkdir");
-    let now = now_ms();
-    let ten_days_ago = now - 10 * 86_400_000;
-    let line = format!(
-        "{{\"ts\":\"{}\",\"plugin\":\"zai\",\"model\":\"glm-5.3\",\"route\":\"provider\",\"status\":200,\"latency_ms\":1,\"usage\":{{\"input_tokens\":1000000}}}}\n",
-        iso_utc_ms(ten_days_ago)
+    store(
+        &home,
+        &[row(
+            "zai",
+            "glm-5.3",
+            now() - 10 * DAY_MS,
+            Some(1_000_000),
+            0,
+        )],
     );
-    fs::write(dir.join(format!("{}.jsonl", utc_date(ten_days_ago))), line).expect("write");
     let text = usage(&home, "zai");
     assert!(
         text.contains("Today: no agent or /model requests."),
@@ -79,57 +104,12 @@ fn an_event_outside_the_window_is_not_in_today() {
 }
 
 #[test]
-fn a_torn_last_line_is_not_counted() {
+fn t5_a_request_with_unknown_tokens_counts_as_a_request_and_costs_nothing() {
     let home = TempHome::new();
-    let dir = home.root().join(".local/state/huddle/events");
-    fs::create_dir_all(&dir).expect("mkdir");
-    let now = now_ms();
-    let ts = iso_utc_ms(now);
-    let whole = format!(
-        "{{\"ts\":\"{ts}\",\"plugin\":\"zai\",\"model\":\"glm-5.3\",\"route\":\"provider\",\"status\":200,\"latency_ms\":1,\"usage\":{{\"input_tokens\":1000}}}}\n",
-        ts = ts
-    );
-    let torn = format!(
-        "{{\"ts\":\"{ts}\",\"plugin\":\"zai\",\"model\":\"glm-5.3\",\"route\":\"provider\",\"status\":200,\"latency_ms\":1,\"usage\":{{\"input_tokens\":1000,",
-        ts = ts
-    );
-    let path = dir.join(format!("{}.jsonl", utc_date(now)));
-    fs::write(&path, format!("{whole}{torn}")).expect("write");
+    store(&home, &[row("zai", "glm-5.3", now(), None, 0)]);
     let text = usage(&home, "zai");
     assert!(
-        text.contains("glm-5.3  1    1.0k  0    0        0        $0.0014\nTOTAL    1    1.0k  0    0        0        $0.0014\n"),
+        text.contains("glm-5.3  1    0   0    0        0        $0.0000\nTOTAL    1    0   0    0        0        $0.0000\n"),
         "{text}"
     );
-    fs::write(&path, format!("{whole}{whole}")).expect("complete");
-    let text = usage(&home, "zai");
-    assert!(
-        text.contains("glm-5.3  2    2.0k  0    0        0        $0.0028\nTOTAL    2    2.0k  0    0        0        $0.0028\n"),
-        "{text}"
-    );
-}
-
-#[test]
-fn a_line_that_does_not_parse_is_skipped() {
-    let home = TempHome::new();
-    let dir = home.root().join(".local/state/huddle/events");
-    fs::create_dir_all(&dir).expect("mkdir");
-    let now = now_ms();
-    let ts = iso_utc_ms(now);
-    let good = format!(
-        "{{\"ts\":\"{ts}\",\"plugin\":\"zai\",\"model\":\"glm-5.3\",\"route\":\"provider\",\"status\":200,\"latency_ms\":1,\"usage\":{{\"input_tokens\":1000}}}}\n",
-        ts = ts
-    );
-    // Marked as this provider's provider route, but cut mid-JSON: the skip must come from the
-    // parse gate, not from the plugin or route filters.
-    let torn = format!(
-        "{{\"ts\":\"{ts}\",\"plugin\":\"zai\",\"route\":\"provider\",\"model\":\"glm-5.3\",\"stat",
-        ts = ts
-    );
-    fs::write(
-        dir.join(format!("{}.jsonl", utc_date(now))),
-        format!("{good}{torn}\n"),
-    )
-    .expect("write");
-    let text = usage(&home, "zai");
-    assert!(text.contains("glm-5.3  1    1.0k"), "{text}");
 }
