@@ -20,8 +20,9 @@ fn job(state: JobState) -> Job {
         repo_root: "/repo".into(),
         base_sha: "0123456789012345678901234567890123456789".into(),
         base_branch: Some("main".into()),
-        worktree: "/state/worktree".into(),
-        branch: Some("huddle/261109-k3m9qx".into()),
+        dir: "/repo".into(),
+        start_tree: None,
+        dirty_at_start: false,
         attempts: vec![],
         failure: None,
         decision: None,
@@ -149,7 +150,7 @@ fn job_detail_shows_attempts_log_and_the_next_command() {
     let want = [
         "huddle job 261109-k3m9qx: Rename foo to bar",
         "running · opencode · write · created 3m ago · updated 1m ago",
-        "worktree /state/worktree (branch huddle/261109-k3m9qx, base 0123456)",
+        "folder /repo (branch main, base 0123456)",
         "Attempts:",
         "  #1 (initial): running",
         "Log (last 4 lines):",
@@ -199,7 +200,7 @@ fn the_result_packet_shows_the_report_changes_diff_and_next_step() {
     let want = [
         "huddle job 261109-k3m9qx: Rename foo to bar",
         "awaiting review · opencode · write · attempt 1 (initial)",
-        "worktree /state/worktree (branch huddle/261109-k3m9qx, base 0123456)",
+        "folder /repo (branch main, base 0123456)",
         "",
         "Report",
         "  Renamed foo",
@@ -261,7 +262,7 @@ fn a_failed_job_shows_why_and_a_free_text_report() {
         "{text}"
     );
     assert!(text.contains("\n\nChanges: none\n"), "{text}");
-    assert!(text.contains("the harness never finished (worker died): nothing to accept. /huddle:result 261109-k3m9qx --return \"<feedback>\" runs it again on the same worktree, or /huddle:cancel 261109-k3m9qx drops it."), "{text}");
+    assert!(text.contains("the harness never finished (worker died): nothing to accept. /huddle:result 261109-k3m9qx --return \"<feedback>\" runs it again in the same folder, or /huddle:cancel 261109-k3m9qx drops it."), "{text}");
 }
 
 #[test]
@@ -326,4 +327,15 @@ fn a_diff_longer_than_the_cap_is_cut_with_a_note() {
 fn no_renderer_writes_an_escape_sequence() {
     let text = status_table(&[job(JobState::Running)], NOW);
     assert!(!text.contains('\u{1b}'));
+}
+
+#[test]
+fn t3_the_folder_line_says_when_the_folder_was_dirty_at_start() {
+    let mut job = job(JobState::AwaitingReview);
+    job.dirty_at_start = true;
+    let text = job_detail(&job, &[], NOW);
+    assert!(
+        text.contains("it had uncommitted changes at start, so the diff includes them"),
+        "{text}"
+    );
 }

@@ -102,7 +102,7 @@ fn background_returns_at_once_and_the_job_still_lands() {
 }
 
 #[test]
-fn a_readonly_run_completes_and_drops_its_worktree() {
+fn a_readonly_run_completes() {
     let r = rig();
     let bin = fake(&r, REPORT, 0);
     let out = huddle(&r, &bin, &["run", "opencode", "--readonly", "Audit", "it"]);
@@ -116,7 +116,6 @@ fn a_readonly_run_completes_and_drops_its_worktree() {
     let job = store.get(&job_id(&text)).unwrap();
     assert_eq!(job.state, JobState::Completed);
     assert_eq!(job.access, Access::Readonly);
-    assert!(!std::path::Path::new(&job.worktree).exists());
     wait_drivers_done(r.home.root());
 }
 
@@ -213,5 +212,32 @@ fn a_closed_stdout_does_not_kill_the_run() {
         .unwrap();
     drop(child.stdout.take());
     assert!(child.wait().unwrap().success());
+    wait_drivers_done(r.home.root());
+}
+
+#[test]
+fn t3_a_readonly_run_that_changes_a_file_fails_with_exit_3() {
+    let r = rig();
+    let env = support::fake_harness_env_writing(&r, REPORT, "touched.txt");
+    let bin = env.get("HUDDLE_OPENCODE_BIN").expect("bin").to_string();
+    let out = huddle(&r, &bin, &["run", "opencode", "--readonly", "Audit", "it"]);
+    assert_eq!(
+        out.status.code(),
+        Some(3),
+        "{}",
+        String::from_utf8_lossy(&out.stdout)
+    );
+    let text = String::from_utf8_lossy(&out.stdout);
+    let store = JobStore::for_repo(&r.paths, &r.repo);
+    let job = store.get(&job_id(&text)).unwrap();
+    assert_eq!(job.state, JobState::Failed);
+    assert_eq!(
+        job.failure.as_deref(),
+        Some("a readonly job changed files in the folder")
+    );
+    assert!(
+        r.repo.join("touched.txt").exists(),
+        "the folder is left as it is"
+    );
     wait_drivers_done(r.home.root());
 }

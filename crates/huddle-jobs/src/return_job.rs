@@ -16,7 +16,7 @@ use std::path::Path;
 pub enum ReturnError {
     EmptyFeedback,
     WrongState { id: String, state: JobState },
-    NoWorktree { id: String },
+    NotWrite { id: String },
     Io(String),
     Store(StoreError),
 }
@@ -30,9 +30,9 @@ impl fmt::Display for ReturnError {
                 "{}",
                 wrong_state_text(id, *state, &[JobState::AwaitingReview, JobState::Failed])
             ),
-            ReturnError::NoWorktree { id } => write!(
+            ReturnError::NotWrite { id } => write!(
                 f,
-                "job {id} kept no worktree (it was not a write job): start a new /huddle:run instead"
+                "job {id} was not a write job: start a new /huddle:run instead"
             ),
             ReturnError::Io(message) => write!(f, "{message}"),
             ReturnError::Store(error) => write!(f, "{error}"),
@@ -49,7 +49,7 @@ impl From<StoreError> for ReturnError {
 }
 
 /// Requeues a job awaiting review, or a failed job, with a review_fix attempt that resumes the
-/// previous session on the same worktree. A stale stop request is cleared first, so the run the
+/// previous session in the same folder. A stale stop request is cleared first, so the run the
 /// reviewer asked for is never stopped on arrival. The caller starts the driver.
 pub fn return_job(store: &JobStore, id: &str, feedback: &str) -> Result<Job, ReturnError> {
     let trimmed = feedback.trim();
@@ -64,7 +64,7 @@ pub fn return_job(store: &JobStore, id: &str, feedback: &str) -> Result<Job, Ret
         });
     }
     if job.access != Access::Write {
-        return Err(ReturnError::NoWorktree { id: job.id.clone() });
+        return Err(ReturnError::NotWrite { id: job.id.clone() });
     }
     // The stop file goes before the record changes: a return that queues the job while a stop
     // request survives would end the new run on arrival.

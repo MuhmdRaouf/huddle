@@ -381,6 +381,7 @@ dependencies = [
  "ring",
  "serde",
  "serde_json",
+ "toml",
 ]
 
 [[package]]

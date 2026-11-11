@@ -1,11 +1,10 @@
 //! The scope and forbid checks over a job's changed paths.
 
+use crate::files;
 use crate::git::ChangeSet;
 use crate::glob::matches_any;
 use crate::model::Access;
-use huddle_config::atomic::write_atomic;
 use serde::{Deserialize, Serialize};
-use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
@@ -52,6 +51,7 @@ impl Verdict {
 #[serde(rename_all = "camelCase")]
 pub struct GateResult {
     pub run: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub exit_code: Option<i32>,
     pub timed_out: bool,
     pub duration_ms: u64,
@@ -139,40 +139,27 @@ pub fn derive_verdict(scope: &ScopeResult, gates: &[GateResult]) -> Verdict {
 }
 
 pub fn checks_path(job_dir: &Path) -> PathBuf {
-    job_dir.join("checks.json")
+    job_dir.join("checks.toml")
 }
 
 pub fn verification_path(job_dir: &Path, attempt: u32) -> PathBuf {
-    job_dir.join(format!("verification-{attempt}.json"))
+    job_dir.join(format!("verification-{attempt}.toml"))
 }
 
 /// Missing file: `Checks::default()`. Unreadable or corrupt: Err.
 pub fn read_checks(job_dir: &Path) -> io::Result<Checks> {
-    match fs::read_to_string(checks_path(job_dir)) {
-        Ok(text) => serde_json::from_str(&text).map_err(io::Error::other),
-        Err(err) if err.kind() == io::ErrorKind::NotFound => Ok(Checks::default()),
-        Err(err) => Err(err),
-    }
+    Ok(files::read(&checks_path(job_dir))?.unwrap_or_default())
 }
 
-/// 2-space JSON, mode 0600, through write_atomic.
 pub fn write_checks(job_dir: &Path, checks: &Checks) -> io::Result<()> {
-    let text = serde_json::to_string_pretty(checks).map_err(io::Error::other)?;
-    write_atomic(&checks_path(job_dir), text.as_bytes(), 0o600)
+    files::write(&checks_path(job_dir), checks)
 }
 
 pub fn write_verification(job_dir: &Path, attempt: u32, v: &Verification) -> io::Result<()> {
-    let text = serde_json::to_string_pretty(v).map_err(io::Error::other)?;
-    write_atomic(&verification_path(job_dir, attempt), text.as_bytes(), 0o600)
+    files::write(&verification_path(job_dir, attempt), v)
 }
 
 /// Missing file: Ok(None). Corrupt: Err.
 pub fn read_verification(job_dir: &Path, attempt: u32) -> io::Result<Option<Verification>> {
-    match fs::read_to_string(verification_path(job_dir, attempt)) {
-        Ok(text) => serde_json::from_str(&text)
-            .map(Some)
-            .map_err(io::Error::other),
-        Err(err) if err.kind() == io::ErrorKind::NotFound => Ok(None),
-        Err(err) => Err(err),
-    }
+    files::read(&verification_path(job_dir, attempt))
 }

@@ -1,8 +1,8 @@
 //! huddle-jobs: store.
 
+use crate::files;
 use crate::id::repo_slug;
 use crate::model::Job;
-use huddle_config::atomic::write_atomic;
 use huddle_config::paths::Paths;
 use huddle_procs::lock::{LockError, wait_lock};
 use std::fmt;
@@ -13,9 +13,9 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 /// The job record file.
-const RECORD: &str = "job.json";
+const RECORD: &str = "job.toml";
 /// The write lock beside the record.
-const RECORD_LOCK: &str = "job.json.lock";
+const RECORD_LOCK: &str = "job.toml.lock";
 /// Record writes hold the lock only for read-compare-rename; waiting longer means something is
 /// wrong.
 const LOCK_TIMEOUT: Duration = Duration::from_secs(10);
@@ -95,11 +95,6 @@ impl JobStore {
     /// <root>/<id>
     pub fn job_dir(&self, id: &str) -> PathBuf {
         self.root.join(id)
-    }
-
-    /// <root>/<id>/worktree
-    pub fn worktree_path(&self, id: &str) -> PathBuf {
-        self.job_dir(id).join("worktree")
     }
 
     /// job.version must be 0; stores version 1. A repeat of an id is Io.
@@ -202,8 +197,7 @@ impl JobStore {
         Ok(jobs)
     }
 
-    /// Removes the job dirs of the oldest terminal jobs beyond `keep`, skipping any whose
-    /// worktree still exists. Returns removed ids.
+    /// Removes the job dirs of the oldest terminal jobs beyond `keep`. Returns removed ids.
     pub fn prune(&self, keep: usize) -> Result<Vec<String>, StoreError> {
         let mut terminal: Vec<Job> = self
             .list()?
@@ -217,9 +211,6 @@ impl JobStore {
         });
         let mut removed = Vec::new();
         for job in terminal.iter().take(terminal.len().saturating_sub(keep)) {
-            if !job.worktree.is_empty() && Path::new(&job.worktree).exists() {
-                continue;
-            }
             let dir = self.job_dir(&job.id);
             fs::remove_dir_all(&dir).map_err(|err| StoreError::Io {
                 message: format!("{}: {}", dir.display(), err),
@@ -233,32 +224,19 @@ impl JobStore {
     /// its message.
     fn read_record(&self, id: &str) -> Result<Job, StoreError> {
         let path = self.job_dir(id).join(RECORD);
-        let text = match fs::read_to_string(&path) {
-            Ok(text) => text,
-            Err(err) if err.kind() == ErrorKind::NotFound => {
-                return Err(StoreError::NotFound { id: id.to_string() });
-            }
-            Err(err) => {
-                return Err(StoreError::Io {
-                    message: format!("{}: {}", path.display(), err),
-                });
-            }
-        };
-        serde_json::from_str(&text).map_err(|err| StoreError::Io {
-            message: format!("{}: {}", path.display(), err),
-        })
+        match files::read(&path) {
+            Ok(Some(job)) => Ok(job),
+            Ok(None) => Err(StoreError::NotFound { id: id.to_string() }),
+            Err(err) => Err(StoreError::Io {
+                message: format!("{}: {}", path.display(), err),
+            }),
+        }
     }
 
-    /// job.json: two-space JSON plus a newline, 0600, atomic.
+    /// job.toml: 0600, atomic.
     fn write_record(&self, job: &Job) -> Result<(), StoreError> {
-        let mut text = serde_json::to_string_pretty(job).map_err(|err| StoreError::Io {
+        files::write(&self.job_dir(&job.id).join(RECORD), job).map_err(|err| StoreError::Io {
             message: err.to_string(),
-        })?;
-        text.push('\n');
-        write_atomic(&self.job_dir(&job.id).join(RECORD), text.as_bytes(), 0o600).map_err(|err| {
-            StoreError::Io {
-                message: err.to_string(),
-            }
         })
     }
 

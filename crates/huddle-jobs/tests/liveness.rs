@@ -4,9 +4,8 @@ use huddle_jobs::id::iso_ms;
 use huddle_jobs::liveness::*;
 use huddle_jobs::model::*;
 use huddle_jobs::store::JobStore;
-use std::path::Path;
 use std::process::Command;
-use support::{Rig, git, ready_worktree, rig, sample_job};
+use support::{Rig, git, rig, sample_job, write};
 
 const NOW: u64 = 1_800_000_000_000;
 
@@ -35,7 +34,7 @@ fn dead_record() -> ProcessRecord {
 #[test]
 fn a_record_round_trips_with_a_private_mode() {
     let r = rig();
-    let path = r.home.root().join("driver.json");
+    let path = r.home.root().join("driver.toml");
     write_record(
         &path,
         &ProcessRecord {
@@ -212,52 +211,19 @@ fn a_version_conflict_is_not_an_error_and_writes_nothing() {
 }
 
 #[test]
-fn sweep_removes_a_terminal_jobs_leftover_worktree_and_leaves_running_jobs_alone() {
+fn t3_sweep_leaves_every_jobs_folder_alone() {
     let r = rig();
     let store = store_for(&r);
-    let mut done = sample_job(&r, "w1", Access::Write, JobState::Accepted);
-    done.worktree = store.worktree_path("w1").to_string_lossy().into_owned();
-    store.create(&done).unwrap();
-    ready_worktree(&r, &done);
-    let mut running = sample_job(&r, "w2", Access::Write, JobState::Running);
-    running.worktree = store.worktree_path("w2").to_string_lossy().into_owned();
-    store.create(&running).unwrap();
-    ready_worktree(&r, &running);
-    write_record(&driver_record_path(&store.job_dir("w2")), &own_record()).unwrap();
-    let report = sweep(&store, NOW).unwrap();
-    assert_eq!(report.worktrees_removed, vec!["w1".to_string()]);
-    assert!(!Path::new(&done.worktree).exists());
-    assert!(Path::new(&running.worktree).exists());
-    assert!(git(&r.repo, &["branch", "--list", "huddle/w1"]).is_empty());
-}
-
-#[test]
-fn a_dead_non_write_jobs_worktree_goes_on_the_sweep() {
-    let r = rig();
-    let store = store_for(&r);
-    let mut job = sample_job(&r, "w3", Access::Readonly, JobState::Running);
-    job.worktree = store.worktree_path("w3").to_string_lossy().into_owned();
-    store.create(&job).unwrap();
-    ready_worktree(&r, &job);
+    store
+        .create(&sample_job(&r, "w1", Access::Write, JobState::Accepted))
+        .unwrap();
+    store
+        .create(&sample_job(&r, "w3", Access::Readonly, JobState::Running))
+        .unwrap();
     write_record(&driver_record_path(&store.job_dir("w3")), &dead_record()).unwrap();
+    write(&r.repo, "a.txt", "edited\n");
     sweep(&store, NOW).unwrap();
     assert_eq!(store.get("w3").unwrap().state, JobState::Failed);
-    assert!(!Path::new(&job.worktree).exists());
-}
-
-#[test]
-fn sweep_never_deletes_a_path_outside_the_store() {
-    let r = rig();
-    let store = store_for(&r);
-    let outside = r.home.root().join("user-worktree");
-    let mut job = sample_job(&r, "w4", Access::Write, JobState::Accepted);
-    job.worktree = outside.to_string_lossy().into_owned();
-    store.create(&job).unwrap();
-    ready_worktree(&r, &job);
-    let report = sweep(&store, NOW).unwrap();
-    assert!(report.worktrees_removed.is_empty());
-    assert!(
-        outside.exists(),
-        "a job record never names a path sweep may delete"
-    );
+    assert_eq!(support::read(&r.repo, "a.txt"), "edited\n");
+    assert_eq!(git(&r.repo, &["worktree", "list"]).lines().count(), 1);
 }

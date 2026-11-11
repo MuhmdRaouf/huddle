@@ -1,10 +1,9 @@
 //! huddle-jobs: liveness.
 
+use crate::files;
 use crate::id::{iso_ms, parse_iso_ms};
-use crate::model::{Access, AttemptOutcome, Job, JobState};
+use crate::model::{AttemptOutcome, Job, JobState};
 use crate::store::{JobStore, KEEP_TERMINAL_JOBS, StoreError};
-use crate::worktree;
-use huddle_config::atomic::write_atomic;
 use huddle_procs::group::terminate_group;
 use huddle_procs::live::process_alive;
 use std::path::{Path, PathBuf};
@@ -19,27 +18,24 @@ pub struct ProcessRecord {
     pub start_token: String,
 }
 
-/// `<job dir>/driver.json`: the driver's own process.
+/// `<job dir>/driver.toml`: the driver's own process.
 pub fn driver_record_path(job_dir: &Path) -> PathBuf {
-    job_dir.join("driver.json")
+    job_dir.join("driver.toml")
 }
 
-/// `<job dir>/harness.json`: the harness process group leader, while it runs.
+/// `<job dir>/harness.toml`: the harness process group leader, while it runs.
 pub fn harness_record_path(job_dir: &Path) -> PathBuf {
-    job_dir.join("harness.json")
+    job_dir.join("harness.toml")
 }
 
-/// Writes `{"pid":..,"startToken":".."}` with mode 0600, via huddle_config::atomic::write_atomic.
+/// Writes the record with mode 0600, atomically.
 pub fn write_record(path: &Path, record: &ProcessRecord) -> std::io::Result<()> {
-    let text =
-        serde_json::to_string(record).map_err(|err| std::io::Error::other(err.to_string()))?;
-    write_atomic(path, text.as_bytes(), 0o600)
+    files::write(path, record)
 }
 
 /// None when the file is missing or unreadable.
 pub fn read_record(path: &Path) -> Option<ProcessRecord> {
-    let text = std::fs::read_to_string(path).ok()?;
-    serde_json::from_str(&text).ok()
+    files::read(path).ok().flatten()
 }
 
 /// A queued job with no driver keeps this long after its last update before the sweep calls it
@@ -94,7 +90,7 @@ pub fn mark_worker_died(store: &JobStore, job: &Job, now_ms: u64) -> Result<bool
 }
 
 /// Ends a dead driver's harness: terminates its process group only when the record is
-/// `process_alive` with its token. Removes harness.json either way.
+/// `process_alive` with its token. Removes harness.toml either way.
 pub fn reap_harness(job_dir: &Path, grace: Duration) {
     let path = harness_record_path(job_dir);
     if let Some(record) = read_record(&path)
@@ -108,64 +104,40 @@ pub fn reap_harness(job_dir: &Path, grace: Duration) {
 /// What one sweep pass did, ids in the order the store listed them.
 pub struct SweepReport {
     pub died: Vec<String>,
-    pub worktrees_removed: Vec<String>,
     pub pruned: Vec<String>,
 }
 
-/// For every job: an active job with a dead driver is marked dead (reap_harness, and its worktree removed when access is not Write);
-/// a terminal job's leftover worktree is removed (best effort, a failure leaves it for the next sweep);
-/// a failed non-write job's leftover worktree is removed. Then store.prune(KEEP_TERMINAL_JOBS).
+/// For every active job with a dead driver: the harness is reaped and the job marked dead. Then
+/// store.prune(KEEP_TERMINAL_JOBS). The job's folder is the caller's and stays as it is.
 pub fn sweep(store: &JobStore, now_ms: u64) -> Result<SweepReport, StoreError> {
     let mut report = SweepReport {
         died: Vec::new(),
-        worktrees_removed: Vec::new(),
         pruned: Vec::new(),
     };
-    for job in store.list()? {
+    for job in store
+        .list()?
+        .into_iter()
+        .filter(|job| job.state.is_active())
+    {
         let dir = store.job_dir(&job.id);
-        if job.state.is_active() {
-            let record = read_record(&driver_record_path(&dir));
-            let record_alive = record
-                .as_ref()
-                .is_some_and(|r| process_alive(r.pid, &r.start_token));
-            let updated_at_ms = parse_iso_ms(&job.updated_at).unwrap_or(0);
-            if !job_alive(
-                job.state,
-                record_alive,
-                record.is_some(),
-                updated_at_ms,
-                now_ms,
-            ) {
-                if mark_worker_died(store, &job, now_ms)? {
-                    report.died.push(job.id.clone());
-                }
-                reap_harness(&dir, STOP_GRACE);
-                if job.access != Access::Write {
-                    remove_leftover_worktree(store, &job, &mut report.worktrees_removed);
-                }
+        let record = read_record(&driver_record_path(&dir));
+        let record_alive = record
+            .as_ref()
+            .is_some_and(|r| process_alive(r.pid, &r.start_token));
+        let updated_at_ms = parse_iso_ms(&job.updated_at).unwrap_or(0);
+        if !job_alive(
+            job.state,
+            record_alive,
+            record.is_some(),
+            updated_at_ms,
+            now_ms,
+        ) {
+            if mark_worker_died(store, &job, now_ms)? {
+                report.died.push(job.id.clone());
             }
-        } else if job.state.is_terminal()
-            || (job.state == JobState::Failed && job.access != Access::Write)
-        {
-            remove_leftover_worktree(store, &job, &mut report.worktrees_removed);
+            reap_harness(&dir, STOP_GRACE);
         }
     }
     report.pruned = store.prune(KEEP_TERMINAL_JOBS)?;
     Ok(report)
-}
-
-/// Removes the job's worktree when its record names the store's own path for the job; a
-/// failure leaves it for the next sweep.
-fn remove_leftover_worktree(store: &JobStore, job: &Job, removed: &mut Vec<String>) {
-    if job.worktree.is_empty() || Path::new(&job.worktree) != store.worktree_path(&job.id) {
-        return;
-    }
-    let done = worktree::remove(
-        Path::new(&job.repo_root),
-        Path::new(&job.worktree),
-        job.branch.as_deref(),
-    );
-    if done.is_ok() {
-        removed.push(job.id.clone());
-    }
 }

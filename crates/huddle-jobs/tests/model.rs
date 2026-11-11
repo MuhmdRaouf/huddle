@@ -130,8 +130,9 @@ fn sample_job() -> Job {
         repo_root: "/repo".into(),
         base_sha: "0123456789012345678901234567890123456789".into(),
         base_branch: Some("main".into()),
-        worktree: "/state/worktree".into(),
-        branch: Some("huddle/261109-k3m9qx".into()),
+        dir: "/repo".into(),
+        start_tree: None,
+        dirty_at_start: false,
         attempts: vec![],
         failure: None,
         decision: None,
@@ -142,29 +143,38 @@ fn sample_job() -> Job {
 }
 
 #[test]
-fn job_json_is_two_space_pretty_in_key_order_and_omits_empty_optionals() {
+fn t3_job_toml_keeps_key_order_and_omits_unset_optionals() {
     let job = sample_job();
-    let text = serde_json::to_string_pretty(&job).unwrap();
-    assert!(text.starts_with("{\n  \"id\": \"261109-k3m9qx\",\n  \"harness\": \"opencode\","));
-    assert!(!text.contains("\"effort\""));
-    assert!(!text.contains("\"failure\""));
-    assert!(!text.contains("\"decision\""));
+    let text = toml::to_string(&job).unwrap();
+    assert!(
+        text.starts_with("id = \"261109-k3m9qx\"\nharness = \"opencode\""),
+        "{text}"
+    );
+    for unset in [
+        "effort",
+        "failure",
+        "decision",
+        "startTree",
+        "dirtyAtStart",
+        "branch",
+    ] {
+        assert!(!text.contains(unset), "{unset} is written: {text}");
+    }
     let order = [
-        "\"id\"",
-        "\"harness\"",
-        "\"title\"",
-        "\"task\"",
-        "\"access\"",
-        "\"state\"",
-        "\"repoRoot\"",
-        "\"baseSha\"",
-        "\"baseBranch\"",
-        "\"worktree\"",
-        "\"branch\"",
-        "\"attempts\"",
-        "\"createdAt\"",
-        "\"updatedAt\"",
-        "\"version\"",
+        "id =",
+        "harness =",
+        "title =",
+        "task =",
+        "access =",
+        "state =",
+        "repoRoot =",
+        "baseSha =",
+        "baseBranch =",
+        "dir =",
+        "attempts =",
+        "createdAt =",
+        "updatedAt =",
+        "version =",
     ];
     let mut last = 0;
     for key in order {
@@ -172,7 +182,7 @@ fn job_json_is_two_space_pretty_in_key_order_and_omits_empty_optionals() {
         assert!(at >= last, "{key} out of order");
         last = at;
     }
-    let back: Job = serde_json::from_str(&text).unwrap();
+    let back: Job = toml::from_str(&text).unwrap();
     assert_eq!(back, job);
 }
 
@@ -201,19 +211,41 @@ fn an_attempt_keeps_its_outcome_and_report() {
         }),
         report_text: None,
     };
-    let text = serde_json::to_string(&attempt).unwrap();
-    assert!(
-        text.contains(r#""kind":"crashed","exitCode":1,"signal":null,"stderrTail":"boom""#),
-        "{text}"
-    );
-    let back: Attempt = serde_json::from_str(&text).unwrap();
+    let text = toml::to_string(&attempt).unwrap();
+    assert!(text.contains("kind = \"crashed\""), "{text}");
+    assert!(text.contains("exitCode = 1"), "{text}");
+    assert!(!text.contains("signal"), "{text}");
+    let back: Attempt = toml::from_str(&text).unwrap();
     assert_eq!(back, attempt);
 }
 
 #[test]
+fn t3_an_outcome_with_no_exit_code_or_signal_survives_a_toml_round_trip() {
+    let mut job = sample_job();
+    job.attempts.push(Attempt {
+        n: 1,
+        kind: AttemptKind::Initial,
+        prompt: "p".into(),
+        feedback: None,
+        session_id: None,
+        started_at: "t0".into(),
+        ended_at: Some("t1".into()),
+        outcome: Some(AttemptOutcome::Crashed {
+            exit_code: None,
+            signal: None,
+            stderr_tail: "boom".into(),
+        }),
+        report: None,
+        report_text: None,
+    });
+    let back: Job = toml::from_str(&toml::to_string(&job).unwrap()).unwrap();
+    assert_eq!(back, job);
+}
+
+#[test]
 fn an_unknown_outcome_kind_does_not_parse() {
-    assert!(serde_json::from_str::<AttemptOutcome>(r#"{"kind":"mystery"}"#).is_err());
-    assert!(serde_json::from_str::<AttemptOutcome>(r#"{"kind":"crashed"}"#).is_err());
+    assert!(toml::from_str::<AttemptOutcome>("kind = \"mystery\"").is_err());
+    assert!(toml::from_str::<AttemptOutcome>("kind = \"crashed\"").is_err());
 }
 
 #[test]

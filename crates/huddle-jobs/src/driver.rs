@@ -10,7 +10,6 @@ use crate::model::{
 use crate::report;
 use crate::store::{JobStore, StoreError};
 use crate::verify;
-use crate::worktree;
 use huddle_config::env::Env;
 use huddle_config::paths::Paths;
 use huddle_harness::env::harness_env;
@@ -34,14 +33,14 @@ use std::time::Duration;
 const STOP_POLL: Duration = Duration::from_millis(250);
 
 /// One brief to submit: the job's id, its harness, the task text, the access, the effort and
-/// the working directory the repository is found from.
+/// the folder the harness works in.
 pub struct SubmitInput {
     pub id: String,
     pub harness: String,
     pub task: String,
     pub access: Access,
     pub effort: Option<String>,
-    pub cwd: PathBuf,
+    pub dir: PathBuf,
 }
 
 /// Every way submitting or driving a job can fail.
@@ -49,7 +48,15 @@ pub struct SubmitInput {
 pub enum DriveError {
     Git(GitError),
     Store(StoreError),
-    WrongState { id: String, state: JobState },
+    WrongState {
+        id: String,
+        state: JobState,
+    },
+    /// Another write job is still running in the folder.
+    Busy {
+        id: String,
+        dir: String,
+    },
     Io(String),
 }
 
@@ -61,6 +68,10 @@ impl fmt::Display for DriveError {
             DriveError::WrongState { id, state } => {
                 f.write_str(&model::wrong_state_text(id, *state, &[JobState::Queued]))
             }
+            DriveError::Busy { id, dir } => write!(
+                f,
+                "job {id} is still running a write job in {dir}: wait for it, or run in another folder with --dir"
+            ),
             DriveError::Io(message) => f.write_str(message),
         }
     }
@@ -75,15 +86,28 @@ impl fmt::Debug for JobStore {
     }
 }
 
-/// Creates the record first, then the worktree: a worktree failure removes the job directory,
-/// so a failed submit leaves nothing behind.
+/// Creates the job's record for the folder the harness will work in. A write job is refused
+/// while another write job of the repository is still running in the same folder. Huddle makes
+/// no checkout of its own: the folder is the caller's.
 pub fn submit(paths: &Paths, input: &SubmitInput) -> Result<(JobStore, Job), DriveError> {
-    let root = git::root(&input.cwd).map_err(DriveError::Git)?;
-    let base_sha = git::resolve(&root, "HEAD").map_err(DriveError::Git)?;
-    let base_branch = git::current_branch(&root).map_err(DriveError::Git)?;
+    let dir = input.dir.canonicalize().map_err(|_| {
+        DriveError::Git(GitError::NotARepo {
+            path: input.dir.to_string_lossy().into_owned(),
+        })
+    })?;
+    let root = git::main_root(&dir).map_err(DriveError::Git)?;
+    let base_sha = git::resolve(&dir, "HEAD").map_err(DriveError::Git)?;
+    let base_branch = git::current_branch(&dir).map_err(DriveError::Git)?;
+    let dirty_at_start = !git::dirty_paths(&dir).map_err(DriveError::Git)?.is_empty();
+    let start_tree = match input.access {
+        Access::Readonly => Some(git::snapshot_tree(&dir).map_err(DriveError::Git)?),
+        Access::Exec | Access::Write => None,
+    };
     let store = JobStore::for_repo(paths, &root);
-    let worktree_path = store.worktree_path(&input.id);
-    let branch = (input.access == Access::Write).then(|| worktree::job_branch(&input.id));
+    let dir = dir.to_string_lossy().into_owned();
+    if input.access == Access::Write {
+        refuse_busy(&store, &dir)?;
+    }
     let now = iso_ms(now_ms());
     let job = Job {
         id: input.id.clone(),
@@ -96,8 +120,9 @@ pub fn submit(paths: &Paths, input: &SubmitInput) -> Result<(JobStore, Job), Dri
         repo_root: root.to_string_lossy().into_owned(),
         base_sha,
         base_branch,
-        worktree: worktree_path.to_string_lossy().into_owned(),
-        branch,
+        dir,
+        start_tree,
+        dirty_at_start,
         attempts: Vec::new(),
         failure: None,
         decision: None,
@@ -106,22 +131,22 @@ pub fn submit(paths: &Paths, input: &SubmitInput) -> Result<(JobStore, Job), Dri
         version: 0,
     };
     let stored = store.create(&job).map_err(DriveError::Store)?;
-    let added = match input.access {
-        Access::Write => worktree::add_write(
-            &root,
-            &worktree_path,
-            stored.branch.as_deref().unwrap_or_default(),
-            &stored.base_sha,
-        ),
-        Access::Readonly | Access::Exec => {
-            worktree::add_detached(&root, &worktree_path, &stored.base_sha)
-        }
-    };
-    if let Err(err) = added {
-        let _ = fs::remove_dir_all(store.job_dir(&input.id));
-        return Err(DriveError::Git(err));
-    }
     Ok((store, stored))
+}
+
+/// Refuses when an active write job already works in `dir`.
+fn refuse_busy(store: &JobStore, dir: &str) -> Result<(), DriveError> {
+    let jobs = store.list().map_err(DriveError::Store)?;
+    match jobs
+        .iter()
+        .find(|job| job.access == Access::Write && job.state.is_active() && job.dir == dir)
+    {
+        Some(job) => Err(DriveError::Busy {
+            id: job.id.clone(),
+            dir: dir.to_string(),
+        }),
+        None => Ok(()),
+    }
 }
 
 /// Drives one queued job through one attempt of its harness and lands it: awaiting_review for
@@ -134,7 +159,6 @@ pub fn drive(store: &JobStore, job_id: &str, env: &Env) -> Result<Job, DriveErro
     let event = finish(&mut job, index, turn, &dir, env);
     apply_outcome(&mut job, index, event)?;
     let job = land(store, job, event)?;
-    remove_throwaway_worktree(&job);
     clear_run_files(&dir);
     Ok(job)
 }
@@ -209,7 +233,7 @@ impl Turn {
     }
 }
 
-/// Finds the job's harness entry and runs one turn of it in the worktree. Every failure of the
+/// Finds the job's harness entry and runs one turn of it in the job's folder. Every failure of the
 /// setup and of the run itself is the run's error text, never a drive error: the job carries it.
 fn run_attempt(job: &Job, index: usize, job_dir: &Path, env: &Env) -> Turn {
     let attempt = &job.attempts[index];
@@ -240,7 +264,7 @@ fn run_attempt(job: &Job, index: usize, job_dir: &Path, env: &Env) -> Turn {
     let run = run_with_stop_watch(
         entry,
         &brief,
-        Path::new(&job.worktree),
+        Path::new(&job.dir),
         &job_dir.join(format!("attempt-{}", attempt.n)),
         job_dir,
         env,
@@ -324,6 +348,11 @@ fn finish(job: &mut Job, index: usize, turn: Turn, dir: &Path, env: &Env) -> Job
         }
     };
     if outcome == AttemptOutcome::Completed
+        && let Some(message) = readonly_violation(job)
+    {
+        outcome = AttemptOutcome::Error { message };
+    }
+    if outcome == AttemptOutcome::Completed
         && let Err(error) = run_checks(job, index, dir, env)
     {
         outcome = AttemptOutcome::Error {
@@ -342,7 +371,7 @@ fn finish(job: &mut Job, index: usize, turn: Turn, dir: &Path, env: &Env) -> Job
     }
 }
 
-/// Runs a completed attempt's checks in its worktree and writes the verification into the job
+/// Runs a completed attempt's checks in the job's folder and writes the verification into the job
 /// directory. No checks: nothing runs. The verdict does not change the outcome: a failing gate
 /// still lands for review.
 fn run_checks(job: &Job, index: usize, dir: &Path, env: &Env) -> Result<(), String> {
@@ -350,16 +379,27 @@ fn run_checks(job: &Job, index: usize, dir: &Path, env: &Env) -> Result<(), Stri
     if checks.is_empty() {
         return Ok(());
     }
-    let verification = verify::verify_worktree(
+    let verification = verify::verify_folder(
         &checks,
         job.access,
-        Path::new(&job.worktree),
+        Path::new(&job.dir),
         &job.base_sha,
         &harness_env(env, &[]),
     )
     .map_err(|error| error.to_string())?;
     checks::write_verification(dir, job.attempts[index].n, &verification)
         .map_err(|error| error.to_string())
+}
+
+/// The failure text of a readonly job whose folder differs from its start, or None. A folder
+/// that cannot be read again is no proof of a change.
+fn readonly_violation(job: &Job) -> Option<String> {
+    let start = job
+        .start_tree
+        .as_deref()
+        .filter(|_| job.access == Access::Readonly)?;
+    let now = git::snapshot_tree(Path::new(&job.dir)).ok()?;
+    (now != start).then(|| "a readonly job changed files in the folder".to_string())
 }
 
 /// The job fields the attempt's end brings: the failure text, the cancel decision, the state.
@@ -416,14 +456,6 @@ fn land(store: &JobStore, job: Job, event: JobEvent) -> Result<Job, DriveError> 
             store.update(&fresh).map_err(DriveError::Store)
         }
         Err(err) => Err(DriveError::Store(err)),
-    }
-}
-
-/// Removes the worktree of a job that keeps nothing: any access but write, unless cancelled.
-/// A failure is left to the sweep.
-fn remove_throwaway_worktree(job: &Job) {
-    if job.access != Access::Write && job.state != JobState::Cancelled {
-        let _ = worktree::remove(Path::new(&job.repo_root), Path::new(&job.worktree), None);
     }
 }
 

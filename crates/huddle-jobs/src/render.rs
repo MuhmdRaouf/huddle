@@ -99,7 +99,7 @@ fn kind_word(kind: AttemptKind) -> &'static str {
     }
 }
 
-/// The worktree's access, as a word.
+/// The job's access, as a word.
 fn access_word(access: Access) -> &'static str {
     match access {
         Access::Readonly => "readonly",
@@ -128,11 +128,16 @@ fn state_cell(job: &Job) -> String {
     }
 }
 
-/// "worktree <path> (branch <name or "none">, base <first 7 chars>)".
-fn worktree_line(job: &Job) -> String {
-    let branch = job.branch.as_deref().unwrap_or("none");
+/// "folder <path> (branch <name or "detached">, base <first 7 chars>)", plus a note when the
+/// folder had uncommitted changes at start.
+fn folder_line(job: &Job) -> String {
+    let branch = job.base_branch.as_deref().unwrap_or("detached");
     let base: String = job.base_sha.chars().take(7).collect();
-    format!("worktree {} (branch {branch}, base {base})", job.worktree)
+    let mut line = format!("folder {} (branch {branch}, base {base})", job.dir);
+    if job.dirty_at_start {
+        line.push_str("; it had uncommitted changes at start, so the diff includes them");
+    }
+    line
 }
 
 /// The status table, or the empty-repo line. Jobs come newest first, as the store gives them.
@@ -194,7 +199,7 @@ fn table(rows: Vec<Vec<String>>) -> String {
     lines.join("\n")
 }
 
-/// One job in full: state, worktree, attempts, the log tail the caller already cut, and the one
+/// One job in full: state, folder, attempts, the log tail the caller already cut, and the one
 /// command that applies. An active job is cancellable; a settled one has a result.
 pub fn job_detail(job: &Job, log_tail: &[String], now_ms: u64) -> String {
     let mut lines = vec![
@@ -207,7 +212,7 @@ pub fn job_detail(job: &Job, log_tail: &[String], now_ms: u64) -> String {
             ago(now_ms, &job.created_at),
             ago(now_ms, &job.updated_at),
         ),
-        worktree_line(job),
+        folder_line(job),
     ];
     if job.attempts.is_empty() {
         lines.push("Attempts: none yet".to_string());
@@ -260,7 +265,7 @@ pub fn result_packet(job: &Job, view: &ReviewView) -> String {
                 access_word(job.access),
             ),
         },
-        worktree_line(job),
+        folder_line(job),
     ];
     if job.attempts.len() > 1 {
         lines.push(String::new());
@@ -396,7 +401,7 @@ pub fn next_step(job: &Job) -> String {
             if job.access == Access::Write {
                 format!(
                     "the harness never finished ({why}): nothing to accept. /huddle:result {id} \
-                     --return \"<feedback>\" runs it again on the same worktree, or \
+                     --return \"<feedback>\" runs it again in the same folder, or \
                      /huddle:cancel {id} drops it."
                 )
             } else {

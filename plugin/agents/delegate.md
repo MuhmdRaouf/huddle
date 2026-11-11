@@ -1,6 +1,6 @@
 ---
 name: delegate
-description: Hands one task to another CLI harness (opencode, omp, pi, zcode, claude and any other in the huddle table) in its own git worktree and returns the harness's report unchanged. Use when the user or the main thread wants a task done by a named harness, or a second implementation from another agent harness. Give it the harness id and the task.
+description: Hands one task to another CLI harness (opencode, omp, pi, zcode, claude and any other in the huddle table) in the current folder (or the one `--dir` names) and returns the harness's report unchanged. Use when the user or the main thread wants a task done by a named harness, or a second implementation from another agent harness. Give it the harness id and the task.
 tools: Bash
 model: sonnet
 ---

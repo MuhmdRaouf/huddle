@@ -7,9 +7,8 @@ use e2e_support::wait_drivers_done;
 use huddle_jobs::git;
 use huddle_jobs::model::*;
 use huddle_jobs::store::JobStore;
-use std::path::Path;
 use std::process::Output;
-use support::{Rig, git as run_git, ready_worktree, rig, sample_job, write};
+use support::{Rig, git as run_git, rig, sample_job, write};
 
 fn huddle(r: &Rig, args: &[&str]) -> Output {
     r.home
@@ -45,18 +44,13 @@ fn ready_job(r: &Rig, id: &str, report: Option<Report>) -> (JobStore, Job) {
         report_text: None,
     });
     let job = store.create(&job).unwrap();
-    ready_worktree(r, &job);
     (store, job)
-}
-
-fn wt(job: &Job) -> &Path {
-    Path::new(&job.worktree)
 }
 
 #[test]
 fn result_prints_the_report_changes_and_next_step() {
     let r = rig();
-    let (_store, job) = ready_job(
+    let (_store, _job) = ready_job(
         &r,
         "261109-res001",
         Some(Report {
@@ -65,7 +59,7 @@ fn result_prints_the_report_changes_and_next_step() {
             open_items: vec![],
         }),
     );
-    write(wt(&job), "a.txt", "edited\n");
+    write(&r.repo, "a.txt", "edited\n");
     let out = huddle(&r, &["result", "261109-res001"]);
     assert!(out.status.success(), "{}", err_text(&out));
     let text = out_text(&out);
@@ -85,18 +79,18 @@ fn result_prints_the_report_changes_and_next_step() {
 #[test]
 fn diff_appends_the_fenced_patch() {
     let r = rig();
-    let (_store, job) = ready_job(&r, "261109-res002", None);
-    write(wt(&job), "a.txt", "edited\n");
+    let (_store, _job) = ready_job(&r, "261109-res002", None);
+    write(&r.repo, "a.txt", "edited\n");
     let text = out_text(&huddle(&r, &["result", "261109-res002", "--diff"]));
     assert!(text.contains("Diff\n```diff"), "{text}");
     assert!(text.contains("+edited"), "{text}");
 }
 
 #[test]
-fn accept_lands_the_commit_and_prints_its_sha() {
+fn t3_accept_commits_in_the_folder_and_prints_its_sha() {
     let r = rig();
-    let (_store, job) = ready_job(&r, "261109-res003", None);
-    write(wt(&job), "a.txt", "edited\n");
+    let (_store, _job) = ready_job(&r, "261109-res003", None);
+    write(&r.repo, "a.txt", "edited\n");
     let out = huddle(&r, &["result", "261109-res003", "--accept"]);
     assert!(out.status.success(), "{}", err_text(&out));
     let head = git::head_sha(&r.repo).unwrap();
@@ -110,7 +104,7 @@ fn accept_lands_the_commit_and_prints_its_sha() {
         )
     );
     assert_eq!(support::read(&r.repo, "a.txt"), "edited\n");
-    assert!(!wt(&job).exists());
+    assert_eq!(run_git(&r.repo, &["worktree", "list"]).lines().count(), 1);
 }
 
 #[test]
@@ -121,22 +115,22 @@ fn accept_of_a_job_with_no_changes_says_so() {
     assert!(out.status.success());
     assert_eq!(
         out_text(&out).trim(),
-        "huddle job 261109-res004 accepted: no changes to land"
+        "huddle job 261109-res004 accepted: no changes to commit"
     );
 }
 
 #[test]
-fn accept_no_commit_applies_without_a_commit() {
+fn accept_no_commit_leaves_the_change_uncommitted() {
     let r = rig();
-    let (_store, job) = ready_job(&r, "261109-res005", None);
+    let (_store, _job) = ready_job(&r, "261109-res005", None);
     let head = git::head_sha(&r.repo).unwrap();
-    write(wt(&job), "a.txt", "edited\n");
+    write(&r.repo, "a.txt", "edited\n");
     let out = huddle(&r, &["result", "261109-res005", "--accept", "--no-commit"]);
     assert!(out.status.success(), "{}", err_text(&out));
     assert_eq!(
         out_text(&out).trim(),
         format!(
-            "huddle job 261109-res005 accepted: applied to the working tree of {}, not committed",
+            "huddle job 261109-res005 accepted: the change stays uncommitted in {}",
             r.repo.display()
         )
     );
@@ -144,39 +138,13 @@ fn accept_no_commit_applies_without_a_commit() {
 }
 
 #[test]
-fn a_dirty_overlap_exits_5_and_tells_what_to_do() {
+fn a_moved_branch_exits_5() {
     let r = rig();
-    let (_store, job) = ready_job(&r, "261109-res006", None);
-    write(wt(&job), "a.txt", "job\n");
-    write(&r.repo, "a.txt", "dirty\n");
+    ready_job(&r, "261109-res006", None);
+    run_git(&r.repo, &["checkout", "-q", "-b", "elsewhere"]);
     let out = huddle(&r, &["result", "261109-res006", "--accept"]);
     assert_eq!(out.status.code(), Some(5));
-    assert_eq!(
-        err_text(&out).trim(),
-        "huddle: uncommitted changes in the way: a.txt: nothing was applied. Commit or stash them, then accept again."
-    );
-}
-
-#[test]
-fn a_rebase_conflict_exits_5_and_names_the_way_out() {
-    let r = rig();
-    let (_store, job) = ready_job(&r, "261109-res007", None);
-    write(wt(&job), "a.txt", "job\n");
-    write(&r.repo, "a.txt", "main\n");
-    run_git(&r.repo, &["add", "-A"]);
-    run_git(&r.repo, &["commit", "-q", "-m", "main edit"]);
-    let out = huddle(&r, &["result", "261109-res007", "--accept"]);
-    assert_eq!(out.status.code(), Some(5));
-    let err = err_text(&out);
-    assert!(
-        err.contains("huddle: conflict in a.txt: nothing was applied."),
-        "{err}"
-    );
-    assert!(err.contains("/huddle:cancel 261109-res007"), "{err}");
-    assert!(
-        err.contains("merge the branch huddle/261109-res007 by hand"),
-        "{err}"
-    );
+    assert!(err_text(&out).contains("elsewhere"), "{}", err_text(&out));
 }
 
 #[test]

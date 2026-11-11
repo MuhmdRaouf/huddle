@@ -1,7 +1,6 @@
 mod support;
 
 use huddle_jobs::git::{self, ChangeSet, DiffMode, GitError};
-use huddle_jobs::worktree;
 use support::{git as run, rig, write};
 
 #[test]
@@ -29,45 +28,6 @@ fn resolve_refuses_an_unknown_ref() {
             reference: "no-such-ref".into()
         })
     );
-}
-
-#[test]
-fn a_write_worktree_has_its_own_branch_and_a_detached_one_has_none() {
-    let r = rig();
-    let base = git::head_sha(&r.repo).unwrap();
-    let write_path = r.home.root().join("wt-write");
-    worktree::add_write(&r.repo, &write_path, "huddle/w1", &base).unwrap();
-    assert_eq!(
-        git::current_branch(&write_path).unwrap().as_deref(),
-        Some("huddle/w1")
-    );
-    assert_eq!(git::head_sha(&write_path).unwrap(), base);
-
-    let ro_path = r.home.root().join("wt-ro");
-    worktree::add_detached(&r.repo, &ro_path, &base).unwrap();
-    assert_eq!(git::current_branch(&ro_path).unwrap(), None);
-}
-
-#[test]
-fn add_write_refuses_a_directory_that_is_not_the_top() {
-    let r = rig();
-    let sub = r.repo.join("sub");
-    std::fs::create_dir(&sub).unwrap();
-    let base = git::head_sha(&r.repo).unwrap();
-    let err = worktree::add_write(&sub, &r.home.root().join("wt"), "huddle/x", &base).unwrap_err();
-    assert!(matches!(err, GitError::NotARepo { .. }));
-}
-
-#[test]
-fn remove_deletes_the_worktree_and_branch_and_a_second_call_is_safe() {
-    let r = rig();
-    let base = git::head_sha(&r.repo).unwrap();
-    let path = r.home.root().join("wt");
-    worktree::add_write(&r.repo, &path, "huddle/w2", &base).unwrap();
-    worktree::remove(&r.repo, &path, Some("huddle/w2")).unwrap();
-    assert!(!path.exists());
-    assert!(!run(&r.repo, &["branch", "--list", "huddle/w2"]).contains("huddle/w2"));
-    worktree::remove(&r.repo, &path, Some("huddle/w2")).unwrap();
 }
 
 #[test]

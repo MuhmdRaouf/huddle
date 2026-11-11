@@ -119,7 +119,7 @@ fn a_harness_outside_its_scope_is_flagged_and_claude_still_decides() {
 }
 
 #[test]
-fn a_gate_that_passes_lands_and_runs_again_on_the_commit() {
+fn a_gate_that_passes_commits_and_runs_again_in_the_folder() {
     let rig = Rig::new();
     let run = rig.huddle(&[
         "run",
@@ -141,25 +141,29 @@ fn a_gate_that_passes_lands_and_runs_again_on_the_commit() {
 }
 
 #[test]
-fn accept_refuses_a_commit_that_breaks_once_rebased_onto_a_moved_tip() {
+fn accept_refuses_when_a_gate_breaks_after_the_run() {
     let rig = Rig::new();
     let run = rig.huddle(&["run", "amp", "--gate", "test ! -f landed.txt", "add a note"]);
     assert!(stdout(&run).contains("Verdict: pass"), "{}", stdout(&run));
     let id = string_field(&rig.one_job(), "id");
 
-    fs::write(rig.repo.join("landed.txt"), "moved\n").expect("write");
-    rig.git(&["add", "landed.txt"]);
-    rig.git(&["commit", "-m", "tip moved"]);
+    fs::write(rig.repo.join("landed.txt"), "arrived after the run\n").expect("write");
 
     let accept = rig.huddle(&["result", &id, "--accept"]);
     assert_ne!(accept.status.code(), Some(0));
     assert!(
-        String::from_utf8_lossy(&accept.stderr).contains("fresh checkout"),
+        String::from_utf8_lossy(&accept.stderr).contains("test ! -f landed.txt failed"),
         "{}",
         String::from_utf8_lossy(&accept.stderr)
     );
-    assert!(
-        !rig.repo.join("created_by_harness.txt").exists(),
-        "nothing landed"
+    let log = Command::new("git")
+        .args(["log", "-1", "--format=%s"])
+        .current_dir(&rig.repo)
+        .output()
+        .expect("git log");
+    assert_eq!(
+        String::from_utf8_lossy(&log.stdout).trim(),
+        "init",
+        "nothing was committed"
     );
 }

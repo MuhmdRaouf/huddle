@@ -21,7 +21,7 @@ fn input(id: &str, access: Access, r: &Rig) -> SubmitInput {
         task: "Rename foo".into(),
         access,
         effort: None,
-        cwd: r.repo.clone(),
+        dir: r.repo.clone(),
     }
 }
 
@@ -32,16 +32,16 @@ fn hanging_harness_env(r: &Rig) -> Env {
 }
 
 #[test]
-fn a_write_job_runs_in_its_worktree_and_lands_for_review_with_its_report() {
+fn a_write_job_runs_in_place_and_lands_for_review_with_its_report() {
     let r = rig();
     let head = git::head_sha(&r.repo).unwrap();
     let (store, job) = submit(&r.paths, &input("261109-drv001", Access::Write, &r)).unwrap();
     assert_eq!(job.state, JobState::Queued);
     assert_eq!(job.base_branch.as_deref(), Some("main"));
-    assert_eq!(job.branch.as_deref(), Some("huddle/261109-drv001"));
-    let wt = Path::new(&job.worktree).to_path_buf();
-    assert!(wt.join("a.txt").exists(), "the worktree is checked out");
-    write(&wt, "a.txt", "edited\n");
+    assert_eq!(job.base_sha, head);
+    assert_eq!(Path::new(&job.dir), r.repo, "the folder is the caller's");
+    assert!(!job.dirty_at_start);
+    write(&r.repo, "a.txt", "edited\n");
 
     let env = fake_harness_env(&r, REPORT, 0);
     let job = drive(&store, "261109-drv001", &env).unwrap();
@@ -53,28 +53,90 @@ fn a_write_job_runs_in_its_worktree_and_lands_for_review_with_its_report() {
     assert_eq!(
         git::head_sha(&r.repo).unwrap(),
         head,
-        "the checkout is not changed"
+        "nothing is committed"
     );
+    assert_eq!(support::read(&r.repo, "a.txt"), "edited\n");
     assert_eq!(
-        support::read(&wt, "a.txt"),
-        "edited\n",
-        "the worktree stays for review"
+        support::git(&r.repo, &["worktree", "list"]).lines().count(),
+        1,
+        "no worktree is made"
     );
     let dir = store.job_dir("261109-drv001");
-    assert!(!dir.join("driver.json").exists());
-    assert!(!dir.join("harness.json").exists());
+    assert!(!dir.join("driver.toml").exists());
+    assert!(!dir.join("harness.toml").exists());
     assert!(!dir.join("stop").exists());
 }
 
 #[test]
-fn a_readonly_job_ends_completed_and_its_worktree_goes() {
+fn t3_a_job_notes_a_folder_that_had_uncommitted_changes_at_start() {
+    let r = rig();
+    write(&r.repo, "a.txt", "dirty\n");
+    let (_, job) = submit(&r.paths, &input("261109-drv011", Access::Write, &r)).unwrap();
+    assert!(job.dirty_at_start);
+}
+
+#[test]
+fn t3_a_job_in_a_linked_worktree_belongs_to_the_main_repository() {
+    let r = rig();
+    let wt = r.home.root().join("session-wt");
+    support::git(
+        &r.repo,
+        &["worktree", "add", "-q", "-b", "s", wt.to_str().unwrap()],
+    );
+    let mut wt_input = input("261109-drv012", Access::Write, &r);
+    wt_input.dir = wt.clone();
+    let (store, job) = submit(&r.paths, &wt_input).unwrap();
+    assert_eq!(Path::new(&job.dir), wt.canonicalize().unwrap());
+    assert_eq!(job.base_branch.as_deref(), Some("s"));
+    assert_eq!(
+        store.root(),
+        JobStore::for_repo(&r.paths, &r.repo).root(),
+        "the worktree's jobs sit with the main repository's"
+    );
+}
+
+#[test]
+fn t3_a_second_write_job_in_the_same_folder_is_refused_while_one_runs() {
+    let r = rig();
+    let (store, first) = submit(&r.paths, &input("261109-drv013", Access::Write, &r)).unwrap();
+    let err = submit(&r.paths, &input("261109-drv014", Access::Write, &r)).unwrap_err();
+    assert_eq!(
+        err,
+        DriveError::Busy {
+            id: first.id.clone(),
+            dir: first.dir.clone()
+        }
+    );
+    assert!(store.get("261109-drv014").is_err(), "no record is left");
+    submit(&r.paths, &input("261109-drv015", Access::Readonly, &r))
+        .expect("a readonly job may share the folder");
+    drive(&store, &first.id, &fake_harness_env(&r, REPORT, 0)).unwrap();
+    submit(&r.paths, &input("261109-drv016", Access::Write, &r))
+        .expect("the folder is free once the first job has landed");
+}
+
+#[test]
+fn t3_a_write_job_in_another_folder_is_not_refused() {
+    let r = rig();
+    submit(&r.paths, &input("261109-drv017", Access::Write, &r)).unwrap();
+    let wt = r.home.root().join("other-wt");
+    support::git(
+        &r.repo,
+        &["worktree", "add", "-q", "-b", "o", wt.to_str().unwrap()],
+    );
+    let mut other = input("261109-drv018", Access::Write, &r);
+    other.dir = wt;
+    submit(&r.paths, &other).unwrap();
+}
+
+#[test]
+fn a_readonly_job_ends_completed() {
     let r = rig();
     let (store, job) = submit(&r.paths, &input("261109-drv002", Access::Readonly, &r)).unwrap();
-    assert_eq!(job.branch, None);
+    assert!(job.start_tree.is_some());
     let env = fake_harness_env(&r, REPORT, 0);
     let job = drive(&store, "261109-drv002", &env).unwrap();
     assert_eq!(job.state, JobState::Completed);
-    assert!(!Path::new(&job.worktree).exists());
     assert_eq!(
         job.last_attempt().unwrap().report.as_ref().unwrap().summary,
         "Renamed foo"
@@ -82,17 +144,39 @@ fn a_readonly_job_ends_completed_and_its_worktree_goes() {
 }
 
 #[test]
+fn t3_a_readonly_job_that_changes_a_file_fails() {
+    let r = rig();
+    let (store, _) = submit(&r.paths, &input("261109-drv019", Access::Readonly, &r)).unwrap();
+    let env = support::fake_harness_env_writing(&r, REPORT, "touched.txt");
+    let job = drive(&store, "261109-drv019", &env).unwrap();
+    assert_eq!(job.state, JobState::Failed);
+    assert_eq!(
+        job.failure.as_deref(),
+        Some("a readonly job changed files in the folder")
+    );
+    assert!(
+        r.repo.join("touched.txt").exists(),
+        "the folder is left as it is"
+    );
+}
+
+#[test]
+fn t3_a_readonly_job_in_a_dirty_folder_passes_when_it_changes_nothing() {
+    let r = rig();
+    write(&r.repo, "a.txt", "dirty before\n");
+    let (store, _) = submit(&r.paths, &input("261109-drv020", Access::Readonly, &r)).unwrap();
+    let job = drive(&store, "261109-drv020", &fake_harness_env(&r, REPORT, 0)).unwrap();
+    assert_eq!(job.state, JobState::Completed);
+}
+
+#[test]
 fn a_harness_that_fails_lands_failed_with_its_reason() {
     let r = rig();
-    let (store, job) = submit(&r.paths, &input("261109-drv003", Access::Write, &r)).unwrap();
+    let (store, _job) = submit(&r.paths, &input("261109-drv003", Access::Write, &r)).unwrap();
     let env = fake_harness_env(&r, "no report here", 7);
-    let job2 = drive(&store, "261109-drv003", &env).unwrap();
-    assert_eq!(job2.state, JobState::Failed);
-    assert!(job2.failure.is_some());
-    assert!(
-        Path::new(&job.worktree).exists(),
-        "a write job keeps its worktree so it can be returned"
-    );
+    let job = drive(&store, "261109-drv003", &env).unwrap();
+    assert_eq!(job.state, JobState::Failed);
+    assert!(job.failure.is_some());
 }
 
 #[test]
@@ -193,28 +277,12 @@ fn a_job_not_queued_is_refused() {
 }
 
 #[test]
-fn a_worktree_that_cannot_be_added_leaves_nothing_behind() {
-    let r = rig();
-    support::git(&r.repo, &["branch", "huddle/261109-drv009"]);
-    let store_root = JobStore::for_repo(&r.paths, &r.repo);
-    let err = submit(&r.paths, &input("261109-drv009", Access::Write, &r)).unwrap_err();
-    assert!(
-        matches!(err, DriveError::Git(GitError::Failed { .. })),
-        "{err:?}"
-    );
-    assert!(
-        !store_root.job_dir("261109-drv009").exists(),
-        "the record is removed again"
-    );
-}
-
-#[test]
 fn submit_outside_a_repository_is_refused() {
     let r = rig();
     let outside = r.home.root().join("elsewhere");
     std::fs::create_dir(&outside).unwrap();
     let mut bad = input("261109-drv010", Access::Write, &r);
-    bad.cwd = outside;
+    bad.dir = outside;
     assert!(matches!(
         submit(&r.paths, &bad),
         Err(DriveError::Git(GitError::NotARepo { .. }))

@@ -3,7 +3,7 @@ mod support;
 use huddle_jobs::checks::{Checks, Verdict};
 use huddle_jobs::git;
 use huddle_jobs::model::Access;
-use huddle_jobs::verify::{run_command, run_commands, verify_worktree};
+use huddle_jobs::verify::{run_command, run_commands, verify_folder};
 use std::collections::BTreeSet;
 use support::{rig, write};
 
@@ -55,7 +55,7 @@ fn the_verdict_and_changed_paths_come_from_the_harness_not_the_gates() {
         gates: list(&[": > gate-output.txt"]),
         ..Default::default()
     };
-    let v = verify_worktree(&checks, Access::Write, &r.repo, &base, &env()).unwrap();
+    let v = verify_folder(&checks, Access::Write, &r.repo, &base, &env()).unwrap();
     assert_eq!(v.verdict, Verdict::Pass);
     assert_eq!(
         v.changed.iter().collect::<BTreeSet<_>>(),
@@ -73,7 +73,7 @@ fn a_change_outside_scope_is_a_violation_and_a_failed_gate_is_gate_fail() {
         scope: list(&["src/**"]),
         ..Default::default()
     };
-    let v = verify_worktree(&scoped, Access::Write, &r.repo, &base, &env()).unwrap();
+    let v = verify_folder(&scoped, Access::Write, &r.repo, &base, &env()).unwrap();
     assert_eq!(v.verdict, Verdict::ScopeViolation);
     assert_eq!(v.scope.out_of_scope, list(&["docs/x.md"]));
 
@@ -81,7 +81,7 @@ fn a_change_outside_scope_is_a_violation_and_a_failed_gate_is_gate_fail() {
         gates: list(&["exit 2"]),
         ..Default::default()
     };
-    let v = verify_worktree(&gated, Access::Write, &r.repo, &base, &env()).unwrap();
+    let v = verify_folder(&gated, Access::Write, &r.repo, &base, &env()).unwrap();
     assert_eq!(v.verdict, Verdict::GateFail);
 }
 
@@ -90,7 +90,7 @@ fn a_readonly_job_that_changed_a_file_is_a_violation() {
     let r = rig();
     let base = git::head_sha(&r.repo).unwrap();
     write(&r.repo, "x.txt", "x\n");
-    let v = verify_worktree(&Checks::default(), Access::Readonly, &r.repo, &base, &env()).unwrap();
+    let v = verify_folder(&Checks::default(), Access::Readonly, &r.repo, &base, &env()).unwrap();
     assert!(v.scope.repo_changed);
     assert_eq!(v.verdict, Verdict::ScopeViolation);
 }

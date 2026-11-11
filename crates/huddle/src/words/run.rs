@@ -20,7 +20,7 @@ use huddle_jobs::model::{Access, Job, JobState};
 use huddle_jobs::render::{self, ReviewView};
 use huddle_jobs::store::JobStore;
 
-const USAGE: &str = "usage: huddle run <harness> [--background] [--readonly|--exec|--write] [--effort <e>] [--setup <cmd>]... [--gate <cmd>]... [--scope <glob>]... [--forbid <glob>]... <task>";
+const USAGE: &str = "usage: huddle run <harness> [--background] [--readonly|--exec|--write] [--dir <path>] [--effort <e>] [--setup <cmd>]... [--gate <cmd>]... [--scope <glob>]... [--forbid <glob>]... <task>";
 
 /// The wait polls at this delay first, doubling up to MAX_POLL_MS.
 const FIRST_POLL_MS: u64 = 1_000;
@@ -33,7 +33,7 @@ pub fn run(args: &[String], env: &Env) -> i32 {
     let parsed = match parse_args(
         args,
         &["background", "readonly", "exec", "write", "help"],
-        &["effort", "forbid", "gate", "scope", "setup"],
+        &["dir", "effort", "forbid", "gate", "scope", "setup"],
     ) {
         Ok(parsed) => parsed,
         Err(message) => {
@@ -136,12 +136,15 @@ pub fn run(args: &[String], env: &Env) -> i32 {
             return 1;
         }
     };
-    let cwd = match std::env::current_dir() {
-        Ok(cwd) => cwd,
-        Err(error) => {
-            let _ = writeln!(std::io::stderr(), "huddle: {error}");
-            return 1;
-        }
+    let dir = match parsed.value("dir") {
+        Some(dir) => PathBuf::from(dir),
+        None => match std::env::current_dir() {
+            Ok(cwd) => cwd,
+            Err(error) => {
+                let _ = writeln!(std::io::stderr(), "huddle: {error}");
+                return 1;
+            }
+        },
     };
     let input = SubmitInput {
         id: job_id,
@@ -149,7 +152,7 @@ pub fn run(args: &[String], env: &Env) -> i32 {
         task,
         access,
         effort: parsed.value("effort").map(str::to_string),
-        cwd,
+        dir,
     };
     let (store, job) = match driver::submit(&paths, &input) {
         Ok(pair) => pair,
@@ -260,7 +263,7 @@ fn wait_and_report(store: &JobStore, job_id: &str) -> i32 {
     }
 }
 
-/// Changes and stat of a job's worktree when it still exists and the job awaits review or
+/// Changes and stat of a job's folder when it still exists and the job awaits review or
 /// failed; with_diff adds the capped patch. Otherwise an empty ChangeSet and no diff.
 pub(crate) fn review_view(job: &Job, with_diff: bool) -> Result<ReviewView, GitError> {
     let mut view = ReviewView {
@@ -269,15 +272,15 @@ pub(crate) fn review_view(job: &Job, with_diff: bool) -> Result<ReviewView, GitE
         diff: None,
     };
     let open = job.state == JobState::AwaitingReview || job.state == JobState::Failed;
-    let worktree = Path::new(&job.worktree);
-    if !open || !worktree.exists() {
+    let dir = Path::new(&job.dir);
+    if !open || !dir.exists() {
         return Ok(view);
     }
-    view.changes = git::changes(worktree, &job.base_sha)?;
-    let stat = git::diff(worktree, &job.base_sha, DiffMode::Stat)?;
+    view.changes = git::changes(dir, &job.base_sha)?;
+    let stat = git::diff(dir, &job.base_sha, DiffMode::Stat)?;
     view.diff_stat = Some(stat);
     if with_diff {
-        let patch = git::diff(worktree, &job.base_sha, DiffMode::Patch)?;
+        let patch = git::diff(dir, &job.base_sha, DiffMode::Patch)?;
         view.diff = Some(render::cap_diff(&patch, render::DIFF_CAP_CHARS));
     }
     Ok(view)

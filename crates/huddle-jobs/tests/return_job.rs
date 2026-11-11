@@ -4,7 +4,6 @@ use huddle_jobs::driver;
 use huddle_jobs::model::*;
 use huddle_jobs::return_job::{ReturnError, return_job};
 use huddle_jobs::store::JobStore;
-use std::path::Path;
 use support::{Rig, rig, sample_job, write};
 
 fn store_for(r: &Rig) -> JobStore {
@@ -100,14 +99,13 @@ fn a_failed_write_job_can_be_returned() {
 }
 
 #[test]
-fn a_finished_readonly_job_has_no_worktree_to_return() {
+fn a_finished_readonly_job_cannot_be_returned() {
     let r = rig();
     let store = store_for(&r);
-    let mut job = sample_job(&r, "r5", Access::Readonly, JobState::Failed);
-    job.branch = None;
+    let job = sample_job(&r, "r5", Access::Readonly, JobState::Failed);
     store.create(&job).unwrap();
     let err = return_job(&store, "r5", "again").unwrap_err();
-    assert_eq!(err, ReturnError::NoWorktree { id: "r5".into() });
+    assert_eq!(err, ReturnError::NotWrite { id: "r5".into() });
 }
 
 #[test]
@@ -121,11 +119,10 @@ fn return_clears_a_stale_stop_file_before_queuing() {
 }
 
 #[test]
-fn a_returned_job_reruns_on_the_same_worktree_with_its_files() {
+fn a_returned_job_reruns_in_the_same_folder_with_its_files() {
     let r = rig();
-    let (store, job) = reviewable(&r, "r7", None);
-    support::ready_worktree(&r, &job);
-    write(Path::new(&job.worktree), "kept.txt", "from attempt one\n");
+    let (store, _job) = reviewable(&r, "r7", None);
+    write(&r.repo, "kept.txt", "from attempt one\n");
     return_job(&store, "r7", "continue").unwrap();
     // drive runs the pending review_fix attempt against the fake harness set up in support.
     let harness =
@@ -136,8 +133,5 @@ fn a_returned_job_reruns_on_the_same_worktree_with_its_files() {
     assert_eq!(job.attempts[1].kind, AttemptKind::ReviewFix);
     assert_eq!(job.attempts[1].outcome, Some(AttemptOutcome::Completed));
     assert_eq!(job.attempts[1].report.as_ref().unwrap().summary, "more");
-    assert_eq!(
-        support::read(Path::new(&job.worktree), "kept.txt"),
-        "from attempt one\n"
-    );
+    assert_eq!(support::read(&r.repo, "kept.txt"), "from attempt one\n");
 }

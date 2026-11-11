@@ -1,4 +1,4 @@
-//! The cancel word: stop a job, mark it cancelled, and remove its worktree and branch.
+//! The cancel word: stop a job and mark it cancelled; its folder stays as it is.
 
 use std::io::Write;
 
@@ -36,7 +36,7 @@ pub fn run(args: &[String], env: &Env) -> i32 {
             return 1;
         }
     };
-    let root = match git::root(&cwd) {
+    let root = match git::main_root(&cwd) {
         Ok(root) => root,
         Err(error) => {
             let _ = writeln!(std::io::stderr(), "huddle: {error}");
@@ -53,9 +53,6 @@ pub fn run(args: &[String], env: &Env) -> i32 {
     let store = JobStore::for_repo(&paths, &root);
     match cancel::cancel(&store, id, &cancel::CANCEL_OPTIONS) {
         Ok(outcome) => {
-            if let Some(message) = &outcome.cleanup_failed {
-                let _ = writeln!(std::io::stderr(), "huddle: {message}");
-            }
             if parsed.has("json") {
                 let line = match serde_json::to_string_pretty(&outcome.job) {
                     Ok(line) => line,
@@ -68,13 +65,13 @@ pub fn run(args: &[String], env: &Env) -> i32 {
             } else if outcome.forced_driver {
                 let _ = writeln!(
                     std::io::stdout(),
-                    "huddle job {} cancelled: its driver did not stop on its own and was terminated; worktree and branch removed",
+                    "huddle job {} cancelled: its driver did not stop on its own and was terminated; the folder is untouched",
                     outcome.job.id
                 );
             } else {
                 let _ = writeln!(
                     std::io::stdout(),
-                    "huddle job {} cancelled: worktree and branch removed",
+                    "huddle job {} cancelled: the folder is untouched",
                     outcome.job.id
                 );
             }

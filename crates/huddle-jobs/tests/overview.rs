@@ -44,7 +44,7 @@ fn attempt(started_ms: u64) -> Attempt {
     }
 }
 
-/// Stores a job in the repo's store; `driver` writes a driver.json when given.
+/// Stores a job in the repo's store; `driver` writes a driver.toml when given.
 fn add(
     r: &Rig,
     repo: &Path,
@@ -179,11 +179,7 @@ fn d4_a_job_row_carries_its_end_time_diff_size_and_why() {
     ended.ended_at = Some(iso_ms(NOW - 30_000));
     job.attempts = vec![ended];
     job.failure = Some("tests are red".into());
-    let tree = Path::new(&job.worktree).to_path_buf();
-    support::git(
-        &r.repo,
-        &["worktree", "add", "-q", &job.worktree, "-b", "huddle/j-rev"],
-    );
+    let tree = r.repo.clone();
     support::write(&tree, "a.txt", "two\n");
     support::write(&tree, "b.txt", "x\ny\n");
     JobStore::for_repo(&r.paths, &r.repo)
@@ -226,5 +222,9 @@ fn d4_a_running_job_has_no_end_time_and_a_dead_one_says_why() {
         row(&rows, "j-dead").why.as_deref(),
         Some("the driver is gone")
     );
-    assert_eq!(row(&rows, "j-run").files, None);
+    assert_eq!(
+        row(&rows, "j-run").files,
+        Some(0),
+        "an untouched folder is an empty diff"
+    );
 }

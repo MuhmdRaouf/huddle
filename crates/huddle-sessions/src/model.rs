@@ -95,7 +95,6 @@ pub struct Session {
 pub enum WorktreeKind {
     Checkout,
     Agent,
-    Job,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]

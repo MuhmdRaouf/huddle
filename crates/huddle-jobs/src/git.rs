@@ -12,8 +12,6 @@ use std::time::{SystemTime, UNIX_EPOCH};
 pub enum GitError {
     NotARepo { path: String },
     BadRef { reference: String },
-    Conflict { paths: Vec<String> },
-    Dirty { paths: Vec<String> },
     WrongBranch { expected: String, actual: String },
     Failed { command: String, stderr: String },
 }
@@ -23,10 +21,6 @@ impl fmt::Display for GitError {
         match self {
             GitError::NotARepo { path } => write!(f, "not a git repository: {path}"),
             GitError::BadRef { reference } => write!(f, "unknown git ref: {reference}"),
-            GitError::Conflict { paths } => write!(f, "conflict in {}", paths.join(", ")),
-            GitError::Dirty { paths } => {
-                write!(f, "uncommitted changes in the way: {}", paths.join(", "))
-            }
             GitError::WrongBranch { expected, actual } => write!(
                 f,
                 "the job was cut from {expected}, but {actual} is checked out: switch back, then accept"
@@ -177,6 +171,22 @@ pub fn root(cwd: &Path) -> Result<PathBuf, GitError> {
     }
 }
 
+/// The repository's main checkout: the folder that holds the `.git` directory every linked
+/// worktree shares, so a worktree and its main checkout name the same repository. A bare
+/// repository has no checkout; its top level stands in.
+pub fn main_root(dir: &Path) -> Result<PathBuf, GitError> {
+    let common = run(
+        dir,
+        &["rev-parse", "--path-format=absolute", "--git-common-dir"],
+    )
+    .map_err(|_| not_a_repo(dir))?;
+    let common = PathBuf::from(common.trim());
+    match (common.file_name(), common.parent()) {
+        (Some(name), Some(parent)) if name == ".git" => Ok(parent.to_path_buf()),
+        _ => root(dir),
+    }
+}
+
 /// The reference's commit sha; anything but a missing repository is an unknown ref.
 pub fn resolve(repo: &Path, reference: &str) -> Result<String, GitError> {
     let sha = reference.to_owned() + "^{commit}";
@@ -291,7 +301,7 @@ fn snapshot_failed(step: &str, error: impl fmt::Display) -> GitError {
 /// staged in a private copy of the index. The copy lives next to the real index, its mtime kept
 /// so a racily clean entry is still re-read; no readable index starts from an empty one. The
 /// real index is never touched.
-fn snapshot_tree(dir: &Path) -> Result<String, GitError> {
+pub fn snapshot_tree(dir: &Path) -> Result<String, GitError> {
     let located = run(dir, &["rev-parse", "--git-path", "index"])?;
     let located = located.trim();
     let index = if Path::new(located).is_absolute() {

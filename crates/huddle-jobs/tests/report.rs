@@ -69,10 +69,12 @@ fn a_report_needs_every_key_and_no_others() {
 }
 
 #[test]
-fn the_write_prompt_has_the_worktree_commit_secret_and_report_lines() {
+fn the_write_prompt_has_the_folder_commit_secret_and_report_lines() {
     let p = initial_prompt("Fix the bug\n", Access::Write);
     assert!(
-        p.starts_with("Fix the bug\n\n## huddle job\n\nYou work in an isolated git worktree"),
+        p.starts_with(
+            "Fix the bug\n\n## huddle job\n\nYou work in the repository folder you were started in"
+        ),
         "{p}"
     );
     assert!(p.contains("Do not commit, stage, stash or switch branches."));
@@ -96,9 +98,9 @@ fn the_readonly_prompt_forbids_edits() {
 }
 
 #[test]
-fn the_exec_prompt_says_the_checkout_is_thrown_away() {
+fn the_exec_prompt_forbids_edits_in_the_folder() {
     let p = initial_prompt("Run the tests", Access::Exec);
-    assert!(p.contains("throwaway checkout"));
+    assert!(p.contains("Do not create, edit or delete files there."));
 }
 
 #[test]

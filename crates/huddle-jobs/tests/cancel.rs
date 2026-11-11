@@ -5,10 +5,9 @@ use huddle_jobs::liveness::{ProcessRecord, driver_record_path, harness_record_pa
 use huddle_jobs::model::*;
 use huddle_jobs::store::JobStore;
 use std::os::unix::process::CommandExt;
-use std::path::Path;
 use std::process::{Child, Command};
 use std::time::Duration;
-use support::{Rig, git, ready_worktree, rig, sample_job};
+use support::{Rig, rig, sample_job, write};
 
 const FAST: CancelOptions = CancelOptions {
     stop_wait: Duration::from_millis(300),
@@ -36,26 +35,27 @@ fn record_of(child: &Child) -> ProcessRecord {
 }
 
 #[test]
-fn cancel_of_a_queued_job_with_no_driver_cancels_it_and_removes_its_worktree() {
+fn t3_cancel_of_a_queued_job_with_no_driver_cancels_it_and_leaves_the_folder() {
     let r = rig();
     let store = store_for(&r);
-    let job = store
+    store
         .create(&sample_job(&r, "c1", Access::Write, JobState::Queued))
         .unwrap();
-    ready_worktree(&r, &job);
+    write(&r.repo, "a.txt", "edited by the job\n");
+    write(&r.repo, "new.txt", "new\n");
     let outcome = cancel(&store, "c1", &FAST).unwrap();
     assert_eq!(outcome.job.state, JobState::Cancelled);
     assert_eq!(
         outcome.job.decision.as_ref().unwrap().kind,
         JobState::Cancelled
     );
-    assert!(!Path::new(&job.worktree).exists());
-    assert!(git(&r.repo, &["branch", "--list", "huddle/c1"]).is_empty());
+    assert_eq!(support::read(&r.repo, "a.txt"), "edited by the job\n");
+    assert_eq!(support::read(&r.repo, "new.txt"), "new\n");
     assert!(!outcome.forced_driver);
 }
 
 #[test]
-fn cancel_of_a_job_awaiting_review_removes_worktree_and_branch() {
+fn cancel_of_a_job_awaiting_review_keeps_the_folders_changes() {
     let r = rig();
     let store = store_for(&r);
     let mut job = sample_job(&r, "c2", Access::Write, JobState::AwaitingReview);
@@ -71,11 +71,11 @@ fn cancel_of_a_job_awaiting_review_removes_worktree_and_branch() {
         report: None,
         report_text: None,
     });
-    let job = store.create(&job).unwrap();
-    ready_worktree(&r, &job);
+    store.create(&job).unwrap();
+    write(&r.repo, "a.txt", "kept\n");
     let outcome = cancel(&store, "c2", &FAST).unwrap();
     assert_eq!(outcome.job.state, JobState::Cancelled);
-    assert!(!Path::new(&job.worktree).exists());
+    assert_eq!(support::read(&r.repo, "a.txt"), "kept\n");
 }
 
 #[test]
@@ -112,8 +112,7 @@ fn cancel_closes_the_open_attempt() {
         report: None,
         report_text: None,
     });
-    let job = store.create(&job).unwrap();
-    ready_worktree(&r, &job);
+    store.create(&job).unwrap();
     let outcome = cancel(&store, "c4", &FAST).unwrap();
     assert_eq!(
         outcome.job.last_attempt().unwrap().outcome,
@@ -126,10 +125,9 @@ fn cancel_closes_the_open_attempt() {
 fn a_live_driver_gets_the_stop_file_and_is_terminated_when_it_will_not_stop() {
     let r = rig();
     let store = store_for(&r);
-    let job = store
+    store
         .create(&sample_job(&r, "c5", Access::Write, JobState::Running))
         .unwrap();
-    ready_worktree(&r, &job);
     let dir = store.job_dir("c5");
     let mut driver = group_leader_sleep();
     write_record(&driver_record_path(&dir), &record_of(&driver)).unwrap();
@@ -141,17 +139,15 @@ fn a_live_driver_gets_the_stop_file_and_is_terminated_when_it_will_not_stop() {
         "the stubborn driver was terminated"
     );
     assert!(!dir.join("stop").exists());
-    assert!(!Path::new(&job.worktree).exists());
 }
 
 #[test]
 fn a_driver_record_with_a_reused_pid_is_never_signalled() {
     let r = rig();
     let store = store_for(&r);
-    let job = store
+    store
         .create(&sample_job(&r, "c6", Access::Write, JobState::Running))
         .unwrap();
-    ready_worktree(&r, &job);
     let dir = store.job_dir("c6");
     let mut stranger = group_leader_sleep();
     write_record(
@@ -177,10 +173,9 @@ fn a_driver_record_with_a_reused_pid_is_never_signalled() {
 fn cancel_terminates_a_harness_left_by_a_dead_driver() {
     let r = rig();
     let store = store_for(&r);
-    let job = store
+    store
         .create(&sample_job(&r, "c7", Access::Write, JobState::Running))
         .unwrap();
-    ready_worktree(&r, &job);
     let dir = store.job_dir("c7");
     let mut harness = group_leader_sleep();
     write_record(&harness_record_path(&dir), &record_of(&harness)).unwrap();

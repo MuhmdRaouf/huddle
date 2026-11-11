@@ -5,10 +5,9 @@ use huddle_jobs::checks::{self, Checks};
 use huddle_jobs::git;
 use huddle_jobs::model::*;
 use huddle_jobs::store::JobStore;
-use std::path::Path;
-use support::{Rig, git as run, ready_worktree, rig, sample_job, write};
+use support::{Rig, rig, sample_job, write};
 
-fn ready_job(r: &Rig, id: &str, gates: &[&str]) -> (JobStore, Job) {
+fn ready_job(r: &Rig, id: &str, checks: Checks) -> (JobStore, Job) {
     let store = JobStore::for_repo(&r.paths, &r.repo);
     let mut job = sample_job(r, id, Access::Write, JobState::AwaitingReview);
     job.attempts.push(Attempt {
@@ -24,57 +23,56 @@ fn ready_job(r: &Rig, id: &str, gates: &[&str]) -> (JobStore, Job) {
         report_text: None,
     });
     let job = store.create(&job).unwrap();
-    ready_worktree(r, &job);
-    let c = Checks {
-        gates: gates.iter().map(|s| s.to_string()).collect(),
-        ..Default::default()
-    };
-    checks::write_checks(&store.job_dir(id), &c).unwrap();
+    checks::write_checks(&store.job_dir(id), &checks).unwrap();
     (store, job)
 }
 
-#[test]
-fn a_gate_that_passes_on_the_commit_lands_it() {
-    let r = rig();
-    let (store, job) = ready_job(&r, "261109-acv001", &["test -f job.txt"]);
-    write(Path::new(&job.worktree), "job.txt", "x\n");
-    let out = accept(&store, &job.id).unwrap();
-    assert!(out.commit.is_some());
-    assert!(
-        !store.job_dir(&job.id).join("verify").exists(),
-        "the checkout is removed"
-    );
+fn gates(gates: &[&str]) -> Checks {
+    Checks {
+        gates: gates.iter().map(|s| s.to_string()).collect(),
+        ..Default::default()
+    }
 }
 
 #[test]
-fn a_gate_that_fails_on_the_commit_lands_nothing() {
+fn a_gate_that_passes_in_the_folder_commits_the_change() {
     let r = rig();
-    let (store, job) = ready_job(&r, "261109-acv002", &["echo broken; exit 1"]);
-    write(Path::new(&job.worktree), "job.txt", "x\n");
+    let (store, job) = ready_job(&r, "261109-acv001", gates(&["test -f job.txt"]));
+    write(&r.repo, "job.txt", "x\n");
+    let out = accept(&store, &job.id).unwrap();
+    assert_eq!(out.commit, Some(git::head_sha(&r.repo).unwrap()));
+}
+
+#[test]
+fn a_gate_that_fails_commits_nothing_and_leaves_the_folder() {
+    let r = rig();
+    let (store, job) = ready_job(&r, "261109-acv002", gates(&["echo broken; exit 1"]));
+    write(&r.repo, "job.txt", "x\n");
     let before = git::head_sha(&r.repo).unwrap();
     let err = accept(&store, &job.id).unwrap_err().to_string();
     assert!(
-        err.contains("nothing was applied") && err.contains("broken"),
+        err.contains("nothing was accepted") && err.contains("broken"),
         "{err}"
     );
     assert_eq!(git::head_sha(&r.repo).unwrap(), before);
     assert_eq!(store.get(&job.id).unwrap().state, JobState::AwaitingReview);
     assert!(
-        Path::new(&job.worktree).exists(),
-        "the worktree stays so the job can be returned"
+        r.repo.join("job.txt").exists(),
+        "the change stays for a return"
     );
-    assert!(!store.job_dir(&job.id).join("verify").exists());
 }
 
 #[test]
-fn the_gate_runs_on_the_commit_rebased_onto_a_moved_tip() {
+fn a_scope_or_forbid_finding_does_not_block_the_accept() {
     let r = rig();
-    let (store, job) = ready_job(&r, "261109-acv003", &["test ! -f landed.txt"]);
-    write(Path::new(&job.worktree), "job.txt", "x\n");
-    write(&r.repo, "landed.txt", "moved\n");
-    run(&r.repo, &["add", "landed.txt"]);
-    run(&r.repo, &["commit", "-m", "tip moved"]);
-    let err = accept(&store, &job.id).unwrap_err().to_string();
-    assert!(err.contains("nothing was applied"), "{err}");
-    assert!(!r.repo.join("job.txt").exists());
+    let checks = Checks {
+        scope: vec!["src/**".into()],
+        forbid: vec!["*.lock".into()],
+        ..Default::default()
+    };
+    let (store, job) = ready_job(&r, "261109-acv003", checks);
+    write(&r.repo, "other.txt", "x\n");
+    write(&r.repo, "deps.lock", "x\n");
+    let out = accept(&store, &job.id).unwrap();
+    assert!(out.commit.is_some());
 }

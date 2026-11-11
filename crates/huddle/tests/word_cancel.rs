@@ -3,9 +3,8 @@ mod support;
 
 use huddle_jobs::model::*;
 use huddle_jobs::store::JobStore;
-use std::path::Path;
 use std::process::Output;
-use support::{Rig, git, ready_worktree, rig, sample_job};
+use support::{Rig, git, rig, sample_job, write};
 
 fn huddle(r: &Rig, args: &[&str]) -> Output {
     r.home
@@ -17,10 +16,10 @@ fn huddle(r: &Rig, args: &[&str]) -> Output {
 }
 
 #[test]
-fn cancel_removes_the_worktree_and_branch_and_says_so() {
+fn t3_cancel_leaves_the_folder_untouched_and_says_so() {
     let r = rig();
     let store = JobStore::for_repo(&r.paths, &r.repo);
-    let job = store
+    store
         .create(&sample_job(
             &r,
             "261109-can001",
@@ -28,7 +27,9 @@ fn cancel_removes_the_worktree_and_branch_and_says_so() {
             JobState::AwaitingReview,
         ))
         .unwrap();
-    ready_worktree(&r, &job);
+    write(&r.repo, "a.txt", "edited\n");
+    write(&r.repo, "new.txt", "new\n");
+    let status = git(&r.repo, &["status", "--porcelain"]);
     let out = huddle(&r, &["cancel", "261109-can001"]);
     assert!(
         out.status.success(),
@@ -37,10 +38,10 @@ fn cancel_removes_the_worktree_and_branch_and_says_so() {
     );
     assert_eq!(
         String::from_utf8_lossy(&out.stdout).trim(),
-        "huddle job 261109-can001 cancelled: worktree and branch removed"
+        "huddle job 261109-can001 cancelled: the folder is untouched"
     );
-    assert!(!Path::new(&job.worktree).exists());
-    assert!(git(&r.repo, &["branch", "--list", "huddle/261109-can001"]).is_empty());
+    assert_eq!(git(&r.repo, &["status", "--porcelain"]), status);
+    assert_eq!(support::read(&r.repo, "a.txt"), "edited\n");
     assert_eq!(
         store.get("261109-can001").unwrap().state,
         JobState::Cancelled
@@ -82,7 +83,7 @@ fn cancel_without_an_id_exits_2() {
 fn cancel_json_prints_the_job() {
     let r = rig();
     let store = JobStore::for_repo(&r.paths, &r.repo);
-    let job = store
+    store
         .create(&sample_job(
             &r,
             "261109-can003",
@@ -90,7 +91,6 @@ fn cancel_json_prints_the_job() {
             JobState::Failed,
         ))
         .unwrap();
-    ready_worktree(&r, &job);
     let out = huddle(&r, &["cancel", "261109-can003", "--json"]);
     assert!(out.status.success());
     let parsed: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();

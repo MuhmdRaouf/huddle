@@ -50,7 +50,7 @@ pub fn run(args: &[String], env: &Env) -> i32 {
         Ok(cwd) => cwd,
         Err(error) => return fail(&error.to_string()),
     };
-    let repo = match git::root(&cwd) {
+    let repo = match git::main_root(&cwd) {
         Ok(repo) => repo,
         Err(error) => return fail(&error.to_string()),
     };
@@ -75,7 +75,7 @@ pub fn run(args: &[String], env: &Env) -> i32 {
     show_report(&store, id, parsed.has("diff"), parsed.has("json"))
 }
 
-/// Lands the job on the repository (a commit, or the working tree under --no-commit).
+/// Accepts the job in its folder (a commit, or the change left uncommitted under --no-commit).
 fn accept_job(store: &JobStore, id: &str, no_commit: bool, json: bool) -> i32 {
     let outcome = if no_commit {
         accept::accept_no_commit(store, id)
@@ -84,59 +84,41 @@ fn accept_job(store: &JobStore, id: &str, no_commit: bool, json: bool) -> i32 {
     };
     let outcome = match outcome {
         Ok(outcome) => outcome,
-        Err(error) => return accept_failed(store, id, &error),
+        Err(error) => return accept_failed(id, &error),
     };
     if json {
         return print_json(&outcome.job);
     }
     let line = accept_line(&outcome, no_commit);
     let _ = writeln!(std::io::stdout(), "{line}");
-    if let Some(failure) = outcome.cleanup_failed.as_deref() {
-        let _ = writeln!(std::io::stderr(), "huddle: {failure}");
-    }
     0
 }
 
 /// Where the accepted work landed.
 fn accept_line(outcome: &AcceptOutcome, no_commit: bool) -> String {
     let id = &outcome.job.id;
-    let repo = &outcome.job.repo_root;
+    let dir = &outcome.job.dir;
     if no_commit {
-        return format!(
-            "huddle job {id} accepted: applied to the working tree of {repo}, not committed"
-        );
+        return format!("huddle job {id} accepted: the change stays uncommitted in {dir}");
     }
     match outcome.commit.as_deref() {
         Some(sha) => {
             let short = sha.get(..12).unwrap_or(sha);
-            format!("huddle job {id} accepted: commit {short} on the current branch of {repo}")
+            format!("huddle job {id} accepted: commit {short} on the current branch of {dir}")
         }
-        None => format!("huddle job {id} accepted: no changes to land"),
+        None => format!("huddle job {id} accepted: no changes to commit"),
     }
 }
 
-/// Reports a landing that did not happen. Git failures name the way forward: nothing was
-/// applied, so the job still awaits review.
-fn accept_failed(store: &JobStore, id: &str, error: &AcceptError) -> i32 {
+/// Reports an accept that did not happen: the job still awaits review.
+fn accept_failed(id: &str, error: &AcceptError) -> i32 {
     let mut stderr = std::io::stderr();
     match error {
-        AcceptError::Git(GitError::Conflict { .. }) => {
-            let job_id = store
-                .find(id)
-                .map(|job| job.id)
-                .unwrap_or_else(|_| id.to_string());
+        AcceptError::Checks(_) => {
             let _ = writeln!(
                 stderr,
-                "huddle: {error}: nothing was applied. The harness cannot rebase (it never \
-                 commits or switches branches): /huddle:cancel {job_id} and run the task again \
-                 on the current branch, or merge the branch huddle/{job_id} by hand."
-            );
-            5
-        }
-        AcceptError::Git(GitError::Dirty { .. }) => {
-            let _ = writeln!(
-                stderr,
-                "huddle: {error}: nothing was applied. Commit or stash them, then accept again."
+                "huddle: {error}\nthe job still awaits review: fix it, or /huddle:result {id} \
+                 --return \"<feedback>\"."
             );
             5
         }
@@ -207,7 +189,7 @@ fn return_failed(error: &ReturnError) -> i32 {
             let _ = writeln!(stderr, "huddle: return needs feedback for the harness");
             2
         }
-        ReturnError::WrongState { .. } | ReturnError::NoWorktree { .. } => {
+        ReturnError::WrongState { .. } | ReturnError::NotWrite { .. } => {
             let _ = writeln!(stderr, "huddle: {error}");
             2
         }

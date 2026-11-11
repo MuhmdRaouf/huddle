@@ -22,8 +22,8 @@ pub struct JobRow {
     pub started_ms: u64,
     /// When the latest attempt ended; `None` while it runs.
     pub ended_ms: Option<u64>,
-    /// Files, added lines and removed lines of the worktree against the job's base; `None`
-    /// when the job has no readable worktree diff.
+    /// Files, added lines and removed lines of the job's folder against the job's base; `None`
+    /// when the job has no readable diff.
     pub files: Option<u32>,
     pub add: Option<u64>,
     pub del: Option<u64>,
@@ -96,9 +96,9 @@ fn row_of(store: &JobStore, job: &Job, now_ms: u64) -> Option<JobRow> {
     })
 }
 
-/// The worktree's change size against the base, from the diff's stat summary.
+/// The folder's change size against the base, from the diff's stat summary.
 fn diff_size(job: &Job) -> (Option<u32>, Option<u64>, Option<u64>) {
-    let stat = git::diff(Path::new(&job.worktree), &job.base_sha, DiffMode::Stat);
+    let stat = git::diff(Path::new(&job.dir), &job.base_sha, DiffMode::Stat);
     match stat.ok().as_deref().and_then(parse_summary) {
         Some((files, add, del)) => (Some(files), Some(add), Some(del)),
         None => (None, None, None),

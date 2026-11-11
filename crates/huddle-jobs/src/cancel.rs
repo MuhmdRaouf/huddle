@@ -6,7 +6,6 @@ use crate::model::{
     AttemptOutcome, Decision, Job, JobEvent, JobState, next_state, wrong_state_text,
 };
 use crate::store::{JobStore, StoreError};
-use crate::worktree;
 use huddle_config::atomic::write_atomic;
 use huddle_procs::group::terminate_group;
 use huddle_procs::live::process_alive;
@@ -75,15 +74,12 @@ pub struct CancelOutcome {
     pub job: Job,
     /// A driver had to be terminated because it did not stop on its own.
     pub forced_driver: bool,
-    /// "huddle job <id> is cancelled, but its worktree could not be removed: <git error>", when
-    /// that happened.
-    pub cleanup_failed: Option<String>,
 }
 
 /// Cancels a queued, running, awaiting-review or failed job: a live driver is asked to stop
 /// through its stop file and terminated only when it will not, a harness left behind is reaped,
-/// the open attempt is closed and the job marked cancelled, then the worktree and its branch are
-/// removed. `id` is a full id or a unique prefix.
+/// the open attempt is closed and the job marked cancelled. The job's folder stays as it is.
+/// `id` is a full id or a unique prefix.
 pub fn cancel(
     store: &JobStore,
     id: &str,
@@ -103,12 +99,8 @@ pub fn cancel(
     if job.state != JobState::Cancelled {
         job = record_cancelled(store, job)?;
     }
-    let cleanup_failed = cleanup(&job, &dir);
-    Ok(CancelOutcome {
-        job,
-        forced_driver,
-        cleanup_failed,
-    })
+    let _ = fs::remove_file(dir.join("stop"));
+    Ok(CancelOutcome { job, forced_driver })
 }
 
 /// Asks a live driver to stop through its stop file, waits for it to end the job, and terminates
@@ -186,18 +178,4 @@ fn apply_cancel(store: &JobStore, mut job: Job) -> Result<Job, StoreError> {
     job.failure = None;
     job.updated_at = iso_ms(now);
     store.update(&job)
-}
-
-/// Removes the stop file and the worktree and its branch once the job is cancelled; a worktree
-/// that cannot be removed is reported, the cancellation stands.
-fn cleanup(job: &Job, dir: &Path) -> Option<String> {
-    let _ = fs::remove_file(dir.join("stop"));
-    let repo = Path::new(&job.repo_root);
-    match worktree::remove(repo, Path::new(&job.worktree), job.branch.as_deref()) {
-        Ok(()) => None,
-        Err(error) => Some(format!(
-            "huddle job {} is cancelled, but its worktree could not be removed: {error}",
-            job.id
-        )),
-    }
 }

@@ -74,10 +74,9 @@ fn create_stores_version_one_in_a_private_directory() {
     assert_eq!(store.get("j1").unwrap(), saved);
     let dir = store.job_dir("j1");
     assert_eq!(mode(&dir), 0o700, "the job dir is private");
-    assert_eq!(mode(&dir.join("job.json")), 0o600, "the record is private");
-    let text = std::fs::read_to_string(dir.join("job.json")).unwrap();
-    assert!(text.starts_with("{\n  \"id\": \"j1\""), "{text}");
-    assert!(text.ends_with("\n"), "{text}");
+    assert_eq!(mode(&dir.join("job.toml")), 0o600, "the record is private");
+    let text = std::fs::read_to_string(dir.join("job.toml")).unwrap();
+    assert!(text.starts_with("id = \"j1\""), "{text}");
 }
 
 #[test]
@@ -220,7 +219,7 @@ fn list_is_newest_first_and_skips_a_corrupt_record() {
     store
         .create(&sample_job(&r, "bad", Access::Write, JobState::Queued))
         .unwrap();
-    std::fs::write(store.job_dir("bad").join("job.json"), "{ torn").unwrap();
+    std::fs::write(store.job_dir("bad").join("job.toml"), "id = [torn").unwrap();
     let ids: Vec<String> = store.list().unwrap().into_iter().map(|j| j.id).collect();
     assert_eq!(ids, vec!["new".to_string(), "old".to_string()]);
 }
@@ -246,15 +245,4 @@ fn prune_removes_the_oldest_terminal_jobs_beyond_the_cap_and_keeps_active_ones()
     assert!(store.get("done-4").is_ok());
     assert!(store.get("done-3").is_ok());
     assert!(store.get("done-0").is_err());
-}
-
-#[test]
-fn prune_skips_a_job_whose_worktree_still_exists() {
-    let r = rig();
-    let store = JobStore::for_repo(&r.paths, &r.repo);
-    let mut job = sample_job(&r, "kept", Access::Write, JobState::Accepted);
-    job.worktree = store.worktree_path("kept").to_string_lossy().into_owned();
-    store.create(&job).unwrap();
-    std::fs::create_dir(store.worktree_path("kept")).unwrap();
-    assert!(store.prune(0).unwrap().is_empty());
 }

@@ -15,7 +15,7 @@ fn start(r: &Rig, id: &str, access: Access, c: &Checks) -> (huddle_jobs::store::
         task: "Do it".into(),
         access,
         effort: None,
-        cwd: r.repo.clone(),
+        dir: r.repo.clone(),
     };
     let (store, job) = submit(&r.paths, &input).unwrap();
     checks::write_checks(&store.job_dir(id), c).unwrap();
@@ -33,7 +33,7 @@ fn gates(items: &[&str]) -> Checks {
 fn a_failing_gate_is_recorded_and_the_job_still_lands_for_review() {
     let r = rig();
     let (store, job) = start(&r, "261109-chk001", Access::Write, &gates(&["exit 4"]));
-    write(Path::new(&job.worktree), "a.txt", "edited\n");
+    write(Path::new(&job.dir), "a.txt", "edited\n");
     let job = drive(&store, "261109-chk001", &fake_harness_env(&r, REPORT, 0)).unwrap();
     assert_eq!(job.state, JobState::AwaitingReview);
     let v = checks::read_verification(&store.job_dir(&job.id), 1)

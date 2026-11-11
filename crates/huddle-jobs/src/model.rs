@@ -16,7 +16,7 @@ pub enum JobState {
     Cancelled,
 }
 
-/// What a job's worktree may do.
+/// What a job may do in its folder.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Access {
@@ -44,15 +44,16 @@ pub enum AttemptKind {
     ReviewFix,
 }
 
-/// How a worker attempt ended. `kind` picks the variant; job.json carries only that variant's
+/// How a worker attempt ended. `kind` picks the variant; job.toml carries only that variant's
 /// fields, so a null `exitCode` or `signal` survives a round trip.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum AttemptOutcome {
     Completed,
     Crashed {
-        #[serde(rename = "exitCode")]
+        #[serde(rename = "exitCode", default, skip_serializing_if = "Option::is_none")]
         exit_code: Option<i32>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         signal: Option<String>,
         #[serde(rename = "stderrTail")]
         stderr_tail: String,
@@ -113,8 +114,7 @@ pub struct Decision {
     pub commit: Option<String>,
 }
 
-/// The on-disk job.json: one brief a driver works through attempts until review decides it.
-/// Field order is the JSON key order.
+/// The on-disk job.toml: one brief a driver works through attempts until review decides it.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Job {
@@ -130,9 +130,15 @@ pub struct Job {
     pub base_sha: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub base_branch: Option<String>,
-    pub worktree: String,
+    /// The folder the harness works in.
+    pub dir: String,
+    /// The tree of the folder's working state when the job started; readonly jobs compare it
+    /// after the run.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub branch: Option<String>,
+    pub start_tree: Option<String>,
+    /// The folder had uncommitted changes when the job started, so its diff includes them.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub dirty_at_start: bool,
     pub attempts: Vec<Attempt>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub failure: Option<String>,
@@ -141,6 +147,10 @@ pub struct Job {
     pub created_at: String,
     pub updated_at: String,
     pub version: u64,
+}
+
+fn is_false(value: &bool) -> bool {
+    !*value
 }
 
 impl JobState {
@@ -230,7 +240,7 @@ impl fmt::Display for IllegalTransition {
 impl std::error::Error for IllegalTransition {}
 
 /// The one legal move for (state, event), or IllegalTransition. A finished run lands in
-/// awaiting_review only when the worktree takes writes.
+/// awaiting_review only when the job takes writes.
 pub fn next_state(
     state: JobState,
     access: Access,

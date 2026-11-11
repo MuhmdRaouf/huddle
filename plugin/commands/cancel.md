@@ -1,5 +1,5 @@
 ---
-description: Stop a delegated job, mark it cancelled, remove its worktree
+description: Stop a delegated job, mark it cancelled, leave its folder as it is
 argument-hint: '<job-id>'
 disable-model-invocation: true
 allowed-tools: Bash(sh:*)

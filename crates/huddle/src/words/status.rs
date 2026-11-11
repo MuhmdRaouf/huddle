@@ -50,7 +50,7 @@ pub fn run(args: &[String], env: &Env) -> i32 {
             return 1;
         }
     };
-    let root = match git::root(&cwd) {
+    let root = match git::main_root(&cwd) {
         Ok(root) => root,
         Err(error) => {
             let _ = writeln!(std::io::stderr(), "huddle: {error}");

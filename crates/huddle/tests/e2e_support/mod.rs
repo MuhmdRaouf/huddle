@@ -210,7 +210,7 @@ pub fn raw_exchange(port: u16, request: &str) -> String {
 }
 
 /// Waits until every job driver under the home stops writing: a driver removes its own record
-/// last, so once no driver.json names a live process, nothing writes into the home again and
+/// last, so once no driver.toml names a live process, nothing writes into the home again and
 /// TempHome's drop cannot race a late record into existence.
 pub fn wait_drivers_done(home_root: &std::path::Path) {
     // A detached driver writes its record within moments of the word that spawned it.

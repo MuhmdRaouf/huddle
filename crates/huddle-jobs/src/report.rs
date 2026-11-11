@@ -43,17 +43,17 @@ fn braces_candidate(text: &str) -> Option<&str> {
     (end >= start).then(|| &text[start..=end])
 }
 
-const WRITE_LINES: &str = "You work in an isolated git worktree of the repository. Edit files only there.\n\
+const WRITE_LINES: &str = "You work in the repository folder you were started in. Edit files only there.\n\
 Leave your changes in the working tree. huddle reviews and commits them.\n\
 Do not commit, stage, stash or switch branches.\n\
 Never print, log or write secrets: API keys, tokens, passwords, private keys.";
 
-const EXEC_LINES: &str = "You work in a throwaway checkout of the repository. Nothing you change here is kept.\n\
-Run the commands the task needs. Do not create, edit or delete files in the repository.\n\
+const EXEC_LINES: &str = "You work in the repository folder you were started in.\n\
+Run the commands the task needs. Do not create, edit or delete files there.\n\
 Do not commit, stage, stash or switch branches.\n\
 Never print, log or write secrets: API keys, tokens, passwords, private keys.";
 
-const READONLY_LINES: &str = "This is a read-only investigation in a throwaway checkout. Read and search; run only commands that change nothing.\n\
+const READONLY_LINES: &str = "This is a read-only investigation in the repository folder you were started in. Read and search; run only commands that change nothing.\n\
 Do not create, edit or delete any file.\n\
 Do not commit, stage, stash or switch branches.\n\
 Never print, log or write secrets: API keys, tokens, passwords, private keys.";

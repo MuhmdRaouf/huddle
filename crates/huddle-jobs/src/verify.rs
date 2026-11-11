@@ -64,17 +64,17 @@ pub fn run_commands(checks: &Checks, dir: &Path, env: &[(String, String)]) -> Ve
 }
 
 /// A finished harness run: changed paths and scope first, then the commands, then what the commands added.
-pub fn verify_worktree(
+pub fn verify_folder(
     checks: &Checks,
     access: Access,
-    worktree: &Path,
+    dir: &Path,
     base: &str,
     env: &[(String, String)],
 ) -> Result<Verification, GitError> {
-    let changed = changed_paths(&git::changes(worktree, base)?);
+    let changed = changed_paths(&git::changes(dir, base)?);
     let scope = check_scope(checks, access, &changed);
-    let gates = run_commands(checks, worktree, env);
-    let after = changed_paths(&git::changes(worktree, base)?);
+    let gates = run_commands(checks, dir, env);
+    let after = changed_paths(&git::changes(dir, base)?);
     let gate_touched = after.into_iter().filter(|p| !changed.contains(p)).collect();
     Ok(Verification {
         verdict: derive_verdict(&scope, &gates),

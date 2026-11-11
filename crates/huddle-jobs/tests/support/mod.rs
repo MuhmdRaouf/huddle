@@ -75,15 +75,14 @@ pub fn read(dir: &Path, rel: &str) -> String {
 }
 
 /// A write job fixture on this repository's HEAD; version 0 and no attempts.
-/// `worktree` is a free path under the temp home; pair with `ready_worktree` when the test needs it on disk.
+/// The job's folder is the rig's repository.
 pub fn sample_job(
     r: &Rig,
     id: &str,
     access: huddle_jobs::model::Access,
     state: huddle_jobs::model::JobState,
 ) -> huddle_jobs::model::Job {
-    use huddle_jobs::model::{Access, Job};
-    let write = access == Access::Write;
+    use huddle_jobs::model::Job;
     Job {
         id: id.to_string(),
         harness: "opencode".to_string(),
@@ -95,14 +94,9 @@ pub fn sample_job(
         repo_root: r.repo.to_string_lossy().into_owned(),
         base_sha: git(&r.repo, &["rev-parse", "HEAD"]),
         base_branch: Some(git(&r.repo, &["symbolic-ref", "--short", "HEAD"])),
-        worktree: r
-            .home
-            .root()
-            .join("worktrees")
-            .join(id)
-            .to_string_lossy()
-            .into_owned(),
-        branch: write.then(|| format!("huddle/{id}")),
+        dir: r.repo.to_string_lossy().into_owned(),
+        start_tree: None,
+        dirty_at_start: false,
         attempts: vec![],
         failure: None,
         decision: None,
@@ -141,14 +135,18 @@ pub fn env_with(r: &Rig, name: &str, value: &str) -> Env {
     Env::with(&refs)
 }
 
-/// Creates the job's worktree on disk: a branch for a write job, detached otherwise.
-pub fn ready_worktree(r: &Rig, job: &huddle_jobs::model::Job) {
-    let path = Path::new(&job.worktree);
-    match job.branch.as_deref() {
-        Some(branch) => huddle_jobs::worktree::add_write(&r.repo, path, branch, &job.base_sha)
-            .expect("add worktree"),
-        None => {
-            huddle_jobs::worktree::add_detached(&r.repo, path, &job.base_sha).expect("add worktree")
-        }
-    }
+/// As `fake_harness_env`, but the harness first writes `file` in its working folder.
+pub fn fake_harness_env_writing(r: &Rig, final_text: &str, file: &str) -> Env {
+    let inner = fake_harness_env(r, final_text, 0);
+    let real = inner
+        .get("HUDDLE_OPENCODE_BIN")
+        .expect("fake harness path")
+        .to_string();
+    let wrapper = r.home.root().join("writing-harness");
+    huddle_testkit::script::write_executable(
+        &wrapper,
+        &format!("#!/bin/sh\necho changed > '{file}'\nexec '{real}' \"$@\"\n"),
+    )
+    .expect("wrapper");
+    env_with(r, "HUDDLE_OPENCODE_BIN", &wrapper.to_string_lossy())
 }

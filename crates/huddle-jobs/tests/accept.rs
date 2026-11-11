@@ -5,10 +5,9 @@ use huddle_jobs::git::{self, GitError};
 use huddle_jobs::model::*;
 use huddle_jobs::store::JobStore;
 use huddle_testkit::script::write_executable;
-use std::path::Path;
-use support::{Rig, git as run, ready_worktree, rig, sample_job, write};
+use support::{Rig, git as run, rig, sample_job, write};
 
-/// A write job awaiting review: stored, with its worktree on disk.
+/// A write job awaiting review: stored, its folder the rig's repository.
 fn ready_job(r: &Rig, id: &str) -> (JobStore, Job) {
     let store = JobStore::for_repo(&r.paths, &r.repo);
     let mut job = sample_job(r, id, Access::Write, JobState::AwaitingReview);
@@ -29,44 +28,38 @@ fn ready_job(r: &Rig, id: &str) -> (JobStore, Job) {
         report_text: None,
     });
     let job = store.create(&job).unwrap();
-    ready_worktree(r, &job);
     (store, job)
 }
 
-fn wt(job: &Job) -> &Path {
-    Path::new(&job.worktree)
-}
-
 #[test]
-fn accept_commits_on_the_job_branch_and_fast_forwards_the_repository() {
+fn accept_commits_on_the_current_branch_of_the_folder() {
     let r = rig();
-    let (store, job) = ready_job(&r, "j1");
-    write(wt(&job), "a.txt", "changed\n");
+    let (store, _) = ready_job(&r, "j1");
+    write(&r.repo, "a.txt", "changed\n");
     let outcome = accept(&store, "j1").unwrap();
     let head = git::head_sha(&r.repo).unwrap();
     assert_eq!(outcome.commit.as_deref(), Some(head.as_str()));
-    assert_eq!(support::read(&r.repo, "a.txt"), "changed\n");
     assert_eq!(
         run(&r.repo, &["log", "-1", "--format=%B"]),
         "Do the thing\n\nRenamed foo"
     );
+    assert_eq!(run(&r.repo, &["branch", "--show-current"]), "main");
     assert_eq!(outcome.job.state, JobState::Accepted);
     let decision = outcome.job.decision.as_ref().unwrap();
     assert_eq!(decision.kind, JobState::Accepted);
     assert_eq!(decision.commit.as_deref(), Some(head.as_str()));
-    assert!(!wt(&job).exists(), "the worktree is removed");
-    assert!(
-        run(&r.repo, &["branch", "--list", "huddle/j1"]).is_empty(),
-        "the branch is removed"
+    assert_eq!(
+        run(&r.repo, &["worktree", "list"]).lines().count(),
+        1,
+        "no worktree is made or kept"
     );
-    assert!(outcome.cleanup_failed.is_none());
 }
 
 #[test]
 fn the_commit_message_carries_no_attribution_trailer() {
     let r = rig();
-    let (store, job) = ready_job(&r, "j2");
-    write(wt(&job), "a.txt", "changed\n");
+    let (store, _) = ready_job(&r, "j2");
+    write(&r.repo, "a.txt", "changed\n");
     accept(&store, "j2").unwrap();
     let body = run(&r.repo, &["log", "-1", "--format=%B"]);
     assert!(!body.contains("Worked-by"), "{body}");
@@ -74,95 +67,49 @@ fn the_commit_message_carries_no_attribution_trailer() {
 }
 
 #[test]
-fn accept_rebases_onto_a_moved_tip() {
+fn t3_accept_commits_in_a_linked_worktree_the_session_made() {
     let r = rig();
-    let (store, job) = ready_job(&r, "j3");
-    write(wt(&job), "new-from-job.txt", "job\n");
-    write(&r.repo, "new-from-main.txt", "main\n");
-    run(&r.repo, &["add", "-A"]);
-    run(&r.repo, &["commit", "-q", "-m", "main moved"]);
-    let tip = git::head_sha(&r.repo).unwrap();
-    accept(&store, "j3").unwrap();
-    assert_eq!(support::read(&r.repo, "new-from-job.txt"), "job\n");
-    assert_eq!(support::read(&r.repo, "new-from-main.txt"), "main\n");
-    // Two commits the rig seeds ("init", "add a"), then "main moved", then the job's commit.
-    assert_eq!(run(&r.repo, &["rev-list", "--count", "HEAD"]), "4");
-    assert_eq!(
-        run(&r.repo, &["rev-list", "--merges", "--count", "HEAD"]),
-        "0",
-        "the history stays linear"
+    let wt = r.home.root().join("session-wt");
+    run(
+        &r.repo,
+        &[
+            "worktree",
+            "add",
+            "-q",
+            "-b",
+            "session",
+            wt.to_str().unwrap(),
+        ],
     );
-    assert_eq!(
-        run(&r.repo, &["rev-parse", "HEAD~1"]),
-        tip,
-        "the job's commit sits on the moved tip"
-    );
+    let wt = wt.canonicalize().unwrap();
+    let store = JobStore::for_repo(&r.paths, &r.repo);
+    let mut job = sample_job(&r, "j3", Access::Write, JobState::AwaitingReview);
+    job.dir = wt.to_string_lossy().into_owned();
+    job.base_branch = Some("session".into());
+    store.create(&job).unwrap();
+    write(&wt, "from-job.txt", "job\n");
+    let outcome = accept(&store, "j3").unwrap();
+    assert_eq!(outcome.commit, Some(git::head_sha(&wt).unwrap()));
+    assert_eq!(run(&wt, &["log", "-1", "--format=%s"]), "Do the thing");
+    assert!(!r.repo.join("from-job.txt").exists());
+    assert_eq!(run(&r.repo, &["branch", "--show-current"]), "main");
 }
 
 #[test]
-fn accept_refuses_a_dirty_overlapping_file_and_changes_nothing() {
+fn a_dirty_file_the_job_did_not_name_is_committed_with_the_rest() {
     let r = rig();
-    let (store, job) = ready_job(&r, "j4");
-    write(wt(&job), "a.txt", "from job\n");
-    write(&r.repo, "a.txt", "dirty in the checkout\n");
-    let err = accept(&store, "j4").unwrap_err();
-    assert_eq!(
-        err,
-        AcceptError::Git(GitError::Dirty {
-            paths: vec!["a.txt".into()]
-        })
-    );
-    assert_eq!(support::read(&r.repo, "a.txt"), "dirty in the checkout\n");
-    assert_eq!(store.get("j4").unwrap().state, JobState::AwaitingReview);
-    assert!(wt(&job).exists(), "the worktree stays for a retry");
-}
-
-#[test]
-fn a_dirty_file_the_job_did_not_touch_does_not_block_accept() {
-    let r = rig();
-    let (store, job) = ready_job(&r, "j5");
-    write(wt(&job), "other.txt", "from job\n");
-    write(&r.repo, "a.txt", "dirty but unrelated\n");
+    let (store, _) = ready_job(&r, "j5");
+    write(&r.repo, "other.txt", "from job\n");
+    write(&r.repo, "a.txt", "dirty before the job\n");
     accept(&store, "j5").unwrap();
-    assert_eq!(support::read(&r.repo, "a.txt"), "dirty but unrelated\n");
-    assert_eq!(support::read(&r.repo, "other.txt"), "from job\n");
-}
-
-#[test]
-fn a_rebase_conflict_is_aborted_and_leaves_no_rebase_in_progress() {
-    let r = rig();
-    let (store, job) = ready_job(&r, "j6");
-    write(wt(&job), "a.txt", "job change\n");
-    write(&r.repo, "a.txt", "main change\n");
-    run(&r.repo, &["add", "-A"]);
-    run(&r.repo, &["commit", "-q", "-m", "main edits a.txt"]);
-    let main_head = git::head_sha(&r.repo).unwrap();
-    let err = accept(&store, "j6").unwrap_err();
-    assert_eq!(
-        err,
-        AcceptError::Git(GitError::Conflict {
-            paths: vec!["a.txt".into()]
-        })
-    );
-    assert_eq!(
-        git::head_sha(&r.repo).unwrap(),
-        main_head,
-        "the repository head is unchanged"
-    );
-    let wt_path = wt(&job);
-    let rebase_merge = run(wt_path, &["rev-parse", "--git-path", "rebase-merge"]);
-    assert!(
-        !wt_path.join(&rebase_merge).exists() && !Path::new(&rebase_merge).exists(),
-        "no rebase left in progress"
-    );
-    assert_eq!(store.get("j6").unwrap().state, JobState::AwaitingReview);
+    assert_eq!(run(&r.repo, &["status", "--porcelain"]), "");
 }
 
 #[test]
 fn accept_refuses_when_the_user_switched_branches() {
     let r = rig();
-    let (store, job) = ready_job(&r, "j7");
-    write(wt(&job), "a.txt", "from job\n");
+    let (store, _) = ready_job(&r, "j7");
+    write(&r.repo, "a.txt", "from job\n");
     run(&r.repo, &["checkout", "-q", "-b", "other"]);
     let err = accept(&store, "j7").unwrap_err();
     assert_eq!(
@@ -210,7 +157,7 @@ fn accept_only_works_on_a_job_awaiting_review() {
 #[test]
 fn a_commit_hook_failure_leaves_the_job_awaiting_review() {
     let r = rig();
-    let (store, job) = ready_job(&r, "j10");
+    let (store, _) = ready_job(&r, "j10");
     let hooks = r.home.root().join("hooks");
     std::fs::create_dir_all(&hooks).unwrap();
     write_executable(
@@ -222,7 +169,7 @@ fn a_commit_hook_failure_leaves_the_job_awaiting_review() {
         &r.repo,
         &["config", "core.hooksPath", hooks.to_str().unwrap()],
     );
-    write(wt(&job), "a.txt", "changed\n");
+    write(&r.repo, "a.txt", "changed\n");
     let err = accept(&store, "j10").unwrap_err();
     match err {
         AcceptError::Git(GitError::Failed { command, stderr }) => {
@@ -232,26 +179,13 @@ fn a_commit_hook_failure_leaves_the_job_awaiting_review() {
         other => panic!("{other:?}"),
     }
     assert_eq!(store.get("j10").unwrap().state, JobState::AwaitingReview);
-    assert!(wt(&job).exists());
-}
-
-#[test]
-fn accept_settles_when_an_earlier_accept_already_landed_the_commit() {
-    let r = rig();
-    let (store, job) = ready_job(&r, "j11");
-    write(wt(&job), "a.txt", "changed\n");
-    let sha = git::commit_all(wt(&job), "Do the thing\n").unwrap();
-    run(&r.repo, &["merge", "--quiet", "--ff-only", &sha]);
-    let outcome = accept(&store, "j11").unwrap();
-    assert_eq!(outcome.commit.as_deref(), Some(sha.as_str()));
-    assert_eq!(outcome.job.state, JobState::Accepted);
 }
 
 #[test]
 fn accept_takes_a_unique_id_prefix() {
     let r = rig();
-    let (store, job) = ready_job(&r, "261109-abcdef");
-    write(wt(&job), "a.txt", "changed\n");
+    let (store, _) = ready_job(&r, "261109-abcdef");
+    write(&r.repo, "a.txt", "changed\n");
     let outcome = accept(&store, "261109-a").unwrap();
     assert_eq!(outcome.job.id, "261109-abcdef");
 }

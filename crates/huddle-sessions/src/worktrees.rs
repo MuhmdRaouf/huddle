@@ -9,10 +9,7 @@ use crate::model::{Worktree, WorktreeKind};
 const AGENT_DIR: &str = "/.agents/worktrees/";
 
 /// Every worktree of the repo around each cwd, once each. A cwd outside git adds nothing.
-pub fn worktrees(cwds: &[PathBuf], jobs_root: &Path) -> Vec<Worktree> {
-    let jobs_root = jobs_root
-        .canonicalize()
-        .unwrap_or_else(|_| jobs_root.to_path_buf());
+pub fn worktrees(cwds: &[PathBuf]) -> Vec<Worktree> {
     let mut rows: Vec<Worktree> = Vec::new();
     for cwd in cwds {
         let Some(listing) = git(cwd, &["worktree", "list", "--porcelain"]) else {
@@ -27,7 +24,7 @@ pub fn worktrees(cwds: &[PathBuf], jobs_root: &Path) -> Vec<Worktree> {
             if rows.iter().any(|row| row.path == entry.path) {
                 continue;
             }
-            rows.push(describe(entry, &project, &jobs_root));
+            rows.push(describe(entry, &project));
         }
     }
     rows
@@ -75,11 +72,9 @@ fn parse_listing(text: &str) -> Vec<Entry> {
     entries
 }
 
-fn describe(entry: &Entry, project: &str, jobs_root: &Path) -> Worktree {
+fn describe(entry: &Entry, project: &str) -> Worktree {
     let path = Path::new(&entry.path);
-    let kind = if path.starts_with(jobs_root) {
-        WorktreeKind::Job
-    } else if entry.path.contains(AGENT_DIR) {
+    let kind = if entry.path.contains(AGENT_DIR) {
         WorktreeKind::Agent
     } else {
         WorktreeKind::Checkout

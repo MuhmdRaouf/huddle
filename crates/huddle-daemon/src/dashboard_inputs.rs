@@ -167,7 +167,7 @@ fn read_machine(paths: &Paths) -> Machine {
         .filter_map(|session| session.cwd.as_deref().map(PathBuf::from))
         .collect();
     Machine {
-        worktrees: worktrees(&cwds, &paths.jobs_root),
+        worktrees: worktrees(&cwds),
         sessions,
     }
 }
