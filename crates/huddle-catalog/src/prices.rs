@@ -1,9 +1,14 @@
 //! The flat price table every cost estimate reads from: each catalog model's list rates in USD
-//! per million tokens. A claude id stays unpriced here; cache write bills at the base rates, and
-//! no request conditions (tier, peak, fast mode) are read off this table.
+//! per million tokens. Claude models carry the API list rates: a Claude plan is flat-rate, so those
+//! prices say what the traffic would cost on the API (`is_api_equivalent`). A provider model with
+//! no cache write rate bills cache writes at zero, and no request conditions (tier, peak, fast
+//! mode, Haiku's over-100k-token rates) are read off this table.
 
 /// The day the price pages were read, as the estimate line names it.
 pub const PRICES_RETRIEVED: &str = "2026-10-08";
+
+/// The day the Claude rates were read from platform.claude.com/docs/en/about-claude/pricing.
+pub const CLAUDE_PRICES_RETRIEVED: &str = "2026-11-11";
 
 /// One model's list rates in USD per million tokens. `verified` is false where the cache rates
 /// are inferred rather than read on the provider's page.
@@ -26,7 +31,7 @@ pub struct TokenCounts {
 }
 
 /// Every priced model, by its catalog id.
-static PRICES: [(&str, Price); 12] = [
+static PRICES: [(&str, Price); 16] = [
     (
         "glm-5.3",
         Price {
@@ -147,14 +152,74 @@ static PRICES: [(&str, Price); 12] = [
             verified: false,
         },
     ),
+    (
+        "claude-fable-5-1",
+        Price {
+            input: 10.0,
+            output: 50.0,
+            cache_read: 0.25,
+            cache_write: 12.5,
+            verified: true,
+        },
+    ),
+    (
+        "claude-opus-5-5",
+        Price {
+            input: 4.0,
+            output: 20.0,
+            cache_read: 0.2,
+            cache_write: 5.0,
+            verified: true,
+        },
+    ),
+    (
+        "claude-sonnet-5-5",
+        Price {
+            input: 2.0,
+            output: 10.0,
+            cache_read: 0.1,
+            cache_write: 2.5,
+            verified: true,
+        },
+    ),
+    (
+        "claude-haiku-5-5",
+        Price {
+            input: 0.1,
+            output: 0.5,
+            cache_read: 0.01,
+            cache_write: 0.125,
+            verified: true,
+        },
+    ),
 ];
 
-/// One model's list price; a model the table does not know (a claude id, a made-up id) has none.
+/// One model's list price; a model the table does not know (a made-up id) has none. A Claude id
+/// prices as its base model once a `[1m]` suffix and a trailing `-YYYYMMDD` date are dropped.
 pub fn price_of(model: &str) -> Option<&'static Price> {
+    let id = base_model(model);
     PRICES
         .iter()
-        .find(|(id, _)| *id == model)
+        .find(|(known, _)| *known == id)
         .map(|(_, price)| price)
+}
+
+/// Whether the model is a Claude id, whose price is what the API would charge rather than what
+/// the plan charges.
+pub fn is_api_equivalent(model: &str) -> bool {
+    base_model(model).starts_with("claude-") && price_of(model).is_some()
+}
+
+/// A Claude id without its context suffix and date; any other id unchanged.
+fn base_model(model: &str) -> &str {
+    if !model.starts_with("claude-") {
+        return model;
+    }
+    let id = model.strip_suffix("[1m]").unwrap_or(model);
+    match id.rsplit_once('-') {
+        Some((base, date)) if date.len() == 8 && date.bytes().all(|b| b.is_ascii_digit()) => base,
+        _ => id,
+    }
 }
 
 /// What a model's tokens cost at its list price; a model with no price costs nothing rather than
