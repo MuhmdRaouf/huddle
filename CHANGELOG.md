@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.0.2
+
+A live page for the router, and route events for every request.
+
+### Router
+
+- The router serves a live page at `http://127.0.0.1:4835/`: health, Claude Code's wiring, one card per lane, the 200 latest model requests, requests in flight, and delegated jobs. It keeps everything in memory, shows no prompts and no keys, and does nothing while no page is open.
+- `/huddle-router/state` answers the page's data as JSON; `/huddle-router/live` streams it.
+- Model requests that reach the router through Claude Code's decrypted connection write their route events, so `huddle provider <p> usage` counts them. Before this, only plain-HTTP requests did.
+
 ## 0.0.1
 
 First release of huddle: one local router for the provider models, and the delegation words that hand work to other CLI harnesses.
