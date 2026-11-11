@@ -245,6 +245,7 @@ impl Dashboard {
             inputs.plugins = (self.inputs.plugins)();
             inputs.harnesses = (self.inputs.harnesses)();
         }
+        self.live.credit(&inputs.sessions);
         let mut snapshot = self.live.snapshot(now_ms(), &inputs);
         join::apply(&mut snapshot);
         snapshot

@@ -81,8 +81,9 @@ pub(crate) struct Summary {
     pub last_assistant_ms: Option<u64>,
     pub last_usage: Option<Usage>,
     pub one_hour_cache: bool,
-    /// One entry per request id, holding the last usage seen for it, in order of first sight.
-    pub requests: Vec<(String, Usage)>,
+    /// One entry per request id, holding the last usage and stop reason seen for it, in order
+    /// of first sight.
+    pub requests: Vec<(String, Usage, Option<String>)>,
 }
 
 impl Summary {
@@ -131,7 +132,8 @@ impl Summary {
         replace_some(&mut self.model, message.model);
         replace_some(&mut self.requested_model, requested_model);
         self.last_assistant_ms = at_ms;
-        let phase = match message.stop_reason.as_deref() {
+        let stop = message.stop_reason;
+        let phase = match stop.as_deref() {
             Some("end_turn" | "stop_sequence" | "max_tokens" | "refusal") => Phase::Ended,
             _ => Phase::Tool,
         };
@@ -149,9 +151,14 @@ impl Summary {
             .and_then(|c| c.ephemeral_1h_input_tokens)
             .is_some_and(|tokens| tokens > 0);
         if let Some(id) = request_id {
-            match self.requests.iter_mut().find(|(seen, _)| *seen == id) {
-                Some(entry) => entry.1 = usage,
-                None => self.requests.push((id, usage)),
+            match self.requests.iter_mut().find(|(seen, _, _)| *seen == id) {
+                Some(entry) => {
+                    entry.1 = usage;
+                    if stop.is_some() {
+                        entry.2 = stop;
+                    }
+                }
+                None => self.requests.push((id, usage, stop)),
             }
         }
     }
@@ -163,10 +170,11 @@ impl Summary {
     pub(crate) fn tags(&self, agent_id: &str) -> Vec<RequestTag> {
         self.requests
             .iter()
-            .map(|(request_id, usage)| RequestTag {
+            .map(|(request_id, usage, stop)| RequestTag {
                 request_id: request_id.clone(),
                 agent_id: agent_id.to_string(),
                 usage: *usage,
+                stop: stop.clone(),
             })
             .collect()
     }

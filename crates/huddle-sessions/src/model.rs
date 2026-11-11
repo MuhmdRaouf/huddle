@@ -51,6 +51,8 @@ pub struct RequestTag {
     pub request_id: String,
     pub agent_id: String,
     pub usage: Usage,
+    /// The `stop_reason` of the request's last assistant line.
+    pub stop: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]

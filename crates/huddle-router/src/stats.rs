@@ -25,6 +25,10 @@ pub struct Sample {
     pub cache_write: u64,
     pub tokens_out: u64,
     pub session: Option<String>,
+    /// The answer's `request-id`: the session logs credit the tokens by it.
+    pub upstream_id: Option<String>,
+    /// False until the router or a session log read the request's usage.
+    pub usage_known: bool,
 }
 
 /// One model's finished requests, oldest first, and the lane that served it last.
@@ -255,6 +259,8 @@ mod tests {
             cache_write: 2,
             tokens_out: 50,
             session: Some("cse_a".into()),
+            upstream_id: None,
+            usage_known: true,
         }
     }
 

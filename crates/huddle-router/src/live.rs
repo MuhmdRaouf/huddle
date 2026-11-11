@@ -5,7 +5,7 @@ use std::collections::{HashMap, VecDeque};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
-use huddle_sessions::{Session, Worktree};
+use huddle_sessions::{RequestTag, Session, Worktree};
 use tokio::sync::watch;
 
 use crate::answer_facts::PlanUsage;
@@ -392,6 +392,68 @@ impl LiveState {
         }
     }
 
+    /// Credits each finished request a session log names by its `request-id`: the agent, and
+    /// the usage and stop reason the router could not read, which then count in the charts,
+    /// the model rows and the lane totals. The router's own reading wins; a request is counted
+    /// once.
+    pub fn credit(&self, sessions: &[Session]) {
+        let tags: HashMap<&str, (&str, &RequestTag)> = sessions
+            .iter()
+            .flat_map(|session| {
+                session
+                    .request_ids
+                    .iter()
+                    .map(move |tag| (tag.request_id.as_str(), (session.id.as_str(), tag)))
+            })
+            .collect();
+        if tags.is_empty() {
+            return;
+        }
+        let mut inner = lock(&self.inner);
+        let Inner {
+            recent,
+            models,
+            lanes,
+            ..
+        } = &mut *inner;
+        for row in recent.iter_mut() {
+            let Some((session, tag)) = row.upstream_id.as_deref().and_then(|id| tags.get(id))
+            else {
+                continue;
+            };
+            if row.agent.is_none() {
+                row.agent = Some(format!("{session}:{}", tag.agent_id));
+            }
+            let usage = tag.usage;
+            row.tokens_in = row
+                .tokens_in
+                .or(Some(usage.input + usage.cache_read + usage.cache_write));
+            row.cache_read = row.cache_read.or(Some(usage.cache_read));
+            row.cache_write = row.cache_write.or(Some(usage.cache_write));
+            row.tokens_out = row.tokens_out.or(Some(usage.output));
+            if row.stop.is_none() {
+                row.stop.clone_from(&tag.stop);
+            }
+        }
+        for series in models.values_mut() {
+            for sample in series.samples.iter_mut().filter(|s| !s.usage_known) {
+                let Some((_, tag)) = sample.upstream_id.as_deref().and_then(|id| tags.get(id))
+                else {
+                    continue;
+                };
+                let usage = tag.usage;
+                sample.tokens_in = usage.input + usage.cache_read + usage.cache_write;
+                sample.cache_read = usage.cache_read;
+                sample.cache_write = usage.cache_write;
+                sample.tokens_out = usage.output;
+                sample.usage_known = true;
+                let lane = lanes.entry(series.lane.clone()).or_default();
+                lane.tokens_in += sample.tokens_in;
+                lane.tokens_out += sample.tokens_out;
+            }
+        }
+    }
+
     pub fn snapshot(&self, now_ms: u64, inputs: &SnapshotInputs) -> Snapshot {
         let mut inner = lock(&self.inner);
         let cutoff = now_ms.saturating_sub(ERROR_WINDOW_MS);
@@ -515,6 +577,8 @@ fn record(inner: &mut Inner, id: u64, active: Active, finish: Finish) {
                 cache_write: cache_write.unwrap_or(0),
                 tokens_out: tokens_out.unwrap_or(0),
                 session: session.clone(),
+                upstream_id: finish.upstream_id.clone(),
+                usage_known: finish.usage.is_some(),
             },
         );
         series.prune(finish.now_ms);
@@ -1146,6 +1210,130 @@ mod tests {
         assert_eq!(row.stop.as_deref(), Some("end_turn"));
         assert_eq!(row.upstream_id.as_deref(), Some("req_011CV"));
         assert_eq!(row.agent, None);
+    }
+
+    fn logged(id: &str, agent: &str, request: &str) -> huddle_sessions::Session {
+        huddle_sessions::Session {
+            id: id.into(),
+            title: String::new(),
+            project: None,
+            cwd: None,
+            branch: None,
+            model: None,
+            state: huddle_sessions::SessionState::Waiting,
+            started_ms: None,
+            last_ms: None,
+            waiting_since_ms: None,
+            context_tokens: None,
+            context_limit: 200_000,
+            cache_ttl_ms: 300_000,
+            last_request_ms: None,
+            agents: Vec::new(),
+            request_ids: vec![huddle_sessions::RequestTag {
+                request_id: request.into(),
+                agent_id: agent.into(),
+                usage: huddle_sessions::Usage {
+                    input: 10,
+                    cache_read: 200,
+                    cache_write: 30,
+                    output: 70,
+                },
+                stop: Some("tool_use".into()),
+            }],
+        }
+    }
+
+    fn unread(live: &LiveState, upstream: &str, at: u64) {
+        answered(
+            live,
+            "anthropic",
+            "claude-opus-5-5",
+            at,
+            400,
+            Finish {
+                upstream_id: Some(upstream.into()),
+                ..end(200, None, at + 1_400)
+            },
+        );
+    }
+
+    #[test]
+    fn q2_the_logs_usage_fills_the_row_the_charts_and_the_lane() {
+        let live = LiveState::new(T0);
+        let base = T0 - T0 % 30_000;
+        unread(&live, "req_A", base + 1_000);
+        live.credit(&[logged("s1", "agent-x", "req_A")]);
+        let snapshot = live.snapshot(base + 10_000, &inputs(&["anthropic"]));
+        let row = &snapshot.recent[0];
+        assert_eq!(row.agent.as_deref(), Some("s1:agent-x"));
+        assert_eq!(
+            (
+                row.tokens_in,
+                row.cache_read,
+                row.cache_write,
+                row.tokens_out
+            ),
+            (Some(240), Some(200), Some(30), Some(70))
+        );
+        assert_eq!(row.stop.as_deref(), Some("tool_use"));
+        let bucket = &snapshot.buckets.models["claude-opus-5-5"][29];
+        assert_eq!((bucket.tok_in, bucket.tok_out), (240, 70));
+        let model = &snapshot.models[0];
+        assert_eq!((model.tokens_in, model.tokens_out), (240, 70));
+        assert_eq!(model.out_tps_p50, Some(70));
+        assert_eq!(
+            (snapshot.lanes[0].tokens_in, snapshot.lanes[0].tokens_out),
+            (240, 70)
+        );
+    }
+
+    #[test]
+    fn q2_a_request_is_credited_once() {
+        let live = LiveState::new(T0);
+        unread(&live, "req_A", T0);
+        let logs = [logged("s1", "agent-x", "req_A")];
+        live.credit(&logs);
+        live.credit(&logs);
+        let snapshot = live.snapshot(T0 + 5_000, &inputs(&["anthropic"]));
+        assert_eq!(snapshot.lanes[0].tokens_in, 240);
+        assert_eq!(snapshot.models[0].tokens_in, 240);
+    }
+
+    #[test]
+    fn q2_the_routers_own_usage_wins_over_the_log() {
+        let live = LiveState::new(T0);
+        answered(
+            &live,
+            "anthropic",
+            "claude-opus-5-5",
+            T0,
+            400,
+            Finish {
+                usage: Some(usage(999, 1)),
+                upstream_id: Some("req_A".into()),
+                ..end(200, None, T0 + 1_400)
+            },
+        );
+        live.credit(&[logged("s1", "agent-x", "req_A")]);
+        let snapshot = live.snapshot(T0 + 5_000, &inputs(&["anthropic"]));
+        let row = &snapshot.recent[0];
+        assert_eq!((row.tokens_in, row.tokens_out), (Some(999), Some(1)));
+        assert_eq!(row.agent.as_deref(), Some("s1:agent-x"));
+        assert_eq!(snapshot.lanes[0].tokens_in, 999);
+    }
+
+    #[test]
+    fn q2_no_match_and_no_upstream_id_leave_the_row_alone() {
+        let live = LiveState::new(T0);
+        unread(&live, "req_other", T0);
+        let id = begin(&live, "anthropic", "claude-opus-5-5", T0);
+        live.finish(id, end(200, None, T0 + 10));
+        live.credit(&[logged("s1", "agent-x", "req_A")]);
+        let snapshot = live.snapshot(T0 + 5_000, &inputs(&["anthropic"]));
+        for row in &snapshot.recent {
+            assert_eq!((row.agent.as_deref(), row.tokens_in), (None, None));
+        }
+        assert_eq!(snapshot.lanes[0].tokens_in, 0);
     }
 
     #[test]

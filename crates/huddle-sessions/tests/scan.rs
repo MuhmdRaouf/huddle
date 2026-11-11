@@ -303,3 +303,11 @@ fn q1_a_session_lists_its_fifty_newest_subagents() {
     assert!(agents.iter().any(|a| a.id == "agent-n48"));
     assert!(agents.iter().all(|a| a.id != "agent-n49"));
 }
+
+#[test]
+fn q2_a_request_tag_carries_its_stop_reason() {
+    let sessions = scanned();
+    let tags = &by_id(&sessions, "s-tool").request_ids;
+    let main = tags.iter().find(|t| t.request_id == "req_t1").expect("tag");
+    assert_eq!(main.stop.as_deref(), Some("tool_use"));
+}
