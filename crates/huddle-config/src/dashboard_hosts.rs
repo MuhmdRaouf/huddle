@@ -3,7 +3,7 @@
 
 use std::fmt;
 use std::fs;
-use std::io::{self, Write as _};
+use std::io;
 use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
@@ -87,25 +87,10 @@ pub fn config_path(paths: &Paths) -> PathBuf {
 /// Creates `path` with [`DEFAULT_CONFIG`] when it does not exist; an existing file is never
 /// touched. Answers whether the file was written.
 pub fn write_default_if_missing(path: &Path) -> Result<bool, DashboardHostsError> {
-    let failed = |err: io::Error| DashboardHostsError::Write {
+    crate::files::write_if_missing(path, DEFAULT_CONFIG).map_err(|err| DashboardHostsError::Write {
         file: path.display().to_string(),
         message: err.to_string(),
-    };
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).map_err(failed)?;
-    }
-    match fs::OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(path)
-    {
-        Ok(mut file) => {
-            file.write_all(DEFAULT_CONFIG.as_bytes()).map_err(failed)?;
-            Ok(true)
-        }
-        Err(err) if err.kind() == io::ErrorKind::AlreadyExists => Ok(false),
-        Err(err) => Err(failed(err)),
-    }
+    })
 }
 
 /// The lowercase form of a bare host name: letters, digits, dots and hyphens, no empty label.

@@ -57,6 +57,12 @@ impl fmt::Display for ProvidersFileError {
 impl std::error::Error for ProvidersFileError {}
 
 /// `<config_dir>/providers.toml`.
+/// The file `setup --install` creates when `providers.toml` is missing: no provider enabled.
+pub const DEFAULT_PROVIDERS: &str = "\
+# Providers whose lane huddle-router serves. /<provider>:setup adds one, /<provider>:remove takes it out.
+providers = []
+";
+
 pub fn providers_path(dir: &Path) -> PathBuf {
     dir.join(PROVIDERS_FILE)
 }

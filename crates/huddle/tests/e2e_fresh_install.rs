@@ -86,6 +86,18 @@ fn walk(home: &TempHome, layout: &Layout) {
 
     let defaults = fs::read_to_string(layout.config.join("config.toml")).expect("config.toml");
     assert!(defaults.contains('#'), "commented defaults: {defaults}");
+    for (file, key) in [
+        ("providers.toml", "providers"),
+        ("harnesses.toml", "harnesses"),
+    ] {
+        let text = fs::read_to_string(layout.config.join(file)).expect(file);
+        let table: toml::Table = text.parse().expect("toml");
+        assert_eq!(
+            table[key].as_array().map(Vec::len),
+            Some(0),
+            "{file}: {text}"
+        );
+    }
     let ca = layout.data.join("ca/huddle-ca.pem");
     assert!(ca.exists());
     assert!(layout.state.exists());

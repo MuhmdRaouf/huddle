@@ -47,6 +47,12 @@ pub struct InstallReport {
 /// Loads or creates the local CA, starts the router, then patches settings.json. The router
 /// comes before the patch, so a router that cannot start leaves settings.json untouched.
 ///
+/// The file `setup --install` creates when `harnesses.toml` is missing: no extra coding CLI.
+const DEFAULT_HARNESSES: &str = "\
+# Extra coding CLIs huddle can delegate to, one [[harnesses]] table each (see docs/USAGE.md).
+harnesses = []
+";
+
 /// `exe` is the running binary (`std::env::current_exe`, resolved by the word).
 pub fn run(env: &Env, paths: &Paths, exe: &Path) -> Result<InstallReport, InstallError> {
     let port = huddle_config::paths::router_port(env)
@@ -61,6 +67,16 @@ pub fn run(env: &Env, paths: &Paths, exe: &Path) -> Result<InstallReport, Instal
         &huddle_config::dashboard_hosts::config_path(paths),
     )
     .map_err(|error| InstallError::Config(error.to_string()))?;
+    for (path, text) in [
+        (
+            huddle_config::providers_file::providers_path(&paths.config_dir),
+            huddle_config::providers_file::DEFAULT_PROVIDERS,
+        ),
+        (paths.config_dir.join("harnesses.toml"), DEFAULT_HARNESSES),
+    ] {
+        huddle_config::files::write_if_missing(&path, text)
+            .map_err(|error| InstallError::Config(format!("{}: {error}", path.display())))?;
+    }
 
     start_router(exe)?;
     if !router_answers(port) {
