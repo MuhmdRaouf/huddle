@@ -85,6 +85,14 @@ run `/huddle:setup` again: it names each old plugin it finds. Then use
 
 ## Providers
 
+<p align="center">
+  <img src="assets/banners/zai.svg" alt="Z.ai GLM: GLM models in Claude Code, through huddle" width="32%">
+  <img src="assets/banners/kimi.svg" alt="Kimi: Kimi models in Claude Code, through huddle" width="32%">
+  <img src="assets/banners/deepseek.svg" alt="DeepSeek: DeepSeek models in Claude Code, through huddle" width="32%">
+  <img src="assets/banners/minimax.svg" alt="MiniMax: MiniMax models in Claude Code, through huddle" width="32%">
+  <img src="assets/banners/qwen.svg" alt="Qwen: Qwen models in Claude Code, through huddle" width="32%">
+</p>
+
 | Provider | Models | Commands |
 |---|---|---|
 | Z.ai GLM | `glm-5.3`, `glm-5.3-flash` | `/huddle:zai:setup`, `/huddle:zai:remove`, `/huddle:zai:usage` |

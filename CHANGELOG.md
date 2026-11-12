@@ -43,6 +43,7 @@ The five providers are part of huddle, and a key goes in from a page or a termin
 ### Build
 
 - Rust 1.99.1 in `mise.toml`, the Docker toolchain image and CI. mise wraps cargo with mr-boxington (`mbx`), so every worktree shares one build cache.
+- One banner per provider in `assets/banners/<p>.svg`, shown in the README's Providers section.
 
 ### Upgrading from 0.0.5
 
