@@ -7,6 +7,7 @@ Provider setup holds across sessions, and the key check gets a real answer.
 ### Fixes
 
 - A new Claude Code session no longer removes the set-up providers, their keys and their agents.
+- The key check sends `Host`, so Z.ai answers it: a working key reads as checked and a wrong one is refused.
 
 ## 0.0.6
 

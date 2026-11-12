@@ -61,11 +61,13 @@ pub fn ping_model(provider: &Provider) -> &'static str {
 }
 
 /// The one request: trailing `/` collapsed off the base, `/v1/messages`, the key in
-/// `authorization` alone. Any part that cannot ride the wire is `EUpstream`, read as Unknown.
+/// `authorization` alone and `host` naming the upstream, which HTTP/1.1 requires. Any part that
+/// cannot ride the wire is `EUpstream`, read as Unknown.
 fn build_request(base_url: &str, key: &str, model: &str) -> Result<UpstreamRequest, FailureCode> {
     let target =
         Uri::try_from(base_url.trim_end_matches('/')).map_err(|_| FailureCode::EUpstream)?;
-    let headers = request_headers(key)?;
+    let host = target.authority().ok_or(FailureCode::EUpstream)?.as_str();
+    let headers = request_headers(host, key)?;
     Ok(UpstreamRequest {
         url: upstream_url(&target, "/v1/messages")?,
         method: Method::POST,
@@ -76,11 +78,12 @@ fn build_request(base_url: &str, key: &str, model: &str) -> Result<UpstreamReque
     })
 }
 
-/// The three headers the check sends. A value that is not a legal header byte string is
+/// The four headers the check sends. A value that is not a legal header byte string is
 /// `EUpstream`, never a panic and never a leaked key.
-fn request_headers(key: &str) -> Result<HeaderMap, FailureCode> {
+fn request_headers(host: &str, key: &str) -> Result<HeaderMap, FailureCode> {
     let mut headers = HeaderMap::new();
     for (name, value) in [
+        ("host", host.to_string()),
         ("authorization", format!("Bearer {key}")),
         ("anthropic-version", "2023-06-01".to_string()),
         ("content-type", "application/json".to_string()),

@@ -61,3 +61,14 @@ async fn a_bad_url_is_unknown_not_a_panic() {
         Verdict::Unknown
     );
 }
+
+/// Z.ai answers 400 to an HTTP/1.1 request without `Host`, so the check names the upstream's
+/// host and port like any client.
+#[tokio::test]
+async fn the_check_sends_the_host_it_asks() {
+    let fake = FakeUpstream::start(|_, _| Step::answer(200, "{}")).await;
+    check_key(&fake.url(), "the-key", "glm-5.3-flash", &client()).await;
+    let requests = fake.requests();
+    let expected = format!("127.0.0.1:{}", fake.port());
+    assert_eq!(requests[0].header("host"), Some(expected.as_str()));
+}

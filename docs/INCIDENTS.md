@@ -232,3 +232,13 @@ Each incident, its cause, and the test that now stops it. A guard named here mus
   every session start removed every provider.
 - **Guard:** crates/huddle/tests/session_providers.rs:a_session_start_keeps_a_provider_set_up_inside_huddle
 - **Rule:** only `/huddle:<p>:remove` turns a provider off; a hook never removes one.
+
+## 2026-11-13, every key check got HTTP 400 from Z.ai
+
+- **What happened:** `/huddle:zai:setup` reported "Z.ai GLM answered HTTP 400 to the key check" for a key
+  that works; the same request from another client got 200.
+- **Cause:** the key check built its HTTP/1.1 request without a `Host` header, and Z.ai's gateway refuses
+  such a request with 400. The test fakes answered it anyway. A refused key also read as 400, so no key
+  was ever checked.
+- **Guard:** crates/huddle-router/tests/keycheck.rs:the_check_sends_the_host_it_asks
+- **Rule:** every request huddle builds itself names its `Host`.
