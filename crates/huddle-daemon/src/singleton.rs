@@ -120,6 +120,17 @@ pub fn wait(path: &Path, holder: &str, within: Duration) -> Result<LockGuard, Si
     }
 }
 
+/// How long a router start waits for the lock: longer than a probe's momentary hold (see
+/// [`holder`]), far shorter than a live router's life.
+pub const START_WAIT: Duration = Duration::from_millis(200);
+
+/// Takes the lock for a router start. `flock` has no read-only look, so [`holder`] takes the
+/// lock for an instant; waiting out [`START_WAIT`] keeps that instant from refusing a start,
+/// while a live holder still refuses it.
+pub fn take_for_start(path: &Path, holder: &str) -> Result<LockGuard, SingletonError> {
+    wait(path, holder, START_WAIT)
+}
+
 /// Answers the pid holding the lock at `path`: it tries the same non-blocking flock on a fresh
 /// handle. No file, a free lock, or an unreadable file is `None`; held names the pid on the
 /// file's first line, 0 when it does not parse.
@@ -284,5 +295,41 @@ mod tests {
             .filter_map(|t| t.join().expect("join"))
             .collect();
         assert_eq!(holders.len(), 1, "exactly one starter holds the lock");
+    }
+
+    #[test]
+    fn b6_a_probe_never_refuses_a_starting_router() {
+        let home = TempHome::new();
+        let path = Arc::new(home.root().join("run/router.lock"));
+        lock(&path, "seed").expect("create the file");
+        let stop = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let probe = {
+            let (path, stop) = (Arc::clone(&path), Arc::clone(&stop));
+            thread::spawn(move || {
+                while !stop.load(std::sync::atomic::Ordering::Relaxed) {
+                    let _ = holder(&path);
+                }
+            })
+        };
+        for _ in 0..200 {
+            let guard = take_for_start(&path, "huddle-router")
+                .expect("a probe's momentary hold never refuses a start");
+            drop(guard);
+        }
+        stop.store(true, std::sync::atomic::Ordering::Relaxed);
+        probe.join().expect("join");
+    }
+
+    #[test]
+    fn b6_a_live_holder_still_refuses_a_start_after_its_wait() {
+        let home = TempHome::new();
+        let path = home.root().join("run/router.lock");
+        let _held = lock(&path, "huddle-router").expect("first");
+        let began = Instant::now();
+        assert!(matches!(
+            take_for_start(&path, "huddle-router"),
+            Err(SingletonError::Held(_))
+        ));
+        assert!(began.elapsed() >= START_WAIT);
     }
 }

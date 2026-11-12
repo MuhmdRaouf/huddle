@@ -8,8 +8,12 @@ use std::io;
 use std::os::unix::fs::DirBuilderExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::time::{Duration, Instant};
 
 use crate::ports;
+
+/// How long a drop waits for the record of a router whose lock file exists.
+const LATE_RECORD_WAIT: Duration = Duration::from_secs(3);
 
 const KEPT_FROM_PARENT: &[&str] = &["PATH", "LANG", "LC_ALL", "LC_CTYPE", "USER", "LOGNAME"];
 
@@ -94,9 +98,31 @@ impl TempHome {
     }
 }
 
+impl TempHome {
+    /// Waits up to `within` for the router record a detached start writes. Answers whether it
+    /// appeared. A test that caused a spawn ends with this, so its drop can stop the router.
+    pub fn settle_router(&self, within: Duration) -> bool {
+        let record = self.root.join("r/huddle/router.toml");
+        let deadline = Instant::now() + within;
+        while !record.exists() {
+            if Instant::now() >= deadline {
+                return false;
+            }
+            std::thread::sleep(Duration::from_millis(25));
+        }
+        true
+    }
+}
+
 impl Drop for TempHome {
     fn drop(&mut self) {
+        // A router a hook spawned can write its record after the test body ends: when its
+        // lock file is already here, wait for the record before stopping it.
+        if self.root.join("r/huddle/router.lock").exists() {
+            self.settle_router(LATE_RECORD_WAIT);
+        }
         stop_key_page_helpers(&self.root);
+        stop_recorded_router(&self.root);
         // A child's last writes can land while the tree is being removed; a
         // few short retries close that race without waiting on a live child.
         for _ in 0..20 {
@@ -137,6 +163,30 @@ fn stop_key_page_helpers(root: &Path) {
             // SAFETY: the pid is live and its command line is a key page helper.
             unsafe { libc::kill(pid, libc::SIGTERM) };
         }
+    }
+}
+
+/// Stops the router this home's runtime folder records: a hook or a word can start one that
+/// outlives the test. Only a pid whose command line is a `router serve` is signalled.
+fn stop_recorded_router(root: &Path) {
+    let Some(pid) = fs::read_to_string(root.join("r/huddle/router.toml"))
+        .ok()
+        .and_then(|text| {
+            text.lines()
+                .find_map(|line| line.strip_prefix("pid = "))
+                .and_then(|pid| pid.trim().parse::<libc::pid_t>().ok())
+        })
+    else {
+        return;
+    };
+    let command = Command::new("ps")
+        .args(["-o", "command=", "-p", &pid.to_string()])
+        .output()
+        .map(|out| String::from_utf8_lossy(&out.stdout).into_owned())
+        .unwrap_or_default();
+    if command.contains(" router serve") {
+        // SAFETY: the pid is live and its command line is a router serve.
+        unsafe { libc::kill(pid, libc::SIGTERM) };
     }
 }
 

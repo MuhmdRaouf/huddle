@@ -60,6 +60,8 @@ fn wait_running(home: &TempHome, port: u16) -> bool {
         }
         thread::sleep(Duration::from_millis(50));
     }
+    // A router that starts late under load still writes its record; the home's drop stops it.
+    home.settle_router(Duration::from_secs(10));
     thread::sleep(Duration::from_secs(4));
     up
 }

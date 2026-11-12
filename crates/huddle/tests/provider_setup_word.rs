@@ -34,7 +34,7 @@ fn fake_answering(status: u16) -> FakeUpstream {
         .block_on(FakeUpstream::start(move |_, _| Step::answer(status, "{}")))
 }
 
-/// The key file the zai plugin writes: a mode-600 env file in a mode-700 directory.
+/// A stored zai key: a mode-600 env file in the mode-700 `keys` folder of the huddle config folder.
 fn stored_zai_key(home: &TempHome) {
     let dir = home.root().join(".config/huddle/keys");
     fs::create_dir_all(&dir).expect("mkdir");

@@ -208,3 +208,84 @@ fn parallel_takers_of_one_stale_lease_never_both_win() {
         assert_eq!(winners, 1, "round {round}");
     }
 }
+
+/// A stand-in whose command line names `router serve`, recorded as the router of `root`.
+fn recorded_router(root: &Path, command: &str) -> std::process::Child {
+    let child = std::process::Command::new("sh")
+        .args(["-c", command])
+        .spawn()
+        .expect("spawn");
+    let run = root.join("r/huddle");
+    fs::create_dir_all(&run).expect("mkdir");
+    fs::write(run.join("router.toml"), format!("pid = {}\n", child.id())).expect("record");
+    child
+}
+
+fn alive(child: &mut std::process::Child) -> bool {
+    matches!(child.try_wait(), Ok(None))
+}
+
+#[test]
+fn b6_a_test_home_stops_the_router_it_caused() {
+    let home = TempHome::new();
+    let mut router = recorded_router(home.root(), "sleep 30; : router serve --by prompt-submit");
+    let mut other = recorded_router(home.root(), "sleep 30");
+    // The second record replaced the first; record the router again beside it.
+    let run = home.root().join("r/huddle");
+    fs::write(run.join("router.toml"), format!("pid = {}\n", router.id())).expect("record");
+    assert!(alive(&mut router));
+    drop(home);
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    while alive(&mut router) && std::time::Instant::now() < deadline {
+        thread::sleep(std::time::Duration::from_millis(20));
+    }
+    assert!(!alive(&mut router), "the router is stopped with its home");
+    assert!(
+        alive(&mut other),
+        "a pid that is not a router serve is left alone"
+    );
+    let _ = other.kill();
+    let _ = other.wait();
+}
+
+#[test]
+fn b6_a_router_that_starts_late_is_still_stopped() {
+    let home = TempHome::new();
+    let run = home.root().join("r/huddle");
+    fs::create_dir_all(&run).expect("mkdir");
+    fs::write(run.join("router.lock"), "").expect("lock file");
+    let script = format!(
+        "sleep 1; echo \"pid = $$\" > {}/router.toml; sleep 30; : router serve --by prompt-submit",
+        run.display()
+    );
+    let mut late = std::process::Command::new("sh")
+        .args(["-c", &script])
+        .spawn()
+        .expect("spawn");
+    assert!(!run.join("router.toml").exists(), "no record yet");
+    drop(home);
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    while alive(&mut late) && std::time::Instant::now() < deadline {
+        thread::sleep(std::time::Duration::from_millis(20));
+    }
+    let stopped = !alive(&mut late);
+    let _ = late.kill();
+    let _ = late.wait();
+    assert!(stopped, "the late router is stopped with its home");
+}
+
+#[test]
+fn b6_settle_router_returns_once_the_record_exists() {
+    let home = TempHome::new();
+    let run = home.root().join("r/huddle");
+    fs::create_dir_all(&run).expect("mkdir");
+    let record = run.join("router.toml");
+    let writer = thread::spawn(move || {
+        thread::sleep(std::time::Duration::from_millis(300));
+        fs::write(record, "pid = 1\n").expect("record");
+    });
+    assert!(home.settle_router(std::time::Duration::from_secs(5)));
+    writer.join().expect("join");
+    let quiet = TempHome::new();
+    assert!(!quiet.settle_router(std::time::Duration::from_millis(100)));
+}

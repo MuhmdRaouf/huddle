@@ -184,7 +184,7 @@ pub async fn run(
     // One router per home: a standing holder is named at once; a dead one never blocks, the
     // kernel already dropped its lock. Any other failure leaves the daemon serving unheld.
     let lock_guard = if listener.is_none() {
-        match singleton::lock(&run_dir.join(LOCK_FILE), ROUTER_NAME) {
+        match singleton::take_for_start(&run_dir.join(LOCK_FILE), ROUTER_NAME) {
             Ok(guard) => Some(guard),
             Err(SingletonError::Held(held)) => {
                 return Ok(ServeOutcome::AlreadyServed { pid: held.pid });
