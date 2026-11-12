@@ -89,9 +89,10 @@ impl World {
         self.record()["pid"].as_integer().expect("pid") as u32
     }
 
-    /// The URL the fake browser received.
+    /// The URL the fake browser received. The wait is long because macOS checks each new
+    /// script before its first run, which takes seconds on a loaded machine.
     fn opened_url(&self) -> String {
-        let deadline = Instant::now() + Duration::from_secs(3);
+        let deadline = Instant::now() + Duration::from_secs(20);
         loop {
             if let Ok(url) = fs::read_to_string(&self.browser_log)
                 && !url.is_empty()
