@@ -130,7 +130,7 @@ a{color:var(--accent)}
       <div class="badge warn"><svg viewBox="0 0 24 24"><path d="M12 8v5M12 16.5v.01"/><circle cx="12" cy="12" r="9"/></svg></div>
       <h1>{{ID}} is on, key not checked</h1>
     </div>
-    <div class="banner warn"><svg viewBox="0 0 24 24"><path d="M12 8v5M12 16.5v.01"/><circle cx="12" cy="12" r="9"/></svg><p><b>{{DISPLAY}} didn't answer in 20 seconds,</b> so huddle couldn't check the key. It's stored and {{ID}} is on. If {{DISPLAY}} requests fail, run <code>/huddle:{{ID}}:setup</code> again.</p></div>
+    <div class="banner warn"><svg viewBox="0 0 24 24"><path d="M12 8v5M12 16.5v.01"/><circle cx="12" cy="12" r="9"/></svg><p><b id="uncheckedWhy"></b> so huddle couldn't check the key. It's stored and {{ID}} is on. If {{DISPLAY}} requests fail, run <code>/huddle:{{ID}}:setup</code> again.</p></div>
     <ul class="checks" id="uncheckedSteps"></ul>
   </div>
 
@@ -213,7 +213,7 @@ a{color:var(--accent)}
         var j=a.json;
         if(a.status===403||a.status===404||a.status===410){close();return}
         if(j.state==='ready'){fill(document.getElementById('readySteps'),j.steps);over=true;only(ready)}
-        else if(j.state==='unchecked'){fill(document.getElementById('uncheckedSteps'),j.steps);over=true;only(unchecked)}
+        else if(j.state==='unchecked'){document.getElementById('uncheckedWhy').textContent=j.why;fill(document.getElementById('uncheckedSteps'),j.steps);over=true;only(unchecked)}
         else if(j.state==='refused'){retry(false)}
         else{retry(true)}
       })

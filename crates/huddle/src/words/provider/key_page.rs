@@ -301,6 +301,8 @@ struct KeyBody {
 #[derive(Debug, Serialize)]
 struct Answer {
     state: &'static str,
+    /// What the check got, for the banner of an unchecked key; empty otherwise.
+    why: String,
     steps: Vec<StepView>,
 }
 
@@ -315,6 +317,7 @@ impl Answer {
     fn bare(state: &'static str) -> Answer {
         Answer {
             state,
+            why: String::new(),
             steps: Vec::new(),
         }
     }
@@ -329,6 +332,16 @@ fn answer(provider: &Provider, outcome: &Outcome) -> Answer {
         name: name.to_owned(),
         detail: detail.to_owned(),
         state,
+    };
+    let why = match outcome.verdict {
+        KeyVerdict::Unexpected(code) => {
+            format!(
+                "{} answered HTTP {code} to the key check,",
+                provider.display
+            )
+        }
+        KeyVerdict::Unknown => format!("{} didn't answer in 20 seconds,", provider.display),
+        _ => String::new(),
     };
     let (state, check) = match outcome.verdict {
         KeyVerdict::Refused => return Answer::bare("refused"),
@@ -371,7 +384,7 @@ fn answer(provider: &Provider, outcome: &Outcome) -> Answer {
     } else {
         steps.push(step("/model and agents", &models, ok));
     }
-    Answer { state, steps }
+    Answer { state, why, steps }
 }
 
 fn store_name() -> &'static str {
@@ -492,6 +505,26 @@ fn reply(status: StatusCode, content_type: &'static str, body: String) -> Respon
 mod tests {
     use super::*;
     use huddle_catalog::providers::provider_by_id;
+
+    #[test]
+    fn the_unchecked_banner_says_what_the_check_got() {
+        let zai = provider_by_id("zai").expect("zai");
+        let outcome = |verdict| Outcome {
+            verdict,
+            steps: Vec::new(),
+            ready: true,
+            changed: true,
+        };
+        assert_eq!(
+            answer(zai, &outcome(KeyVerdict::Unexpected(400))).why,
+            "Z.ai GLM answered HTTP 400 to the key check,"
+        );
+        assert_eq!(
+            answer(zai, &outcome(KeyVerdict::Unknown)).why,
+            "Z.ai GLM didn't answer in 20 seconds,"
+        );
+        assert!(!PAGE.contains("didn't answer in 20 seconds"));
+    }
 
     #[test]
     fn k10_the_page_names_an_unexpected_status() {

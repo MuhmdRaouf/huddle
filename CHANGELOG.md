@@ -8,6 +8,7 @@ Provider setup holds across sessions, and the key check gets a real answer.
 
 - A new Claude Code session no longer removes the set-up providers, their keys and their agents.
 - The key check sends `Host`, so Z.ai answers it: a working key reads as checked and a wrong one is refused.
+- The key page names what the check got (`answered HTTP 400`, or no answer in 20 seconds) instead of always saying it timed out.
 
 ## 0.0.6
 
