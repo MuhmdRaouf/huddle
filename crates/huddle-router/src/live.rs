@@ -10,6 +10,7 @@ use huddle_sessions::{RequestTag, Session, Worktree};
 use tokio::sync::watch;
 
 use crate::answer_facts::PlanUsage;
+use crate::router_events::{EventRow, PathFailing, PathRecovery, PathView, RouterEvents};
 use crate::sse::Usage;
 use crate::stats::{self, Buckets, MAX_MODELS, ModelRow, ModelSeries, Sample, percentile};
 
@@ -175,13 +176,17 @@ pub struct LaneLast {
 }
 
 /// The router card's counters.
-#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
 pub struct RouterStats {
     /// Dashboard live feeds open now.
     pub viewers: usize,
     pub connections: usize,
     pub cpu_pct: Option<f64>,
     pub rss_bytes: Option<u64>,
+    /// The last event lines, oldest first.
+    pub events: Vec<EventRow>,
+    /// The Anthropic path: ok, or failing since when and where.
+    pub path: PathView,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
@@ -286,6 +291,7 @@ pub struct LiveState {
     changes: watch::Sender<u64>,
     viewers: AtomicUsize,
     sink: Option<Arc<dyn HistorySink>>,
+    events: RouterEvents,
 }
 
 impl LiveState {
@@ -315,7 +321,26 @@ impl LiveState {
             changes: watch::channel(0).0,
             viewers: AtomicUsize::new(0),
             sink,
+            events: RouterEvents::default(),
         }
+    }
+
+    /// Files one router event line for the dashboard.
+    pub fn note_event(&self, now_ms: u64, line: &str) {
+        self.events.note(now_ms, line);
+        self.bump();
+    }
+
+    /// The Anthropic path fails, or fails further.
+    pub fn path_failing(&self, failing: PathFailing) {
+        self.events.fail(failing);
+        self.bump();
+    }
+
+    /// The Anthropic path answers again.
+    pub fn path_recovered(&self, recovery: PathRecovery) {
+        self.events.recover(recovery);
+        self.bump();
     }
 
     /// Counts one open dashboard feed until the guard drops.
@@ -535,6 +560,7 @@ impl LiveState {
             series.prune(now_ms);
         }
         inner.models.retain(|_, series| !series.is_empty());
+        let (events, path) = self.events.view();
         Snapshot {
             version: inputs.version.clone(),
             pid: inputs.pid,
@@ -550,6 +576,8 @@ impl LiveState {
                 connections: inputs.connections,
                 cpu_pct: inputs.process.cpu_pct,
                 rss_bytes: inputs.process.rss_bytes,
+                events,
+                path,
             },
             plan: inner.plan,
             buckets: stats::buckets(&inner.models, now_ms),

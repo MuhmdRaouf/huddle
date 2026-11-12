@@ -147,6 +147,7 @@ pub async fn run(
     let mut listener = None;
     let mut lock_release = None;
     let mut started_by = by.clone();
+    let mut took_over = None;
     if takeover {
         let old_pid = read_record(&paths).map(|record| record.pid);
         match tokio::task::spawn_blocking({
@@ -159,7 +160,9 @@ pub async fn run(
             Ok(Ok(taken)) => {
                 started_by = "handover".to_owned();
                 if let Some(old) = old_pid {
-                    log(format!("huddle-router: took over from pid={old}"));
+                    let line = format!("huddle-router: took over from pid={old}");
+                    log(line.clone());
+                    took_over = Some(line);
                 }
                 listener = Some(taken);
                 lock_release = Some(hold_lock_behind_the_run(run_dir.clone(), log.clone()));
@@ -208,10 +211,11 @@ pub async fn run(
             message: error.to_string(),
         });
     }
-    log(format!(
+    let start_line = format!(
         "huddle-router: start v{version} pid={} port={port} by={started_by}",
         std::process::id()
-    ));
+    );
+    log(start_line.clone());
 
     // The daemon must not chain through a router, its own or a neighbour's; the check probes
     // loopback proxies, so it runs off the async task.
@@ -283,6 +287,12 @@ pub async fn run(
         },
         &initial_enabled,
     );
+    // The lines logged before the router existed join the dashboard's recent events, and the
+    // lines after them reach it through the router's own log.
+    for line in took_over.iter().chain([&start_line]) {
+        router.note_event(line);
+    }
+    let log = router.logger();
 
     // The handover socket gives the listening socket to the next binary without closing the
     // port; a socket that cannot open is logged and skipped, the router still serves.

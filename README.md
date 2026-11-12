@@ -158,7 +158,8 @@ It shows:
   errors and next step. A row opens the key, lane, `/model` entries and
   commands.
 - Projects, Worktrees and Jobs per repository.
-- Harnesses and Router.
+- Harnesses and Router, with the last router events and a failing Anthropic path
+  named on the Overview.
 
 The sidebar badges read as ratios, for example providers set up out of five.
 

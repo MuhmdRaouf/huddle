@@ -10,12 +10,14 @@ use crate::anthropic::{
 };
 use crate::body::model_of;
 use crate::connect::{ConnectCtx, Decrypt, TunnelTracker, connect_handler};
+use crate::crashlog::is_event;
 use crate::dashboard::{Dashboard, DashboardInputs, HISTORY_PATH, LIVE_PATH, STATE_PATH};
 use crate::keycache::sources_for;
 use crate::lane::{Lane, LaneError, Logger};
 use crate::live::{Finish, HistorySink, LiveState, RequestStart};
 pub use crate::probe::ProbeTiming;
 use crate::probe::{self, ProbeHandle, ProbeTarget};
+use crate::router_events::{PathFailing, PathRecovery};
 use crate::server::{
     BODY_LIMIT, EntryCtx, Handler, ServerLimits, cut_response, entry_handler, receive,
 };
@@ -90,6 +92,11 @@ impl FailStreak {
         self.raised = true;
         self.raised_at = now;
         true
+    }
+
+    /// When the failing run began and how many requests it has cost, while the path is raised.
+    pub fn failing(&self) -> Option<(u64, u32)> {
+        self.raised.then_some((self.run_since, self.run_failures))
     }
 
     /// Counts one success and resets the run. Some only for the first success after a raise.
@@ -188,7 +195,11 @@ impl Router {
 
     /// Like `new`, with the probe and silence timings set by the caller.
     pub fn with_tuning(config: RouterConfig, enabled: &[String], tuning: Tuning) -> Arc<Router> {
-        let log = config.log;
+        let live = Arc::new(match config.history.clone() {
+            Some(sink) => LiveState::with_sink(now_ms(), sink),
+            None => LiveState::new(now_ms()),
+        });
+        let log = events_noted(config.log, &live);
         let roots = os_roots(&*log);
         let client = Arc::new(UpstreamClient::new(UpstreamConfig {
             env: config.env.clone(),
@@ -196,14 +207,10 @@ impl Router {
             idle: tuning.idle,
         }));
         let tunnels = TunnelTracker::new();
-        let live = Arc::new(match config.history.clone() {
-            Some(sink) => LiveState::with_sink(now_ms(), sink),
-            None => LiveState::new(now_ms()),
-        });
 
         // One line per raise and one per recovery: the third failure in a minute names the
         // code, the phase and its fix hint, the first success after a raise names the recovery.
-        let on_outcome = failure_hook(&log, &config.anthropic_url, tuning.probe);
+        let on_outcome = failure_hook(&log, &config.anthropic_url, tuning.probe, Arc::clone(&live));
 
         // Inside a decrypted conversation every non-model request rides to the Anthropic
         // origin unchanged.
@@ -333,6 +340,17 @@ impl Router {
                 tunnels,
             }
         })
+    }
+
+    /// The router's log: every event line it takes also reaches the dashboard's recent events.
+    pub fn logger(&self) -> Logger {
+        Arc::clone(&self.log)
+    }
+
+    /// Files an event line the caller already logged, such as the start line written before the
+    /// router existed, in the dashboard's recent events.
+    pub fn note_event(&self, line: &str) {
+        self.live.note_event(now_ms(), line);
     }
 
     /// The router's entry handler: CONNECT first, then the Host guard, then the health answer,
@@ -761,6 +779,17 @@ fn lane_by_id(lanes: &RwLock<Arc<Vec<Arc<Lane>>>>, id: &'static str) -> Option<A
         .cloned()
 }
 
+/// `inner` with every event line also filed in the live state, stamped with the router's clock.
+fn events_noted(inner: Logger, live: &Arc<LiveState>) -> Logger {
+    let live = Arc::clone(live);
+    Arc::new(move |line: String| {
+        if is_event(&line) {
+            live.note_event(now_ms(), &line);
+        }
+        inner(line);
+    })
+}
+
 /// The lane logger as a borrowed-line note: one borrowed line in, one owned line out.
 fn pass_note(log: Logger) -> Arc<dyn Fn(&str) + Send + Sync> {
     Arc::new(move |line: &str| log(line.to_string()))
@@ -786,7 +815,12 @@ struct PathWatch {
 
 /// The hook every Anthropic outcome passes through. A raise starts the probe and logs the
 /// failing line; a recovery stops the probe and logs how long and how many.
-fn failure_hook(log: &Logger, target: &hyper::Uri, timing: ProbeTiming) -> OutcomeHook {
+fn failure_hook(
+    log: &Logger,
+    target: &hyper::Uri,
+    timing: ProbeTiming,
+    live: Arc<LiveState>,
+) -> OutcomeHook {
     let probe_target = probe_target_of(target);
     let watch = Mutex::new(PathWatch {
         streak: FailStreak::default(),
@@ -801,16 +835,24 @@ fn failure_hook(log: &Logger, target: &hyper::Uri, timing: ProbeTiming) -> Outco
                 AnswerOutcome::Failed { code, trace } => {
                     let line = raise(&mut watch, now, code, trace);
                     start_probe_on_raise(&mut watch, &line, &probe_target, timing, &log);
+                    show_failing(&watch, &live, code, &trace);
                     line
                 }
                 AnswerOutcome::Cut { code, .. } => {
-                    let line = raise(&mut watch, now, code, Trace::body());
+                    let trace = Trace::body();
+                    let line = raise(&mut watch, now, code, trace);
                     start_probe_on_raise(&mut watch, &line, &probe_target, timing, &log);
+                    show_failing(&watch, &live, code, &trace);
                     line
                 }
                 AnswerOutcome::Finished { status, trace, .. } if status < 500 => {
                     watch.streak.ok(now).map(|recovery| {
                         watch.probe = None;
+                        live.path_recovered(PathRecovery {
+                            at_ms: now,
+                            after_ms: recovery.down_ms,
+                            failed: recovery.failed,
+                        });
                         format!(
                             "huddle-router: Anthropic path recovered after {}; {} requests failed; now via {}",
                             human_duration(recovery.down_ms),
@@ -826,6 +868,20 @@ fn failure_hook(log: &Logger, target: &hyper::Uri, timing: ProbeTiming) -> Outco
             log(line);
         }
     })
+}
+
+/// The dashboard's view of a path that is raised: updated with each further failure.
+fn show_failing(watch: &PathWatch, live: &LiveState, code: FailureCode, trace: &Trace) {
+    if let Some((since_ms, failed)) = watch.streak.failing() {
+        live.path_failing(PathFailing {
+            since_ms,
+            code: code.as_str().to_owned(),
+            phase: trace.phase.as_str().to_owned(),
+            peer: trace.peer.map(|peer| peer.to_string()),
+            failed,
+            hint: fail_hint(code, trace).to_owned(),
+        });
+    }
 }
 
 /// A raise starts the one probe task that runs until the path recovers.

@@ -613,3 +613,54 @@ fn k15_phone_command_chips_wrap() {
     );
     assert!(phone.contains(".cmd{white-space:normal"), "{phone}");
 }
+
+#[test]
+fn k18_a_failing_path_is_the_first_needs_you_item() {
+    let state: Value = serde_json::from_str(FIXTURE).expect("fixture parses");
+    assert_eq!(state["router"]["path"]["state"], "failing");
+    let items = page_between("function attnItems(){", "const unsetProviders");
+    let anthropic = items.find("Anthropic is not answering:").expect("the item");
+    let first_other = items.find("SESS.filter").expect("session items");
+    assert!(anthropic < first_other, "the failing path leads the list");
+    assert!(items.contains("requests failed)"));
+    assert!(items.contains("cmd('huddle router log')"));
+    assert!(PAGE.contains("Anthropic recovered at "));
+    assert!(
+        PAGE.contains("30*MIN"),
+        "the recovery line lasts 30 minutes"
+    );
+}
+
+#[test]
+fn k18_the_router_page_lists_recent_events() {
+    let state: Value = serde_json::from_str(FIXTURE).expect("fixture parses");
+    assert!(
+        state["router"]["events"]
+            .as_array()
+            .is_some_and(|e| !e.is_empty())
+    );
+    let router = page_between("PAGES.router={", "/* ---------- drawers");
+    assert!(router.contains("secH('Recent events'"));
+    assert!(router.contains("No events since the router started."));
+    assert!(router.contains("RT.events"));
+}
+
+#[test]
+fn k18_command_chips_break_only_after_a_colon() {
+    let cmd = page_between("const cmd=c=>", "\n");
+    assert!(cmd.contains("<wbr>"), "{cmd}");
+    let phone = page_between(
+        "@media (max-width:600px){",
+        "@media (prefers-reduced-motion",
+    );
+    let chip = phone
+        .lines()
+        .find(|l| l.contains(".cmd{"))
+        .expect("phone chip rule");
+    assert!(!chip.contains("anywhere"), "{chip}");
+    assert!(chip.contains("overflow-wrap:normal"), "{chip}");
+    assert!(
+        phone.contains(".stword{"),
+        "the Status cell has a short phone form"
+    );
+}

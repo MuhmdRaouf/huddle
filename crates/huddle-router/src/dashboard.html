@@ -137,6 +137,8 @@ kbd{font-family:var(--mono);font-size:10.5px;padding:0 5px;border:1px solid var(
 .pill.ok{background:var(--ok-bg);color:var(--ok)}.pill.warn{background:var(--warn-bg);color:var(--warn)}.pill.bad{background:var(--bad-bg);color:var(--bad)}
 .pill.acc{background:var(--accent-bg);color:var(--accent)}.pill.off{background:var(--subtle);color:var(--muted)}
 .pill.na{color:var(--faint);padding-left:0;background:none}
+.stword{display:none}
+.evt{display:block;white-space:normal;min-width:160px}
 .tag{font-size:12px;font-weight:500;padding:2px 8px;border-radius:6px;white-space:nowrap}
 .tag.warn{background:var(--warn-bg);color:var(--warn)}.tag.bad{background:var(--bad-bg);color:var(--bad)}.tag.ok{background:var(--ok-bg);color:var(--ok)}.tag.acc{background:var(--accent-bg);color:var(--accent)}.tag.off{background:var(--subtle);color:var(--muted)}
 .sw{width:8px;height:8px;border-radius:2px;display:inline-block;flex:none}
@@ -357,7 +359,8 @@ td.empty{text-align:center;color:var(--faint);padding:28px 14px}
 }
 @media (max-width:760px){.kpis,.kpis.k6,.kpis.k5,.kpis.k3{grid-template-columns:repeat(2,minmax(0,1fr))}.kpis.k3 .kpi:last-child{grid-column:1/-1}.mtabs{grid-template-columns:repeat(2,minmax(0,1fr))}.mtab:nth-child(3){border-left:0}.mtab:nth-child(n+3){border-top:1px solid var(--line-soft)}}
 @media (max-width:600px){
-  .cmd{white-space:normal;overflow-wrap:anywhere;max-width:100%}
+  .cmd{white-space:normal;overflow-wrap:normal;max-width:100%}
+  .stl{display:none}.stword{display:inline}
   .hide-sm{display:none}
   .ph h1{font-size:21px}
   .ph .act{margin-left:0}
@@ -438,6 +441,7 @@ function ago(t){if(num(t)==null)return '—';const d=Math.max(0,NOW-t);if(d<4e3)
 function dur(d){if(num(d)==null)return '—';d=Math.max(0,d);if(d<MIN)return Math.floor(d/1e3)+'s';if(d<HR)return Math.floor(d/MIN)+'m '+String(Math.floor(d%MIN/1e3)).padStart(2,'0')+'s';if(d<DAY)return Math.floor(d/HR)+'h '+Math.floor(d%HR/MIN)+'m';return Math.floor(d/DAY)+'d '+Math.floor(d%DAY/HR)+'h'}
 const since=t=>num(t)==null?'—':dur(NOW-t);
 const clock=t=>num(t)==null?'—':new Date(t).toTimeString().slice(0,8);
+const hm=t=>clock(t).slice(0,5);
 const msf=v=>num(v)==null?'—':v>=1e4?(v/1e3).toFixed(1)+' s':Math.round(v)+' ms';
 const mb=b=>num(b)==null?'—':(b/1e6).toFixed(1)+' MB';
 
@@ -552,7 +556,7 @@ function build(s){
  HARN.state=hs.state==='ready'?'ready':'checking';
  WIRE=SNAP.wiring&&typeof SNAP.wiring==='object'?SNAP.wiring:{};
  const r=SNAP.router&&typeof SNAP.router==='object'?SNAP.router:{};
- RT={cpu:num(r.cpu_pct),rss:num(r.rss_bytes),viewers:num(r.viewers),conns:num(r.connections)};
+ RT={cpu:num(r.cpu_pct),rss:num(r.rss_bytes),viewers:num(r.viewers),conns:num(r.connections),events:arr(r.events),path:r.path&&typeof r.path==='object'?r.path:{}};
 }
 function projects(){
  const names=[...new Set([...SESS.map(s=>s.project),...WT.map(w=>w.project),...JOBS.map(j=>j.repo)].filter(Boolean))];
@@ -565,12 +569,12 @@ function projects(){
 }
 
 /* ---------- components ---------- */
-function pill(k,txt){const icon=k==='ok'?ic('check'):k==='bad'?ic('x'):k==='warn'?ic('alert'):k==='acc'?'<span class="dot acc pulse"></span>':k==='off'?ic('minus'):'';return `<span class="pill ${k}">${icon}${esc(txt)}</span>`}
+function pill(k,txt,short){const icon=k==='ok'?ic('check'):k==='bad'?ic('x'):k==='warn'?ic('alert'):k==='acc'?'<span class="dot acc pulse"></span>':k==='off'?ic('minus'):'';return `<span class="pill ${k}">${icon}${short?`<span class="stl">${esc(txt)}</span><span class="stword">${esc(short)}</span>`:esc(txt)}</span>`}
 const dot=(k,p)=>`<span class="dot ${k}${p?' pulse':''}"></span>`;
 const NA='<span class="faint">—</span>';
 const sw=m=>`<span class="sw" data-css="background:${col(m)}"></span>`;
 const modelTag=m=>m?`<span class="mt">${sw(m)}<span class="mono">${esc(m)}</span></span>`:NA;
-const cmd=c=>`<button class="cmd" data-copy="${esc(c)}" title="Copy">${esc(c)}${ic('copy')}</button>`;
+const cmd=c=>`<button class="cmd" data-copy="${esc(c)}" title="Copy">${esc(c).replace(/:/g,':<wbr>')}${ic('copy')}</button>`;
 const cid=t=>t?`<button class="cid" data-copy="${esc(t)}" title="Copy">${esc(t)}</button>`:NA;
 const meter=(p,k)=>`<div class="meter"><i class="${k||''}" data-css="width:${Math.max(0,Math.min(100,num(p)||0)).toFixed(1)}%"></i></div>`;
 function spark(v,color,cls){const n=v.length;if(n<2)return '';const max=Math.max(1e-9,...v);const d=v.map((x,i)=>(i?'L':'M')+(i/(n-1)*100).toFixed(2)+' '+(26-x/max*22).toFixed(2)).join(' ');
@@ -697,6 +701,7 @@ function histBlock(key,t){const tr=HT.trend[key],head='<h4>History <span class="
 
 /* ---------- overview ---------- */
 function attnItems(){const it=[];
+ const P=RT.path;if(P.state==='failing')it.push({k:'bad',tag:'Anthropic',t:`Anthropic is not answering: ${P.code||'error'} at ${P.phase||'?'} since ${hm(P.since_ms)} (${num(P.failed)||0} requests failed)`,m:`${P.hint||''}${P.peer?' (peer '+P.peer+')':''}`,act:cmd('huddle router log')});
  const open=s=>`<button class="btn sm" data-open="session:${esc(s.id)}">Open</button>`;
  SESS.filter(s=>sstate(s)==='waiting').sort((a,b)=>(a.waitingSince||0)-(b.waitingSince||0)).forEach(s=>it.push({k:'warn',tag:'Waiting '+since(s.waitingSince),t:s.name,m:[s.project,s.branch,s.sid,s.ctx!=null?'context '+Math.round(s.ctx)+'%':''].filter(Boolean).join(' · '),act:open(s)}));
  SESS.filter(s=>s.ctx!=null&&s.ctx>=80).forEach(s=>it.push({k:'bad',tag:`Context ${Math.round(s.ctx)}%`,t:`${s.name} is close to compaction`,m:'Claude Code compacts near the limit. Wrap up the task or start a fresh session.',act:open(s)}));
@@ -710,10 +715,11 @@ function attnItems(){const it=[];
  const stale=WT.filter(w=>w.stale);if(stale.length)it.push({k:'off',tag:'Cleanup',t:`${stale.length} agent worktree${stale.length>1?'s have':' has'} had no session for days`,m:tilde(stale[0].path),act:`<a class="btn sm" href="#worktrees">Review</a>`});
  return it}
 const unsetProviders=()=>provRows().filter(x=>x.status[1]==='Not set up').length;
+function recovered(){const B=RT.path.last_recovery;return B&&RT.path.state!=='failing'&&num(B.at_ms)!=null&&NOW-B.at_ms<30*MIN?`<div class="attn-row quiet"><div class="what"><div class="m">Anthropic recovered at ${hm(B.at_ms)} after ${dur(B.after_ms)}</div></div></div>`:''}
 function attnList(){const it=attnItems(),u=unsetProviders();
  const rows=it.map(a=>`<div class="attn-row"><span class="tag ${a.k}">${esc(a.tag)}</span><div class="what"><div class="t">${esc(a.t)}</div><div class="m">${esc(a.m)}</div></div>${a.act}</div>`).join('');
  const quiet=u?`<div class="attn-row quiet"><div class="what"><div class="m">${u} provider${u>1?'s':''} not set up (optional)</div></div><a class="btn sm" href="#providers">Providers</a></div>`:'';
- return (it.length?rows:`<div class="allclear">${ic('check')} Nothing needs you.</div>`)+quiet}
+ return (it.length?rows:`<div class="allclear">${ic('check')} Nothing needs you.</div>`)+recovered()+quiet}
 function overviewKpis(){if(!liveRange())return histKpis();const b=BK;
  const live=SESS.filter(s=>sstate(s)!=='idle').length,waiting=SESS.filter(s=>sstate(s)==='waiting').length;
  const subs=AGENTS.filter(a=>a.type!=='main'),run=subs.filter(a=>a.state==='running').length,doneN=subs.filter(a=>a.state==='done'&&a.end!=null&&a.end>NOW-15*MIN).length;
@@ -929,6 +935,7 @@ PAGES.models={title:'Models',body:()=>head('Models',`Every model seen in the las
  ]),rangeRows(),{sort:{k:'n',d:-1},empty:rangeEmpty()}))}</div>`};
 
 const laneLast=l=>{if(l.last)return l.last;const rs=stats().byLane[l.id]||[];const r=rs[rs.length-1];return r?{status:r.status,t:r.t}:null};
+const STSHORT={'Working':'On','Not set up':'Off','Needs a fix':'Fix'};
 const PNAME={zai:'Z.ai GLM',kimi:'Kimi',deepseek:'DeepSeek',minimax:'MiniMax',qwen:'Qwen'};
 /* A provider is Working when set up with its lane on; Not set up is neutral because every catalog provider is optional; Needs a fix is a real fault. */
 function provStatus(x){
@@ -959,7 +966,7 @@ PAGES.providers={title:'Providers',body:()=>head('Providers','Where your model r
   {k:'Errors',v:e.toLocaleString('en-US'),d:n?`${(e/n*100).toFixed(1)}% of requests`:'no requests yet'}])})}</div>`+
  `<div class="card t">${reg('lanes',()=>table('lanes',[
   {k:'name',label:'Provider',h:x=>`<div class="ct">${esc(x.name)}</div>${x.pattern?`<div class="cs">${esc(x.pattern)}</div>`:''}`},
-  {k:'status',label:'Status',h:x=>pill(x.status[0],x.status[1])},
+  {k:'status',label:'Status',h:x=>pill(x.status[0],x.status[1],STSHORT[x.status[1]])},
   {k:'n',label:'Requests',num:1,h:x=>x.n?`<b>${x.n.toLocaleString('en-US')}</b>`:NA,sm:1},
   {k:'p50',label:'<span title="Time to first token">1st token</span>',num:1,h:x=>x.n&&x.p50?`<span class="mono">${msf(x.p50)}</span>`:NA,sm:1},
   {k:'err',label:'Errors',num:1,h:errPct,sm:1},
@@ -1048,6 +1055,8 @@ PAGES.router={title:'Router',body:()=>head('Router','The local proxy every Claud
  `<div class="card kpis k6">${reg('rk',()=>kpiGrid([
   {k:'Status',v:LOST?'Down':'Up',d:SNAP.pid!=null?'pid '+esc(SNAP.pid):'—'},{k:'Uptime',v:upCell()},{k:'CPU',v:RT.cpu!=null?RT.cpu.toFixed(1):'—',small:RT.cpu!=null?'%':'',d:'idle cost near zero'},
   {k:'Memory',v:RT.rss!=null?(RT.rss/1e6).toFixed(1):'—',small:RT.rss!=null?'MB':'',d:'resident'},{k:'In flight',v:stats().flights.length,small:'streams',d:`${RT.conns!=null?RT.conns:'—'} open connections`},{k:'Live viewers',v:RT.viewers!=null?RT.viewers:'—',small:RT.viewers!=null?'page'+(RT.viewers===1?'':'s'):'',d:'feed sleeps with none'}]))}</div>`+
+ `<section>${secH('Recent events')}<div class="card t">${reg('events',()=>table('events',[
+  {k:'t',label:'Time',h:e=>`<span class="mono">${clock(e.at_ms)}</span>`,w:'1%'},{k:'k',label:'',h:e=>pill(e.kind==='failing'?'bad':e.kind==='recovered'?'ok':'off',e.kind),w:'1%',sm:1},{k:'e',label:'Event',h:e=>`<span class="muted evt">${esc(e.text)}</span>`}],RT.events.slice().reverse(),{empty:'No events since the router started.'}))}</div></section>`+
  `<section>${secH('Health checks')}<div class="card t">${reg('checks',()=>table('checks',[
   {k:'s',label:'',h:c=>c.level==='pass'?pill('ok','Pass'):c.level==='fail'?pill('bad','Fail'):pill('warn','Check'),w:'1%'},{k:'n',label:'Check',h:c=>`<b class="fw5">${esc(c.label||c.id)}</b>`},{k:'v',label:'Result',h:c=>c.value?`<span class="mono">${esc(c.value)}</span>`:NA},{k:'d',label:'Detail',h:c=>`<span class="muted">${esc(c.detail||'')}</span>`,sm:1}],PL.checks,{empty:PL.state==='checking'?checking():'No checks reported'}))}</div></section>`+
  `<div class="g2e"><section>${secH('Claude Code wiring')}<div class="card pad">${reg('wiring',wiringCard)}</div></section>

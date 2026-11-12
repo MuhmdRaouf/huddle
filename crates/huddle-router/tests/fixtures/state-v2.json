@@ -7,7 +7,38 @@
   "cpu_pct": 0.4,
   "rss_bytes": 19300000,
   "viewers": 1,
-  "connections": 11
+  "connections": 11,
+  "events": [
+   {
+    "at_ms": 1799996400000,
+    "kind": "start",
+    "text": "start v0.0.3 pid=48211 port=4835 by=session-start"
+   },
+   {
+    "at_ms": 1799999580000,
+    "kind": "failing",
+    "text": "Anthropic path failing (ETIMEDOUT at connect to 160.79.104.10:443): the connection to the peer did not open; check the network or a VPN"
+   },
+   {
+    "at_ms": 1799999600000,
+    "kind": "probe",
+    "text": "probe api.anthropic.com dns=ok(3 ms, 160.79.104.10) connect=timeout(5000 ms)"
+   }
+  ],
+  "path": {
+   "state": "failing",
+   "since_ms": 1799999580000,
+   "code": "ETIMEDOUT",
+   "phase": "connect",
+   "peer": "160.79.104.10:443",
+   "failed": 7,
+   "hint": "the connection to the peer did not open; check the network or a VPN",
+   "last_recovery": {
+    "at_ms": 1799992800000,
+    "after_ms": 95000,
+    "failed": 4
+   }
+  }
  },
  "wiring": {
   "state": "ok",

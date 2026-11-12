@@ -17,6 +17,7 @@ pub mod live;
 pub mod probe;
 pub mod refusal;
 pub mod reload;
+pub mod router_events;
 pub mod server;
 pub mod sse;
 pub mod stats;
