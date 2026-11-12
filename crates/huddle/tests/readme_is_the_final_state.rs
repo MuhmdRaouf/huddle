@@ -40,25 +40,26 @@ const EARLIER_STACK: &[&str] = &[
 ];
 
 const HEADINGS: &[&str] = &[
-    "What it does",
-    "Architecture",
-    "How it works",
     "Quick start",
-    "Layout",
-    "Automation",
+    "Installation",
+    "Providers",
+    "Delegation",
+    "Dashboard",
+    "Commands",
+    "How it works",
+    "Troubleshooting",
     "Development",
-    "Versioning",
     "Support",
     "License",
 ];
 
 const SUB_HEADINGS: &[&str] = &[
     "Routing",
-    "Providers",
-    "Delegation",
+    "Architecture",
     "Setup and recovery",
-    "`ci.yml`",
-    "`release.yml`",
+    "Layout",
+    "Automation",
+    "Versioning",
 ];
 
 fn assert_clean(rel: &str) {

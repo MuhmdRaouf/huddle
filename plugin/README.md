@@ -12,6 +12,9 @@ Routes Claude Code's requests to Z.ai, Kimi, DeepSeek, MiniMax and Qwen through 
 | `/huddle:result <job-id>` | Read a job's report and diff, then accept it or return it with feedback |
 | `/huddle:cancel <job-id>` | Stop a job |
 | `/huddle:update` | Install the binary of the version this plugin carries and hand the router over |
+| `/huddle:<p>:setup` | Check a provider's key, add its lane, models and agents (`<p>` is `zai`, `kimi`, `deepseek`, `minimax` or `qwen`); a key page opens when no key is stored |
+| `/huddle:<p>:usage` | That provider's requests, tokens and estimated cost |
+| `/huddle:<p>:remove` | Take that provider's lane, models, agents and key back out |
 | `/huddle:add-dashboard-host <host>` | Let a domain such as `huddle.example.com` open the dashboard |
 | `/huddle:remove-dashboard-host <host>` | Stop that domain from opening the dashboard |
 

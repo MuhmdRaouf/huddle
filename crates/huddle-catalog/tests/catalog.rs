@@ -11,12 +11,11 @@ type ModelRow = (
     Option<&'static str>,
 );
 
-/// One row of the keys table: provider, key env names, key file, billing and keys URLs, strip
+/// One row of the keys table: provider, key env names, billing and keys URLs, strip
 /// list, model prefixes.
 type KeyRow = (
     &'static str,
     &'static [&'static str],
-    &'static str,
     &'static str,
     &'static str,
     &'static [&'static str],
@@ -184,7 +183,6 @@ fn keys_billing_strip_and_prefixes_are_the_table_values() {
         (
             "zai",
             &["ZAI_API_KEY"],
-            "~/.config/zai-plugin-cc/env",
             "https://z.ai/manage-apikey/billing",
             "https://z.ai/manage-apikey/apikey-list",
             &[],
@@ -193,7 +191,6 @@ fn keys_billing_strip_and_prefixes_are_the_table_values() {
         (
             "kimi",
             &["KIMI_API_KEY"],
-            "~/.config/kimi-plugin-cc/env",
             "https://platform.kimi.ai/console",
             "https://platform.kimi.ai/console/api-keys",
             &[],
@@ -202,7 +199,6 @@ fn keys_billing_strip_and_prefixes_are_the_table_values() {
         (
             "deepseek",
             &["DEEPSEEK_API_KEY"],
-            "~/.config/deepseek-plugin-cc/env",
             "https://platform.deepseek.com/top_up",
             "https://platform.deepseek.com/api_keys",
             &[],
@@ -211,7 +207,6 @@ fn keys_billing_strip_and_prefixes_are_the_table_values() {
         (
             "minimax",
             &["MINIMAX_API_KEY"],
-            "~/.config/minimax-plugin-cc/env",
             "https://platform.minimax.io/user-center/payment/balance",
             "https://platform.minimax.io/console/access",
             &[],
@@ -220,17 +215,15 @@ fn keys_billing_strip_and_prefixes_are_the_table_values() {
         (
             "qwen",
             &["QWEN_API_KEY", "DASHSCOPE_API_KEY"],
-            "~/.config/qwen-plugin-cc/env",
             "https://usercenter2-intl.aliyun.com/billing",
             "https://modelstudio.console.alibabacloud.com/?tab=playground#/api-key",
             &["context_management"],
             &["qwen"],
         ),
     ];
-    for (id, key_env, key_file, billing, keys, strip, prefixes) in want {
+    for (id, key_env, billing, keys, strip, prefixes) in want {
         let p = provider_by_id(id).expect("provider");
         assert_eq!(p.key_env, key_env, "{id}");
-        assert_eq!(p.key_file, key_file, "{id}");
         assert_eq!(p.billing_url, billing, "{id}");
         assert_eq!(p.keys_url, keys, "{id}");
         assert_eq!(p.strip, strip, "{id}");
@@ -246,7 +239,6 @@ fn nothing_is_shared_between_providers() {
             assert_ne!(a.id, b.id);
             assert_ne!(a.display, b.display);
             assert_ne!(a.env_prefix, b.env_prefix);
-            assert_ne!(a.key_file, b.key_file);
             assert!(
                 a.key_env.iter().all(|k| !b.key_env.contains(k)),
                 "{} {}",

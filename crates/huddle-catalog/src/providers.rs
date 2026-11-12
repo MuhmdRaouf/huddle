@@ -26,8 +26,6 @@ pub struct Provider {
     pub flash: ModelRef,
     /// API key environment variables in priority order (qwen also accepts DASHSCOPE_API_KEY).
     pub key_env: &'static [&'static str],
-    /// The key file setup writes and the router reads instead (mode 600).
-    pub key_file: &'static str,
     /// The billing or top-up page, named when the provider refuses for lack of balance.
     pub billing_url: &'static str,
     /// The page where the user creates an API key.
@@ -59,7 +57,6 @@ static PROVIDERS: [Provider; 5] = [
             default_effort: Some("xhigh"),
         },
         key_env: &["ZAI_API_KEY"],
-        key_file: "~/.config/zai-plugin-cc/env",
         billing_url: "https://z.ai/manage-apikey/billing",
         keys_url: "https://z.ai/manage-apikey/apikey-list",
         strip: &[],
@@ -85,7 +82,6 @@ static PROVIDERS: [Provider; 5] = [
             default_effort: None,
         },
         key_env: &["KIMI_API_KEY"],
-        key_file: "~/.config/kimi-plugin-cc/env",
         billing_url: "https://platform.kimi.ai/console",
         keys_url: "https://platform.kimi.ai/console/api-keys",
         strip: &[],
@@ -110,7 +106,6 @@ static PROVIDERS: [Provider; 5] = [
             default_effort: Some("xhigh"),
         },
         key_env: &["DEEPSEEK_API_KEY"],
-        key_file: "~/.config/deepseek-plugin-cc/env",
         billing_url: "https://platform.deepseek.com/top_up",
         keys_url: "https://platform.deepseek.com/api_keys",
         strip: &[],
@@ -137,7 +132,6 @@ static PROVIDERS: [Provider; 5] = [
             default_effort: Some("xhigh"),
         },
         key_env: &["MINIMAX_API_KEY"],
-        key_file: "~/.config/minimax-plugin-cc/env",
         billing_url: "https://platform.minimax.io/user-center/payment/balance",
         keys_url: "https://platform.minimax.io/console/access",
         strip: &[],
@@ -162,7 +156,6 @@ static PROVIDERS: [Provider; 5] = [
             default_effort: Some("xhigh"),
         },
         key_env: &["QWEN_API_KEY", "DASHSCOPE_API_KEY"],
-        key_file: "~/.config/qwen-plugin-cc/env",
         billing_url: "https://usercenter2-intl.aliyun.com/billing",
         keys_url: "https://modelstudio.console.alibabacloud.com/?tab=playground#/api-key",
         // Qwen rejects context_management.

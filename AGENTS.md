@@ -8,7 +8,7 @@ Huddle: a Claude Code plugin with two jobs, shipped as one Rust binary and one p
 - **huddle-router**: a local proxy that routes Claude Code's requests to the right provider (zai, kimi, deepseek, minimax, qwen) and sends everything else to Anthropic.
 - **delegation**: Claude Code hands a task to another coding CLI (table-driven harnesses: codex, opencode, omp, pi, zcode and the rest), the task runs in its own git worktree, and Claude reads the diff and report and accepts or returns it.
 
-Five thin provider plugins ship from this repository beside the `huddle` plugin.
+The five providers (zai, kimi, deepseek, minimax, qwen) are commands of the `huddle` plugin.
 
 Commands:
 
@@ -36,8 +36,8 @@ cargo run -q -p huddle-testkit --bin huddle-check-attribution  # no AI attributi
 - `crates/huddle-history`: the `huddle.db` request history: writer, queries, pruning, prices.
 - `crates/huddle-setup`: the install, the settings patch and its undo.
 - `crates/huddle-testkit`: temp homes, ports, fake upstream, fake harness (dev only).
-- `plugin/`: what Claude Code installs for huddle (`.claude-plugin/plugin.json`, `hooks/hooks.json`, `commands/`, `agents/delegate.md`, `skills/delegate/`, `dist/run`). `plugins/<p>-plugin-cc/`: the five provider plugins, each with its agents, commands and a `dist/run`.
-- `.claude-plugin/marketplace.json`: the `muhmdraouf` marketplace with the six plugins.
+- `plugin/`: what Claude Code installs for huddle (`.claude-plugin/plugin.json`, `hooks/hooks.json`, `commands/` with `commands/<p>/{setup,remove,usage}.md` for each provider, `agents/delegate.md`, `skills/delegate/`, `dist/run`).
+- `.claude-plugin/marketplace.json`: the `muhmdraouf` marketplace with the `huddle` plugin.
 
 ## Architecture
 
@@ -45,7 +45,7 @@ cargo run -q -p huddle-testkit --bin huddle-check-attribution  # no AI attributi
 - One hook. `plugin/hooks/hooks.json` wires SessionStart and a UserPromptSubmit probe that restarts a dead router (`hook prompt-submit`). SessionStart: it runs `${HUDDLE_DATA_HOME:-${XDG_DATA_HOME:-$HOME/.local/share}/huddle}/bin/huddle hook session-start`, which does nothing before `/huddle:setup` has run, and when the router is stopped starts it detached and returns. A hook never blocks a session: it exits 0 on any failure and stays silent when it has nothing to say.
 - `/huddle:setup` runs `plugin/dist/run setup`, a POSIX sh script that downloads the release for this OS and CPU from GitHub Releases and checks it against `SHA256SUMS` (or runs a local `cargo build` while no release exists), then `huddle setup --install`, which starts the router, points Claude Code's `HTTPS_PROXY` at it with the local CA in `NODE_EXTRA_CA_CERTS`, and records what it changed in a ledger. The patch is idempotent and reversible: `huddle uninstall` restores `settings.json` byte for byte. Binaries live at `~/.local/share/huddle/bin/huddle-<version>` with a `huddle` symlink beside them.
 - History: every finished request is one row in `~/.local/state/huddle/huddle.db` (SQLite, no prompt, key or header value), written off the request path and pruned past `[history] keep_days` in `config.toml` (90 by default). `GET /huddle-router/history` answers range buckets, session and project totals and a filtered, paged search to the dashboard; Claude models are priced at API list rates and shown as API-equivalent.
-- `/<p>:setup` adds a provider's lane, key and `/model` entries; `/<p>:remove` undoes them. Keys live in the OS keystore, entered through the environment, `~/.config/<p>-plugin-cc/env` or `huddle provider <p> key` reading hidden stdin.
+- `/huddle:<p>:setup` adds a provider's lane, key, `/model` entries and its two agents in `~/.claude/agents/`; `/huddle:<p>:remove` undoes them. Keys live in the OS keystore, entered through a one-time key page on `127.0.0.1` (Claude Code), `huddle provider <p>` (a terminal: masked prompt), `<P>_API_KEY` or `huddle provider <p> key` reading hidden stdin. A key the provider refuses is never stored. Setup links `~/.local/bin/huddle` to the binary.
 - Delegation runs a table-driven harness in the caller's folder or the folder `--dir` names; huddle makes no worktree. Each job's record is `job.toml` under `~/.local/state/huddle/jobs/<repo-slug>/<id>/`. `/huddle:run` waits by default, `--background` returns; `/huddle:status` finds dead drivers; `/huddle:result <id> [--diff] [--accept [--no-commit]] [--return "<feedback>"]` decides; `/huddle:cancel <id>` stops it.
 - `panic=abort`, Rust stable, reproducible flags are not a goal; CI enforces a 10 MB binary limit (`release/size-limit`) that never rises just to pass.
 

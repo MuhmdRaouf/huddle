@@ -1,5 +1,41 @@
 # Changelog
 
+## 0.0.6
+
+The five providers are part of huddle, and a key goes in from a page or a terminal guide.
+
+### Providers
+
+- The zai, kimi, deepseek, minimax and qwen commands live in the `huddle` plugin: `/huddle:<p>:setup`, `/huddle:<p>:remove` and `/huddle:<p>:usage`. The marketplace lists one plugin.
+- `/huddle:<p>:setup` writes the provider's two agents into `~/.claude/agents/`, named by the bare model (`glm-5.3`, `glm-5.3-flash`). `remove` and `huddle uninstall` delete only huddle's own agent files. A provider you never set up shows no agents.
+- `/huddle:setup` names each old provider plugin it finds and the command that removes it. It never touches Claude Code's plugin files.
+- A key is checked with the provider before it is stored. A refused key never replaces a stored one, and turns nothing on.
+- When the key check gets an answer it does not know, setup names the HTTP status the provider sent. "Could not reach" means no answer came back.
+- The catalog has no key file field; keys live in the OS keystore.
+
+### Keys
+
+- With no stored key, `/huddle:<p>:setup` opens a one-time key page on `127.0.0.1`. It needs its token, host and origin, loads nothing from outside, and ends after the key is saved or its time runs out. A second setup stops the first page, and never signals a process that is not huddle's helper.
+- `huddle provider <p>` guides a terminal: a menu, a masked key prompt, backspace, Ctrl-C that stores nothing and restores the terminal, and three refused keys end with exit 6. Off a terminal it prints the next steps and never waits. A piped key is stored as before.
+
+### Terminal
+
+- `huddle` alone shows where you stand: the router, each provider's key and lane, and the next command. `huddle help` lists every word.
+- `huddle` is linked into `~/.local/bin/huddle` on setup, never over a file that is not its own link, and removed by `huddle uninstall`. Setup says when `~/.local/bin` is not on `PATH`, and carries on when the folder cannot be written.
+- An unknown word or action is answered with the valid ones and is never echoed back, in case it was a key.
+
+### Dashboard
+
+- The Plugins page lists the five providers, without an installed column, and the sidebar badges read as ratios with the good part green.
+
+### Tests
+
+- A test home stops the key page helpers it started when it is dropped.
+
+### Upgrading from 0.0.5
+
+Remove the five provider plugins (zai, kimi, deepseek, minimax and qwen) in `/plugin`, update huddle and run `/huddle:setup` again. Then use `/huddle:<p>:setup`. A key already in the keystore is kept.
+
 ## 0.0.5
 
 huddle keeps its files in the XDG folders and remembers every request.

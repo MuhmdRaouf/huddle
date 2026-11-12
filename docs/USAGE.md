@@ -11,29 +11,35 @@ How to set huddle up, what every word does, what each file holds, and where to l
    /plugin install huddle@muhmdraouf
    ```
 
-2. Run `/huddle:setup`. It gets the `huddle` binary for this OS and CPU — the release download, checked against `SHA256SUMS`, or a cargo build of the plugin checkout while no release is published — and installs it as `~/.local/share/huddle/bin/huddle-<version>` with the link `~/.local/share/huddle/bin/huddle` to it. It then creates the local CA in `~/.local/share/huddle/ca/`, starts the router and patches `~/.claude/settings.json` with the proxy settings. Nothing changes before it runs. An existing 0.0.4 install runs `huddle uninstall` first, then `/huddle:setup` with 0.0.5; nothing moves from `~/.agents`.
+2. Run `/huddle:setup`. It gets the `huddle` binary for this OS and CPU — the release download, checked against `SHA256SUMS`, or a cargo build of the plugin checkout while no release is published — and installs it as `~/.local/share/huddle/bin/huddle-<version>` with the link `~/.local/share/huddle/bin/huddle` to it, and links `~/.local/bin/huddle` to that, so a bare `huddle` works in a terminal whose `PATH` has `~/.local/bin` (setup says so when it does not, and carries on when the folder cannot be written). It then creates the local CA in `~/.local/share/huddle/ca/`, starts the router and patches `~/.claude/settings.json` with the proxy settings. Nothing changes before it runs. An existing 0.0.4 install runs `huddle uninstall` first, then `/huddle:setup` with 0.0.5; nothing moves from `~/.agents`. An install that has the five old provider plugins runs `/huddle:setup` again: it names each one to remove in `/plugin`, and the providers' commands are part of the `huddle` plugin.
 
 3. Restart Claude Code once so it reads the proxy settings. From here on the session-start hook keeps the router alive: a later session finds it down and brings it back.
 
-4. Add a provider:
+4. Add a provider, for example Z.ai GLM. In Claude Code:
 
-   ```sh
-   ~/.local/share/huddle/bin/huddle provider zai key
-   ~/.local/share/huddle/bin/huddle provider zai setup
+   ```text
+   /huddle:zai:setup
    ```
 
-   The key word asks for the key with the echo off; a pipe works too. `/zai:setup` inside Claude Code does the same. The four other providers work the same way, and each one adds its models to `/model`.
+   With no stored key, a one-time key page opens on `127.0.0.1`: paste the key there. In a terminal:
+
+   ```sh
+   huddle provider zai
+   ```
+
+   The guide asks for the key with the echo off, checks it with the provider, enables the lane and adds the models to `/model` and the agents to `~/.claude/agents/`. A pipe works too: `huddle provider zai key`. The four other providers work the same way. A key the provider refuses is never stored and never replaces a stored one.
 
 A provider model picked in `/model` sends that request through the router to the provider; every `claude-*` request still reaches Anthropic untouched. The router forwards a provider request unchanged except the destination, the key swap and the hop-by-hop headers; a message-threads beta answers 400, and Qwen's `context_management` field is the one body edit.
 
 ## Words
 
-One row per word, with the exit codes it answers. `<p>` is `zai`, `kimi`, `deepseek`, `minimax` or `qwen`.
+One row per word, with the exit codes it answers. An unknown word or action is never echoed back. `<p>` is `zai`, `kimi`, `deepseek`, `minimax` or `qwen`.
 
 | Word | What it does | Exits |
 |---|---|---|
 | `huddle setup [harness]` | Every harness's readiness table, or one harness's report; `--smoke` runs one real turn, `--json` is for scripts. | `0` ready, `6` not ready, `2` unknown harness, `1` error |
-| `huddle setup --install` | The local CA, the router start, the settings patch, one restart line. | `0`, `1` |
+| `huddle` | Where you stand: the router, each provider's key and lane, and the next command to run. `huddle help` lists every word. | `0` |
+| `huddle setup --install` | The local CA, the router start, the settings patch, the `~/.local/bin/huddle` link, one restart line. | `0`, `1` |
 | `huddle run <harness> <task>` | Submits the task, runs the harness in the current folder or the one `--dir <path>` names (a second write job in a folder is refused), starts the harness's detached driver, waits and prints the result; `--background` returns at once, `--readonly`/`--exec`/`--write` set the access, `--setup`, `--gate`, `--scope` and `--forbid` add checks. | `0` review or clean, `3` failed, `2` usage or unknown harness, `6` binary missing, `1` error |
 | `huddle status [<id>]` | The job table for this repository, or one job in full with its log tail. | `0`, `4` unknown id, `2` usage, `1` error |
 | `huddle result <id>` | One job's review packet; `--diff` adds the patch, `--accept` lands it as a commit (`--no-commit` leaves the working tree), `--return <feedback>` sends it back. | `0`, `4` unknown id, `2` usage, `1` error |
@@ -44,12 +50,14 @@ One row per word, with the exit codes it answers. `<p>` is `zai`, `kimi`, `deeps
 | `huddle router stop` | One SIGTERM to the recorded pid, then a wait for the port to go. | `0` stopped, `6` not running, `1` past 10 s, `2` bad port |
 | `huddle add-dashboard-host <host>` | Lists a bare host name in `~/.config/huddle/config.toml`; the router reads the dashboard's page, state and live paths for it within 2 s. A repeat changes nothing. | `0`, `2` not a bare host name or usage, `1` |
 | `huddle remove-dashboard-host <host>` | Takes the host back out; one that is not listed changes nothing. | `0`, `2`, `1` |
+| `huddle provider` | Lists the providers. | `0` |
+| `huddle provider <p>` | The guided setup: a terminal gets the menu and the masked key prompt, a pipe or a script gets the next steps printed. Without a key it never waits. | `0` ready, `6` not ready, `1` |
 | `huddle provider <p> key` | Reads the key from hidden stdin into the keystore. | `0`, `2` empty or invalid, `1` |
-| `huddle provider <p> setup` | Checks the key with the provider, enables the lane, starts the router, reports ready or not. | `0` ready, `6` not ready, `1` |
-| `huddle provider <p> remove` | Takes the lane, the `/model` entries and the stored key back out; the other providers keep serving. | `0`, `1` |
+| `huddle provider <p> setup` | Checks the key with the provider, enables the lane, writes its agents, starts the router, reports ready or not; with no key it opens the one-time key page. | `0` ready, `6` not ready, `1` |
+| `huddle provider <p> remove` | Takes the lane, the `/model` entries, the agents and the stored key back out; the other providers keep serving. | `0`, `1` |
 | `huddle provider <p> usage` | Requests, tokens and estimated cost per model, today and the last 7 and 30 days. | `0` |
 | `huddle hook <event>` | Claude Code's `session-start` and `prompt-submit`: starts the router, re-applies the provider wiring, refreshes the agent files. Never blocks a session. | `0` |
-| `huddle uninstall` | Undoes every patch huddle made, one line per step. | `0`, `1` |
+| `huddle uninstall` | Undoes every patch huddle made, the `~/.local/bin/huddle` link and the provider agents, one line per step. | `0`, `1` |
 
 Inside Claude Code the plugin's commands run the words for you. The launcher answers `run /huddle:setup first` with exit 127 while no binary is installed.
 
@@ -61,6 +69,7 @@ Inside Claude Code the plugin's commands run the words for you. The launcher ans
 | `~/.config/huddle/providers.toml` | `provider <p> setup` and `remove`: the enabled providers, edited in place | The daemon, re-read every 2 s |
 | `~/.config/huddle/harnesses.toml` | You: one entry per extra CLI | `setup`, `run`, `status`, the driver |
 | `~/.local/share/huddle/bin/` | The launcher on `/huddle:setup`: `huddle-<version>` and the `huddle` link to it | Every word and hook |
+| `~/.local/bin/huddle` | `setup --install`: a link to `~/.local/share/huddle/bin/huddle`; it never replaces a file that is not its own link | Your terminal's `PATH`; `uninstall` removes it |
 | `~/.local/share/huddle/ca/` | `setup --install`, or the daemon's first start: `huddle-ca.pem` and `huddle-ca-key.pem`, the local CA | Claude Code through `NODE_EXTRA_CA_CERTS`, the daemon's leaf signer |
 | `~/.cache/huddle/` | The launcher: the download in flight and `build.log` of a local build | You, when a build fails |
 | `~/.local/state/huddle/huddle.db` | The daemon: one row per finished request (no prompt, key or header value), pruned past `keep_days` | `provider <p> usage`, the dashboard's history views |
@@ -71,7 +80,7 @@ Inside Claude Code the plugin's commands run the words for you. The launcher ans
 | `~/.local/state/huddle/providers/<p>-ledger.toml` | `provider <p> setup`: the `/model` entries it added | `provider <p> remove`, `uninstall` |
 | `~/.local/state/huddle/jobs/<repo-slug>/<id>/` | `run` and each job's detached driver: `job.toml`, task, transcript, checks | `status`, `result`, `cancel` |
 | `~/.claude/settings.json` | `setup --install` and `provider <p> setup`: the proxy env and the `/model` entries | Claude Code, at startup |
-| `~/.claude/agents/` | The session-start hook: one managed file per Claude family | Claude Code's agent panel |
+| `~/.claude/agents/` | The session-start hook: one managed file per Claude family; `provider <p> setup`: the provider's two model agents, removed by `remove` | Claude Code's agent panel |
 
 ## Environment variables
 
@@ -98,4 +107,6 @@ Inside Claude Code the plugin's commands run the words for you. The launcher ans
 
 - **The router will not start.** `huddle router status` says what answers on the port, and `~/.local/state/huddle/router.log` names the failure.
 - **Requests fail with 407 or 502.** The settings patch is gone or stale. Run `/huddle:setup` again, then check `huddle router status`.
+- **A key is refused.** The report names the status the provider sent. Check the key at the provider's key page and run `/huddle:<p>:setup` again; the stored key stays as it was.
+- **`huddle` is not found.** Put `~/.local/bin` on your `PATH`, or run `~/.local/share/huddle/bin/huddle`.
 - **Restore the settings.** `huddle uninstall` stops the router, takes the proxy env and the `/model` entries back out, and puts `settings.json` back the way it found it, one line per step.

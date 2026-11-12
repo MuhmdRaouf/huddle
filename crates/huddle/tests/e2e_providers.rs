@@ -5,7 +5,6 @@ use huddle_testkit::fake_upstream::FakeUpstream;
 use huddle_testkit::ports::free_port;
 use huddle_testkit::temp_home::TempHome;
 use std::fs;
-use std::os::unix::fs::PermissionsExt;
 use std::process::{Command, Output};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -23,12 +22,6 @@ impl Rig {
         let home = TempHome::new();
         let anthropic = upstream("{\"from\":\"anthropic\"}");
         let zai = upstream("{\"from\":\"zai\"}");
-        let key_dir = home.root().join(".config/zai-plugin-cc");
-        fs::create_dir_all(&key_dir).expect("mkdir");
-        fs::set_permissions(&key_dir, fs::Permissions::from_mode(0o700)).expect("chmod");
-        let key_file = key_dir.join("env");
-        fs::write(&key_file, "ZAI_API_KEY=abcdefghijklmnop\n").expect("write");
-        fs::set_permissions(&key_file, fs::Permissions::from_mode(0o600)).expect("chmod");
         let settings = home.root().join(".claude/settings.json");
         fs::create_dir_all(settings.parent().expect("parent")).expect("mkdir");
         Rig {
@@ -49,6 +42,7 @@ impl Rig {
             .env("HUDDLE_ROUTER_PORT", self.port.to_string())
             .env("HUDDLE_ROUTER_ANTHROPIC_URL", self.anthropic.url())
             .env("ZAI_BASE_URL", self.zai.url())
+            .env("ZAI_API_KEY", "abcdefghijklmnop")
             .output()
             .expect("run huddle")
     }

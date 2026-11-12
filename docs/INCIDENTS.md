@@ -182,7 +182,7 @@ Each incident, its cause, and the test that now stops it. A guard named here mus
 
 ## 2026-11-12, provider setup said it could not reach a provider that answered
 
-- **What happened:** `/zai:setup` printed "could not reach Z.ai GLM to check the key" while Z.ai
+- **What happened:** `/huddle:zai:setup` printed "could not reach Z.ai GLM to check the key" while Z.ai
   was reachable and answered every request.
 - **Cause:** the key check folded every status other than 2xx, 401, 402, 403 and 429 into the same
   verdict as a network failure, and the report printed "could not reach" for both. The status the
@@ -190,3 +190,13 @@ Each incident, its cause, and the test that now stops it. A guard named here mus
 - **Guard:** crates/huddle/tests/provider_setup_word.rs:k10_an_unexpected_status_is_named_in_the_report
 - **Rule:** a check that got an answer reports what the answer was; "could not reach" means no
   answer came back.
+
+## 2026-11-12, test runs left routers and key page helpers running
+
+- **What happened:** after repeated test runs the machine's load went past 300: test routers and
+  key page helpers were still running long after their tests ended.
+- **Cause:** a test home started a router or a key page helper and nothing stopped it when the
+  test ended or failed.
+- **Guard:** crates/huddle/tests/k8_key_page.rs:k8_a_test_home_stops_the_helper_it_started stops
+  the helpers; no guard yet stops a router with its test.
+- **Rule:** a test home stops every process it started when it is dropped.
