@@ -49,8 +49,8 @@ edit the user made in between.
 
 ## D7: Two hook events
 
-The plugin wires two events and no more: SessionStart re-applies each enabled provider's wiring, cleans up
-after a removed plugin, names each provider whose key is missing and brings a stopped router back; a
+The plugin wires two events and no more: SessionStart re-applies each enabled provider's wiring, names each
+provider whose key is missing and brings a stopped router back; a
 UserPromptSubmit probe checks the router within its one-second budget and brings a dead one back without
 waiting. A hook exits 0 on any failure, stays silent when it has nothing to say, and every hook word a binary
 has dropped stays a silent exit 0.

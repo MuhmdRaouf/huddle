@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.0.7
+
+Provider setup holds across sessions, and the key check gets a real answer.
+
+### Fixes
+
+- A new Claude Code session no longer removes the set-up providers, their keys and their agents.
+
 ## 0.0.6
 
 The five providers are part of huddle, and a key goes in from a page or a terminal guide.

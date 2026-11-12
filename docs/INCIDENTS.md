@@ -222,3 +222,13 @@ Each incident, its cause, and the test that now stops it. A guard named here mus
 - **Guard:** crates/huddle/tests/prompt_probe.rs:b2_a_held_lock_means_no_second_router and
   b2_a_free_lock_still_starts_the_router; crates/huddle-daemon/tests/start_probe.rs:b2_a_start_that_loses_the_lock_waits_for_the_winner
 - **Rule:** a slow answer is not a dead router: nothing spawns while the router lock is held.
+
+## 2026-11-13, every session start removed the providers
+
+- **What happened:** after `/huddle:zai:setup` the next Claude Code session emptied `providers.toml`,
+  deleted the zai key from the Keychain and removed the zai agents; setup then asked for the key again.
+- **Cause:** the SessionStart hook still removed each enabled provider whose own provider plugin was
+  not installed. Since 0.0.6 the providers live in the huddle plugin, so no provider plugin exists and
+  every session start removed every provider.
+- **Guard:** crates/huddle/tests/session_providers.rs:a_session_start_keeps_a_provider_set_up_inside_huddle
+- **Rule:** only `/huddle:<p>:remove` turns a provider off; a hook never removes one.

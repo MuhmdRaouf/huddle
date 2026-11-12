@@ -97,7 +97,7 @@ fn session_start(env: &Env, paths: &Paths, exe: &Path) {
             start_router_detached(exe, SESSION_START);
         }
     }
-    let lines = session_providers(env, paths, exe);
+    let lines = session_providers(env, paths);
     if !lines.is_empty() {
         let message = lines.join("\n");
         if let Ok(json) = serde_json::to_string(&serde_json::json!({ "systemMessage": message })) {
@@ -106,10 +106,10 @@ fn session_start(env: &Env, paths: &Paths, exe: &Path) {
     }
 }
 
-/// One pass over the enabled providers: re-applies a plugin update's wiring removal, cleans
-/// up after a removed plugin and names each provider whose key is missing. Every failure
-/// stays silent: a hook never disturbs the session it observes.
-fn session_providers(env: &Env, paths: &Paths, exe: &Path) -> Vec<String> {
+/// One pass over the enabled providers: re-applies a plugin update's wiring removal and names
+/// each provider whose key is missing. Every failure stays silent: a hook never disturbs the
+/// session it observes.
+fn session_providers(env: &Env, paths: &Paths) -> Vec<String> {
     let enabled = huddle_config::providers_file::read_enabled(
         &paths.config_dir,
         &huddle_catalog::providers::provider_ids(),
@@ -120,12 +120,6 @@ fn session_providers(env: &Env, paths: &Paths, exe: &Path) -> Vec<String> {
         let Some(provider) = huddle_catalog::providers::provider_by_id(&id) else {
             continue;
         };
-        if plugin_absent(paths, provider.id) {
-            let _ = Command::new(exe)
-                .args(["provider", provider.id, "remove"])
-                .output();
-            continue;
-        }
         let _ = huddle_setup::model_entries::apply(paths, provider);
         if !key_present(env, paths, provider) {
             lines.push(format!(
@@ -137,24 +131,6 @@ fn session_providers(env: &Env, paths: &Paths, exe: &Path) -> Vec<String> {
         }
     }
     lines
-}
-
-/// True only when installed_plugins.json exists, parses and has no entry naming the
-/// provider's plugin. A missing or unparsable file is unknown, and unknown leaves the
-/// provider alone; a disabled plugin keeps its entries.
-fn plugin_absent(paths: &Paths, id: &str) -> bool {
-    let path = paths.claude_dir.join("plugins/installed_plugins.json");
-    let Ok(text) = std::fs::read_to_string(path) else {
-        return false;
-    };
-    let Ok(doc) = serde_json::from_str::<serde_json::Value>(&text) else {
-        return false;
-    };
-    let key = format!("{id}-plugin-cc@");
-    match doc.get("plugins").and_then(|p| p.as_object()) {
-        Some(plugins) => !plugins.keys().any(|k| k.starts_with(&key)),
-        None => false,
-    }
 }
 
 /// The key comes from the environment first, then the keystore.

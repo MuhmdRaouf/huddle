@@ -128,7 +128,7 @@ fn a_missing_key_prints_one_json_object_naming_setup() {
 }
 
 #[test]
-fn a_provider_with_no_plugin_entry_is_cleaned_up() {
+fn a_session_start_keeps_a_provider_set_up_inside_huddle() {
     let home = TempHome::new();
     let port = free_port();
     let _stop = StopOnDrop(&home, port);
@@ -151,6 +151,6 @@ fn a_provider_with_no_plugin_entry_is_cleaned_up() {
     assert_eq!(out.status.code(), Some(0));
     let enabled =
         fs::read_to_string(home.root().join(".config/huddle/providers.toml")).expect("providers");
-    assert!(!enabled.contains("zai"), "{enabled}");
+    assert!(enabled.contains("zai"), "zai stays on: {enabled}");
     wait_running(&home, port);
 }
