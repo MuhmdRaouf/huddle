@@ -10,8 +10,8 @@
    Colours: the Admin Dashboard palette (Catppuccin-based, high contrast). */
 :root{
   --page:#eff1f5;--surface:#ffffff;--subtle:#e6e9ef;--line:#ccd0da;--line-soft:#dce0e8;
-  --text:#2b2c3e;--muted:#5c5f77;--faint:#7c7f93;
-  --accent:#1e66f5;--ok:#2a7a19;--warn:#975a00;--bad:#b4082f;--mauve:#8839ef;--teal:#147d78;--peach:#c24e2e;
+  --text:#2b2c3e;--muted:#5c5f77;--faint:#696c80;
+  --accent:#1450d0;--ok:#2a7a19;--warn:#975a00;--bad:#b4082f;--mauve:#8839ef;--teal:#147d78;--peach:#c24e2e;
   --warn-bg:#fdf3dc;--bad-bg:#fbe4e9;--ok-bg:#e3f2de;--accent-bg:#e2eafd;
   --l1:#1e9c96;--l2:#0c2b33;--l3:#c24e2e;--l4:#c24e2e;--ring:#0c2b33;
   --c1:#1e66f5;--c2:#147d78;--c3:#8839ef;--c4:#c24e2e;--c5:#a86a12;--c6:#c8418f;
@@ -358,6 +358,7 @@ td.empty{text-align:center;color:var(--faint);padding:28px 14px}
   .search{width:100%;min-width:0}.sbox{flex:1}
   .livep .lt{display:none}
   .attn-row{flex-wrap:wrap}.attn-row .tag{min-width:0}
+  .attn-row .what{flex:1 1 100%}.attn-row .t,.attn-row .m{white-space:normal;overflow:visible;text-overflow:clip}
   .gauges{grid-template-columns:1fr}
   .swim .row{grid-template-columns:minmax(0,1fr);gap:4px}.axis{margin-left:0}
   .dh,.db{padding-left:16px;padding-right:16px}
@@ -600,6 +601,8 @@ const FLAT='Claude plan usage is flat-rate; this is what the same tokens cost on
 const HIST={range:'15m',bk:null,tot:null,ser:null,err:false},HCOLOR={};
 try{const r=localStorage.getItem('huddle-range');if(RANGES.some(x=>x[0]===r))HIST.range=r}catch(e){}
 const liveRange=()=>HIST.range==='15m';
+/* Only pages that read the router's live memory say a restart clears them; the rest read disk or settings. */
+const readsMemory=()=>({overview:liveRange(),models:liveRange(),usage:liveRange(),sessions:true,agents:true,requests:HS.mode==='live',errors:HS.mode==='live'})[page]===true;
 const rangeLabel=()=>RANGES.find(x=>x[0]===HIST.range)[1];
 const rangeSeg=()=>seg('range',RANGES,HIST.range);
 const usd=v=>num(v)==null?'—':'$'+(v>0&&v<0.01?v.toFixed(4):v.toFixed(2));
@@ -689,11 +692,14 @@ function attnItems(){const it=[];
  JOBS.filter(j=>j.state==='dead'||j.state==='failed').forEach(j=>it.push({k:'bad',tag:j.state==='dead'?'Dead':'Failed',t:`Job ${j.id}: ${j.task||j.h}`,m:j.why||'The job did not finish.',act:cmd(`/huddle:cancel ${j.id}`)}));
  if(WIRE.state==='bad')it.push({k:'bad',tag:'Wiring',t:'Claude Code is not pointed at the router',m:'The proxy setting or the local CA is missing.',act:cmd('/huddle:setup')});
  PL.checks.filter(c=>c.level==='fail'||c.level==='warn').forEach(c=>it.push({k:c.level==='fail'?'bad':'warn',tag:'Check',t:`${c.label||c.id}: ${c.value||''}`,m:c.detail||'',act:`<a class="btn sm" href="#router">View</a>`}));
- PL.rows.filter(r=>r.next).forEach(r=>it.push({k:'off',tag:'Setup',t:`${r.name} is not set up`,m:'Its lane, key and /model entries are missing.',act:cmd(r.next)}));
+ provRows().filter(x=>x.status[1]==='Needs a fix').forEach(x=>it.push({k:'bad',tag:'Needs a fix',t:`${x.name} needs a fix`,m:x.key&&!x.laneOn?'The key is saved but the lane is off.':'Its last request failed, or its lane is off.',act:cmd(x.next)}));
  const stale=WT.filter(w=>w.stale);if(stale.length)it.push({k:'off',tag:'Cleanup',t:`${stale.length} agent worktree${stale.length>1?'s have':' has'} had no session for days`,m:tilde(stale[0].path),act:`<a class="btn sm" href="#worktrees">Review</a>`});
  return it}
-function attnList(){const it=attnItems();if(!it.length)return `<div class="allclear">${ic('check')} Nothing needs you right now</div>`;
- return it.map(a=>`<div class="attn-row"><span class="tag ${a.k}">${esc(a.tag)}</span><div class="what"><div class="t">${esc(a.t)}</div><div class="m">${esc(a.m)}</div></div>${a.act}</div>`).join('')}
+const unsetProviders=()=>provRows().filter(x=>x.status[1]==='Not set up').length;
+function attnList(){const it=attnItems(),u=unsetProviders();
+ const rows=it.map(a=>`<div class="attn-row"><span class="tag ${a.k}">${esc(a.tag)}</span><div class="what"><div class="t">${esc(a.t)}</div><div class="m">${esc(a.m)}</div></div>${a.act}</div>`).join('');
+ const quiet=u?`<div class="attn-row quiet"><div class="what"><div class="m">${u} provider${u>1?'s':''} not set up (optional)</div></div><a class="btn sm" href="#providers">Providers</a></div>`:'';
+ return (it.length?rows:`<div class="allclear">${ic('check')} Nothing needs you.</div>`)+quiet}
 function overviewKpis(){if(!liveRange())return histKpis();const b=BK;
  const live=SESS.filter(s=>sstate(s)!=='idle').length,waiting=SESS.filter(s=>sstate(s)==='waiting').length;
  const subs=AGENTS.filter(a=>a.type!=='main'),run=subs.filter(a=>a.state==='running').length,doneN=subs.filter(a=>a.state==='done'&&a.end!=null&&a.end>NOW-15*MIN).length;
@@ -792,15 +798,15 @@ const PAGES={};
 const kpiCard=(items,cls)=>`<div class="card kpis${cls?' '+cls:''}">${kpiGrid(items)}</div>`;
 PAGES.overview={title:'Overview',body:()=>
  head('Overview',liveRange()?'Everything huddle sees right now, kept in memory. A router restart starts it fresh.':`Requests, tokens and cost for the last ${rangeLabel()}, from the history database. Sessions, jobs and providers below stay live.`,rangeSeg())+
+ `<section>${secH('Needs you',reg('attn-n',()=>`<span class="note">${attnItems().length} items</span>`))}<div class="card">${reg('attn',attnList)}</div></section>`+
  reg('rstat',rangeStatus)+reg('kpis',overviewKpis)+
  `<section>${secH('Traffic',reg('bw',()=>`<span class="note">${liveRange()?'30-second':dur(ser().bw)} buckets</span>`),['requests','All requests'])}<div class="card chart">${reg('mtabs',mtabs)}<div class="chart-body"><div class="plot"><svg id="chart" role="img" aria-label="Traffic over the selected range"></svg><div class="tip" id="tip"></div></div><div class="split">${reg('bars',bars)}</div></div></div></section>`+
- `<section>${secH('Needs you',reg('attn-n',()=>`<span class="note">${attnItems().length} items</span>`))}<div class="card">${reg('attn',attnList)}</div></section>`+
- `<section>${secH('Live sessions',reg('sess-n',()=>`<span class="note">${SESS.filter(s=>sstate(s)!=='idle').length} live · waiting first</span>`),['sessions','All sessions'])}<div class="card t">${reg('sessmini',()=>table('sessmini',SESS_COLS.filter(c=>c.k!=='req'),SESS,{row:s=>'session:'+s.id,sort:{k:'state',d:1},empty:'No sessions in the last 24 hours'}))}</div></section>`+
+  `<section>${secH('Live sessions',reg('sess-n',()=>`<span class="note">${SESS.filter(s=>sstate(s)!=='idle').length} live · waiting first</span>`),['sessions','All sessions'])}<div class="card t">${reg('sessmini',()=>table('sessmini',SESS_COLS.filter(c=>c.k!=='req'),SESS,{row:s=>'session:'+s.id,sort:{k:'state',d:1},empty:'No sessions in the last 24 hours'}))}</div></section>`+
  `<div class="g3"><section>${secH('Activity')}<div class="card">${reg('feed',feed)}</div></section><section>${secH('Providers',null,['providers','Details'])}<div class="card list">${reg('lanesmini',lanesMini)}</div></section><div class="stack"><section>${secH('Delegated jobs',null,['jobs','All jobs'])}<div class="card list">${reg('jobsmini',jobsMini)}</div></section><section>${secH('Router',null,['router','Details'])}<div class="card">${reg('routermini',routerMini)}</div></section></div></div>`,
  after:()=>{bindChart();drawChart()}};
 
 PAGES.sessions={title:'Sessions',body:()=>{const c=k=>k==='all'?SESS.length:SESS.filter(s=>sstate(s)===k).length;
- return head('Sessions','Every Claude Code session from the last 24 hours. Paths, branches, titles and subagents come from Claude Code\'s own session logs, read only while this page is open.',seg('sess',[['all','All',c('all')],['waiting','Waiting',c('waiting')],['working','Working',c('working')],['idle','Idle',c('idle')]],F.sess)+search('sess','Filter by title, project or branch'))+
+ return head('Sessions','Every Claude Code session from the last 24 hours. Paths, branches, titles and subagents come from Claude Code\'s own session logs, read only while this page is open.',reg('sess-f',()=>seg('sess',[['all','All',c('all')],['waiting','Waiting',c('waiting')],['working','Working',c('working')],['idle','Idle',c('idle')]],F.sess))+search('sess','Filter by title, project or branch'))+
  `<div class="card t">${reg('sess',()=>table('sess',SESS_COLS.filter(c=>c.k!=='last'),SESS.filter(s=>(F.sess==='all'||sstate(s)===F.sess)&&qmatch('sess',s.name+' '+s.project+' '+s.branch+' '+s.id)),{row:s=>'session:'+s.id,sort:{k:'state',d:1},empty:'No sessions match'}))}</div>`}};
 
 const AG_COLS=[
@@ -815,7 +821,7 @@ const AG_COLS=[
  {k:'wt',label:'Worktree',v:a=>a.wt||'',h:a=>wtName(a.wt),sm:1}
 ];
 PAGES.agents={title:'Agents',body:()=>{const c=k=>k==='all'?AGENTS.length:AGENTS.filter(a=>a.state===k).length;
- return head('Agents','Every main session and subagent, with its model, state and worktree. Subagent types and descriptions come from the session logs.',seg('agents',[['all','All',c('all')],['running','Running',c('running')],['waiting','Waiting',c('waiting')],['done','Done',c('done')],['idle','Idle',c('idle')]],F.agents)+search('agents','Filter by agent, task or project'))+
+ return head('Agents','Every main session and subagent, with its model, state and worktree. Subagent types and descriptions come from the session logs.',reg('agents-f',()=>seg('agents',[['all','All',c('all')],['running','Running',c('running')],['waiting','Waiting',c('waiting')],['done','Done',c('done')],['idle','Idle',c('idle')]],F.agents))+search('agents','Filter by agent, task or project'))+
  `<div class="card t">${reg('agents',()=>table('agents',AG_COLS,AGENTS.filter(a=>(F.agents==='all'||a.state===F.agents)&&qmatch('agents',a.type+' '+a.desc+' '+a.s.project+' '+a.model)),{row:a=>'session:'+a.s.id,sort:{k:'state',d:1},empty:'No agents match'}))}</div>`}};
 
 function speed(r){if(r.dur==null||r.ttft==null||!r.out||r.dur<=r.ttft)return null;return r.out/((r.dur-r.ttft)/1e3)}
@@ -985,7 +991,7 @@ PAGES.projects={title:'Projects',body:()=>head('Projects','Grouped by repository
 const kindPill=k=>k==='checkout'?pill('off','Checkout'):k==='agent'?`<span class="pill acc">${ic('agents')}Agent</span>`:`<span class="pill warn">${ic('jobs')}Job</span>`;
 const changesCell=w=>w.changes==null?NA:w.changes?`<span class="warnc">${w.changes} file${w.changes===1?'':'s'}</span>`:'<span class="faint">clean</span>';
 PAGES.worktrees={title:'Worktrees',body:()=>{const c=k=>k==='all'?WT.length:WT.filter(w=>w.kind===k).length;
- return head('Worktrees','Every checkout and worktree of the projects in use, read from git worktree list. Read only: huddle never changes them here.',seg('wt',[['all','All',c('all')],['checkout','Checkouts',c('checkout')],['agent','Agent',c('agent')],['job','Job',c('job')]],F.wt))+
+ return head('Worktrees','Every checkout and worktree of the projects in use, read from git worktree list. Read only: huddle never changes them here.',reg('wt-f',()=>seg('wt',[['all','All',c('all')],['checkout','Checkouts',c('checkout')],['agent','Agent',c('agent')],['job','Job',c('job')]],F.wt)))+
  `<div class="card t">${reg('wt',()=>table('wt',[
   {k:'branch',label:'Branch',v:w=>w.branch,h:w=>`<div class="ct mono" style="font-size:13px">${esc(w.branch||'(detached)')}</div><div class="cs">${esc(tilde(w.path))}</div>`},
   {k:'project',label:'Project',v:w=>w.project,h:w=>esc(w.project)},
@@ -1010,7 +1016,7 @@ PAGES.jobs={title:'Jobs',body:()=>head('Delegated jobs','Tasks handed to another
  ],JOBS,{sort:{k:'state',d:1},empty:'No delegated jobs yet'}))}</div>`};
 
 PAGES.harnesses={title:'Harnesses',body:()=>{const c=k=>k==='all'?HARN.length:k==='ready'?HARN.filter(h=>h.st==='ready').length:HARN.filter(h=>h.st!=='ready').length;
- return head('Harnesses','The coding CLIs huddle can delegate to, checked by /huddle:setup. Only ready ones take jobs.',seg('harn',[['all','All',c('all')],['ready','Ready',c('ready')],['att','Needs attention',c('att')]],F.harn)+cmd('/huddle:setup'))+
+ return head('Harnesses','The coding CLIs huddle can delegate to, checked by /huddle:setup. Only ready ones take jobs.',reg('harn-f',()=>seg('harn',[['all','All',c('all')],['ready','Ready',c('ready')],['att','Needs attention',c('att')]],F.harn))+cmd('/huddle:setup'))+
  `<div class="card t">${reg('harn',()=>table('harn',[
   {k:'name',label:'Harness',v:h=>h.name,h:h=>`<div class="ct">${esc(h.name)}</div><div class="cs">${esc(h.id)}</div>`},
   {k:'st',label:'Status',v:h=>h.st==='ready'?0:1,h:h=>h.st==='ready'?pill('ok','Ready'):h.st==='fail'?pill('bad','Fails to start'):pill('off','Not on PATH')},
@@ -1145,7 +1151,7 @@ function render(){REG={};let h=(location.hash||'#overview').slice(1).split('?')[
  if(page==='requests'||page==='errors')hload(page);else HS.mode='live';
  const grp=NAV.find(([,its])=>its.some(([k])=>k===page))[0];
  setHtml($('#crumbs'),`<span class="c0">Huddle</span>${ic('chev')}<span>${grp}</span>${ic('chev')}<b>${p.title}</b>`);
- setHtml($('#content'),p.body()+`<div class="foot">${dot('ok',true)} Memory only. Restarting the router clears this page.</div>`);
+ setHtml($('#content'),p.body()+(readsMemory()?`<div class="foot">${dot('ok',true)} Memory only. Restarting the router clears this page.</div>`:''));
  if(p.after)p.after();shell();closeSidebar();window.scrollTo(0,0);loadTotals()}
 window.addEventListener('hashchange',render);
 

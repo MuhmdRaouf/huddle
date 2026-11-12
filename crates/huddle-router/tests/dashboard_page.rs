@@ -426,3 +426,120 @@ fn k13_the_providers_badge_reads_set_up_of_five() {
     assert!(line.contains("var(--ok)"), "{line}");
     assert!(line.contains("/${"), "{line}");
 }
+
+/// The text of the page between two markers.
+fn page_between(from: &str, to: &str) -> &'static str {
+    let start = PAGE.find(from).unwrap_or_else(|| panic!("{from}"));
+    let end = start + PAGE[start..].find(to).unwrap_or_else(|| panic!("{to}"));
+    &PAGE[start..end]
+}
+
+#[test]
+fn k14_filter_counts_redraw_with_each_snapshot() {
+    for (page, next, region) in [
+        ("PAGES.sessions={", "const AG_COLS", "reg('sess-f'"),
+        ("PAGES.agents={", "PAGES.requests={", "reg('agents-f'"),
+        ("PAGES.worktrees={", "PAGES.jobs={", "reg('wt-f'"),
+        ("PAGES.harnesses={", "PAGES.router={", "reg('harn-f'"),
+    ] {
+        let body = page_between(page, next);
+        assert!(body.contains(region), "{page} counts sit in {region}");
+    }
+}
+
+#[test]
+fn k14_memory_footer_only_on_live_pages() {
+    assert!(PAGE.contains("const readsMemory=()=>"));
+    assert!(PAGE.contains("(readsMemory()?`<div class=\"foot\">"));
+    let rule = page_between("const readsMemory=()=>", ";\n");
+    for live in [
+        "overview:liveRange()",
+        "sessions:true",
+        "agents:true",
+        "requests:HS.mode==='live'",
+        "errors:HS.mode==='live'",
+    ] {
+        assert!(rule.contains(live), "{live}");
+    }
+    for disk in [
+        "providers",
+        "harnesses",
+        "router",
+        "jobs",
+        "projects",
+        "worktrees",
+    ] {
+        assert!(!rule.contains(disk), "{disk} reads disk or settings");
+    }
+}
+
+#[test]
+fn k14_optional_providers_fold_into_one_quiet_row() {
+    let items = page_between("function attnItems()", "const unsetProviders");
+    assert!(items.contains("x.status[1]==='Needs a fix'"));
+    assert!(
+        !items.contains("is not set up"),
+        "an unset provider is no item"
+    );
+    let list = page_between("function attnList()", "function overviewKpis");
+    assert!(list.contains("not set up (optional)"));
+    assert!(list.contains("href=\"#providers\""));
+    assert!(list.contains("Nothing needs you."));
+    let quiet = list.find("const quiet=").expect("quiet row");
+    let rows = list.find("const rows=").expect("real rows");
+    assert!(rows < quiet && list.rfind("+quiet").is_some_and(|i| i > quiet));
+}
+
+#[test]
+fn k14_needs_you_comes_before_the_kpis() {
+    let overview = page_between("PAGES.overview={", "after:()=>{bindChart()");
+    let needs = overview.find("secH('Needs you'").expect("needs you");
+    let kpis = overview.find("reg('kpis'").expect("kpis");
+    let chart = overview.find("secH('Traffic'").expect("chart");
+    assert!(needs < kpis && needs < chart);
+    let header = overview.find("head('Overview'").expect("header");
+    assert!(header < needs);
+}
+
+/// Relative luminance of `#rrggbb` per WCAG 2.
+fn luminance(hex: &str) -> f64 {
+    let channel = |i: usize| {
+        let c = f64::from(u8::from_str_radix(&hex[1 + 2 * i..3 + 2 * i], 16).expect("hex")) / 255.0;
+        if c <= 0.03928 {
+            c / 12.92
+        } else {
+            ((c + 0.055) / 1.055).powf(2.4)
+        }
+    };
+    0.2126 * channel(0) + 0.7152 * channel(1) + 0.0722 * channel(2)
+}
+
+fn contrast(a: &str, b: &str) -> f64 {
+    let (x, y) = (luminance(a), luminance(b));
+    (x.max(y) + 0.05) / (x.min(y) + 0.05)
+}
+
+/// The value of a custom property in the light `:root` block.
+fn light_token(name: &str) -> &'static str {
+    let root = page_between(":root{", "}");
+    let at = root
+        .find(&format!("{name}:"))
+        .unwrap_or_else(|| panic!("{name}"))
+        + name.len()
+        + 1;
+    &root[at..at + 7]
+}
+
+#[test]
+fn k14_light_theme_faint_and_accent_meet_4_5_to_1() {
+    let (page, card) = (light_token("--page"), light_token("--surface"));
+    let faint = light_token("--faint");
+    assert!(contrast(faint, page) >= 4.5, "faint on the page");
+    assert!(contrast(faint, card) >= 4.5, "faint on a card");
+    let accent = light_token("--accent");
+    assert!(
+        contrast(accent, light_token("--accent-bg")) >= 4.5,
+        "accent on its tint"
+    );
+    assert!(contrast(accent, card) >= 4.5, "accent on a card");
+}

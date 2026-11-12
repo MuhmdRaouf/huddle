@@ -150,7 +150,7 @@ works on a narrow screen and loads nothing from outside the router.
 
 It shows:
 
-- Overview: stats, the traffic chart, what needs you, live sessions.
+- Overview: what needs you first, then stats, the traffic chart and live sessions.
 - Sessions, Agents, Requests and Errors, with search over the history.
 - Models and Usage, with the Claude plan windows when Anthropic's replies carry
   them.
