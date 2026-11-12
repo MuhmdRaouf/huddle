@@ -524,7 +524,7 @@
    "name": "DeepSeek",
    "enabled": false,
    "models": "deepseek-*",
-   "setup": "/deepseek:setup",
+   "setup": "/huddle:deepseek:setup",
    "key": false,
    "requests": 0,
    "errors": 0,
@@ -1408,7 +1408,7 @@
     "key": false,
     "lane": null,
     "models": 0,
-    "next": "/deepseek:setup"
+    "next": "/huddle:deepseek:setup"
    },
    {
     "name": "qwen",

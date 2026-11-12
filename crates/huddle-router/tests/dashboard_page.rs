@@ -333,3 +333,31 @@ fn t10_history_rows_carry_cost_and_open_the_request_sheet() {
     assert!(PAGE.contains("No requests match these filters"));
     assert!(PAGE.contains("${HS.off+1}–${HS.off+n}"), "range text");
 }
+
+#[test]
+fn k11_sidebar_badges_read_as_ratios_with_the_good_part_green() {
+    let plugins = PAGE
+        .lines()
+        .find(|l| l.contains("case 'plugins':"))
+        .expect("plugins badge");
+    assert!(plugins.contains("/${PL.rows.length}"), "{plugins}");
+    assert!(plugins.contains("var(--ok)"), "{plugins}");
+    assert!(!plugins.contains("badge warn"), "{plugins}");
+    let harnesses = PAGE
+        .lines()
+        .find(|l| l.contains("case 'harnesses':"))
+        .expect("harnesses badge");
+    assert!(harnesses.contains("HARN.length"), "{harnesses}");
+    assert!(harnesses.contains("var(--ok)"), "{harnesses}");
+    assert!(harnesses.contains("/${HARN.length}"), "{harnesses}");
+}
+
+#[test]
+fn k11_the_plugins_page_has_no_installed_column() {
+    assert!(!PAGE.contains("label:'Installed'"));
+    assert!(!PAGE.contains("<b>Installed</b>"));
+    assert!(PAGE.contains("label:'Agents'"));
+    assert!(PAGE.contains("label:'Provider'"));
+    assert!(PAGE.contains("{k:'Set up',v:r.filter(x=>x.setup).length,small:`of ${r.length}`"));
+    assert!(PAGE.contains("huddle's providers, with every step each one needs before it works."));
+}

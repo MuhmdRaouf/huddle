@@ -56,4 +56,6 @@ pub struct Facts<'a> {
     pub config_hosts: Result<usize, String>,
     /// Whether each provider holds a key. Yes or no only.
     pub keys: &'a HashMap<&'static str, bool>,
+    /// How many managed agent files each provider has in `<claude_dir>/agents`.
+    pub agents: &'a HashMap<&'static str, usize>,
 }

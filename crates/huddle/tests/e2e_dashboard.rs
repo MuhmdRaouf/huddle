@@ -215,7 +215,7 @@ fn the_live_feed_opens_with_a_snapshot() {
     assert_eq!(zai_lane["enabled"], true);
     let kimi = lanes.iter().find(|l| l["id"] == "kimi").expect("kimi lane");
     assert_eq!(kimi["enabled"], false);
-    assert_eq!(kimi["setup"], "/kimi:setup");
+    assert_eq!(kimi["setup"], "/huddle:kimi:setup");
     assert!(snapshot["jobs"].as_array().expect("jobs").is_empty());
 }
 

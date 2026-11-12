@@ -175,6 +175,9 @@ mod tests {
     static NO_RUN_VERSIONS: std::sync::LazyLock<HashMap<String, String>> =
         std::sync::LazyLock::new(HashMap::new);
 
+    static NO_AGENTS: std::sync::LazyLock<HashMap<&'static str, usize>> =
+        std::sync::LazyLock::new(HashMap::new);
+
     fn facts<'a>(keys: &'a HashMap<&'static str, bool>) -> Facts<'a> {
         Facts {
             version: "0.0.3",
@@ -189,6 +192,7 @@ mod tests {
             enabled: Ok(vec!["zai".into(), "kimi".into()]),
             config_hosts: Ok(0),
             keys,
+            agents: &NO_AGENTS,
         }
     }
 

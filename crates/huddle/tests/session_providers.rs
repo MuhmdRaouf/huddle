@@ -121,7 +121,7 @@ fn a_missing_key_prints_one_json_object_naming_setup() {
     let doc: serde_json::Value = serde_json::from_str(stdout.trim()).expect("json");
     let msg = doc["systemMessage"].as_str().expect("systemMessage");
     assert!(msg.contains("no Z.ai GLM key found"), "{msg}");
-    assert!(msg.contains("/zai:setup"), "{msg}");
+    assert!(msg.contains("/huddle:zai:setup"), "{msg}");
     wait_running(&home, port);
 }
 

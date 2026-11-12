@@ -43,7 +43,7 @@ static PROVIDERS: [Provider; 5] = [
     Provider {
         id: "zai",
         display: "Z.ai GLM",
-        slash: "/zai:",
+        slash: "/huddle:zai:",
         env_prefix: "ZAI",
         base_url: "https://api.z.ai/api/anthropic",
         main: ModelRef {
@@ -68,7 +68,7 @@ static PROVIDERS: [Provider; 5] = [
     Provider {
         id: "kimi",
         display: "Moonshot Kimi",
-        slash: "/kimi:",
+        slash: "/huddle:kimi:",
         env_prefix: "KIMI",
         base_url: "https://api.moonshot.ai/anthropic",
         main: ModelRef {
@@ -94,7 +94,7 @@ static PROVIDERS: [Provider; 5] = [
     Provider {
         id: "deepseek",
         display: "DeepSeek",
-        slash: "/deepseek:",
+        slash: "/huddle:deepseek:",
         env_prefix: "DEEPSEEK",
         base_url: "https://api.deepseek.com/anthropic",
         main: ModelRef {
@@ -119,7 +119,7 @@ static PROVIDERS: [Provider; 5] = [
     Provider {
         id: "minimax",
         display: "MiniMax",
-        slash: "/minimax:",
+        slash: "/huddle:minimax:",
         env_prefix: "MINIMAX",
         base_url: "https://api.minimax.io/anthropic",
         main: ModelRef {
@@ -146,7 +146,7 @@ static PROVIDERS: [Provider; 5] = [
     Provider {
         id: "qwen",
         display: "Alibaba Qwen",
-        slash: "/qwen:",
+        slash: "/huddle:qwen:",
         env_prefix: "QWEN",
         base_url: "https://dashscope-intl.aliyuncs.com/apps/anthropic",
         main: ModelRef {

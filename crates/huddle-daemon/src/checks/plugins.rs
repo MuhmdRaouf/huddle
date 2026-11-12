@@ -1,4 +1,4 @@
-//! One row per provider plugin, and the plugin report that carries huddle's checks beside them.
+//! One row per provider, and the plugin report that carries huddle's checks beside them.
 
 use std::collections::HashMap;
 use std::fs;
@@ -19,12 +19,13 @@ pub const MARKETPLACE: &str = "muhmdraouf";
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct PluginRow {
     pub name: String,
-    pub version: Option<String>,
-    pub installed: bool,
-    pub setup: bool,
     pub key: bool,
     pub lane: Option<String>,
     pub models: usize,
+    /// How many of the provider's agent files in `<claude_dir>/agents` huddle manages.
+    pub agents: usize,
+    /// The lane is on and a key is found.
+    pub set_up: bool,
     pub next: Option<String>,
 }
 
@@ -53,6 +54,10 @@ pub fn read(
     wiring: Wiring,
     keys: &HashMap<&'static str, bool>,
 ) -> PluginsReport {
+    let agents: HashMap<&'static str, usize> = providers()
+        .iter()
+        .map(|provider| (provider.id, managed_agents(&paths.claude_dir, provider)))
+        .collect();
     let known: Vec<&str> = providers().iter().map(|provider| provider.id).collect();
     let installed_plugins =
         fs::read_to_string(paths.claude_dir.join("plugins/installed_plugins.json")).ok();
@@ -71,7 +76,19 @@ pub fn read(
             .map(|hosts| hosts.len())
             .map_err(|error| error.to_string()),
         keys,
+        agents: &agents,
     })
+}
+
+/// The provider's agent files that carry huddle's `managed-by` marker.
+fn managed_agents(claude_dir: &std::path::Path, provider: &Provider) -> usize {
+    [provider.main.id, provider.flash.id]
+        .iter()
+        .filter(|id| {
+            fs::read_to_string(claude_dir.join("agents").join(format!("{id}.md")))
+                .is_ok_and(|text| text.lines().any(|line| line.trim() == "managed-by: huddle"))
+        })
+        .count()
 }
 
 /// The key Claude Code records a plugin under.
@@ -140,36 +157,24 @@ fn rows(facts: &Facts) -> Vec<PluginRow> {
 }
 
 fn row(provider: &Provider, facts: &Facts, picker: &[String]) -> PluginRow {
-    let plugin = format!("{}-plugin-cc", provider.id);
-    let installed = installed_version(facts.installed_plugins, facts.carried, &plugin);
-    let setup = facts
+    let lane_on = facts
         .enabled
         .as_ref()
         .is_ok_and(|enabled| enabled.iter().any(|name| name == provider.id));
     let key = facts.keys.get(provider.id).copied().unwrap_or(false);
+    let set_up = lane_on && key;
     let models = [provider.main.id, provider.flash.id]
         .iter()
         .filter(|id| picker.iter().any(|held| held == *id))
         .count();
-    let version = installed.clone().flatten();
-    let next = if installed.is_none() {
-        Some(format!("/plugin install {}", plugin_key(&plugin)))
-    } else if version.as_deref().is_some_and(|v| v != facts.version) {
-        Some("/huddle:update".to_string())
-    } else if !setup || !key {
-        Some(format!("{}setup", provider.slash))
-    } else {
-        None
-    };
     PluginRow {
         name: provider.id.to_string(),
-        version,
-        installed: installed.is_some(),
-        setup,
         key,
-        lane: setup.then(|| lane_of(provider)),
+        lane: lane_on.then(|| lane_of(provider)),
         models,
-        next,
+        agents: facts.agents.get(provider.id).copied().unwrap_or(0),
+        set_up,
+        next: (!set_up).then(|| format!("{}setup", provider.slash)),
     }
 }
 
@@ -212,6 +217,9 @@ mod tests {
     static NO_RUN_VERSIONS: std::sync::LazyLock<HashMap<String, String>> =
         std::sync::LazyLock::new(HashMap::new);
 
+    static NO_AGENTS: std::sync::LazyLock<HashMap<&'static str, usize>> =
+        std::sync::LazyLock::new(HashMap::new);
+
     const SETTINGS: &str = r#"{"modelPicker":{"options":[
         {"model":"glm-5.3","label":"GLM 5.3"},{"model":"glm-5.3-flash","label":"GLM 5.3 Flash"},
         {"model":"kimi-k3","label":"Kimi K3"}]}}"#;
@@ -230,6 +238,7 @@ mod tests {
             enabled: Ok(vec!["zai".to_string()]),
             config_hosts: Ok(0),
             keys,
+            agents: &NO_AGENTS,
         }
     }
 
@@ -238,90 +247,49 @@ mod tests {
     }
 
     #[test]
-    fn a_set_up_plugin_shows_its_lane_models_and_key_with_no_next_step() {
+    fn a_set_up_provider_shows_its_lane_models_and_key_with_no_next_step() {
         let keys = HashMap::from([("zai", true)]);
         let rows = rows(&facts(&keys));
-        let zai = row(&rows, "zai");
         assert_eq!(
-            *zai,
+            *row(&rows, "zai"),
             PluginRow {
                 name: "zai".into(),
-                version: Some("0.0.3".into()),
-                installed: true,
-                setup: true,
                 key: true,
                 lane: Some("glm-*".into()),
                 models: 2,
+                agents: 0,
+                set_up: true,
                 next: None,
             }
         );
     }
 
     #[test]
-    fn there_is_one_row_per_catalog_provider() {
-        let keys = HashMap::new();
-        let names: Vec<_> = rows(&facts(&keys)).into_iter().map(|r| r.name).collect();
-        let catalog: Vec<_> = huddle_catalog::providers::providers()
-            .iter()
-            .map(|p| p.id.to_string())
-            .collect();
-        assert_eq!(names, catalog);
-    }
-
-    #[test]
-    fn a_missing_plugin_names_the_install_command() {
-        let keys = HashMap::new();
-        let rows = rows(&facts(&keys));
-        let qwen = row(&rows, "qwen");
-        assert!(!qwen.installed);
-        assert_eq!(qwen.version, None);
-        assert_eq!(
-            qwen.next.as_deref(),
-            Some("/plugin install qwen-plugin-cc@muhmdraouf")
-        );
-    }
-
-    #[test]
-    fn a_version_other_than_the_binary_names_huddle_update() {
-        let keys = HashMap::from([("kimi", true)]);
-        let rows = rows(&facts(&keys));
-        assert_eq!(row(&rows, "kimi").next.as_deref(), Some("/huddle:update"));
-    }
-
-    #[test]
-    fn an_installed_plugin_without_a_lane_names_its_setup() {
-        let keys = HashMap::from([("kimi", false)]);
-        let mut f = facts(&keys);
-        let all_current = INSTALLED.replace("0.0.2", "0.0.3");
-        f.installed_plugins = Some(&all_current);
-        let rows = rows(&f);
-        let kimi = row(&rows, "kimi");
-        assert!(!kimi.setup);
-        assert_eq!(kimi.lane, None);
-        assert_eq!(kimi.next.as_deref(), Some("/kimi:setup"));
-    }
-
-    #[test]
-    fn a_lane_without_a_key_names_setup_too() {
+    fn a_lane_without_a_key_names_setup() {
         let keys = HashMap::from([("zai", false)]);
         let rows = rows(&facts(&keys));
         let zai = row(&rows, "zai");
-        assert!(zai.setup && !zai.key);
-        assert_eq!(zai.next.as_deref(), Some("/zai:setup"));
+        assert!(zai.lane.is_some() && !zai.set_up);
+        assert_eq!(zai.next.as_deref(), Some("/huddle:zai:setup"));
     }
 
     #[test]
-    fn unreadable_files_leave_every_plugin_not_installed() {
+    fn a_key_without_a_lane_names_setup() {
+        let keys = HashMap::from([("kimi", true)]);
+        let rows = rows(&facts(&keys));
+        let kimi = row(&rows, "kimi");
+        assert!(kimi.key && !kimi.set_up);
+        assert_eq!(kimi.lane, None);
+        assert_eq!(kimi.next.as_deref(), Some("/huddle:kimi:setup"));
+    }
+
+    #[test]
+    fn unreadable_files_leave_every_provider_not_set_up() {
         let keys = HashMap::new();
         let mut f = facts(&keys);
-        f.installed_plugins = None;
         f.settings = Some("{");
         f.enabled = Err("unreadable".into());
-        assert!(
-            rows(&f)
-                .iter()
-                .all(|r| !r.installed && !r.setup && r.models == 0)
-        );
+        assert!(rows(&f).iter().all(|r| !r.set_up && r.models == 0));
     }
 
     #[test]
@@ -430,7 +398,7 @@ mod tests {
 
         assert_eq!(report.state, Phase::Ready);
         let zai = row(&report.rows, "zai");
-        assert!(zai.installed && zai.setup && zai.key);
+        assert!(zai.set_up && zai.key);
         assert_eq!(zai.models, 2);
         let config = report
             .checks
@@ -447,7 +415,7 @@ mod tests {
     }
 
     #[test]
-    fn read_of_an_empty_home_shows_nothing_installed_without_failing() {
+    fn read_of_an_empty_home_shows_nothing_set_up_without_failing() {
         use huddle_config::env::Env;
         use huddle_testkit::temp_home::TempHome;
 
@@ -456,7 +424,51 @@ mod tests {
         let paths = Paths::from_env(&Env::with(&[("HOME", root.as_str())])).expect("paths");
         let report = read(&paths, "0.0.3", 4835, Wiring::default(), &HashMap::new());
         assert_eq!(report.state, Phase::Ready);
-        assert!(report.rows.iter().all(|r| !r.installed && !r.setup));
+        assert!(report.rows.iter().all(|r| !r.set_up));
         assert_eq!(report.checks.len(), 7);
+    }
+
+    #[test]
+    fn k11_plugin_rows_are_the_five_providers_without_installed() {
+        use huddle_config::env::Env;
+        use huddle_testkit::temp_home::TempHome;
+
+        let home = TempHome::new();
+        let root = home.root().display().to_string();
+        let paths = Paths::from_env(&Env::with(&[("HOME", root.as_str())])).expect("paths");
+        providers_file::set_enabled(&paths.config_dir, "zai", true).expect("providers.toml");
+        fs::create_dir_all(paths.claude_dir.join("agents")).expect("agents dir");
+        fs::write(
+            paths.claude_dir.join("agents/glm-5.3.md"),
+            "---\nname: glm-5.3\nmanaged-by: huddle\n---\n",
+        )
+        .expect("agent");
+        fs::write(
+            paths.claude_dir.join("agents/glm-5.3-flash.md"),
+            "---\nname: mine\n---\n",
+        )
+        .expect("foreign agent");
+        let keys = HashMap::from([("zai", true)]);
+
+        let report = read(&paths, "0.0.6", 4835, Wiring::default(), &keys);
+
+        let names: Vec<_> = report.rows.iter().map(|r| r.name.as_str()).collect();
+        let catalog: Vec<_> = huddle_catalog::providers::providers()
+            .iter()
+            .map(|p| p.id)
+            .collect();
+        assert_eq!(names, catalog);
+        let zai = row(&report.rows, "zai");
+        assert!(zai.set_up && zai.key);
+        assert_eq!(zai.next, None);
+        assert_eq!(zai.agents, 1);
+        let kimi = row(&report.rows, "kimi");
+        assert!(!kimi.set_up);
+        assert_eq!(kimi.next.as_deref(), Some("/huddle:kimi:setup"));
+        let json = serde_json::to_value(zai).expect("json");
+        assert!(
+            json.get("installed").is_none() && json.get("version").is_none(),
+            "{json}"
+        );
     }
 }

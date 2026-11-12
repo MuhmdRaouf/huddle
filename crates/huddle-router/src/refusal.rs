@@ -395,7 +395,7 @@ mod tests {
     fn names() -> RefusalNames {
         RefusalNames {
             display: "Z.ai GLM".into(),
-            slash: "/zai:".into(),
+            slash: "/huddle:zai:".into(),
             billing_url: "https://z.ai/manage-apikey/billing".into(),
         }
     }
@@ -415,7 +415,7 @@ mod tests {
         assert_eq!(answer.headers, REFUSAL_HEADERS.to_vec());
         assert_eq!(
             message(&answer),
-            "Z.ai GLM key refused or missing: run /zai:setup (no key is set). Claude models are not affected."
+            "Z.ai GLM key refused or missing: run /huddle:zai:setup (no key is set). Claude models are not affected."
         );
         let value: serde_json::Value = serde_json::from_slice(&answer.body).expect("json");
         assert_eq!(value["type"], "error");
@@ -427,7 +427,7 @@ mod tests {
         let answer = refusal_answer(&names(), Refusal::Key, "Z.ai GLM answered HTTP 401");
         assert_eq!(
             message(&answer),
-            "Z.ai GLM key refused or missing: run /zai:setup (Z.ai GLM answered HTTP 401). Claude models are not affected."
+            "Z.ai GLM key refused or missing: run /huddle:zai:setup (Z.ai GLM answered HTTP 401). Claude models are not affected."
         );
     }
 
@@ -460,7 +460,7 @@ mod tests {
         assert_eq!(answer.status, 400);
         assert_eq!(
             message(&answer),
-            "Z.ai GLM key refused or missing: run /zai:setup (key file /x/env has mode 0644: run chmod 600 on it). Claude models are not affected."
+            "Z.ai GLM key refused or missing: run /huddle:zai:setup (key file /x/env has mode 0644: run chmod 600 on it). Claude models are not affected."
         );
     }
 
@@ -616,6 +616,16 @@ mod tests {
                 .chars()
                 .count(),
             299
+        );
+    }
+
+    #[test]
+    fn k11_refusals_name_the_huddle_provider_command() {
+        let answer = no_key_answer(&names());
+        assert!(
+            message(&answer).contains("run /huddle:zai:setup "),
+            "{}",
+            message(&answer)
         );
     }
 }

@@ -233,7 +233,7 @@ async fn no_key_is_a_400_naming_setup_and_nothing_goes_out() {
     assert!(
         body_of(response)
             .await
-            .contains("run /zai:setup (no key is set)")
+            .contains("run /huddle:zai:setup (no key is set)")
     );
 }
 

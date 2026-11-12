@@ -86,7 +86,7 @@ fn a_missing_key_is_a_non_retryable_400_naming_setup() {
 
     assert_eq!(reply.status, 400, "{}", reply.body);
     assert_eq!(reply.header("x-should-retry"), Some("false"));
-    assert!(reply.body.contains("/zai:setup"), "{}", reply.body);
+    assert!(reply.body.contains("/huddle:zai:setup"), "{}", reply.body);
     assert!(
         reply.body.contains("Claude models are not affected."),
         "{}",

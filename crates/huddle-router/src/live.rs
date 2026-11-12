@@ -1101,7 +1101,7 @@ mod tests {
         begin(&live, "anthropic", "claude-opus-5-5", T0 + 2000);
         let mut given = inputs(&["anthropic", "kimi"]);
         given.lanes[1].enabled = false;
-        given.lanes[1].setup = Some("/kimi:setup".into());
+        given.lanes[1].setup = Some("/huddle:kimi:setup".into());
         given.lanes[1].key = Some(false);
         given.jobs.push(JobRow {
             id: "j-7f3a".into(),
@@ -1189,7 +1189,7 @@ mod tests {
         );
         assert!(json["lanes"][0]["key"].is_null());
         assert_eq!(json["lanes"][1]["key"], false);
-        assert_eq!(json["lanes"][1]["setup"], "/kimi:setup");
+        assert_eq!(json["lanes"][1]["setup"], "/huddle:kimi:setup");
         assert!(json["lanes"][1]["ttft_p50_ms"].is_null());
         assert_eq!(
             keys(&json["recent"][0]),
