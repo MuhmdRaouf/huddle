@@ -95,6 +95,7 @@ mod tests {
                 ("NO_PROXY".to_string(), None),
             ]),
             after_sha256: "ab12".to_string(),
+            linked_bin: true,
         };
         let text = render(&path(), &ledger).expect("render");
         assert_eq!(

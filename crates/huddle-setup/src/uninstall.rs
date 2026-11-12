@@ -9,7 +9,9 @@ use huddle_config::paths::Paths;
 use huddle_config::providers_file::read_enabled;
 
 use crate::agent_files::remove_managed;
+use crate::settings;
 use crate::undo::{UndoOutcome, undo};
+use crate::user_bin_link;
 
 /// The lines one uninstall says, in the order the steps ran.
 pub struct UninstallReport {
@@ -51,6 +53,17 @@ pub fn run(paths: &Paths, exe: &Path) -> UninstallReport {
             }
         }
         Err(error) => lines.push(format!("could not stop huddle-router: {error}")),
+    }
+
+    // The ledger goes with the settings undo, so the link is read and removed first.
+    match settings::user_bin_link_recorded(paths) {
+        Ok(true) => match user_bin_link::remove_if_ours(paths) {
+            Ok(true) => lines.push("removed ~/.local/bin/huddle".to_string()),
+            Ok(false) => {}
+            Err(error) => lines.push(format!("could not remove ~/.local/bin/huddle: {error}")),
+        },
+        Ok(false) => {}
+        Err(error) => lines.push(format!("could not read the install ledger: {error}")),
     }
 
     match undo(paths) {

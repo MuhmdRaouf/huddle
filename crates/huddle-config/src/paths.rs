@@ -21,6 +21,8 @@ pub struct Paths {
     /// Logs, ledgers, jobs and the running router's files.
     pub state_dir: PathBuf,
     pub bin_dir: PathBuf,
+    /// `~/.local/bin`, the systemd file-hierarchy home for user executables: setup links `huddle` here.
+    pub user_bin_dir: PathBuf,
     pub ca_dir: PathBuf,
     /// Files that can be rebuilt: the install's download and build log.
     pub cache_dir: PathBuf,
@@ -71,6 +73,7 @@ impl Paths {
         };
         Ok(Paths {
             bin_dir: data_dir.join("bin"),
+            user_bin_dir: home.join(".local/bin"),
             ca_dir: data_dir.join("ca"),
             run_dir,
             cache_dir,

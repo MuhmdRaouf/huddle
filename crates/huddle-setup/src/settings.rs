@@ -88,6 +88,9 @@ pub struct Ledger {
     #[serde(with = "crate::ledger_file::json_string")]
     pub before: BTreeMap<String, Option<String>>,
     pub after_sha256: String,
+    /// Setup created `~/.local/bin/huddle`, so uninstall may remove it.
+    #[serde(default)]
+    pub linked_bin: bool,
 }
 
 pub fn settings_path(paths: &Paths) -> PathBuf {
@@ -331,6 +334,7 @@ fn apply_once(paths: &Paths, target: &RouterTarget) -> Result<PatchOutcome, Sett
                 created_env,
                 before: BTreeMap::new(),
                 after_sha256: String::new(),
+                linked_bin: false,
             }
         }
     };
@@ -384,6 +388,23 @@ fn before_values(doc: &Map<String, Value>, plan: &EnvPlan) -> Vec<(String, Optio
             (key.clone(), value)
         })
         .collect()
+}
+
+/// Whether the install ledger says setup created the `~/.local/bin/huddle` link.
+pub fn user_bin_link_recorded(paths: &Paths) -> Result<bool, SettingsError> {
+    Ok(read_ledger(&ledger_path(paths))?.is_some_and(|ledger| ledger.linked_bin))
+}
+
+/// Records the link in the install ledger. A run with no ledger records nothing.
+pub fn record_user_bin_link(paths: &Paths) -> Result<(), SettingsError> {
+    let file = ledger_path(paths);
+    if let Some(mut ledger) = read_ledger(&file)?
+        && !ledger.linked_bin
+    {
+        ledger.linked_bin = true;
+        write_ledger(&file, &ledger)?;
+    }
+    Ok(())
 }
 
 fn read_ledger(path: &Path) -> Result<Option<Ledger>, SettingsError> {

@@ -199,3 +199,99 @@ fn t12_install_sets_the_folder_and_file_modes_and_puts_runtime_files_in_the_runt
     assert!(run.join("handover.sock").exists());
     assert!(!home.root().join(".local/state/huddle/run").exists());
 }
+
+fn huddle_on_path(home: &TempHome, port: u16, path: &str, args: &[&str]) -> Output {
+    Command::new(env!("CARGO_BIN_EXE_huddle"))
+        .args(args)
+        .env_clear()
+        .envs(home.env())
+        .env("CLAUDE_CONFIG_DIR", home.root().join(".claude"))
+        .env("HUDDLE_ROUTER_PORT", port.to_string())
+        .env("PATH", path)
+        .output()
+        .expect("run huddle")
+}
+
+fn stable_link(home: &TempHome) -> std::path::PathBuf {
+    home.root().join(".local/share/huddle/bin/huddle")
+}
+
+fn user_link(home: &TempHome) -> std::path::PathBuf {
+    home.root().join(".local/bin/huddle")
+}
+
+fn on_path(home: &TempHome) -> String {
+    format!("{}:/usr/bin", home.root().join(".local/bin").display())
+}
+
+#[test]
+fn k4_setup_links_huddle_into_the_user_bin_folder() {
+    let home = TempHome::new();
+    let port = free_port();
+    let _stop = StopOnDrop(&home, port);
+
+    let out = huddle_on_path(&home, port, &on_path(&home), &["setup", "--install"]);
+    assert_eq!(out.status.code(), Some(0));
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.contains("linked ~/.local/bin/huddle"), "{stdout}");
+    assert!(!stdout.contains("not on your PATH"), "{stdout}");
+    assert_eq!(
+        fs::read_link(user_link(&home)).expect("link"),
+        stable_link(&home)
+    );
+}
+
+#[test]
+fn k4_a_second_setup_leaves_the_link_alone() {
+    let home = TempHome::new();
+    let port = free_port();
+    let _stop = StopOnDrop(&home, port);
+    let path = on_path(&home);
+
+    huddle_on_path(&home, port, &path, &["setup", "--install"]);
+    let second = huddle_on_path(&home, port, &path, &["setup", "--install"]);
+    let stdout = String::from_utf8_lossy(&second.stdout);
+    assert!(!stdout.contains("linked"), "{stdout}");
+    assert!(!stdout.contains("left as it is"), "{stdout}");
+    assert_eq!(
+        fs::read_link(user_link(&home)).expect("link"),
+        stable_link(&home)
+    );
+}
+
+#[test]
+fn k4_setup_never_replaces_a_file_that_is_not_its_link() {
+    let home = TempHome::new();
+    let port = free_port();
+    let _stop = StopOnDrop(&home, port);
+    fs::create_dir_all(home.root().join(".local/bin")).expect("mkdir");
+    fs::write(user_link(&home), b"#!/bin/sh\necho mine\n").expect("write");
+
+    let out = huddle_on_path(&home, port, &on_path(&home), &["setup", "--install"]);
+    assert_eq!(out.status.code(), Some(0));
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        stdout.contains("~/.local/bin/huddle exists and is not huddle's link; left as it is."),
+        "{stdout}"
+    );
+    assert!(!stdout.contains("linked ~/.local/bin/huddle"), "{stdout}");
+    assert_eq!(
+        fs::read(user_link(&home)).expect("read"),
+        b"#!/bin/sh\necho mine\n"
+    );
+}
+
+#[test]
+fn k4_setup_says_when_the_user_bin_folder_is_not_on_path() {
+    let home = TempHome::new();
+    let port = free_port();
+    let _stop = StopOnDrop(&home, port);
+
+    let out = huddle_on_path(&home, port, "/usr/bin", &["setup", "--install"]);
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let expected = format!(
+        "~/.local/bin is not on your PATH; run huddle as {}",
+        stable_link(&home).display()
+    );
+    assert!(stdout.contains(&expected), "{stdout}");
+}

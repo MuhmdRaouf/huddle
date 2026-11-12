@@ -120,3 +120,35 @@ fn t2_install_leaves_toml_ledgers_and_uninstall_restores_the_bytes() {
     assert_eq!(fs::read_to_string(&settings).expect("read"), original);
     assert!(!state.join("settings-ledger.toml").exists());
 }
+
+#[test]
+fn k4_uninstall_removes_only_its_own_link() {
+    let own = TempHome::new();
+    let port = free_port();
+    let _stop = StopOnDrop(&own, port);
+    let link = own.root().join(".local/bin/huddle");
+    assert_eq!(
+        huddle(&own, port, &["setup", "--install"]).status.code(),
+        Some(0)
+    );
+    assert!(link.symlink_metadata().is_ok(), "setup linked huddle");
+    assert_eq!(huddle(&own, port, &["uninstall"]).status.code(), Some(0));
+    assert!(
+        link.symlink_metadata().is_err(),
+        "uninstall removed the link"
+    );
+
+    let moved = TempHome::new();
+    let port = free_port();
+    let _stop2 = StopOnDrop(&moved, port);
+    let link = moved.root().join(".local/bin/huddle");
+    assert_eq!(
+        huddle(&moved, port, &["setup", "--install"]).status.code(),
+        Some(0)
+    );
+    fs::remove_file(&link).expect("unlink");
+    let elsewhere = moved.root().join("elsewhere");
+    std::os::unix::fs::symlink(&elsewhere, &link).expect("relink");
+    assert_eq!(huddle(&moved, port, &["uninstall"]).status.code(), Some(0));
+    assert_eq!(fs::read_link(&link).expect("still there"), elsewhere);
+}

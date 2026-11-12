@@ -8,3 +8,4 @@ pub mod provider_setup;
 pub mod settings;
 pub mod undo;
 pub mod uninstall;
+pub mod user_bin_link;
