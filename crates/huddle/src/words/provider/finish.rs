@@ -15,6 +15,7 @@ use huddle_keystore::port::{KeystoreError, SecretString, platform_default};
 use huddle_router::dispatch::os_roots;
 use huddle_router::keycheck::{Verdict, check_key, ping_model};
 use huddle_router::upstream::{IDLE_TIMEOUT, UpstreamClient, UpstreamConfig};
+use huddle_setup::agent_files::{self, AgentChange};
 use huddle_setup::env_file::is_router_url;
 use huddle_setup::{provider_setup, settings};
 
@@ -63,6 +64,8 @@ pub enum StepName {
     RouterRoutes,
     /// The lane is recorded and the provider's models are in `/model`.
     ModelEntries,
+    /// The provider's two agents are in Claude's agents folder.
+    Agents,
 }
 
 /// How one step ended.
@@ -91,7 +94,8 @@ pub struct Step {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Outcome {
     pub verdict: KeyVerdict,
-    /// Four steps: key stored, provider check, router routes the provider, `/model` entries.
+    /// Five steps: key stored, provider check, router routes the provider, `/model` entries,
+    /// agents.
     pub steps: Vec<Step>,
     /// The provider is usable from Claude Code once it restarts.
     pub ready: bool,
@@ -176,6 +180,7 @@ fn stopped(verdict: KeyVerdict) -> Outcome {
             step(StepName::ProviderCheck, check_state(verdict), Vec::new()),
             step(StepName::RouterRoutes, StepState::Skipped, Vec::new()),
             step(StepName::ModelEntries, StepState::Skipped, Vec::new()),
+            step(StepName::Agents, StepState::Skipped, Vec::new()),
         ],
         ready: false,
         changed: false,
@@ -201,6 +206,7 @@ fn wire(
     let ready = router.state == StepState::Done;
     steps.push(router);
     steps.push(step(StepName::ModelEntries, StepState::Done, enabled.lines));
+    steps.push(agents_step(provider, paths));
     Ok(Outcome {
         verdict,
         steps,
@@ -218,7 +224,11 @@ pub fn render_lines(outcome: &Outcome, provider: &Provider) -> Vec<String> {
         lines.push("key: stored".to_owned());
     }
     lines.push(verdict_line(outcome.verdict, provider));
-    for name in [StepName::ModelEntries, StepName::RouterRoutes] {
+    for name in [
+        StepName::ModelEntries,
+        StepName::Agents,
+        StepName::RouterRoutes,
+    ] {
         if let Some(step) = outcome.step(name) {
             lines.extend(step.lines.iter().cloned());
         }
@@ -227,6 +237,33 @@ pub fn render_lines(outcome: &Outcome, provider: &Provider) -> Vec<String> {
         lines.push(RESTART_LINE.to_owned());
     }
     lines
+}
+
+/// Writes the provider's agents. A failure is a warned step: the lane works without them.
+fn agents_step(provider: &Provider, paths: &Paths) -> Step {
+    match agent_files::sync_provider(paths, provider) {
+        Ok(AgentChange { done, kept }) => {
+            let mut lines = Vec::new();
+            if !done.is_empty() {
+                lines.push(format!("agents: {}", done.join(", ")));
+            }
+            lines.extend(
+                kept.iter()
+                    .map(|name| format!("{name} exists and is not huddle's; left as it is")),
+            );
+            let state = if kept.is_empty() {
+                StepState::Done
+            } else {
+                StepState::Warned
+            };
+            step(StepName::Agents, state, lines)
+        }
+        Err(error) => step(
+            StepName::Agents,
+            StepState::Warned,
+            vec![format!("could not write the agents: {error}")],
+        ),
+    }
 }
 
 fn step(name: StepName, state: StepState, lines: Vec<String>) -> Step {
@@ -414,7 +451,8 @@ mod tests {
                 StepName::KeyStored,
                 StepName::ProviderCheck,
                 StepName::RouterRoutes,
-                StepName::ModelEntries
+                StepName::ModelEntries,
+                StepName::Agents
             ]
         );
         assert_eq!(outcome.verdict, KeyVerdict::Accepted);
@@ -446,7 +484,7 @@ mod tests {
         let outcome = finish(zai(), &env, &paths, Path::new(NO_BINARY), &secret()).expect("finish");
         assert_eq!(outcome.verdict, KeyVerdict::Refused);
         assert!(!outcome.ready && !outcome.changed);
-        assert_eq!(outcome.steps.len(), 4);
+        assert_eq!(outcome.steps.len(), 5);
         assert!(!paths.config_dir.join("providers.toml").exists());
         assert!(
             outcome

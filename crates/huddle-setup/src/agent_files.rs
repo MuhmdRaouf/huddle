@@ -7,6 +7,7 @@ use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+use huddle_catalog::providers::{Provider, providers};
 use huddle_config::paths::Paths;
 
 /// The marker line that says a file is huddle's to manage.
@@ -67,12 +68,59 @@ pub fn sync(paths: &Paths) -> Result<(), AgentFilesError> {
         write_wanted(&dir, name, content)?;
     }
     for (name, path) in managed_files(&dir)? {
-        if wanted.contains_key(&name) {
+        if wanted.contains_key(&name) || is_provider_agent_file(&name) {
             continue;
         }
         delete_file(&path)?;
     }
     Ok(())
+}
+
+/// What `sync_provider` and `remove_provider` did with a provider's two agent files.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct AgentChange {
+    /// The model ids whose files are huddle's after a sync, or were huddle's and are gone after
+    /// a removal.
+    pub done: Vec<String>,
+    /// The file names left as they are because the user owns them.
+    pub kept: Vec<String>,
+}
+
+/// Writes the provider's main and flash agents. A file without huddle's marker is left alone
+/// and named in `kept`.
+pub fn sync_provider(paths: &Paths, provider: &Provider) -> Result<AgentChange, AgentFilesError> {
+    let dir = paths.claude_dir.join("agents");
+    ensure_dir(&dir)?;
+    sweep_stale_temps(&dir)?;
+    let mut change = AgentChange::default();
+    for id in provider_model_ids(provider) {
+        let name = format!("{id}.md");
+        if write_wanted(&dir, &name, &provider_agent_text(provider, id))? {
+            change.done.push(id.to_string());
+        } else {
+            change.kept.push(name);
+        }
+    }
+    Ok(change)
+}
+
+/// Deletes the provider's agent files that carry huddle's marker.
+pub fn remove_provider(paths: &Paths, provider: &Provider) -> Result<AgentChange, AgentFilesError> {
+    let dir = paths.claude_dir.join("agents");
+    let mut change = AgentChange::default();
+    for id in provider_model_ids(provider) {
+        let name = format!("{id}.md");
+        let path = dir.join(&name);
+        match std::fs::read(&path) {
+            Ok(bytes) if is_managed(&bytes) => {
+                delete_file(&path)?;
+                change.done.push(id.to_string());
+            }
+            Ok(_) => change.kept.push(name),
+            Err(_) => {}
+        }
+    }
+    Ok(change)
 }
 
 /// Removes every managed file. Leaves the folder and user files.
@@ -130,18 +178,32 @@ fn managed_files(dir: &Path) -> Result<Vec<(String, PathBuf)>, AgentFilesError> 
     Ok(managed)
 }
 
-fn write_wanted(dir: &Path, name: &str, content: &str) -> Result<(), AgentFilesError> {
+/// Writes the file unless the user owns it. Whether the file is huddle's afterwards.
+fn write_wanted(dir: &Path, name: &str, content: &str) -> Result<bool, AgentFilesError> {
     let path = dir.join(name);
     let wanted = content.as_bytes();
     match std::fs::read(&path) {
-        Ok(existing) if existing == wanted => Ok(()),
+        Ok(existing) if existing == wanted => Ok(true),
         Ok(existing) if existing.is_empty() || is_managed(&existing) => {
-            write_atomic(dir, name, content)
+            write_atomic(dir, name, content).map(|()| true)
         }
-        Ok(_) => Ok(()),
-        Err(err) if err.kind() == std::io::ErrorKind::NotFound => write_atomic(dir, name, content),
-        Err(_) => Ok(()),
+        Ok(_) => Ok(false),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+            write_atomic(dir, name, content).map(|()| true)
+        }
+        Err(_) => Ok(false),
     }
+}
+
+fn provider_model_ids(provider: &Provider) -> [&'static str; 2] {
+    [provider.main.id, provider.flash.id]
+}
+
+fn is_provider_agent_file(name: &str) -> bool {
+    providers()
+        .iter()
+        .flat_map(provider_model_ids)
+        .any(|id| name.strip_suffix(".md") == Some(id))
 }
 
 fn write_atomic(dir: &Path, name: &str, content: &str) -> Result<(), AgentFilesError> {
@@ -220,3 +282,82 @@ fn file_content(stem: &str, description: &str, id: &str) -> String {
         "---\nname: {stem}\ndescription: {description}\nmodel: {id}\nmanaged-by: huddle\n---\n\nDo the task in your prompt and report what you did.\n"
     )
 }
+
+/// The agent file for one of the provider's two models: the main model is the capable tier and
+/// the flash model the faster one.
+pub fn provider_agent_text(provider: &Provider, model_id: &str) -> String {
+    let main = &provider.main;
+    let flash = &provider.flash;
+    let display = provider.display;
+    let (model, summary, tier, example, color) = if model_id == flash.id {
+        (
+            flash,
+            "the same work you would give a Sonnet subagent when speed matters more than depth",
+            format!("Faster, cheaper tier of {}. {NOT_FOR}", main.id),
+            "  user: \"Which services still call the v1 billing API?\"\n  assistant: \"A checkable sweep for MODEL.\"",
+            "cyan",
+        )
+    } else {
+        (
+            main,
+            "work you would give a Sonnet subagent",
+            format!(
+                "Give it one self-contained task with exact paths and proving commands. {NOT_FOR} Faster tier: {}.",
+                flash.id
+            ),
+            "  user: \"Login sometimes fails in production; why?\"\n  assistant: \"An unknown cause: I'll diagnose it myself.\"",
+            "green",
+        )
+    };
+    let id = model.id;
+    let label = model.label;
+    let example = example.replace("MODEL", id);
+    format!(
+        "---
+name: {id}
+description: |-
+  Use this agent for {summary}, run on {display}: a clear spec or pattern, renames across files, tests for existing behaviour, fixes the project's commands can prove. It runs on {id} through huddle-router. {tier}
+
+  <example>
+  user: \"Rename getUserById to findUser everywhere, tests too.\"
+  assistant: \"Mechanical, test-proven: {id}, then I review the diff.\"
+  </example>
+
+  <example>
+{example}
+  </example>
+model: {id}
+effort: max
+color: {color}
+tools: {TOOLS}
+managed-by: huddle
+---
+
+You are the {label} implementation subagent. The orchestrator gave you one bounded task and reviews what you do.
+
+## How to work
+
+1. Do the task directly in the current repository: read the files the task names and the pattern it points to, then
+   make exactly the change asked for, following the existing code's style. Change no file the task does not need:
+   no reformatting, no unrelated fixes, no new dependencies, no config or CI changes unless asked.
+2. Verify the change with the project's own commands — tests first, then typecheck or lint. If one fails because of
+   your change, fix it; if it fails for an unrelated reason, stop and say so.
+3. Never run huddle's provider commands. You are the worker; the orchestrator runs commands.
+4. Never commit, push, stash, reset or switch branches. Never read or print secrets (`.env*`, key files, tokens).
+5. Write every note, progress line and the final message in English, whatever language the code or tools use.
+   Always end with the final message below, even when the work is unfinished: say what is done and what is not.
+
+## Your final message (the orchestrator reads only this)
+
+- `Changed:` every file you changed, one per line, with a few words on what changed.
+- `Proved by:` each command you ran with its exit code (and the failing test names, if any).
+- `Open:` anything you could not do, any assumption you made, anything that looked wrong. Write `none` if none.
+
+No praise, no restating the task, no code blocks of the whole diff: the orchestrator reads the diff itself.
+",
+    )
+}
+
+const NOT_FOR: &str = "Not for design, unclear requirements, unknown causes or security code.";
+
+const TOOLS: &str = r#"["Agent", "Bash", "Edit", "Glob", "Grep", "LSP", "ListMcpResourcesTool", "Monitor", "NotebookEdit", "Read", "ReadMcpResourceTool", "Skill", "TaskStop", "TodoWrite", "WebFetch", "WebSearch", "Write"]"#;
