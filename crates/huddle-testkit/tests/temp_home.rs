@@ -1,4 +1,5 @@
 use std::fs;
+use std::os::unix::process::CommandExt;
 use std::path::Path;
 use std::thread;
 
@@ -209,20 +210,44 @@ fn parallel_takers_of_one_stale_lease_never_both_win() {
     }
 }
 
-/// A stand-in whose command line names `router serve`, recorded as the router of `root`.
-fn recorded_router(root: &Path, command: &str) -> std::process::Child {
-    let child = std::process::Command::new("sh")
-        .args(["-c", command])
-        .spawn()
-        .expect("spawn");
-    let run = root.join("r/huddle");
-    fs::create_dir_all(&run).expect("mkdir");
-    fs::write(run.join("router.toml"), format!("pid = {}\n", child.id())).expect("record");
-    child
+/// A `sh -c` stand-in in a process group of its own. Stopping the shell leaves the `sleep` it
+/// forked running, so the group is killed when the stand-in drops, whatever the test asserted.
+struct Fake(std::process::Child);
+
+impl Fake {
+    fn spawn(command: &str) -> Fake {
+        let child = std::process::Command::new("sh")
+            .args(["-c", command])
+            .process_group(0)
+            .spawn()
+            .expect("spawn");
+        Fake(child)
+    }
+
+    fn id(&self) -> u32 {
+        self.0.id()
+    }
 }
 
-fn alive(child: &mut std::process::Child) -> bool {
-    matches!(child.try_wait(), Ok(None))
+impl Drop for Fake {
+    fn drop(&mut self) {
+        // SAFETY: the child leads its own group; a negative pid signals the whole group.
+        unsafe { libc::kill(-(self.0.id() as libc::pid_t), libc::SIGKILL) };
+        let _ = self.0.wait();
+    }
+}
+
+/// A stand-in whose command line names `router serve`, recorded as the router of `root`.
+fn recorded_router(root: &Path, command: &str) -> Fake {
+    let fake = Fake::spawn(command);
+    let run = root.join("r/huddle");
+    fs::create_dir_all(&run).expect("mkdir");
+    fs::write(run.join("router.toml"), format!("pid = {}\n", fake.id())).expect("record");
+    fake
+}
+
+fn alive(fake: &mut Fake) -> bool {
+    matches!(fake.0.try_wait(), Ok(None))
 }
 
 #[test]
@@ -244,8 +269,6 @@ fn b6_a_test_home_stops_the_router_it_caused() {
         alive(&mut other),
         "a pid that is not a router serve is left alone"
     );
-    let _ = other.kill();
-    let _ = other.wait();
 }
 
 #[test]
@@ -258,20 +281,17 @@ fn b6_a_router_that_starts_late_is_still_stopped() {
         "sleep 1; echo \"pid = $$\" > {}/router.toml; sleep 30; : router serve --by prompt-submit",
         run.display()
     );
-    let mut late = std::process::Command::new("sh")
-        .args(["-c", &script])
-        .spawn()
-        .expect("spawn");
+    let mut late = Fake::spawn(&script);
     assert!(!run.join("router.toml").exists(), "no record yet");
     drop(home);
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
     while alive(&mut late) && std::time::Instant::now() < deadline {
         thread::sleep(std::time::Duration::from_millis(20));
     }
-    let stopped = !alive(&mut late);
-    let _ = late.kill();
-    let _ = late.wait();
-    assert!(stopped, "the late router is stopped with its home");
+    assert!(
+        !alive(&mut late),
+        "the late router is stopped with its home"
+    );
 }
 
 #[test]
