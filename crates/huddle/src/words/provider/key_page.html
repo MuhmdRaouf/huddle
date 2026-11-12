@@ -1,0 +1,228 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Huddle Key Setup</title>
+<style nonce="{{NONCE}}">
+:root{
+  --page:#eff1f5;--surface:#ffffff;--subtle:#e6e9ef;--line:#ccd0da;--line-soft:#dce0e8;
+  --text:#2b2c3e;--muted:#5c5f77;--faint:#7c7f93;
+  --accent:#1e66f5;--ok:#2a7a19;--warn:#975a00;--bad:#b4082f;
+  --warn-bg:#fdf3dc;--bad-bg:#fbe4e9;--ok-bg:#e3f2de;--accent-bg:#e2eafd;
+  --l1:#1e9c96;--l2:#0c2b33;--l3:#c24e2e;--l4:#c24e2e;--ring:#0c2b33;
+  --pop:0 16px 48px rgba(17,17,27,.12),0 2px 6px rgba(17,17,27,.06);
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;
+  --mono:ui-monospace,"SF Mono",Menlo,monospace;
+}
+@media (prefers-color-scheme:dark){:root{
+  --page:#11111b;--surface:#181825;--subtle:#1e1e2e;--line:#313244;--line-soft:#262637;
+  --text:#e4e8fb;--muted:#bac2de;--faint:#8b90a8;
+  --accent:#89b4fa;--ok:#a6e3a1;--warn:#f9e2af;--bad:#f38ba8;
+  --warn-bg:#2e2a22;--bad-bg:#2f1f29;--ok-bg:#1f2a23;--accent-bg:#1f2840;
+  --l1:#2fb8b0;--l2:#17857f;--l3:#ff8a6b;--l4:#e8623f;--ring:#cfe8ea;
+  --pop:0 16px 48px rgba(0,0,0,.55),0 0 0 1px rgba(255,255,255,.04);color-scheme:dark}}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+body{margin:0;background:var(--page);color:var(--text);font-family:var(--sans);font-size:14px;line-height:1.5;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+button{font:inherit;color:inherit;background:none;border:0;cursor:pointer;padding:0}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:6px}
+a{color:var(--accent)}
+.kp{min-height:100vh;display:flex;flex-direction:column;align-items:center;gap:22px;padding:40px 0 28px}
+.logo{display:flex;flex-direction:column;align-items:center;gap:10px}
+.logo svg{width:60px;height:60px}
+.word{font-size:24px;font-weight:600;letter-spacing:-.025em;line-height:1}
+.word b{font-weight:inherit;background:linear-gradient(135deg,var(--l1),var(--l3));-webkit-background-clip:text;background-clip:text;color:transparent}
+.form{width:100%;max-width:420px;background:var(--surface);border:1px solid var(--line);border-radius:14px;box-shadow:var(--pop);padding:24px;display:grid;gap:16px}
+.prov{display:flex;align-items:center;gap:10px}
+.pmark{width:32px;height:32px;border-radius:8px;display:grid;place-items:center;background:var(--accent-bg);color:var(--accent);font-weight:700;font-size:13px;letter-spacing:-.02em}
+.prov .n{font-weight:600}
+.prov .s{font-size:12px;color:var(--faint)}
+.chip{font-family:var(--mono);font-size:11px;padding:0 7px;border:1px solid var(--line);border-radius:999px;color:var(--muted);line-height:18px;white-space:nowrap}
+.form h1{margin:0;font-size:19px;letter-spacing:-.015em;text-wrap:balance}
+.desc{margin:-8px 0 0;color:var(--muted);font-size:13.5px}
+.stack{display:grid;gap:6px}
+.lab{display:flex;justify-content:space-between;align-items:baseline;font-size:12.5px;font-weight:600}
+.lab a{font-weight:400;font-size:12.5px}
+.field{display:flex;align-items:center;height:40px;border:1px solid var(--line);border-radius:9px;background:var(--page);padding:0 4px 0 12px;gap:6px}
+.field:focus-within{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-bg)}
+.field.err{border-color:var(--bad);box-shadow:0 0 0 3px var(--bad-bg)}
+.field input{flex:1;min-width:0;border:0;background:none;outline:0;font-family:var(--mono);font-size:13px;color:var(--text);letter-spacing:.02em}
+.field input::placeholder{color:var(--faint);font-family:var(--sans);letter-spacing:0}
+.eye{display:inline-flex;align-items:center;gap:5px;height:30px;padding:0 9px;border-radius:7px;font-size:12px;color:var(--muted)}
+.eye:hover{background:var(--subtle);color:var(--text)}
+.eye svg{width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.help{margin:-8px 0 0;font-size:12px;color:var(--faint)}
+.primary{height:40px;border-radius:9px;background:var(--text);color:var(--surface);font-weight:600;font-size:13.5px;display:inline-flex;align-items:center;justify-content:center;gap:8px}
+.primary[disabled]{opacity:.7;cursor:default}
+.spin{width:14px;height:14px;border-radius:50%;border:2px solid currentColor;border-right-color:transparent;animation:r .8s linear infinite}
+@keyframes r{to{transform:rotate(1turn)}}
+@media (prefers-reduced-motion:reduce){.spin{animation:none}}
+.banner{display:flex;gap:10px;align-items:flex-start;border-radius:9px;padding:10px 12px;font-size:13px}
+.banner svg{width:16px;height:16px;flex:none;margin-top:2px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.banner.bad{background:var(--bad-bg);color:var(--bad)}
+.banner.warn{background:var(--warn-bg);color:var(--warn)}
+.banner p{margin:0;color:var(--text)}
+.banner b{color:inherit}
+.result{display:grid;justify-items:center;gap:8px;text-align:center}
+.badge{width:44px;height:44px;border-radius:50%;display:grid;place-items:center}
+.badge svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:2.4;stroke-linecap:round;stroke-linejoin:round}
+.badge.ok{background:var(--ok-bg);color:var(--ok)}
+.badge.warn{background:var(--warn-bg);color:var(--warn)}
+.badge.off{background:var(--subtle);color:var(--faint)}
+.checks{list-style:none;margin:0;padding:0;display:grid;gap:0;border:1px solid var(--line-soft);border-radius:10px;overflow:hidden}
+.checks li{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:9px 12px;font-size:13px}
+.checks li+li{border-top:1px solid var(--line-soft)}
+.checks .v{display:inline-flex;align-items:center;gap:6px;font-family:var(--mono);font-size:12px;color:var(--muted);text-align:right}
+.checks .v svg{width:14px;height:14px;fill:none;stroke-width:2.4;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.checks .ok svg{stroke:var(--ok)}.checks .wn svg{stroke:var(--warn)}
+.next{margin:0;font-size:13px;color:var(--muted);text-align:center}
+.next code,.banner code{font-family:var(--mono);font-size:12px;color:var(--text);background:var(--subtle);padding:1px 6px;border-radius:5px}
+.kpfoot{display:flex;flex-wrap:wrap;justify-content:center;gap:6px 14px;font-size:12px;color:var(--faint)}
+.kpfoot span{display:inline-flex;align-items:center;gap:5px}
+.kpfoot svg{width:13px;height:13px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+</style>
+</head>
+<body>
+<main class="kp" id="kp" data-start="{{START}}" data-expires="{{EXPIRES_MS}}">
+  <div class="logo">
+    <svg viewBox="0 0 64 64" aria-hidden="true"><circle cx="32" cy="32" r="26" fill="none" stroke="var(--ring)" stroke-width="1.5" stroke-opacity=".5"/><path d="M19.9 16L26.4 16L26.4 28.8L38.5 28.8L38.5 32L19.9 32Z" fill="var(--l1)"/><path d="M19.9 32L38.5 32L38.5 35.2L26.4 35.2L26.4 48L19.9 48Z" fill="var(--l2)"/><path d="M37.9 16L44.1 16L44.1 32L37.9 32Z" fill="var(--l3)"/><path d="M37.9 32L44.1 32L44.1 48L37.9 48Z" fill="var(--l4)"/><circle cx="15.29" cy="51.92" r="3.6" fill="var(--l3)"/><circle cx="56.43" cy="40.89" r="2.4" fill="var(--ring)"/><circle cx="23.11" cy="7.57" r="1.7" fill="var(--ring)"/></svg>
+    <div class="word"><b>H</b>uddle</div>
+  </div>
+
+  <form class="form" id="formView" autocomplete="off">
+    <div class="prov"><div class="pmark" aria-hidden="true">{{INITIAL}}</div><div><div class="n">{{DISPLAY}}</div><div class="s">Provider <span class="chip">{{ID}}</span></div></div></div>
+    <h1>Add your {{DISPLAY}} key</h1>
+    <p class="desc">huddle keeps the key in {{WHERE}}. Claude, the chat and huddle's files never see it.</p>
+    <div class="banner bad" id="refusedBanner" hidden>
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16.5v.01"/></svg>
+      <p><b>{{DISPLAY}} refused this key.</b> Check that you copied all of it, or create a new one, then paste it again.</p>
+    </div>
+    <div class="banner bad" id="errorBanner" hidden>
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16.5v.01"/></svg>
+      <p><b>huddle could not finish the setup.</b> Run <code>huddle provider {{ID}}</code> in a terminal.</p>
+    </div>
+    <div class="stack">
+      <div class="lab"><label for="key">API key</label><a href="{{KEYS_URL}}" target="_blank" rel="noopener">Get a key at {{KEYS_HOST}}</a></div>
+      <div class="field" id="field">
+        <input id="key" name="key" type="password" spellcheck="false" placeholder="Paste your {{DISPLAY}} API key">
+        <button type="button" class="eye" id="eye" aria-pressed="false" aria-controls="key">
+          <svg viewBox="0 0 24 24" id="eyeIcon"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></svg><span id="eyeText">Show</span>
+        </button>
+      </div>
+    </div>
+    <p class="help" id="help">Paste the whole key. huddle checks it with {{DISPLAY}}, then turns {{ID}} on.</p>
+    <button class="primary" type="submit" id="save">Save key</button>
+  </form>
+
+  <div class="form" id="readyView" hidden>
+    <div class="result">
+      <div class="badge ok"><svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></div>
+      <h1>{{DISPLAY}} is ready</h1>
+    </div>
+    <ul class="checks" id="readySteps"></ul>
+    <p class="next">Close this tab. In Claude Code, pick a {{DISPLAY}} model with <code>/model</code>.</p>
+  </div>
+
+  <div class="form" id="uncheckedView" hidden>
+    <div class="result">
+      <div class="badge warn"><svg viewBox="0 0 24 24"><path d="M12 8v5M12 16.5v.01"/><circle cx="12" cy="12" r="9"/></svg></div>
+      <h1>{{ID}} is on, key not checked</h1>
+    </div>
+    <div class="banner warn"><svg viewBox="0 0 24 24"><path d="M12 8v5M12 16.5v.01"/><circle cx="12" cy="12" r="9"/></svg><p><b>{{DISPLAY}} didn't answer in 20 seconds,</b> so huddle couldn't check the key. It's stored and {{ID}} is on. If {{DISPLAY}} requests fail, run <code>/huddle:{{ID}}:setup</code> again.</p></div>
+    <ul class="checks" id="uncheckedSteps"></ul>
+  </div>
+
+  <div class="form" id="closedView" hidden>
+    <div class="result">
+      <div class="badge off"><svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg></div>
+      <h1>This link has closed</h1>
+    </div>
+    <p class="next">A key link works for 10 minutes and closes once a key is saved. Run <code>/huddle:{{ID}}:setup</code> in Claude Code for a new one, or <code>huddle provider {{ID}}</code> in a terminal.</p>
+  </div>
+
+  <div class="kpfoot" id="kpfoot">
+    <span><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/></svg>Only this {{THIS}} can open this page</span>
+    <span id="clock"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg><span id="clockText"></span></span>
+  </div>
+</main>
+<script nonce="{{NONCE}}">
+(function(){
+  var kp=document.getElementById('kp');
+  var expires=Number(kp.getAttribute('data-expires'));
+  var key=document.getElementById('key'),eye=document.getElementById('eye'),eyeText=document.getElementById('eyeText'),eyeIcon=document.getElementById('eyeIcon');
+  var OPEN='<path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/>';
+  var SHUT='<path d="M3 3l18 18"/><path d="M10.6 5.1A10.8 10.8 0 0 1 12 5c6.4 0 10 7 10 7a17 17 0 0 1-3.2 4.1M6.6 6.6C3.8 8.4 2 12 2 12s3.6 7 10 7a9.6 9.6 0 0 0 5.4-1.6"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/>';
+  var TICK='<path d="M5 12.5l4.5 4.5L19 7.5"/>';
+  var BANG='<path d="M12 8v5M12 16.5v.01"/>';
+  var form=document.getElementById('formView'),ready=document.getElementById('readyView'),unchecked=document.getElementById('uncheckedView'),closed=document.getElementById('closedView');
+  var save=document.getElementById('save'),field=document.getElementById('field'),refused=document.getElementById('refusedBanner'),errorBanner=document.getElementById('errorBanner'),help=document.getElementById('help');
+  var clock=document.getElementById('clock'),clockText=document.getElementById('clockText');
+  var HELP=help.textContent;
+  var over=false;
+
+  function left(){var s=Math.max(0,Math.floor((expires-Date.now())/1000));return Math.floor(s/60)+':'+('0'+(s%60)).slice(-2)}
+  function only(view){[form,ready,unchecked,closed].forEach(function(v){v.hidden=v!==view});clock.hidden=view!==form}
+  function close(){over=true;only(closed)}
+  function tick(){if(over)return;if(Date.now()>=expires){close();return}clockText.textContent='Link closes in '+left()}
+
+  eye.addEventListener('click',function(){
+    var show=key.type==='password';
+    key.type=show?'text':'password';
+    eye.setAttribute('aria-pressed',String(show));
+    eyeText.textContent=show?'Hide':'Show';
+    eyeIcon.innerHTML=show?SHUT:OPEN;
+  });
+
+  function fill(list,steps){
+    list.textContent='';
+    steps.forEach(function(s){
+      var li=document.createElement('li');
+      li.appendChild(document.createTextNode(s.name));
+      var v=document.createElement('span');
+      v.className='v '+(s.state==='ok'?'ok':'wn');
+      v.innerHTML='<svg viewBox="0 0 24 24">'+(s.state==='ok'?TICK:BANG)+'</svg>';
+      v.appendChild(document.createTextNode(s.detail));
+      li.appendChild(v);
+      list.appendChild(li);
+    });
+  }
+  function busy(on){
+    key.disabled=on;eye.disabled=on;save.disabled=on;
+    if(on){save.textContent='';var sp=document.createElement('span');sp.className='spin';sp.setAttribute('aria-hidden','true');save.appendChild(sp);save.appendChild(document.createTextNode('Checking with {{DISPLAY}}…'))}
+    else{save.textContent='Save key'}
+  }
+  function retry(isError){
+    key.value='';key.type='password';eyeText.textContent='Show';eyeIcon.innerHTML=OPEN;
+    refused.hidden=isError;errorBanner.hidden=!isError;
+    field.classList.add('err');
+    help.textContent='You can try again until the link closes in '+left()+'.';
+    busy(false);key.focus();
+  }
+
+  form.addEventListener('submit',function(e){
+    e.preventDefault();
+    if(over||!key.value)return;
+    var body=JSON.stringify({key:key.value});
+    busy(true);
+    fetch(location.pathname,{method:'POST',headers:{'Content-Type':'application/json'},body:body,cache:'no-store',credentials:'omit',referrerPolicy:'no-referrer'})
+      .then(function(r){return r.json().then(function(j){return {status:r.status,json:j}})})
+      .then(function(a){
+        key.value='';
+        var j=a.json;
+        if(a.status===403||a.status===404||a.status===410){close();return}
+        if(j.state==='ready'){fill(document.getElementById('readySteps'),j.steps);over=true;only(ready)}
+        else if(j.state==='unchecked'){fill(document.getElementById('uncheckedSteps'),j.steps);over=true;only(unchecked)}
+        else if(j.state==='refused'){retry(false)}
+        else{retry(true)}
+      })
+      .catch(function(){close()});
+  });
+
+  if(kp.getAttribute('data-start')==='closed'){close()}
+  else{only(form);help.textContent=HELP;tick();setInterval(tick,1000)}
+})();
+</script>
+</body>
+</html>

@@ -60,8 +60,15 @@ fn k3_setup_without_a_key_names_the_terminal_flow() {
     let output = huddle(&home, port, &["provider", "zai", "setup"]);
     assert_eq!(output.status.code(), Some(6), "{output:?}");
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert_eq!(
-        stdout, "zai setup: needs a key.\nIn a terminal: huddle provider zai\n",
+    assert!(
+        stdout.starts_with(
+            "zai setup: needs a key.\nOpened the key page in your browser:\n  http://127.0.0.1:"
+        ),
+        "{stdout}"
+    );
+    assert!(
+        stdout
+            .ends_with("  works once, closes in 10 min\nOr, in a terminal: huddle provider zai\n"),
         "{stdout}"
     );
     assert!(

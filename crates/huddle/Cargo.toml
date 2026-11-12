@@ -22,9 +22,13 @@ huddle-pki.workspace = true
 huddle-procs.workspace = true
 huddle-router.workspace = true
 huddle-setup.workspace = true
+http-body-util.workspace = true
+hyper.workspace = true
+hyper-util.workspace = true
 libc.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+toml.workspace = true
 tokio.workspace = true
 
 [dev-dependencies]

@@ -2,7 +2,7 @@
 //! output on a log or nowhere.
 
 use std::fs::OpenOptions;
-use std::io;
+use std::io::{self, Write};
 use std::os::unix::fs::OpenOptionsExt;
 use std::os::unix::process::CommandExt;
 use std::path::PathBuf;
@@ -28,13 +28,30 @@ pub enum DetachError {
 /// Starts the child detached: own session, re-parented to init, never waited on. The caller
 /// gets no pid: the daemon and the job driver write their own pid where it is needed.
 pub fn start_detached(spec: &DetachSpec) -> Result<(), DetachError> {
+    start(spec, Stdio::null())
+}
+
+/// Like `start_detached`, with `input` as the child's stdin: a pipe the child reads, so a secret
+/// reaches it without touching argv, the environment or a file. `input` must fit the pipe buffer.
+pub fn start_detached_with_input(spec: &DetachSpec, input: &[u8]) -> Result<(), DetachError> {
+    let spawn_error = |source| DetachError::Spawn {
+        program: spec.program.clone(),
+        source,
+    };
+    let (reader, mut writer) = io::pipe().map_err(spawn_error)?;
+    writer.write_all(input).map_err(spawn_error)?;
+    drop(writer);
+    start(spec, Stdio::from(reader))
+}
+
+fn start(spec: &DetachSpec, stdin: Stdio) -> Result<(), DetachError> {
     let mut command = Command::new(&spec.program);
     command
         .args(&spec.args)
         .env_clear()
         .envs(spec.env.iter().cloned())
         .current_dir(&spec.cwd)
-        .stdin(Stdio::null());
+        .stdin(stdin);
     match &spec.log_file {
         Some(path) => {
             let stdout = OpenOptions::new()

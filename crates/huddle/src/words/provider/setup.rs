@@ -9,6 +9,7 @@ use huddle_config::paths::Paths;
 use huddle_keystore::port::{SecretString, platform_default};
 
 use super::finish::{finish, render_lines};
+use super::key_page_launch;
 
 const VERSION_FILE: &str = include_str!("../../../../../VERSION");
 
@@ -35,9 +36,13 @@ pub fn run(provider: &'static Provider, env: &Env) -> i32 {
         Ok(Some(found)) => found,
         Ok(None) => {
             let _ = writeln!(std::io::stdout(), "{} setup: needs a key.", provider.id);
+            if let Some(url) = key_page_launch::open(provider, env, &paths, &executable) {
+                let _ = writeln!(std::io::stdout(), "Opened the key page in your browser:");
+                let _ = writeln!(std::io::stdout(), "  {url}  works once, closes in 10 min");
+            }
             let _ = writeln!(
                 std::io::stdout(),
-                "In a terminal: huddle provider {}",
+                "Or, in a terminal: huddle provider {}",
                 provider.id
             );
             return 6;

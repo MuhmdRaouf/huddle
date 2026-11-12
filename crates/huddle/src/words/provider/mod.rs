@@ -1,5 +1,7 @@
 pub mod finish;
 pub mod key;
+pub mod key_page;
+pub mod key_page_launch;
 pub mod remove;
 pub mod setup;
 pub mod usage;
@@ -24,6 +26,7 @@ pub fn run(args: &[String], env: &Env) -> i32 {
     };
     match word.as_str() {
         "key" if rest.is_empty() => key::run(provider, env),
+        "key-page" if rest.is_empty() => key_page::run(provider, env),
         "setup" => setup::run(provider, env),
         "remove" => remove::run(provider, env),
         "usage" => usage::run(provider, env),

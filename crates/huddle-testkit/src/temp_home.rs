@@ -132,6 +132,8 @@ pub fn child_env(
         ("XDG_RUNTIME_DIR", path("r")),
         ("TMPDIR", path("tmp")),
         ("HUDDLE_KEYS", "files".to_string()),
+        // No test opens a real browser: this one does nothing.
+        ("HUDDLE_BROWSER", "true".to_string()),
         ("HUDDLE_ROUTER_PORT", router_port.to_string()),
     ] {
         vars.push((name.to_string(), value));
