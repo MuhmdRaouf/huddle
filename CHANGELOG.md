@@ -40,6 +40,7 @@ The five providers are part of huddle, and a key goes in from a page or a termin
 - One Providers page joins setup and traffic: a row per provider with its status, requests, first-token time, errors and next step, and a drawer with the key, lane, `/model` entries and commands. Providers that are not set up read as neutral, not as failures. The sidebar badges read as ratios with the good part green.
 - The Overview opens with "Needs you", before the numbers. Providers you have not set up are one quiet line, not four problems, and a provider that needs a fix is a real item. Filter counts stay right, the "Memory only" footer shows only where the page reads live memory, and light-theme grey and blue text meet 4.5:1.
 - Keyboard and phone fixes on the dashboard. Command chips on a phone break only after a colon.
+- On a 360 px phone the Harnesses and Overview tables stack each row as a block of `label: value` lines, with no sideways scroll. Desktop is unchanged.
 - When the Anthropic path fails, the Overview leads with `Anthropic is not answering` and the router log command, and keeps `Anthropic recovered` for 30 minutes. The Router page lists the last 20 router events.
 
 ### Tests

@@ -664,3 +664,26 @@ fn k18_command_chips_break_only_after_a_colon() {
         "the Status cell has a short phone form"
     );
 }
+
+#[test]
+fn b4_phone_tables_stack_their_cells() {
+    let phone = page_between(
+        "@media (max-width:600px){",
+        "@media (prefers-reduced-motion",
+    );
+    for rule in [
+        "table.fold,table.fold tbody,table.fold tr,table.fold td{display:block",
+        "table.fold thead{display:none}",
+        "table.fold td[data-label]::before{content:attr(data-label)",
+        "table.fold td.hide-sm{display:block}",
+    ] {
+        assert!(phone.contains(rule), "missing phone rule {rule}\n{phone}");
+    }
+    let table = page_between("function table(", "\n\n");
+    assert!(table.contains("data-label=\"${esc(c.label)}\""), "{table}");
+    assert!(table.contains("opt.stack?' class=\"fold\"':''"), "{table}");
+    let harn = page_between("PAGES.harnesses=", "const wirePill");
+    assert!(harn.contains("stack:1"), "the Harnesses table stacks");
+    let overview = page_between("PAGES.overview=", "PAGES.requests");
+    assert!(overview.contains("stack:1"), "the Overview table stacks");
+}

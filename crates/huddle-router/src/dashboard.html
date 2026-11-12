@@ -371,6 +371,17 @@ td.empty{text-align:center;color:var(--faint);padding:28px 14px}
   .gauges{grid-template-columns:1fr}
   .swim .row{grid-template-columns:minmax(0,1fr);gap:4px}.axis{margin-left:0}
   .dh,.db{padding-left:16px;padding-right:16px}
+  table.fold,table.fold tbody,table.fold tr,table.fold td{display:block;width:100%}
+  table.fold thead{display:none}
+  table.fold tr{padding:8px 0;border-top:1px solid var(--line-soft)}
+  table.fold tbody tr:first-child{border-top:0}
+  table.fold td,table.fold tbody tr:first-child td{border-top:0;padding:3px 12px;white-space:normal;overflow-wrap:anywhere;text-align:left}
+  table.fold td.hide-sm{display:block}
+  table.fold td:first-child{padding-top:0}
+  table.fold td[data-label]::before{content:attr(data-label) ": ";color:var(--muted);font-size:12px;font-family:var(--sans)}
+  table.fold td:first-child::before{content:none}
+  table.fold td.empty{text-align:center}
+  table.fold td.empty::before{content:none}
 }
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 </style>
@@ -596,9 +607,9 @@ function table(id,cols,rows,opt){opt=opt||{};const st=SORT[id]||opt.sort;let rs=
  if(opt.limit)rs=rs.slice(0,opt.limit);
  const th=cols.map(c=>{const on=st&&st.k===c.k,lab=`${c.label}${on?`<span class="caret">${st.d>0?'↑':'↓'}</span>`:''}`;return `<th class="${c.num?'num ':''}${c.c?'c ':''}${c.sm?'hide-sm ':''}${c.v?'sortable':''}"${c.v?` aria-sort="${on?(st.d>0?'ascending':'descending'):'none'}"`:''}${c.w?` data-css="width:${c.w}"`:''}>${c.v?`<button type="button" class="sortbtn" data-sort="${id}:${c.k}">${lab}</button>`:lab}</th>`}).join('');
  const tb=rs.length?rs.map(r=>{const o=opt.row?opt.row(r):null;const cls=[o?'clickable':'',opt.cls?opt.cls(r):'',o&&DR&&DR.key===o?'sel':''].join(' ').trim();
-  return `<tr${cls?` class="${cls}"`:''}${o?` tabindex="0" data-open="${esc(o)}"`:''}>${cols.map(c=>`<td class="${c.num?'num ':''}${c.c?'c ':''}${c.sm?'hide-sm ':''}${c.cls||''}">${c.h(r)}</td>`).join('')}</tr>`}).join('')
+  return `<tr${cls?` class="${cls}"`:''}${o?` tabindex="0" data-open="${esc(o)}"`:''}>${cols.map(c=>`<td class="${c.num?'num ':''}${c.c?'c ':''}${c.sm?'hide-sm ':''}${c.cls||''}" data-label="${esc(c.label)}">${c.h(r)}</td>`).join('')}</tr>`}).join('')
   :`<tr><td colspan="${cols.length}" class="empty">${opt.empty||'Nothing here yet'}</td></tr>`;
- return `<div class="tbl"><table><thead><tr>${th}</tr></thead><tbody>${tb}</tbody></table></div>`}
+ return `<div class="tbl"><table${opt.stack?' class="fold"':''}><thead><tr>${th}</tr></thead><tbody>${tb}</tbody></table></div>`}
 
 /* regions: parts of a page that refresh on every snapshot without touching the rest */
 let REG={};
@@ -821,8 +832,8 @@ PAGES.overview={title:'Overview',body:()=>
  `<section>${secH('Needs you',reg('attn-n',()=>`<span class="note">${attnItems().length} items</span>`))}<div class="card">${reg('attn',attnList)}</div></section>`+
  reg('rstat',rangeStatus)+reg('kpis',overviewKpis)+
  `<section>${secH('Traffic',reg('bw',()=>`<span class="note">${liveRange()?'30-second':dur(ser().bw)} buckets</span>`),['requests','All requests'])}<div class="card chart">${reg('mtabs',mtabs)}<div class="chart-body"><div class="plot"><svg id="chart" role="img" aria-label="Traffic over the selected range"></svg><div class="tip" id="tip"></div></div><div class="split">${reg('bars',bars)}</div></div></div></section>`+
-  `<section>${secH('Live sessions',reg('sess-n',()=>`<span class="note">${SESS.filter(s=>sstate(s)!=='idle').length} live · waiting first</span>`),['sessions','All sessions'])}<div class="card t">${reg('sessmini',()=>table('sessmini',SESS_COLS.filter(c=>c.k!=='req'),SESS,{row:s=>'session:'+s.id,sort:{k:'state',d:1},empty:'No sessions in the last 24 hours'}))}</div></section>`+
- `<div class="g3"><section>${secH('Activity')}<div class="card">${reg('feed',feed)}</div></section><section>${secH('Providers',null,['providers','Details'])}<div class="card list">${reg('lanesmini',lanesMini)}</div></section><div class="stack"><section>${secH('Delegated jobs',null,['jobs','All jobs'])}<div class="card list">${reg('jobsmini',jobsMini)}</div></section><section>${secH('Router',null,['router','Details'])}<div class="card">${reg('routermini',routerMini)}</div></section></div></div>`,
+  `<section>${secH('Live sessions',reg('sess-n',()=>`<span class="note">${SESS.filter(s=>sstate(s)!=='idle').length} live · waiting first</span>`),['sessions','All sessions'])}<div class="card t">${reg('sessmini',()=>table('sessmini',SESS_COLS.filter(c=>c.k!=='req'),SESS,{row:s=>'session:'+s.id,sort:{k:'state',d:1},stack:1,empty:'No sessions in the last 24 hours'}))}</div></section>`+
+ `<div class="g3"><section>${secH('Activity')}<div class="card">${reg('feed',feed)}</div></section><section>${secH('Providers',null,['providers','Details'])}<div class="card list">${reg('lanesmini',lanesMini)}</div></section><div class="fold"><section>${secH('Delegated jobs',null,['jobs','All jobs'])}<div class="card list">${reg('jobsmini',jobsMini)}</div></section><section>${secH('Router',null,['router','Details'])}<div class="card">${reg('routermini',routerMini)}</div></section></div></div>`,
  after:()=>{bindChart();drawChart()}};
 
 PAGES.sessions={title:'Sessions',body:()=>{const c=k=>k==='all'?SESS.length:SESS.filter(s=>sstate(s)===k).length;
@@ -1047,7 +1058,7 @@ PAGES.harnesses={title:'Harnesses',body:()=>{const c=k=>k==='all'?HARN.length:k=
   {k:'report',label:'Report',v:h=>h.report,h:h=>h.report?`<span class="muted">${esc(h.report)}</span>`:NA,sm:1},
   {k:'access',label:'Access',h:h=>h.access.length?`<span class="access">${h.access.map(a=>`<span>${esc(a)}</span>`).join('')}</span>`:NA,sm:1},
   {k:'jobs',label:'Jobs',num:1,v:h=>h.jobs,h:h=>h.jobs||'<span class="faint">0</span>'}
- ],HARN.filter(h=>F.harn==='all'||(F.harn==='ready'?h.st==='ready':h.st!=='ready')),{sort:{k:'st',d:1},cls:h=>h.st==='missing'?'dim':'',empty:HARN.state==='checking'?checking():'No harnesses found'}))}<div class="legendrow"><span><b>Flags</b> Checked: the flags huddle passes are verified. Unverified: not yet</span><span><b>Access</b> what a job may do: readonly, exec, write</span><span><b>Report</b> how huddle reads the result: checked, extracted or free text</span></div></div>`}};
+ ],HARN.filter(h=>F.harn==='all'||(F.harn==='ready'?h.st==='ready':h.st!=='ready')),{sort:{k:'st',d:1},stack:1,cls:h=>h.st==='missing'?'dim':'',empty:HARN.state==='checking'?checking():'No harnesses found'}))}<div class="legendrow"><span><b>Flags</b> Checked: the flags huddle passes are verified. Unverified: not yet</span><span><b>Access</b> what a job may do: readonly, exec, write</span><span><b>Report</b> how huddle reads the result: checked, extracted or free text</span></div></div>`}};
 
 const wirePill=(on,label)=>WIRE.state==='checking'||on==null?`<span class="muted">Checking…</span>`:pill(on?'ok':'bad',label);
 function wiringCard(){return `<dl class="kv"><dt>Status</dt><dd>${WIRE.state==='ok'?pill('ok','Wired'):WIRE.state==='bad'?pill('bad','Not wired'):'<span class="muted">Checking…</span>'}</dd><dt>HTTPS_PROXY</dt><dd>${wirePill(WIRE.proxy,'Points at the router')}</dd><dt>NODE_EXTRA_CA_CERTS</dt><dd>${wirePill(WIRE.ca,'Trusts the local CA')}</dd><dt>Written by</dt><dd>/huddle:setup, undone by <span class="mono">huddle uninstall</span></dd><dt>Settings file</dt><dd class="mono">~/.claude/settings.json</dd></dl>`}
