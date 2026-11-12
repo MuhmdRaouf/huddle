@@ -127,8 +127,9 @@ impl fmt::Display for FinishError {
 
 impl std::error::Error for FinishError {}
 
-/// Stores the key in the platform key store, then finishes the setup with it. Callers beyond
-/// the setup word use this entry point.
+/// Finishes the setup with a key the user just entered, and stores it unless the provider
+/// refused it: a refused key never replaces a stored one. Callers beyond the setup word use
+/// this entry point.
 #[allow(dead_code)]
 pub fn store_and_finish(
     provider: &'static Provider,
@@ -137,10 +138,14 @@ pub fn store_and_finish(
     executable: &Path,
     key: SecretString,
 ) -> Result<Outcome, FinishError> {
+    let verdict = check_provider_key(provider, env, &key);
+    if !verdict.lets_setup_go_on() {
+        return Ok(stopped(verdict));
+    }
     platform_default(paths)
         .set(provider.id, &key)
         .map_err(FinishError::Keystore)?;
-    let mut outcome = finish(provider, env, paths, executable, &key)?;
+    let mut outcome = wire(provider, env, paths, executable, verdict)?;
     set_state(&mut outcome, StepName::KeyStored, StepState::Done);
     Ok(outcome)
 }
@@ -156,20 +161,40 @@ pub fn finish(
     key: &SecretString,
 ) -> Result<Outcome, FinishError> {
     let verdict = check_provider_key(provider, env, key);
+    if !verdict.lets_setup_go_on() {
+        return Ok(stopped(verdict));
+    }
+    wire(provider, env, paths, executable, verdict)
+}
+
+/// The outcome of a key the provider refused: nothing stored, nothing turned on.
+fn stopped(verdict: KeyVerdict) -> Outcome {
+    Outcome {
+        verdict,
+        steps: vec![
+            step(StepName::KeyStored, StepState::Skipped, Vec::new()),
+            step(StepName::ProviderCheck, check_state(verdict), Vec::new()),
+            step(StepName::RouterRoutes, StepState::Skipped, Vec::new()),
+            step(StepName::ModelEntries, StepState::Skipped, Vec::new()),
+        ],
+        ready: false,
+        changed: false,
+    }
+}
+
+/// Records the lane and the `/model` entries, starts the router and waits for it to serve the
+/// provider; the key is already in the store or the environment.
+fn wire(
+    provider: &'static Provider,
+    env: &Env,
+    paths: &Paths,
+    executable: &Path,
+    verdict: KeyVerdict,
+) -> Result<Outcome, FinishError> {
     let mut steps = vec![
         step(StepName::KeyStored, StepState::Skipped, Vec::new()),
         step(StepName::ProviderCheck, check_state(verdict), Vec::new()),
     ];
-    if !verdict.lets_setup_go_on() {
-        steps.push(step(StepName::RouterRoutes, StepState::Skipped, Vec::new()));
-        steps.push(step(StepName::ModelEntries, StepState::Skipped, Vec::new()));
-        return Ok(Outcome {
-            verdict,
-            steps,
-            ready: false,
-            changed: false,
-        });
-    }
     let enabled = provider_setup::enable(paths, provider)
         .map_err(|error| FinishError::Setup(error.to_string()))?;
     let router = route(provider, env, paths, executable)?;
@@ -446,5 +471,29 @@ mod tests {
         assert_eq!(stored.map(|s| s.expose().to_owned()).as_deref(), Some(KEY));
         let lines = render_lines(&outcome, zai());
         assert_eq!(lines[0], "key: stored");
+    }
+
+    #[test]
+    fn a_refused_key_never_replaces_the_stored_one() {
+        let home = TempHome::new();
+        let upstream = upstream_answering(401);
+        let (env, paths) = world(&home, &upstream);
+        platform_default(&paths)
+            .set("zai", &SecretString::new("working-key-0000".to_owned()))
+            .expect("seed");
+
+        let outcome =
+            store_and_finish(zai(), &env, &paths, Path::new(NO_BINARY), secret()).expect("finish");
+
+        assert_eq!(outcome.verdict, KeyVerdict::Refused);
+        assert_eq!(
+            outcome.step(StepName::KeyStored).map(|s| s.state),
+            Some(StepState::Skipped)
+        );
+        let stored = platform_default(&paths).get("zai").expect("get");
+        assert_eq!(
+            stored.map(|s| s.expose().to_owned()).as_deref(),
+            Some("working-key-0000")
+        );
     }
 }
