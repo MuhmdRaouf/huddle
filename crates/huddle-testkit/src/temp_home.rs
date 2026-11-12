@@ -96,6 +96,7 @@ impl TempHome {
 
 impl Drop for TempHome {
     fn drop(&mut self) {
+        stop_key_page_helpers(&self.root);
         // A child's last writes can land while the tree is being removed; a
         // few short retries close that race without waiting on a live child.
         for _ in 0..20 {
@@ -104,6 +105,37 @@ impl Drop for TempHome {
             if removed && !self.root.exists() {
                 return;
             }
+        }
+    }
+}
+
+/// Stops each key page helper this home's runtime folder records. A helper otherwise lives
+/// for its full ten minutes after the test is gone. Only a pid whose command line is a
+/// `key-page` helper is signalled.
+fn stop_key_page_helpers(root: &Path) {
+    let Ok(entries) = fs::read_dir(root.join("r/huddle")) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let name = entry.file_name().to_string_lossy().into_owned();
+        if !(name.starts_with("key-page-") && name.ends_with(".toml")) {
+            continue;
+        }
+        let Some(pid) = fs::read_to_string(entry.path()).ok().and_then(|text| {
+            text.lines()
+                .find_map(|line| line.strip_prefix("pid = "))
+                .and_then(|pid| pid.trim().parse::<libc::pid_t>().ok())
+        }) else {
+            continue;
+        };
+        let command = Command::new("ps")
+            .args(["-o", "command=", "-p", &pid.to_string()])
+            .output()
+            .map(|out| String::from_utf8_lossy(&out.stdout).into_owned())
+            .unwrap_or_default();
+        if command.trim_end().ends_with(" key-page") {
+            // SAFETY: the pid is live and its command line is a key page helper.
+            unsafe { libc::kill(pid, libc::SIGTERM) };
         }
     }
 }

@@ -524,3 +524,27 @@ fn k8_a_second_setup_stops_the_first_helper() {
         "the first helper kept running"
     );
 }
+
+#[test]
+fn k8_a_test_home_stops_the_helper_it_started() {
+    let home = TempHome::new();
+    let output = home
+        .command(env!("CARGO_BIN_EXE_huddle"))
+        .args(["provider", "zai", "setup"])
+        .stdin(Stdio::null())
+        .output()
+        .expect("run");
+    assert_eq!(output.status.code(), Some(6));
+    let record: toml::Table = fs::read_to_string(home.root().join("r/huddle/key-page-zai.toml"))
+        .expect("record")
+        .parse()
+        .expect("toml");
+    let pid = record["pid"].as_integer().expect("pid") as u32;
+
+    drop(home);
+
+    assert!(
+        wait_gone(pid, Duration::from_secs(2)),
+        "the helper outlived its test home"
+    );
+}
