@@ -43,19 +43,19 @@ fn version_file_is_three_numbers() {
 }
 
 #[test]
-fn an_unknown_word_exits_2_and_names_it() {
+fn an_unknown_word_exits_2_without_naming_it() {
     let out = huddle(&["bogus-word"]);
     assert_eq!(out.status.code(), Some(2));
     assert_eq!(String::from_utf8_lossy(&out.stdout), "");
-    assert_eq!(
-        String::from_utf8_lossy(&out.stderr),
-        "huddle: unknown command bogus-word\n"
-    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(stderr.starts_with("huddle: unknown word\n"), "{stderr}");
+    assert!(!stderr.contains("bogus-word"), "{stderr}");
 }
 
 #[test]
-fn no_word_exits_2_with_usage() {
-    let out = huddle(&[]);
-    assert_eq!(out.status.code(), Some(2));
-    assert!(String::from_utf8_lossy(&out.stderr).starts_with("usage: huddle "));
+fn no_word_shows_where_you_stand_and_exits_0() {
+    let home = huddle_testkit::temp_home::TempHome::new();
+    let out = home.command(env!("CARGO_BIN_EXE_huddle")).output().unwrap();
+    assert_eq!(out.status.code(), Some(0));
+    assert!(String::from_utf8_lossy(&out.stdout).starts_with("huddle "));
 }

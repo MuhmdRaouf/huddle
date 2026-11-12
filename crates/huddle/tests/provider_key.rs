@@ -29,10 +29,10 @@ fn huddle(home: &TempHome, args: &[&str], stdin: &str) -> Output {
 fn a_positional_argument_after_key_is_refused() {
     let home = TempHome::new();
     let output = huddle(&home, &["provider", "zai", "key", "abc"], "");
-    assert_eq!(output.status.code(), Some(1));
-    assert_eq!(
-        String::from_utf8_lossy(&output.stderr),
-        "key: pass the key on stdin, not as an argument\n"
+    assert_eq!(output.status.code(), Some(2));
+    assert!(
+        String::from_utf8_lossy(&output.stderr)
+            .starts_with("huddle provider zai: unknown action (not shown")
     );
     assert!(!home.root().join(".config/zai-plugin-cc/env").exists());
 }
@@ -91,10 +91,7 @@ fn an_unknown_provider_is_a_usage_error() {
     let home = TempHome::new();
     let output = huddle(&home, &["provider", "nobody", "key"], "");
     assert_eq!(output.status.code(), Some(2));
-    assert_eq!(
-        String::from_utf8_lossy(&output.stderr),
-        "usage: huddle provider <zai|kimi|deepseek|minimax|qwen> <key|setup|remove|usage>\n"
-    );
+    assert!(String::from_utf8_lossy(&output.stderr).starts_with("Providers\n"));
 }
 
 #[test]
