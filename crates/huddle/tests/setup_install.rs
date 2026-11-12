@@ -295,3 +295,29 @@ fn k4_setup_says_when_the_user_bin_folder_is_not_on_path() {
     );
     assert!(stdout.contains(&expected), "{stdout}");
 }
+
+#[test]
+fn setup_goes_on_when_the_user_bin_folder_cannot_be_written() {
+    use std::os::unix::fs::PermissionsExt;
+    let home = TempHome::new();
+    let port = free_port();
+    let _stop = StopOnDrop(&home, port);
+    let local = home.root().join(".local");
+    fs::create_dir_all(local.join("bin")).expect("bin");
+    fs::set_permissions(local.join("bin"), fs::Permissions::from_mode(0o555)).expect("chmod");
+
+    let out = huddle_on_path(&home, port, &on_path(&home), &["setup", "--install"]);
+    fs::set_permissions(local.join("bin"), fs::Permissions::from_mode(0o755)).expect("chmod back");
+
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        stdout.contains("could not link ~/.local/bin/huddle:"),
+        "{stdout}"
+    );
+}

@@ -23,7 +23,6 @@ pub enum InstallError {
     Config(String),
     Router(String),
     Settings(SettingsError),
-    Link(String),
 }
 
 impl std::fmt::Display for InstallError {
@@ -35,9 +34,6 @@ impl std::fmt::Display for InstallError {
                 write!(f, "huddle setup: the router did not start: {message}")
             }
             InstallError::Settings(error) => write!(f, "huddle setup: settings.json: {error}"),
-            InstallError::Link(message) => {
-                write!(f, "huddle setup: ~/.local/bin/huddle: {message}")
-            }
         }
     }
 }
@@ -101,12 +97,16 @@ pub fn run(env: &Env, paths: &Paths, exe: &Path) -> Result<InstallReport, Instal
     };
     let outcome = settings::apply_proxy(paths, &target).map_err(InstallError::Settings)?;
     let mut lines = outcome.lines;
-    let link =
-        user_bin_link::ensure(paths).map_err(|error| InstallError::Link(error.to_string()))?;
-    if link == LinkOutcome::Created {
-        settings::record_user_bin_link(paths).map_err(InstallError::Settings)?;
+    // The link is a convenience: a folder that cannot take it never fails the install.
+    match user_bin_link::ensure(paths) {
+        Ok(link) => {
+            if link == LinkOutcome::Created {
+                settings::record_user_bin_link(paths).map_err(InstallError::Settings)?;
+            }
+            lines.extend(user_bin_link::lines(env, paths, &link));
+        }
+        Err(error) => lines.push(format!("could not link ~/.local/bin/huddle: {error}")),
     }
-    lines.extend(user_bin_link::lines(env, paths, &link));
     Ok(InstallReport {
         lines,
         restart_needed: outcome.changed,
