@@ -307,7 +307,7 @@ Files huddle writes on your machine:
 | `~/.config/huddle/` | `config.toml` (dashboard hosts, `[history] keep_days`), `providers.toml`, `harnesses.toml` |
 | `~/.local/share/huddle/` | `bin/` (the binaries and the `huddle` link), `ca/` (`huddle-ca.pem`, `huddle-ca-key.pem`) |
 | `~/.local/bin/huddle` | A link to `~/.local/share/huddle/bin/huddle`, removed by `huddle uninstall` |
-| `~/.local/state/huddle/` | `huddle.db`, `router.log`, the settings and provider ledgers, `jobs/` |
+| `~/.local/state/huddle/` | `huddle.db`, `router.log` and `router-events.log` (each with five older files), the settings and provider ledgers, `jobs/` |
 | `$XDG_RUNTIME_DIR/huddle/` (else `~/.local/state/huddle/run/`) | `router.toml`, `router.lock`, `handover.sock` |
 | `~/.cache/huddle/` | the launcher's download in flight and `build.log` |
 | `~/.claude/settings.json` | the proxy and CA settings and the `/model` entries, undone by `huddle uninstall` |
@@ -334,6 +334,7 @@ Files huddle writes on your machine:
 - **The router will not start.** `huddle router status` says what answers on the port, and `~/.local/state/huddle/router.log` names the failure.
 - **Requests fail with 407 or 502.** Run `/huddle:setup` again, then check `huddle router status`.
 - **A key is refused.** Setup names the status the provider sent. Check the key at the provider's key page, then run `/huddle:<p>:setup` again; the stored key stays as it was.
+- **Reading the router log.** `huddle router log` prints the last 40 event lines; `--since 2h` limits by time, `--requests` prints request lines and `--all` prints both by time. `router.log` holds every line and rolls at 4 MB; `router-events.log` holds only the event lines (start, handover, exit, path failing, probe, recovered) and rolls at 1 MB, so an outage stays readable for days. Each keeps five older files. The line shapes are in [docs/USAGE.md](docs/USAGE.md#reading-routerlog).
 - **`huddle` is not found in a terminal.** Add `~/.local/bin` to your `PATH`, or run `~/.local/share/huddle/bin/huddle`.
 
 ## Development

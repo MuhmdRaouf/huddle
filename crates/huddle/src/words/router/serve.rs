@@ -25,10 +25,7 @@ pub fn run(args: &[String], env: &Env) -> i32 {
             return 1;
         }
     };
-    let log = crashlog::rotating_log(
-        &paths.state_dir.join("router.log"),
-        crashlog::ROUTER_LOG_LIMIT,
-    );
+    let log = crashlog::router_logs(&paths.state_dir);
     crashlog::install_crash_hook(&log);
     let signal: Arc<OnceLock<&'static str>> = Arc::default();
     let options = ServeOptions {

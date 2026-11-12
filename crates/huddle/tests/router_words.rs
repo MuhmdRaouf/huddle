@@ -38,7 +38,7 @@ fn no_word_is_a_usage_error() {
     assert_eq!(output.status.code(), Some(2));
     assert_eq!(
         stderr(&output),
-        "usage: huddle router serve [--takeover] | start | status [--json] | stop\n"
+        "usage: huddle router serve [--takeover] | start | status [--json] | stop | log\n"
     );
 }
 

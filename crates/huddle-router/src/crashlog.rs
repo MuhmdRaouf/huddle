@@ -5,28 +5,56 @@ use std::fs;
 use std::io::Write;
 use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use crate::clock;
 
 /// The largest `router.log` in bytes before the next line rotates it to `router.log.1`.
 pub const ROUTER_LOG_LIMIT: u64 = 4 * 1024 * 1024;
 
+/// The largest `router-events.log` in bytes before the next line rotates it.
+pub const EVENTS_LOG_LIMIT: u64 = 1024 * 1024;
+
+/// Rotated files kept beside each log: `.1` is the newest, the one past `.5` is deleted.
+pub const LOG_KEEP: usize = 5;
+
+/// The prefix of every event line; a request line starts with its HTTP method.
+const EVENT_PREFIX: &str = "huddle-router:";
+
 /// One log line, handed to the sink the caller chose.
 pub type Logger = Arc<dyn Fn(String) + Send + Sync>;
 
-/// Appends `<ISO ts> <line>\n` to `path` (0600). Renames to `<path>.1` before the append that
-/// would pass `limit`. Never fails: a full disk costs the line. Does not recreate a removed
+/// The router's two logs in `state_dir`: every line goes to `router.log`, and each event line
+/// (start, exit, handover, path failing, probe, recovered, reload, restart reason, crash) also
+/// goes to `router-events.log`, which request lines never fill.
+pub fn router_logs(state_dir: &Path) -> Logger {
+    let all = rotating_log(&state_dir.join("router.log"), ROUTER_LOG_LIMIT);
+    let events = rotating_log(&state_dir.join("router-events.log"), EVENTS_LOG_LIMIT);
+    Arc::new(move |line: String| {
+        if is_event(&line) {
+            events(line.clone());
+        }
+        all(line);
+    })
+}
+
+/// Whether `line` (without its timestamp) is an event line.
+pub fn is_event(line: &str) -> bool {
+    line.starts_with(EVENT_PREFIX)
+}
+
+/// Appends `<ISO ts> <line>\n` to `path` (0644). Before the append that would pass `limit`
+/// it rotates `path` to `<path>.1`, shifting older files up and deleting the one past
+/// `LOG_KEEP`. The size comes from the disk and the rotation runs under an exclusive lock on
+/// `<path>.lock`, so two routers writing the same file during a handover rotate it once and
+/// lose no line. Never fails: a full disk costs the line. Does not recreate a removed
 /// directory.
 pub fn rotating_log(path: &Path, limit: u64) -> Logger {
     let path = path.to_path_buf();
-    let written = Mutex::new(fs::metadata(&path).map(|meta| meta.len()).unwrap_or(0));
     Arc::new(move |line: String| {
         let text = format!("{} {}\n", clock::iso_utc_ms(clock::now_ms()), line);
-        let mut written = written.lock().unwrap_or_else(|locked| locked.into_inner());
-        if *written + text.len() as u64 > limit {
-            let _ = fs::rename(&path, rolled_path(&path));
-            *written = 0;
+        if size_of(&path) + text.len() as u64 > limit {
+            rotate(&path, limit, text.len() as u64);
         }
         let opened = fs::OpenOptions::new()
             .append(true)
@@ -36,14 +64,43 @@ pub fn rotating_log(path: &Path, limit: u64) -> Logger {
         if let Ok(mut file) = opened {
             let _ = file.write_all(text.as_bytes());
         }
-        *written += text.len() as u64;
     })
 }
 
-/// `router.log.1` beside `path`: the file a rotation renames it to.
-fn rolled_path(path: &Path) -> PathBuf {
+fn size_of(path: &Path) -> u64 {
+    fs::metadata(path).map(|meta| meta.len()).unwrap_or(0)
+}
+
+/// Rotates `path` unless a writer holding the lock before us already did.
+fn rotate(path: &Path, limit: u64, incoming: u64) {
+    let lock = fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .mode(huddle_config::files::FILE_MODE)
+        .open(sibling(path, ".lock"));
+    let Ok(lock) = lock else {
+        return;
+    };
+    if lock.lock().is_err() {
+        return;
+    }
+    if size_of(path) + incoming > limit {
+        let _ = fs::remove_file(rolled_path(path, LOG_KEEP));
+        for number in (1..LOG_KEEP).rev() {
+            let _ = fs::rename(rolled_path(path, number), rolled_path(path, number + 1));
+        }
+        let _ = fs::rename(path, rolled_path(path, 1));
+    }
+}
+
+/// `router.log.<number>` beside `path`.
+fn rolled_path(path: &Path, number: usize) -> PathBuf {
+    sibling(path, &format!(".{number}"))
+}
+
+fn sibling(path: &Path, suffix: &str) -> PathBuf {
     let mut name = path.as_os_str().to_os_string();
-    name.push(".1");
+    name.push(suffix);
     PathBuf::from(name)
 }
 
@@ -153,5 +210,79 @@ mod tests {
         let text = lines.lock().expect("lines").join("\n");
         assert!(text.contains("huddle-router: crash: boom at "), "{text}");
         assert!(text.contains("crashlog.rs:"), "{text}");
+    }
+
+    #[test]
+    fn k17_event_lines_go_to_the_events_log_and_requests_do_not() {
+        let home = TempHome::new();
+        let log = router_logs(home.root());
+        log("POST /v1/messages model=- -> anthropic 200".to_string());
+        log("huddle-router: Anthropic path failing (ETIMEDOUT)".to_string());
+        let events = fs::read_to_string(home.root().join("router-events.log")).unwrap_or_default();
+        assert!(events.contains("Anthropic path failing"), "{events}");
+        assert!(!events.contains("POST /v1/messages"), "{events}");
+        let requests = fs::read_to_string(home.root().join("router.log")).expect("router.log");
+        assert!(requests.contains("POST /v1/messages"), "{requests}");
+        assert!(requests.contains("Anthropic path failing"), "{requests}");
+    }
+
+    #[test]
+    fn k17_router_log_keeps_five_old_files() {
+        let home = TempHome::new();
+        let path = home.root().join("router.log");
+        let log = rotating_log(&path, 100);
+        for round in 0..9 {
+            log(format!("{round}{}", "x".repeat(60)));
+        }
+        let first_of = |name: &str| {
+            fs::read_to_string(home.root().join(name))
+                .unwrap_or_default()
+                .split(' ')
+                .nth(1)
+                .unwrap_or("")
+                .chars()
+                .next()
+        };
+        assert_eq!(first_of("router.log"), Some('8'));
+        assert_eq!(first_of("router.log.1"), Some('7'));
+        assert_eq!(first_of("router.log.5"), Some('3'));
+        assert!(!home.root().join("router.log.6").exists());
+    }
+
+    #[test]
+    fn k17_two_writers_never_lose_a_line_across_a_rotation() {
+        let home = TempHome::new();
+        let path = home.root().join("router.log");
+        let writers: Vec<_> = ["a", "b"]
+            .into_iter()
+            .map(|tag| {
+                let log = rotating_log(&path, 2000);
+                std::thread::spawn(move || {
+                    for round in 0..40 {
+                        log(format!("{tag}{round:02}"));
+                    }
+                })
+            })
+            .collect();
+        for writer in writers {
+            writer.join().expect("writer");
+        }
+        let mut all = String::new();
+        for name in [
+            "router.log",
+            "router.log.1",
+            "router.log.2",
+            "router.log.3",
+            "router.log.4",
+            "router.log.5",
+        ] {
+            all.push_str(&fs::read_to_string(home.root().join(name)).unwrap_or_default());
+        }
+        for tag in ["a", "b"] {
+            for round in 0..40 {
+                let want = format!(" {tag}{round:02}\n");
+                assert_eq!(all.matches(&want).count(), 1, "{want} in {all}");
+            }
+        }
     }
 }

@@ -26,6 +26,7 @@ The five providers are part of huddle, and a key goes in from a page or a termin
 
 ### Router log
 
+- `router-events.log` keeps only the event lines, rolls at 1 MB and keeps five older files; `router.log` also keeps five. `huddle router log` prints the last 40 events, `--since <n>m|<n>h`, `--requests` or `--all`, without a router.
 - `router.log` names where an upstream failure happened (`phase=dns|connect|tls|send|headers|body`, the peer and whether the socket was pooled), how long a failing path lasted and how many requests failed, and why a router started, handed over or exited. While the path fails, a probe line every 15 s shows DNS and connect separately.
 
 ### Dashboard

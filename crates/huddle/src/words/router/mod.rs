@@ -1,3 +1,4 @@
+pub mod log;
 pub mod serve;
 pub mod start;
 pub mod status;
@@ -7,7 +8,8 @@ use std::io::Write;
 
 use huddle_config::env::Env;
 
-const USAGE: &str = "usage: huddle router serve [--takeover] | start | status [--json] | stop";
+const USAGE: &str =
+    "usage: huddle router serve [--takeover] | start | status [--json] | stop | log";
 
 pub fn run(args: &[String], env: &Env) -> i32 {
     let Some((word, rest)) = args.split_first() else {
@@ -15,6 +17,7 @@ pub fn run(args: &[String], env: &Env) -> i32 {
         return 2;
     };
     match word.as_str() {
+        "log" => log::run(rest, env),
         "serve" => serve::run(rest, env),
         "start" => start::run(rest, env),
         "status" => status::run(rest, env),

@@ -32,7 +32,7 @@ Delegation
   cancel                 stop a job
 
 Router
-  router                 start, stop or check the router
+  router                 start, stop, check or read the log of the router
   add-dashboard-host     let a host name open the dashboard
   remove-dashboard-host  take a host name off that list
 ";

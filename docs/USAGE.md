@@ -47,6 +47,7 @@ One row per word, with the exit codes it answers. An unknown word or action is n
 | `huddle router serve` | The router daemon in this foreground process; `--takeover` takes a running daemon's socket. | `0` stopped, handed over or already served, `1`, `2` bad port |
 | `huddle router start` | One daemon for this home, detached. | `0`, `1`, `2` bad port |
 | `huddle router status` | What answers on the port, with the record's pid and version and the dashboard hosts; `--json` is for scripts. | `0` running, `6` not running, `2` bad port |
+| `huddle router log` | The last 40 event lines from `router-events.log`, oldest first; `--since <n>m\|<n>h` limits by time and reads the older files, `--requests` prints request lines from `router.log`, `--all` merges both. Reads files only, so no router is needed. | `0`, `2` usage |
 | `huddle router stop` | One SIGTERM to the recorded pid, then a wait for the port to go. | `0` stopped, `6` not running, `1` past 10 s, `2` bad port |
 | `huddle add-dashboard-host <host>` | Lists a bare host name in `~/.config/huddle/config.toml`; the router reads the dashboard's page, state and live paths for it within 2 s. A repeat changes nothing. | `0`, `2` not a bare host name or usage, `1` |
 | `huddle remove-dashboard-host <host>` | Takes the host back out; one that is not listed changes nothing. | `0`, `2`, `1` |
@@ -73,7 +74,8 @@ Inside Claude Code the plugin's commands run the words for you. The launcher ans
 | `~/.local/share/huddle/ca/` | `setup --install`, or the daemon's first start: `huddle-ca.pem` and `huddle-ca-key.pem`, the local CA | Claude Code through `NODE_EXTRA_CA_CERTS`, the daemon's leaf signer |
 | `~/.cache/huddle/` | The launcher: the download in flight and `build.log` of a local build | You, when a build fails |
 | `~/.local/state/huddle/huddle.db` | The daemon: one row per finished request (no prompt, key or header value), pruned past `keep_days` | `provider <p> usage`, the dashboard's history views |
-| `~/.local/state/huddle/router.log` | The daemon: the rotating log | You, when the router misbehaves |
+| `~/.local/state/huddle/router.log` | The daemon: every line, rolled at 4 MB, five older files (`.1` to `.5`) | `router log --requests`, you when the router misbehaves |
+| `~/.local/state/huddle/router-events.log` | The daemon, the stop word and the hooks: event lines only, rolled at 1 MB, five older files | `router log` |
 | `$XDG_RUNTIME_DIR/huddle/` (else `~/.local/state/huddle/run/`) | The daemon: `router.toml` (pid, port, version, binary, start time), `router.lock`, `handover.sock` | `router start`, `status`, `stop` |
 | `~/.local/state/huddle/settings-ledger.toml` | `setup --install`: what the proxy patch changed | `uninstall` |
 | `~/.local/state/huddle/settings.json.pristine` | `setup --install`: settings.json as the user had it | `uninstall`, byte for byte |
@@ -105,7 +107,7 @@ Inside Claude Code the plugin's commands run the words for you. The launcher ans
 
 ## Reading router.log
 
-`~/.local/state/huddle/router.log` has three line shapes for an Anthropic failure.
+`huddle router log` prints the event lines below from `router-events.log`; `router.log` has them among the request lines. There are three line shapes for an Anthropic failure.
 
 - A failed request: `... anthropic-pass error ETIMEDOUT ms=16333 phase=connect peer=160.79.104.10:443 conn=fresh dns_ms=4`. The phase is the step that failed: `dns` (the name lookup), `connect` (the TCP dial), `tls` (the handshake), `send` (the request going out), `headers` (waiting for the answer), `body` (the answer broke part way). The `*_ms` fields are the finished dial steps. `conn=reused` is a pooled socket.
 - The path is failing (three failures within a minute): `huddle-router: Anthropic path failing (ETIMEDOUT at connect to 160.79.104.10:443): check the network, the firewall or the VPN`. Every 15 s after it, `huddle-router: probe api.anthropic.com dns=ok(3 ms, 160.79.104.10) connect=timeout(5000 ms)` shows whether DNS and a bare connect still work.

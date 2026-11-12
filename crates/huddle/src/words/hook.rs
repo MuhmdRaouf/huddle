@@ -63,12 +63,9 @@ fn probe_reason(paths: &Paths, error: &std::io::Error) -> String {
     }
 }
 
-/// One router.log line saying why the hook starts the router.
+/// One router log line saying why the hook starts the router.
 fn log_restart(paths: &Paths, reason: &str) {
-    let log = huddle_router::crashlog::rotating_log(
-        &paths.state_dir.join("router.log"),
-        huddle_router::crashlog::ROUTER_LOG_LIMIT,
-    );
+    let log = huddle_router::crashlog::router_logs(&paths.state_dir);
     log(format!(
         "huddle-router: prompt-submit probe: {reason}; starting the router"
     ));
