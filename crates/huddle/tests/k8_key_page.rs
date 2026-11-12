@@ -479,3 +479,47 @@ fn k8_the_helper_exits_after_its_life() {
     assert!(started.elapsed() >= Duration::from_millis(900));
     assert!(!world.record_path().exists(), "record removed");
 }
+
+#[test]
+fn k8_setup_never_signals_a_process_that_is_not_the_helper() {
+    let world = World::new();
+    let mut stranger = Command::new("sleep").arg("30").spawn().expect("sleep");
+    fs::create_dir_all(world.record_path().parent().expect("dir")).expect("dir");
+    let far = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("clock")
+        .as_millis()
+        + 600_000;
+    fs::write(
+        world.record_path(),
+        format!("port = 1\npid = {}\nexpires_at_ms = {far}\n", stranger.id()),
+    )
+    .expect("record");
+
+    let (code, _, _) = world.setup();
+
+    let still_running = stranger.try_wait().expect("wait").is_none();
+    let _ = stranger.kill();
+    let _ = stranger.wait();
+    assert_eq!(code, Some(6));
+    assert!(
+        still_running,
+        "setup signalled a process that is not its helper"
+    );
+}
+
+#[test]
+fn k8_a_second_setup_stops_the_first_helper() {
+    let world = World::new();
+    world.start_page();
+    let first = world.pid();
+    fs::remove_file(&world.browser_log).expect("browser log");
+
+    world.start_page();
+
+    assert_ne!(world.pid(), first);
+    assert!(
+        wait_gone(first, Duration::from_secs(2)),
+        "the first helper kept running"
+    );
+}

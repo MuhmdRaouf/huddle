@@ -51,13 +51,15 @@ pub fn open(
     Some(url)
 }
 
-/// Signals a helper whose record is still live, then clears the record.
+/// Signals a helper whose record is still live, then clears the record. A crashed helper's pid
+/// can be reused, so only a process whose command line is this provider's helper is signalled.
 fn stop_old(paths: &Paths, provider: &Provider) {
     if let Some(record) = read_record(paths, provider)
         && record.expires_at_ms > now_ms()
         && is_alive(record.pid)
+        && is_helper(record.pid, provider)
     {
-        // SAFETY: the pid comes from this helper's own record, which is live and unexpired.
+        // SAFETY: the pid is live and its command line names this provider's key page helper.
         unsafe { libc::kill(record.pid as libc::pid_t, libc::SIGTERM) };
         let until = Instant::now() + STOP_WAIT;
         while is_alive(record.pid) && Instant::now() < until {
@@ -65,6 +67,20 @@ fn stop_old(paths: &Paths, provider: &Provider) {
         }
     }
     let _ = std::fs::remove_file(record_path(paths, provider));
+}
+
+/// True when `ps` shows the pid running `provider <p> key-page`.
+fn is_helper(pid: u32, provider: &Provider) -> bool {
+    Command::new("ps")
+        .args(["-o", "command=", "-p", &pid.to_string()])
+        .stdin(Stdio::null())
+        .stderr(Stdio::null())
+        .output()
+        .is_ok_and(|out| {
+            String::from_utf8_lossy(&out.stdout)
+                .trim_end()
+                .ends_with(&format!(" provider {} key-page", provider.id))
+        })
 }
 
 fn wait_for_port(paths: &Paths, provider: &Provider) -> Option<u16> {
