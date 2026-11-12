@@ -1,7 +1,9 @@
 pub mod finish;
+pub mod guide;
 pub mod key;
 pub mod key_page;
 pub mod key_page_launch;
+pub mod masked;
 pub mod remove;
 pub mod setup;
 pub mod usage;
@@ -22,7 +24,7 @@ pub fn run(args: &[String], env: &Env) -> i32 {
         return home::run_unknown_provider(env);
     };
     let Some((word, rest)) = rest.split_first() else {
-        return usage();
+        return guide::run(provider, env);
     };
     match word.as_str() {
         "key" if rest.is_empty() => key::run(provider, env),
@@ -32,15 +34,6 @@ pub fn run(args: &[String], env: &Env) -> i32 {
         "usage" => usage::run(provider, env),
         _ => unknown_action(provider.id),
     }
-}
-
-/// The usage line of `huddle provider <p>` with no action.
-fn usage() -> i32 {
-    let _ = writeln!(
-        std::io::stderr(),
-        "usage: huddle provider <zai|kimi|deepseek|minimax|qwen> <key|setup|remove|usage>"
-    );
-    2
 }
 
 /// An action huddle does not know, or `key` with an argument. The argument is never printed,

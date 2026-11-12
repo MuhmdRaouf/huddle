@@ -93,12 +93,3 @@ fn an_unknown_provider_is_a_usage_error() {
     assert_eq!(output.status.code(), Some(2));
     assert!(String::from_utf8_lossy(&output.stderr).starts_with("Providers\n"));
 }
-
-#[test]
-fn a_missing_word_is_a_usage_error() {
-    let home = TempHome::new();
-    assert_eq!(
-        huddle(&home, &["provider", "zai"], "").status.code(),
-        Some(2)
-    );
-}

@@ -7,10 +7,16 @@ use huddle_catalog::providers::Provider;
 use huddle_config::{env::Env, paths::Paths};
 use huddle_keystore::port::{SecretString, is_valid_key, platform_default};
 
+use super::masked::{Echo, Entry, read_entry};
+
 /// Reads, checks and stores the key; every refusal is one line and an exit code.
 pub fn run(provider: &'static Provider, env: &Env) -> i32 {
     let key = match read_key(provider.display) {
-        Ok(key) => key,
+        Ok(Some(key)) => key,
+        Ok(None) => {
+            let _ = writeln!(io::stdout(), "Stopped. Nothing was stored.");
+            return 130;
+        }
         Err(error) => {
             let _ = writeln!(io::stderr(), "key: cannot read stdin ({error})");
             return 1;
@@ -42,28 +48,16 @@ pub fn run(provider: &'static Provider, env: &Env) -> i32 {
     0
 }
 
-/// One line of stdin, trimmed. A terminal gets a prompt with the echo off, and the echo comes
-/// back in every path.
-fn read_key(display: &str) -> io::Result<String> {
-    let mut line = String::new();
+/// One line of stdin, trimmed. A terminal gets a masked prompt; None is a Ctrl-C.
+fn read_key(display: &str) -> io::Result<Option<String>> {
     if unsafe { libc::isatty(0) } != 1 {
+        let mut line = String::new();
         io::stdin().lock().read_line(&mut line)?;
-        return Ok(line.trim().to_owned());
+        return Ok(Some(line.trim().to_owned()));
     }
-    let _ = write!(io::stderr(), "Paste your {display} key and press enter: ");
-    let _ = io::stderr().flush();
-    let mut state = unsafe { std::mem::zeroed::<libc::termios>() };
-    if unsafe { libc::tcgetattr(0, &mut state) } == 0 {
-        let flags = state.c_lflag;
-        state.c_lflag = flags & !(libc::ECHO as libc::tcflag_t);
-        unsafe { libc::tcsetattr(0, libc::TCSANOW, &state) };
-        let read = io::stdin().lock().read_line(&mut line);
-        state.c_lflag = flags;
-        unsafe { libc::tcsetattr(0, libc::TCSANOW, &state) };
-        let _ = writeln!(io::stderr());
-        read?;
-    } else {
-        io::stdin().lock().read_line(&mut line)?;
-    }
-    Ok(line.trim().to_owned())
+    let prompt = format!("Paste your {display} key, then press Enter: ");
+    Ok(match read_entry(&prompt, Echo::Stars) {
+        Entry::Line(line) => Some(line.expose().trim().to_owned()),
+        Entry::Aborted => None,
+    })
 }
