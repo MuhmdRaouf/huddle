@@ -26,7 +26,7 @@ The five providers are part of huddle, and a key goes in from a page or a termin
 
 ### Dashboard
 
-- The Plugins page lists the five providers, without an installed column, and the sidebar badges read as ratios with the good part green.
+- One Providers page joins setup and traffic: a row per provider with its status, requests, first-token time, errors and next step, and a drawer with the key, lane, `/model` entries and commands. Providers that are not set up read as neutral, not as failures. The sidebar badges read as ratios with the good part green.
 
 ### Tests
 

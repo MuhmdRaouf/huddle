@@ -6,7 +6,7 @@ use serde_json::Value;
 const PAGE: &str = include_str!("../src/dashboard.html");
 const FIXTURE: &str = include_str!("fixtures/state-v2.json");
 
-const PAGE_IDS: [&str; 14] = [
+const PAGE_IDS: [&str; 13] = [
     "overview",
     "sessions",
     "agents",
@@ -18,7 +18,6 @@ const PAGE_IDS: [&str; 14] = [
     "projects",
     "worktrees",
     "jobs",
-    "plugins",
     "harnesses",
     "router",
 ];
@@ -81,7 +80,7 @@ fn writes_markup_in_one_helper_that_the_data_cannot_reach_unescaped() {
 }
 
 #[test]
-fn carries_all_fourteen_pages() {
+fn carries_all_thirteen_pages() {
     for id in PAGE_IDS {
         assert!(PAGE.contains(&format!("['{id}','")), "nav entry {id}");
         assert!(PAGE.contains(&format!("PAGES.{id}={{")), "page {id}");
@@ -336,13 +335,13 @@ fn t10_history_rows_carry_cost_and_open_the_request_sheet() {
 
 #[test]
 fn k11_sidebar_badges_read_as_ratios_with_the_good_part_green() {
-    let plugins = PAGE
+    let providers = PAGE
         .lines()
-        .find(|l| l.contains("case 'plugins':"))
-        .expect("plugins badge");
-    assert!(plugins.contains("/${PL.rows.length}"), "{plugins}");
-    assert!(plugins.contains("var(--ok)"), "{plugins}");
-    assert!(!plugins.contains("badge warn"), "{plugins}");
+        .find(|l| l.contains("case 'providers':"))
+        .expect("providers badge");
+    assert!(providers.contains("/${"), "{providers}");
+    assert!(providers.contains("var(--ok)"), "{providers}");
+    assert!(!providers.contains("badge warn"), "{providers}");
     let harnesses = PAGE
         .lines()
         .find(|l| l.contains("case 'harnesses':"))
@@ -353,11 +352,77 @@ fn k11_sidebar_badges_read_as_ratios_with_the_good_part_green() {
 }
 
 #[test]
-fn k11_the_plugins_page_has_no_installed_column() {
+fn k11_the_providers_table_has_no_installed_column() {
     assert!(!PAGE.contains("label:'Installed'"));
     assert!(!PAGE.contains("<b>Installed</b>"));
-    assert!(PAGE.contains("label:'Agents'"));
     assert!(PAGE.contains("label:'Provider'"));
-    assert!(PAGE.contains("{k:'Set up',v:r.filter(x=>x.setup).length,small:`of ${r.length}`"));
-    assert!(PAGE.contains("huddle's providers, with every step each one needs before it works."));
+    assert!(PAGE.contains("label:'Status'"));
+}
+
+fn providers_page() -> &'static str {
+    let start = PAGE.find("PAGES.providers={").expect("providers page");
+    let end = PAGE.find("PAGES.usage={").expect("usage page");
+    &PAGE[start..end]
+}
+
+#[test]
+fn k13_one_providers_page_and_no_plugins_page() {
+    assert!(!PAGE.contains("['plugins','"), "nav entry");
+    assert!(!PAGE.contains("PAGES.plugins"), "page");
+    assert!(PAGE.contains("['providers','Providers']"));
+    assert!(
+        PAGE.contains("h==='plugins'?'providers'"),
+        "old links open Providers"
+    );
+    assert_eq!(PAGE_IDS.len(), 13);
+}
+
+#[test]
+fn k13_not_set_up_is_neutral_never_red() {
+    assert!(PAGE.contains("function provStatus("));
+    let start = PAGE.find("function provStatus(").expect("status");
+    let body = &PAGE[start..start + 700];
+    assert!(body.contains("['off','Not set up']"), "{body}");
+    assert!(body.contains("['bad','Needs a fix']"), "{body}");
+    assert!(body.contains("['ok','Working']"), "{body}");
+    assert!(body.contains("['ok','Built in']"), "{body}");
+    assert!(!PAGE.contains("['bad','Missing']"), "no red Missing pill");
+}
+
+#[test]
+fn k13_the_next_step_is_the_huddle_setup_command() {
+    let page = providers_page();
+    assert!(page.contains("label:'Next step'"), "column");
+    assert!(page.contains("cmd(x.next)"), "command chip");
+    assert!(FIXTURE.contains("/huddle:kimi:setup"));
+    assert!(page.contains("label:'1st token'"));
+    assert!(page.contains("label:'Requests'"));
+    assert!(page.contains("label:'Errors'"));
+    assert!(
+        page.contains("row:x=>'provider:'+x.id"),
+        "row opens the drawer"
+    );
+    assert!(PAGE.contains("provider(id){"), "provider drawer");
+}
+
+#[test]
+fn k13_no_plugin_cc_text_and_no_marketplace_chip() {
+    assert!(!PAGE.contains("-plugin-cc"));
+    assert!(!PAGE.contains("/plugin marketplace update"));
+    assert!(PAGE.contains("Where your model requests go, and what each provider still needs."));
+    assert!(
+        PAGE.contains("kpis k3"),
+        "three tiles fit a three-column grid"
+    );
+}
+
+#[test]
+fn k13_the_providers_badge_reads_set_up_of_five() {
+    let line = PAGE
+        .lines()
+        .find(|l| l.contains("case 'providers':"))
+        .expect("providers badge");
+    assert!(line.contains("set_up===true"), "{line}");
+    assert!(line.contains("var(--ok)"), "{line}");
+    assert!(line.contains("/${"), "{line}");
 }

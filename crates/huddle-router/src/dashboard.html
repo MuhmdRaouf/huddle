@@ -173,6 +173,7 @@ kbd{font-family:var(--mono);font-size:10.5px;padding:0 5px;border:1px solid var(
 .kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:1px;background:var(--line-soft);overflow:hidden}
 .kpis.k6{grid-template-columns:repeat(6,minmax(0,1fr))}
 .kpis.k5{grid-template-columns:repeat(5,minmax(0,1fr))}
+.kpis.k3{grid-template-columns:repeat(3,minmax(0,1fr))}
 .kpi{background:var(--surface);padding:14px 16px 12px;display:flex;flex-direction:column;gap:3px;min-width:0}
 .kpi .k{font-size:12.5px;color:var(--muted);display:flex;align-items:center;gap:6px;white-space:nowrap}
 .kpi .v{font-size:24px;font-weight:600;letter-spacing:-.025em;line-height:1.2;font-variant-numeric:tabular-nums;white-space:nowrap}
@@ -194,6 +195,7 @@ tbody tr.clickable{cursor:pointer}
 tbody tr:hover td{background:color-mix(in srgb,var(--subtle) 55%,transparent)}
 tbody tr.sel td{background:var(--accent-bg)}
 tbody tr.dim td{color:var(--faint)}
+tbody tr.sep td{border-top:2px solid var(--line)}
 td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
 td.c,th.c{text-align:center}
 td.wrap{white-space:normal;min-width:220px}
@@ -277,6 +279,7 @@ td.empty{text-align:center;color:var(--faint);padding:28px 14px}
 .planrow .meter{grid-column:1/-1;height:8px}
 .legendrow{display:flex;gap:6px 18px;flex-wrap:wrap;font-size:12.5px;color:var(--muted);padding:12px 16px;border-top:1px solid var(--line-soft)}
 .legendrow b{color:var(--text);font-weight:500}
+.chips{display:flex;gap:8px;flex-wrap:wrap}
 .matrix td.cellv{text-align:right;font-family:var(--mono);font-size:12px;font-variant-numeric:tabular-nums}
 
 /* ---------- drawer, palette, toast ---------- */
@@ -347,7 +350,7 @@ td.empty{text-align:center;color:var(--faint);padding:28px 14px}
   .crumbs .c0,.crumbs .c0+svg{display:none}
   .g3{grid-template-columns:minmax(0,1fr)}
 }
-@media (max-width:760px){.kpis,.kpis.k6,.kpis.k5{grid-template-columns:repeat(2,minmax(0,1fr))}.mtabs{grid-template-columns:repeat(2,minmax(0,1fr))}.mtab:nth-child(3){border-left:0}.mtab:nth-child(n+3){border-top:1px solid var(--line-soft)}}
+@media (max-width:760px){.kpis,.kpis.k6,.kpis.k5,.kpis.k3{grid-template-columns:repeat(2,minmax(0,1fr))}.kpis.k3 .kpi:last-child{grid-column:1/-1}.mtabs{grid-template-columns:repeat(2,minmax(0,1fr))}.mtab:nth-child(3){border-left:0}.mtab:nth-child(n+3){border-top:1px solid var(--line-soft)}}
 @media (max-width:600px){
   .hide-sm{display:none}
   .ph h1{font-size:21px}
@@ -436,7 +439,6 @@ const ICONS={
  projects:'<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>',
  worktrees:'<circle cx="6" cy="5" r="2.5"/><circle cx="6" cy="19" r="2.5"/><circle cx="18" cy="7" r="2.5"/><path d="M6 7.5v9M18 9.5c0 5-7 4-11.2 7.2"/>',
  jobs:'<path d="M22 2 11 13M22 2l-7 20-4-9-9-4z"/>',
- plugins:'<path d="M9 2v6M15 2v6M6 8h12v4a6 6 0 0 1-12 0zM12 18v4"/>',
  harnesses:'<path d="m12 2 10 5-10 5L2 7z"/><path d="m2 17 10 5 10-5M2 12l10 5 10-5"/>',
  router:'<rect x="3" y="4" width="18" height="7" rx="2"/><rect x="3" y="13" width="18" height="7" rx="2"/><path d="M7 7.5h.01M7 16.5h.01"/>',
  check:'<path d="M20 6 9 17l-5-5"/>', x:'<path d="M18 6 6 18M6 6l12 12"/>', minus:'<path d="M5 12h14"/>',
@@ -516,8 +518,7 @@ function buildModels(){
 }
 function buildLanes(){
   LANES=arr(SNAP.lanes).map(l=>{const last=l.last&&num(l.last.at_ms)!=null?{status:num(l.last.status),t:l.last.at_ms}:null;
-  return {id:l.id||'',name:l.name||l.id||'',plugin:l.id==='anthropic'?'built in':l.id||'',match:l.models||'—',state:l.enabled?'live':'off',
-   key:l.id==='anthropic'?['ok','Sign-in']:l.key===true?['ok','Found']:l.key===false?['bad','Missing']:['na','—'],
+  return {id:l.id||'',name:l.name||l.id||'',match:l.models||'—',state:l.enabled?'live':'off',
    n:n0(l.requests),err:n0(l.errors),p50:num(l.ttft_p50!=null?l.ttft_p50:l.ttft_p50_ms),last,setup:l.setup||null,
    models:MODELS.filter(m=>m.lane===l.id).map(m=>m.id)}});
 }
@@ -908,18 +909,42 @@ PAGES.models={title:'Models',body:()=>head('Models',`Every model seen in the las
  ]),rangeRows(),{sort:{k:'n',d:-1},empty:rangeEmpty()}))}</div>`};
 
 const laneLast=l=>{if(l.last)return l.last;const rs=stats().byLane[l.id]||[];const r=rs[rs.length-1];return r?{status:r.status,t:r.t}:null};
-PAGES.providers={title:'Providers',body:()=>head('Providers','One lane per provider. A request goes to the lane whose pattern matches its model, and anything no lane claims goes to Anthropic untouched.')+
+const PNAME={zai:'Z.ai GLM',kimi:'Kimi',deepseek:'DeepSeek',minimax:'MiniMax',qwen:'Qwen'};
+/* A provider is Working when set up with its lane on; Not set up is neutral because every catalog provider is optional; Needs a fix is a real fault. */
+function provStatus(x){
+ if(x.built)return ['ok','Built in'];
+ const bad=x.last&&x.last.status!==200&&x.last.status!==429;
+ if(x.setup)return x.laneOn&&!bad?['ok','Working']:['bad','Needs a fix'];
+ return x.key&&!x.laneOn?['bad','Needs a fix']:['off','Not set up'];
+}
+function provRows(){
+ const mk=(id,r)=>{const La=LANES.find(l=>l.id===id)||null,built=id==='anthropic';
+  const x={id,name:(La&&La.name)||PNAME[id]||id,built,setup:built||(!!r&&r.set_up===true),key:!!r&&r.key===true,
+   pattern:La?La.match:r&&r.lane||null,laneOn:built||!!(r&&r.lane)||(!!La&&La.state==='live'),
+   models:La?La.models:[],nModels:r?n0(r.models):0,nAgents:r?n0(r.agents):0,
+   n:La?La.n:0,err:La?La.err:0,p50:La?La.p50:null,last:La?laneLast(La):null,next:r&&r.next||null};
+  x.status=provStatus(x);if(!x.next&&x.status[0]==='bad'&&!built)x.next=`/huddle:${id}:setup`;
+  return x};
+ const all=[...PL.rows.map(r=>mk(r.name,r)),mk('anthropic',null)];
+ const live=all.filter(x=>x.status[0]!=='off'),rest=all.filter(x=>x.status[0]==='off');
+ const ordered=[...live.filter(x=>!x.built),...live.filter(x=>x.built),...rest];
+ rest.forEach((x,i)=>{x.rest=true;x.first=i===0});
+ return ordered}
+const provSetUp=()=>PL.rows.filter(r=>r.set_up===true).length;
+const errPct=x=>x.n?(x.err?`<span class="badc">${(x.err/x.n*100).toFixed(1)}%</span>`:'0%'):NA;
+PAGES.providers={title:'Providers',body:()=>head('Providers','Where your model requests go, and what each provider still needs.',reg('provn',()=>PL.rows.length?`<span class="note">${provSetUp()}/${PL.rows.length} set up</span>`:''))+
+ `<div class="card kpis k3">${reg('provk',()=>{const r=provRows(),n=sum(r.map(x=>x.n)),e=sum(r.map(x=>x.err));return kpiGrid([
+  {k:'Set up',v:PL.rows.length?provSetUp():'—',small:PL.rows.length?`of ${PL.rows.length}`:'',d:PL.rows.length?'with a key and a lane':'Checking…'},
+  {k:'Requests',v:n.toLocaleString('en-US'),d:'across every provider'},
+  {k:'Errors',v:e.toLocaleString('en-US'),d:n?`${(e/n*100).toFixed(1)}% of requests`:'no requests yet'}])})}</div>`+
  `<div class="card t">${reg('lanes',()=>table('lanes',[
-  {k:'name',label:'Provider',v:l=>l.name,h:l=>`<div class="ct">${esc(l.name)}</div><div class="cs">${l.plugin==='built in'?'built in':esc(l.plugin)+'-plugin-cc'}</div>`},
-  {k:'state',label:'Lane',v:l=>({live:0,off:1})[l.state],h:l=>l.state==='live'?pill('ok','Live'):pill('warn','Off')},
-  {k:'match',label:'Matches',v:l=>l.match,h:l=>`<span class="mono">${esc(l.match)}</span>`},
-  {k:'key',label:'Key',v:l=>l.key[1],h:l=>l.key[0]==='na'?NA:pill(l.key[0],l.key[1])},
-  {k:'n',label:'Requests',num:1,v:l=>l.n,h:l=>l.n?`<b>${l.n}</b>`:'<span class="faint">0</span>'},
-  {k:'err',label:'Errors',num:1,v:l=>l.err,h:l=>l.err?`<span class="badc">${l.err}</span>`:'<span class="faint">0</span>',sm:1},
-  {k:'p50',label:'TTFT p50',num:1,v:l=>l.p50||0,h:l=>`<span class="mono">${msf(l.p50)}</span>`,sm:1},
-  {k:'last',label:'Last request',num:1,v:l=>{const r=laneLast(l);return r?-r.t:0},h:l=>{const r=laneLast(l);return r?`${r.status===200?'<span class="okc">200</span>':`<span class="${r.status===429?'warnc':'badc'}">${esc(r.status)}</span>`} <span class="muted">· ${ago(r.t)}</span>`:NA}},
-  {k:'models',label:'/model entries',h:l=>l.models.length?`<span class="mono muted">${l.models.length} · ${esc(l.models.slice(0,2).join(', '))}${l.models.length>2?'…':''}</span>`:'<span class="faint">none</span>',sm:1}
- ],LANES,{sort:{k:'state',d:1},empty:'No lanes yet'}))}</div>`+
+  {k:'name',label:'Provider',h:x=>`<div class="ct">${esc(x.name)}</div>${x.pattern?`<div class="cs">${esc(x.pattern)}</div>`:''}`},
+  {k:'status',label:'Status',h:x=>pill(x.status[0],x.status[1])},
+  {k:'n',label:'Requests',num:1,h:x=>x.n?`<b>${x.n.toLocaleString('en-US')}</b>`:NA,sm:1},
+  {k:'p50',label:'1st token',num:1,h:x=>x.n&&x.p50?`<span class="mono">${msf(x.p50)}</span>`:NA,sm:1},
+  {k:'err',label:'Errors',num:1,h:errPct,sm:1},
+  {k:'next',label:'Next step',h:x=>x.next?cmd(x.next):NA}
+ ],provRows(),{row:x=>'provider:'+x.id,cls:x=>x.rest?x.first?'dim sep':'dim':'',empty:PL.state==='checking'?checking():'No providers found'}))}<div class="legendrow"><span><b>Working</b> set up, and its lane answers</span><span><b>Not set up</b> optional; run the command to add it</span><span><b>Needs a fix</b> a key without a lane, or a failing lane</span></div></div>`+
  `<div class="notebox">${ic('info')}<span>Keys stay in the operating system's key store. This page only learns whether a key exists, never its value.</span></div>`};
 
 PAGES.usage={title:'Usage',body:()=>head('Usage',`Where the tokens went in the last ${rangeLabel()}.`,rangeSeg())+reg('rstat',rangeStatus)+
@@ -983,34 +1008,6 @@ PAGES.jobs={title:'Jobs',body:()=>head('Delegated jobs','Tasks handed to another
   {k:'diff',label:'Changes',num:1,v:j=>n0(j.add)+n0(j.del),h:j=>j.files?`<span class="mono"><span class="okc">+${n0(j.add)}</span> <span class="badc">−${n0(j.del)}</span> <span class="faint">· ${j.files} files</span></span>`:NA,sm:1},
   {k:'next',label:'Next step',h:j=>j.state==='awaiting_review'?cmd(`/huddle:result ${j.id} --diff`):j.state==='running'?cmd(`/huddle:status ${j.id}`):j.state==='dead'||j.state==='failed'?cmd(`/huddle:cancel ${j.id}`):NA}
  ],JOBS,{sort:{k:'state',d:1},empty:'No delegated jobs yet'}))}</div>`};
-
-function plugRows(){return PL.rows.map(r=>{const L=LANES.find(l=>l.id===r.name),last=L?laneLast(L):null;
- const stat=(s,t)=>s===200?['ok',`200 · ${ago(t)}`]:s===429?['warn',`429 · ${ago(t)}`]:['bad',`${s} · ${ago(t)}`];
- const work=typeof r.working==='boolean'?(r.working?['ok','Working']:['off','No requests yet']):!L?['na','—']:!last?['off','No requests yet']:stat(last.status,last.t);
- const nm=num(r.models),na=num(r.agents);
- return {n:r.name||'',d:L?L.match:'',
-  setup:r.set_up===true,
-  key:r.key===true?['ok','Found']:r.key===false?['bad','Missing']:['na','—'],
-  lane:r.lane?['ok',String(r.lane)]:['off','Off'],
-  model:nm?['ok',nm+' model'+(nm===1?'':'s')]:['off','None'],
-  agents:na?['ok',na+' agent'+(na===1?'':'s')]:['off','None'],
-  work,req:num(r.requests)!=null?r.requests:L?L.n:0,next:r.next||null}})}
-const cellP=x=>x[0]==='na'?`<span class="faint">${esc(x[1])}</span>`:pill(x[0],x[1]);
-PAGES.plugins={title:'Plugins',body:()=>head('Plugins',"huddle's providers, with every step each one needs before it works.",cmd('/plugin marketplace update muhmdraouf'))+
- `<div class="card kpis">${reg('plugk',()=>{if(PL.state==='checking'&&!PL.rows.length)return kpiGrid([{k:'Set up',v:'—',d:'Checking…'},{k:'Working',v:'—',d:'Checking…'},{k:'Need action',v:'—',d:'Checking…'}]);const r=plugRows();return kpiGrid([
-  {k:'Set up',v:r.filter(x=>x.setup).length,small:`of ${r.length}`,d:'lane, key and models added'},
-  {k:'Working',v:r.filter(x=>x.work[0]==='ok').length,small:'healthy',d:(n=>n?`<span class="warnc">${n} with warnings</span>`:'no warnings')(r.filter(x=>x.work[0]==='warn').length)},
-  {k:'Need action',v:r.filter(x=>x.next).length,d:'see Next step'}])})}</div>`+
- `<div class="card t">${reg('plug',()=>table('plug',[
-  {k:'n',label:'Provider',v:x=>x.n,h:x=>`<div class="ct">${esc(x.n)}</div><div class="cs" style="font-family:var(--sans)">${esc(x.d)}</div>`},
-  {k:'key',label:'Key',h:x=>cellP(x.key)},
-  {k:'lane',label:'Lane',h:x=>cellP(x.lane)},
-  {k:'model',label:'/model',h:x=>cellP(x.model)},
-  {k:'agents',label:'Agents',h:x=>cellP(x.agents)},
-  {k:'work',label:'Working',v:x=>({ok:0,warn:1,bad:2,off:3,na:4})[x.work[0]],h:x=>cellP(x.work)},
-  {k:'req',label:'Requests',num:1,v:x=>x.req,h:x=>x.req?x.req:'<span class="faint">0</span>'},
-  {k:'next',label:'Next step',h:x=>x.next?cmd(x.next):'<span class="okc">Ready</span>'}
- ],plugRows(),{empty:PL.state==='checking'?checking():'No providers found'}))}<div class="legendrow"><span><b>Key</b> found in the key store or the environment</span><span><b>Lane</b> the router routes its models</span><span><b>/model</b> entries in Claude Code's picker</span><span><b>Agents</b> huddle's agent files for its models</span><span><b>Working</b> its last request through the router</span></div></div>`};
 
 PAGES.harnesses={title:'Harnesses',body:()=>{const c=k=>k==='all'?HARN.length:k==='ready'?HARN.filter(h=>h.st==='ready').length:HARN.filter(h=>h.st!=='ready').length;
  return head('Harnesses','The coding CLIs huddle can delegate to, checked by /huddle:setup. Only ready ones take jobs.',seg('harn',[['all','All',c('all')],['ready','Ready',c('ready')],['att','Needs attention',c('att')]],F.harn)+cmd('/huddle:setup'))+
@@ -1084,6 +1081,21 @@ const DRAWERS={
     ${r.status&&r.status!==200?`<dt>Cause</dt><dd>${esc(errDef(r.status,r.reason)[2])}</dd>`:''}</dl></div>
    <div class="notebox">${ic('info')}<span>The router keeps the model, timings, token counts and status. It never keeps the prompt, the answer or header values.</span></div>
   </div>`},
+ provider(id){const x=provRows().find(p=>p.id===id);if(!x)return '';
+  const chips=x.built?'':`<div><h4>Commands</h4><div class="chips">${cmd(`/huddle:${x.id}:setup`)}${cmd(`/huddle:${x.id}:remove`)}</div></div>`;
+  return `<div class="dh"><div class="grow">${pill(x.status[0],x.status[1])}<h3>${esc(x.name)}</h3><div class="s">${x.built?'built in':esc(x.id)}</div></div>${closeBtn()}</div>
+  <div class="db">
+   <div class="facts">
+    <div class="fact"><div class="k">Key</div><div class="v">${x.built?'Claude sign-in':x.key?'Found':'Not found'}</div></div>
+    <div class="fact"><div class="k">Lane</div><div class="v">${x.laneOn?'On':'Off'}${x.pattern?` <span class="mono muted">${esc(x.pattern)}</span>`:''}</div></div>
+    <div class="fact"><div class="k">Requests</div><div class="v">${x.n.toLocaleString('en-US')}</div></div>
+    <div class="fact"><div class="k">1st token</div><div class="v">${x.n&&x.p50?msf(x.p50):'—'}</div></div>
+    <div class="fact"><div class="k">Errors</div><div class="v">${x.err.toLocaleString('en-US')}</div></div>
+    ${x.built?'':`<div class="fact"><div class="k">Agents</div><div class="v">${x.nAgents?x.nAgents+' agent'+(x.nAgents===1?'':'s'):'None'}</div></div>`}
+   </div>
+   ${x.built?`<div class="notebox">${ic('info')}<span>Requests for claude-* models go straight to Anthropic.</span></div>`:`<div><h4>/model entries <span class="faint">${x.models.length||x.nModels}</span></h4><div class="card list">${x.models.map(m=>`<div class="li"><div class="grow mono">${esc(m)}</div></div>`).join('')||`<div class="allclear">${ic('info')} ${x.nModels?x.nModels+' in the picker':'None in the picker'}</div>`}</div></div>`}
+   ${chips}
+  </div>`},
  project(name){const p=projects().find(x=>x.name===name);if(!p)return '';
   return `<div class="dh"><div class="grow"><span class="pill off">${ic('projects')}Project</span><h3>${esc(p.name)}</h3><div class="s">${cid(tilde(p.path))}</div></div>${closeBtn()}</div>
   <div class="db">
@@ -1103,7 +1115,7 @@ const NAV=[
  ['Monitor',[['overview','Overview'],['sessions','Sessions'],['agents','Agents'],['requests','Requests'],['errors','Errors']]],
  ['Usage',[['models','Models'],['providers','Providers'],['usage','Usage']]],
  ['Workspace',[['projects','Projects'],['worktrees','Worktrees'],['jobs','Jobs']]],
- ['System',[['plugins','Plugins'],['harnesses','Harnesses'],['router','Router']]]
+ ['System',[['harnesses','Harnesses'],['router','Router']]]
 ];
 function badge(k){switch(k){
  case 'sessions':{const w=SESS.filter(s=>sstate(s)==='waiting').length;return w?`<span class="badge warn" title="waiting on you">${w}</span>`:`<span class="badge">${SESS.filter(s=>sstate(s)!=='idle').length}</span>`}
@@ -1111,11 +1123,10 @@ function badge(k){switch(k){
  case 'requests':return `<span class="badge">${Math.round(sum(BK.slice(20).map(b=>b.n))/5)}/m</span>`;
  case 'errors':{const e=stats().done.filter(isErr).length;return e?`<span class="badge bad">${e}</span>`:''}
  case 'models':return `<span class="badge">${MODELS.length}</span>`;
- case 'providers':return `<span class="badge">${LANES.filter(l=>l.state==='live').length}</span>`;
+ case 'providers':{const n=PL.rows.filter(r=>r.set_up===true).length;return PL.rows.length?`<span class="badge">${n?`<span style="color:var(--ok)">${n}</span>`:n}/${PL.rows.length}</span>`:''}
  case 'projects':return `<span class="badge">${projects().length}</span>`;
  case 'worktrees':return `<span class="badge">${WT.length}</span>`;
  case 'jobs':return `<span class="badge">${JOBS.filter(j=>j.state==='running'||j.state==='awaiting_review').length}</span>`;
- case 'plugins':{const n=PL.rows.filter(r=>r.set_up===true).length;return PL.rows.length?`<span class="badge">${n?`<span style="color:var(--ok)">${n}</span>`:n}/${PL.rows.length}</span>`:''}
  case 'harnesses':{const n=HARN.filter(h=>h.st==='ready').length;return HARN.length?`<span class="badge">${n?`<span style="color:var(--ok)">${n}</span>`:n}/${HARN.length}</span>`:''}
  default:return ''}}
 function navHtml(){return NAV.map(([g,items])=>`<div><div class="gl">${g}</div>${items.map(([k,l])=>`<a href="#${k}"${k===page?' aria-current="page"':''}>${ic(k)}${l}${badge(k)}</a>`).join('')}</div>`).join('')}
@@ -1130,7 +1141,7 @@ function shell(){setHtml($('#nav'),navHtml());setHtml($('#rcard'),rcard());$('#c
 
 /* ---------- routing ---------- */
 let page='overview';
-function render(){REG={};const h=(location.hash||'#overview').slice(1).split('?')[0];page=PAGES[h]?h:'overview';const p=PAGES[page];
+function render(){REG={};let h=(location.hash||'#overview').slice(1).split('?')[0];h=h==='plugins'?'providers':h;page=PAGES[h]?h:'overview';const p=PAGES[page];
  if(page==='requests'||page==='errors')hload(page);else HS.mode='live';
  const grp=NAV.find(([,its])=>its.some(([k])=>k===page))[0];
  setHtml($('#crumbs'),`<span class="c0">Huddle</span>${ic('chev')}<span>${grp}</span>${ic('chev')}<b>${p.title}</b>`);

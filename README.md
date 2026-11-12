@@ -152,11 +152,13 @@ It shows:
 
 - Overview: stats, the traffic chart, what needs you, live sessions.
 - Sessions, Agents, Requests and Errors, with search over the history.
-- Models, Providers and Usage, with the Claude plan windows when Anthropic's
-  replies carry them.
+- Models and Usage, with the Claude plan windows when Anthropic's replies carry
+  them.
+- Providers: one table with each provider's status, requests, first-token time,
+  errors and next step. A row opens the key, lane, `/model` entries and
+  commands.
 - Projects, Worktrees and Jobs per repository.
-- Plugins (the five providers: setup, key, lane, next step), Harnesses and
-  Router.
+- Harnesses and Router.
 
 The sidebar badges read as ratios, for example providers set up out of five.
 
