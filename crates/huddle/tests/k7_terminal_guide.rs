@@ -317,6 +317,11 @@ fn k7_ctrl_c_stores_nothing_and_restores_the_terminal() {
     let mut pty = Pty::spawn(&home, port, &["provider", "zai"], &[]);
     let before = pty.lflag();
     assert!(pty.read_until(PROMPT), "{}", pty.seen);
+    // The prompt is written just before the mode changes, so the mode is polled.
+    let start = Instant::now();
+    while pty.lflag() == before && start.elapsed() < WAIT {
+        pty.pump(Duration::from_millis(20));
+    }
     assert_ne!(pty.lflag(), before, "the prompt changes the terminal mode");
     pty.send(b"abc\x03");
     let code = pty.finish();
