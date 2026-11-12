@@ -40,6 +40,10 @@ The five providers are part of huddle, and a key goes in from a page or a termin
 
 - A test home stops the key page helpers it started when it is dropped.
 
+### Build
+
+- Rust 1.99.1 in `mise.toml`, the Docker toolchain image and CI. mise wraps cargo with mr-boxington (`mbx`), so every worktree shares one build cache.
+
 ### Upgrading from 0.0.5
 
 Remove the five provider plugins (zai, kimi, deepseek, minimax and qwen) in `/plugin`, update huddle and run `/huddle:setup` again. Then use `/huddle:<p>:setup`. A key already in the keystore is kept.

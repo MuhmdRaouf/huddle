@@ -4,7 +4,7 @@
 
 <p align="center">
   <a href="https://www.gnu.org/licenses/gpl-3.0"><img src="https://img.shields.io/badge/License-GPL--3.0--or--later-blue.svg" alt="License: GPL-3.0-or-later"></a>
-  <a href="https://www.rust-lang.org/"><img src="https://img.shields.io/badge/Rust-1.99.0-B7410E?logo=rust" alt="Rust Version"></a>
+  <a href="https://www.rust-lang.org/"><img src="https://img.shields.io/badge/Rust-1.99.1-B7410E?logo=rust" alt="Rust Version"></a>
   <a href="https://code.claude.com/docs/en/plugins"><img src="https://img.shields.io/badge/Claude_Code-plugin-cba6f7" alt="Claude Code plugin"></a>
   <a href="https://github.com/MuhmdRaouf/huddle/actions/workflows/ci.yml"><img src="https://github.com/MuhmdRaouf/huddle/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI"></a>
 </p>
@@ -377,7 +377,7 @@ huddle/
 
 ### Tools and tests
 
-`mise.toml` pins the tools (Rust 1.99.0, Python, pre-commit, gitleaks) and holds
+`mise.toml` pins the tools (Rust 1.99.1 with mr-boxington, Python, pre-commit, gitleaks) and holds
 the tasks:
 
 ```sh

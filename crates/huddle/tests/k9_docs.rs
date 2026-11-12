@@ -48,8 +48,34 @@ fn k9_readme_sections_follow_the_approved_order() {
         .output()
         .expect("git show");
     assert!(main.status.success(), "git show main:README.md failed");
-    let top = |s: &str| s.lines().take(16).collect::<Vec<_>>().join("\n");
+    // The top block is kept as main has it, except the Rust badge, which names the pinned toolchain.
+    let top = |s: &str| {
+        s.lines()
+            .take(16)
+            .map(|line| match line.split_once("badge/Rust-") {
+                Some((head, tail)) => {
+                    let rest = tail.split_once('-').map_or("", |(_, rest)| rest);
+                    format!("{head}badge/Rust-<pinned>-{rest}")
+                }
+                None => line.to_owned(),
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
     assert_eq!(top(&text), top(&String::from_utf8_lossy(&main.stdout)));
+    let mise: toml::Table = std::fs::read_to_string(repo().join("mise.toml"))
+        .expect("mise.toml")
+        .parse()
+        .expect("mise.toml is TOML");
+    let rust = &mise["tools"]["rust"];
+    let pinned = rust
+        .as_str()
+        .or_else(|| rust.get("version").and_then(toml::Value::as_str))
+        .expect("mise.toml pins rust");
+    assert!(
+        text.contains(&format!("badge/Rust-{pinned}-")),
+        "the README's Rust badge names {pinned}"
+    );
 }
 
 const OLD: &[&str] = &["-plugin-cc", "/zai:", "/<p>:", "zai:glm"];

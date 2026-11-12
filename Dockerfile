@@ -3,9 +3,9 @@
 # Hand-kept. No source COPY — docker-compose.yml bind-mounts the live checkout.
 # =============================================================================
 
-# ┌ Tag-pinned only; the tag mirrors mise.toml's rust = "1.99.0"
+# ┌ Tag-pinned only; the tag mirrors mise.toml's rust = "1.99.1"
 # └ — bump both together.
-FROM rust:1.99.0-bookworm
+FROM rust:1.99.1-bookworm
 
 # ┌ The gates need fmt and clippy, and the Linux builds need both musl targets
 # └ for cargo zigbuild to cross-compile into.
