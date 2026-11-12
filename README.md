@@ -36,11 +36,11 @@ plugins from this repository. The five provider plugins depend on `huddle`.
 | Plugin | What it is | Models |
 |---|---|---|
 | [`huddle`](plugin/README.md) | The router, the dashboard, the session hooks, delegation and updates | every `claude-*` model, to Anthropic |
-| [`zai-plugin-cc`](plugins/zai-plugin-cc/README.md) | Z.ai GLM lane, key and `/model` entries | `glm-5.3`, `glm-5.3-flash` |
-| [`kimi-plugin-cc`](plugins/kimi-plugin-cc/README.md) | Moonshot Kimi lane, key and `/model` entries | `kimi-k3`, `kimi-k2.6` |
-| [`deepseek-plugin-cc`](plugins/deepseek-plugin-cc/README.md) | DeepSeek lane, key and `/model` entries | `deepseek-v4-pro`, `deepseek-flash` |
-| [`minimax-plugin-cc`](plugins/minimax-plugin-cc/README.md) | MiniMax lane, key and `/model` entries | `MiniMax-M3`, `MiniMax-M2.7-highspeed` |
-| [`qwen-plugin-cc`](plugins/qwen-plugin-cc/README.md) | Alibaba Qwen lane, key and `/model` entries | `qwen3.8-max`, `qwen3.8-flash` |
+| `zai-plugin-cc` | Z.ai GLM lane, key and `/model` entries | `glm-5.3`, `glm-5.3-flash` |
+| `kimi-plugin-cc` | Moonshot Kimi lane, key and `/model` entries | `kimi-k3`, `kimi-k2.6` |
+| `deepseek-plugin-cc` | DeepSeek lane, key and `/model` entries | `deepseek-v4-pro`, `deepseek-flash` |
+| `minimax-plugin-cc` | MiniMax lane, key and `/model` entries | `MiniMax-M3`, `MiniMax-M2.7-highspeed` |
+| `qwen-plugin-cc` | Alibaba Qwen lane, key and `/model` entries | `qwen3.8-max`, `qwen3.8-flash` |
 
 ### Commands
 

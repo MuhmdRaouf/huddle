@@ -43,7 +43,6 @@ jobs:
             plugin:
               - '.claude-plugin/**'
               - 'plugin/**'
-              - 'plugins/**'
               - .github/workflows/ci.yml
             rust:
               - Cargo.toml
@@ -136,16 +135,6 @@ jobs:
         run: |
           npx -y @anthropic-ai/claude-code@2.1.319 plugin validate .
           npx -y @anthropic-ai/claude-code@2.1.319 plugin validate ./plugin
-      - name: Validate the zai plugin
-        run: npx -y @anthropic-ai/claude-code@2.1.319 plugin validate ./plugins/zai-plugin-cc
-      - name: Validate the kimi plugin
-        run: npx -y @anthropic-ai/claude-code@2.1.319 plugin validate ./plugins/kimi-plugin-cc
-      - name: Validate the deepseek plugin
-        run: npx -y @anthropic-ai/claude-code@2.1.319 plugin validate ./plugins/deepseek-plugin-cc
-      - name: Validate the minimax plugin
-        run: npx -y @anthropic-ai/claude-code@2.1.319 plugin validate ./plugins/minimax-plugin-cc
-      - name: Validate the qwen plugin
-        run: npx -y @anthropic-ai/claude-code@2.1.319 plugin validate ./plugins/qwen-plugin-cc
 
   # 3. Tests
 
