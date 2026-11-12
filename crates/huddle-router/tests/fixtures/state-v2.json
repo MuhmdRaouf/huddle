@@ -1381,44 +1381,49 @@
   "state": "ready",
   "rows": [
    {
-    "name": "huddle",
-    "version": "0.0.3",
-    "installed": true,
-    "setup": true,
-    "key": null,
-    "lane": null,
-    "models": 0,
-    "next": null
-   },
-   {
     "name": "zai",
-    "version": "0.0.3",
-    "installed": true,
-    "setup": true,
     "key": true,
     "lane": "glm-*",
     "models": 3,
+    "agents": 2,
+    "set_up": true,
     "next": null
    },
    {
-    "name": "deepseek",
-    "version": "0.0.3",
-    "installed": true,
-    "setup": false,
+    "name": "kimi",
     "key": false,
     "lane": null,
     "models": 0,
+    "agents": 0,
+    "set_up": false,
+    "next": "/huddle:kimi:setup"
+   },
+   {
+    "name": "deepseek",
+    "key": false,
+    "lane": null,
+    "models": 0,
+    "agents": 0,
+    "set_up": false,
     "next": "/huddle:deepseek:setup"
    },
    {
-    "name": "qwen",
-    "version": null,
-    "installed": false,
-    "setup": false,
-    "key": null,
+    "name": "minimax",
+    "key": false,
     "lane": null,
     "models": 0,
-    "next": "/plugin install qwen@muhmdraouf"
+    "agents": 0,
+    "set_up": false,
+    "next": "/huddle:minimax:setup"
+   },
+   {
+    "name": "qwen",
+    "key": false,
+    "lane": null,
+    "models": 0,
+    "agents": 0,
+    "set_up": false,
+    "next": "/huddle:qwen:setup"
    }
   ],
   "checks": [
