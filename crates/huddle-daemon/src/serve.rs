@@ -8,7 +8,7 @@ use std::io;
 use std::net::TcpListener;
 use std::os::fd::FromRawFd;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, OnceLock, RwLock};
 use std::time::{Duration, Instant};
 
 use huddle_catalog::providers::provider_ids;
@@ -31,7 +31,7 @@ use crate::history_upkeep;
 use crate::nochain::clean_proxy_env;
 use crate::rss::{RssDecision, RssWatch, ceiling_of, interval_of, read_rss};
 use crate::singleton::{self, SingletonError};
-use crate::start::{RouterRecord, spawn_serve};
+use crate::start::{RouterRecord, read_record, spawn_serve};
 use huddle_config::files::{DIR_MODE, FILE_MODE, create_dir};
 
 /// How long a clean stop keeps the requests it already accepted.
@@ -71,6 +71,11 @@ pub struct ServeOptions {
     pub port: u16,
     pub version: String,
     pub takeover: bool,
+    /// Who started this run: `setup`, `session-start`, `prompt-submit`, `router start`. A
+    /// takeover passes the reason it asks the running daemon to hand over.
+    pub by: String,
+    /// The signal that stopped the run, set by the caller's signal task before it sends the stop.
+    pub signal: Arc<OnceLock<&'static str>>,
     pub log: Logger,
 }
 
@@ -121,6 +126,8 @@ pub async fn run(
         mut port,
         version,
         takeover,
+        by,
+        signal,
         log,
     } = options;
 
@@ -139,14 +146,21 @@ pub async fn run(
     // background: the previous daemon holds it while it drains.
     let mut listener = None;
     let mut lock_release = None;
+    let mut started_by = by.clone();
     if takeover {
+        let old_pid = read_record(&paths).map(|record| record.pid);
         match tokio::task::spawn_blocking({
             let run_dir = run_dir.clone();
-            move || take_over_socket(&run_dir, std::process::id())
+            let by = by.clone();
+            move || take_over_socket(&run_dir, std::process::id(), &by)
         })
         .await
         {
             Ok(Ok(taken)) => {
+                started_by = "handover".to_owned();
+                if let Some(old) = old_pid {
+                    log(format!("huddle-router: took over from pid={old}"));
+                }
                 listener = Some(taken);
                 lock_release = Some(hold_lock_behind_the_run(run_dir.clone(), log.clone()));
             }
@@ -194,6 +208,10 @@ pub async fn run(
             message: error.to_string(),
         });
     }
+    log(format!(
+        "huddle-router: start v{version} pid={} port={port} by={started_by}",
+        std::process::id()
+    ));
 
     // The daemon must not chain through a router, its own or a neighbour's; the check probes
     // loopback proxies, so it runs off the async task.
@@ -361,6 +379,14 @@ pub async fn run(
     drop(history);
     drop(lock_guard);
     drop(lock_release);
+    let reason = match &outcome {
+        Ok(ServeOutcome::HandedOver) => "handover",
+        _ => signal.get().copied().unwrap_or("stop"),
+    };
+    log(format!(
+        "huddle-router: exit pid={} reason={reason}",
+        std::process::id()
+    ));
     outcome
 }
 
@@ -547,7 +573,13 @@ async fn rss_check(
             let executable = executable.to_path_buf();
             let log = Arc::clone(log);
             tokio::task::spawn_blocking(move || {
-                if let Err(error) = spawn_serve(&env, &paths, port, &executable, &["--takeover"]) {
+                if let Err(error) = spawn_serve(
+                    &env,
+                    &paths,
+                    port,
+                    &executable,
+                    &["--takeover", "--by", "memory ceiling"],
+                ) {
                     log(format!("huddle-router: handover: {error}"));
                 }
             })

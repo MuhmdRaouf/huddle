@@ -191,6 +191,18 @@ Each incident, its cause, and the test that now stops it. A guard named here mus
 - **Rule:** a check that got an answer reports what the answer was; "could not reach" means no
   answer came back.
 
+## 2026-11-12, the Anthropic path failed for seven minutes and the log could not say where
+
+- **What happened:** from 15:34Z to 15:41Z every request from the router to `api.anthropic.com` failed with
+  `ETIMEDOUT` after about 16.3 s, and it recovered by itself within seconds of the user running
+  `huddle setup`. At 15:49Z the router was replaced by a new one with nothing in the log saying why.
+- **Cause:** unknown at the time. The failure lines carried only a code, so DNS, connect, TLS and
+  waiting for the answer looked the same, and no line named the peer, the start reason or the exit reason.
+- **Guard:** crates/huddle-router/tests/k16_failure_logs.rs and crates/huddle-daemon/tests/k16_lifecycle.rs
+  (the phase and peer on a failed line, the failing and recovered lines, the probe, the start, handover
+  and exit lines); crates/huddle/tests/k16_prompt_hook_log.rs (the hook's reason for a restart).
+- **Rule:** a failure line names where it failed, and a router names who started it and why it ended.
+
 ## 2026-11-12, test runs left routers and key page helpers running
 
 - **What happened:** after repeated test runs the machine's load went past 300: test routers and

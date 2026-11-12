@@ -41,6 +41,8 @@ async fn an_idle_daemon_costs_under_half_a_percent_of_one_core() {
         port: free_port(),
         version: "test".into(),
         takeover: false,
+        by: "test".into(),
+        signal: Arc::default(),
         log: Arc::new(|_| {}),
     };
     let task = tokio::spawn(run(options, stop_rx));

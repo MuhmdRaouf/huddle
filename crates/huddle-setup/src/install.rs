@@ -117,7 +117,7 @@ pub fn run(env: &Env, paths: &Paths, exe: &Path) -> Result<InstallReport, Instal
 /// inherits this process's environment.
 fn start_router(exe: &Path) -> Result<(), InstallError> {
     let output = Command::new(exe)
-        .args(["router", "start"])
+        .args(["router", "start", "--by", "setup"])
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .output()

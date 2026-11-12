@@ -103,6 +103,16 @@ Inside Claude Code the plugin's commands run the words for you. The launcher ans
 | `HUDDLE_<ID>_BIN` | One harness's binary, for example `HUDDLE_CURSOR_AGENT_BIN`. Checked before the harness's own variable, `PATH` and the fixed install paths. |
 | `ZCODE_CLI` | zcode's own binary override. |
 
+## Reading router.log
+
+`~/.local/state/huddle/router.log` has three line shapes for an Anthropic failure.
+
+- A failed request: `... anthropic-pass error ETIMEDOUT ms=16333 phase=connect peer=160.79.104.10:443 conn=fresh dns_ms=4`. The phase is the step that failed: `dns` (the name lookup), `connect` (the TCP dial), `tls` (the handshake), `send` (the request going out), `headers` (waiting for the answer), `body` (the answer broke part way). The `*_ms` fields are the finished dial steps. `conn=reused` is a pooled socket.
+- The path is failing (three failures within a minute): `huddle-router: Anthropic path failing (ETIMEDOUT at connect to 160.79.104.10:443): check the network, the firewall or the VPN`. Every 15 s after it, `huddle-router: probe api.anthropic.com dns=ok(3 ms, 160.79.104.10) connect=timeout(5000 ms)` shows whether DNS and a bare connect still work.
+- The path is back: `huddle-router: Anthropic path recovered after 6m 56s; 53 requests failed; now via 160.79.104.12:443 (fresh)`.
+
+Lifecycle lines say why the router changed: `start v0.0.6 pid=91414 port=4835 by=prompt-submit`, `handing over to pid=91414 (asked by prompt-submit)`, `took over from pid=6540`, `exit pid=6540 reason=handover`. Every request to `/huddle-router/*` except the dashboard's own reads is one line with its method, path and status. Header values, bodies and query strings are never logged.
+
 ## Troubleshooting
 
 - **The router will not start.** `huddle router status` says what answers on the port, and `~/.local/state/huddle/router.log` names the failure.

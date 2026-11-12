@@ -161,7 +161,7 @@ fn answer(server: &HandoverServer, stream: UnixStream) {
     if reader.read_line(&mut line).is_err() {
         return;
     }
-    let Some(pid) = parse_takeover(&line) else {
+    let Some((pid, reason)) = parse_takeover(&line) else {
         return;
     };
     // The single winner is decided before any descriptor moves.
@@ -172,6 +172,9 @@ fn answer(server: &HandoverServer, stream: UnixStream) {
     {
         return;
     }
+    (server.log)(format!(
+        "huddle-router: handing over to pid={pid} (asked by {reason})"
+    ));
     let port = server.port;
     let sent = send_fds(
         &stream,
@@ -207,15 +210,20 @@ fn retire(server: &HandoverServer, pid: u32) {
     let _ = server.handed.send(pid);
 }
 
-fn parse_takeover(line: &str) -> Option<u32> {
+/// The taker's pid and the reason it gives, `takeover <pid> <reason>`; no reason reads as
+/// `unknown`.
+fn parse_takeover(line: &str) -> Option<(u32, String)> {
     let trimmed = line.trim();
     let rest = trimmed.strip_prefix("takeover ").unwrap_or(trimmed);
-    rest.parse::<u32>().ok()
+    let (pid, reason) = rest.split_once(' ').unwrap_or((rest, ""));
+    let reason = reason.trim();
+    let reason = if reason.is_empty() { "unknown" } else { reason };
+    Some((pid.parse::<u32>().ok()?, reason.to_owned()))
 }
 
 /// The taker's side: dial, ask, get one descriptor, acknowledge. Blocking: run off the async
 /// runtime.
-pub fn takeover(run_dir: &Path, pid: u32) -> Result<TcpListener, HandoverError> {
+pub fn takeover(run_dir: &Path, pid: u32, reason: &str) -> Result<TcpListener, HandoverError> {
     let path = run_dir.join(HANDOVER_SOCKET);
     let mut stream = UnixStream::connect(&path).map_err(|source| HandoverError::NoDaemon {
         path: path.clone(),
@@ -223,7 +231,7 @@ pub fn takeover(run_dir: &Path, pid: u32) -> Result<TcpListener, HandoverError> 
     })?;
     let _ = stream.set_read_timeout(Some(ANSWER_WAIT));
     let _ = stream.set_write_timeout(Some(ANSWER_WAIT));
-    let question = format!("takeover {pid}\n");
+    let question = format!("takeover {pid} {reason}\n");
     stream
         .write_all(question.as_bytes())
         .map_err(|source| HandoverError::Socket {
@@ -473,7 +481,7 @@ mod tests {
         let (handed, mut seen) = mpsc::unbounded_channel();
         let handover = serve_handover(&run_dir, port, &tcp, handed, no_log());
         assert_eq!(fs_mode(&run_dir.join(HANDOVER_SOCKET)), 0o600);
-        let taken = takeover(&run_dir, 777).expect("takeover");
+        let taken = takeover(&run_dir, 777, "test").expect("takeover");
         assert_eq!(taken.local_addr().expect("addr").port(), port);
         assert_eq!(seen.try_recv().expect("the taker's pid is named"), 777);
         assert!(
@@ -510,7 +518,7 @@ mod tests {
         let (tcp, port) = listener();
         let (handed, _seen) = mpsc::unbounded_channel();
         let handover = serve_handover(&run_dir, port, &tcp, handed, no_log());
-        assert!(takeover(&run_dir, 1).is_ok());
+        assert!(takeover(&run_dir, 1, "test").is_ok());
         handover.stop();
     }
 
@@ -523,11 +531,11 @@ mod tests {
         let handover = serve_handover(&run_dir, port, &tcp, handed, no_log());
         let a = {
             let dir = run_dir.clone();
-            thread::spawn(move || takeover(&dir, 1))
+            thread::spawn(move || takeover(&dir, 1, "test"))
         };
         let b = {
             let dir = run_dir.clone();
-            thread::spawn(move || takeover(&dir, 2))
+            thread::spawn(move || takeover(&dir, 2, "test"))
         };
         let results = [a.join().expect("join"), b.join().expect("join")];
         let winners = results.iter().filter(|r| r.is_ok()).count();
@@ -561,7 +569,7 @@ mod tests {
             "the daemon keeps its socket"
         );
         assert!(
-            takeover(&run_dir, 43).is_ok(),
+            takeover(&run_dir, 43, "test").is_ok(),
             "a later taker still gets the socket"
         );
         handover.stop();
@@ -580,7 +588,7 @@ mod tests {
         let _ = stream.read_to_string(&mut text);
         assert!(text.is_empty());
         assert!(
-            takeover(&run_dir, 1).is_ok(),
+            takeover(&run_dir, 1, "test").is_ok(),
             "a proper question afterwards still works"
         );
         handover.stop();
@@ -590,7 +598,7 @@ mod tests {
     fn a_missing_socket_is_a_named_error() {
         let home = TempHome::new();
         let run_dir = home.root().join("run");
-        let error = takeover(&run_dir, 1).expect_err("no daemon");
+        let error = takeover(&run_dir, 1, "test").expect_err("no daemon");
         assert!(matches!(error, HandoverError::NoDaemon { .. }));
         assert!(
             error
@@ -622,7 +630,7 @@ mod tests {
                 let fds: Vec<RawFd> = vec![raw; send];
                 send_fds(&stream, b"ok 1\n", &fds).expect("send");
             });
-            let error = takeover(&run_dir, 1).expect_err("unusable");
+            let error = takeover(&run_dir, 1, "test").expect_err("unusable");
             assert!(error.to_string().contains(want), "{error}");
         }
     }
@@ -643,7 +651,7 @@ mod tests {
             let raw = tcp.as_raw_fd();
             send_fds(&stream, b"ok nope\n", &[raw]).expect("send");
         });
-        let error = takeover(&run_dir, 1).expect_err("unusable");
+        let error = takeover(&run_dir, 1, "test").expect_err("unusable");
         assert!(
             error.to_string().contains("answered \"ok nope\""),
             "{error}"
@@ -657,7 +665,7 @@ mod tests {
         let (tcp, port) = listener();
         let (handed, _seen) = mpsc::unbounded_channel();
         let old = serve_handover(&run_dir, port, &tcp, handed, no_log());
-        let taken = takeover(&run_dir, 777).expect("takeover");
+        let taken = takeover(&run_dir, 777, "test").expect("takeover");
         // The taker opens its own socket, then the old daemon's late stop runs.
         let (handed_two, _seen_two) = mpsc::unbounded_channel();
         let new_handover = serve_handover(&run_dir, port, &taken, handed_two, no_log());

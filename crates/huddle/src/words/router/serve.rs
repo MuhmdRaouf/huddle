@@ -1,6 +1,7 @@
 //! The `huddle router serve` word: the daemon in this foreground process.
 
 use std::io::Write;
+use std::sync::{Arc, OnceLock};
 
 use huddle_config::env::Env;
 use huddle_config::paths::Paths;
@@ -29,13 +30,16 @@ pub fn run(args: &[String], env: &Env) -> i32 {
         crashlog::ROUTER_LOG_LIMIT,
     );
     crashlog::install_crash_hook(&log);
+    let signal: Arc<OnceLock<&'static str>> = Arc::default();
     let options = ServeOptions {
         env: env.clone(),
         paths,
         port,
         version: VERSION_FILE.trim().to_string(),
         takeover,
-        log,
+        by: super::reason_of(args),
+        signal: Arc::clone(&signal),
+        log: Arc::clone(&log),
     };
     let runtime = match tokio::runtime::Runtime::new() {
         Ok(runtime) => runtime,
@@ -46,12 +50,13 @@ pub fn run(args: &[String], env: &Env) -> i32 {
     };
     let code = runtime.block_on(async move {
         let (stop_sender, stop_receiver) = watch::channel(false);
-        let signals = tokio::spawn(stop_on_signal(stop_sender));
+        let signals = tokio::spawn(stop_on_signal(stop_sender, signal));
         let outcome = huddle_daemon::serve::run(options, stop_receiver).await;
         signals.abort();
         match outcome {
             Ok(ServeOutcome::Stopped | ServeOutcome::HandedOver) => 0,
             Ok(ServeOutcome::AlreadyServed { pid }) => {
+                log(exit_line(&format!("already served by pid {pid}")));
                 let _ = writeln!(
                     std::io::stdout(),
                     "huddle-router: already served by pid {pid}"
@@ -59,6 +64,7 @@ pub fn run(args: &[String], env: &Env) -> i32 {
                 0
             }
             Err(error) => {
+                log(exit_line(&format!("fatal: {error}")));
                 let _ = writeln!(std::io::stderr(), "{error}");
                 1
             }
@@ -71,7 +77,7 @@ pub fn run(args: &[String], env: &Env) -> i32 {
 
 /// Sets the stop flag on SIGINT or SIGTERM. A failed registration is logged and the daemon
 /// stays stoppable only from outside.
-async fn stop_on_signal(stop: watch::Sender<bool>) {
+async fn stop_on_signal(stop: watch::Sender<bool>, stopped_by: Arc<OnceLock<&'static str>>) {
     let mut sigint = match signal(SignalKind::interrupt()) {
         Ok(sig) => sig,
         Err(error) => {
@@ -86,9 +92,18 @@ async fn stop_on_signal(stop: watch::Sender<bool>) {
             return;
         }
     };
-    tokio::select! {
-        _ = sigint.recv() => {}
-        _ = sigterm.recv() => {}
-    }
+    let name = tokio::select! {
+        _ = sigint.recv() => "SIGINT",
+        _ = sigterm.recv() => "SIGTERM",
+    };
+    let _ = stopped_by.set(name);
     let _ = stop.send(true);
+}
+
+/// The exit line of a run that ended before it served.
+fn exit_line(reason: &str) -> String {
+    format!(
+        "huddle-router: exit pid={} reason={reason}",
+        std::process::id()
+    )
 }

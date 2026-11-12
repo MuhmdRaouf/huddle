@@ -31,6 +31,7 @@ async fn rig(upstream: FakeUpstream, idle: Duration) -> Rig {
         target: target.parse().expect("target"),
         body_limit: BODY_LIMIT,
         note: Arc::new(move |l: &str| sink.lock().unwrap().push(l.to_string())),
+        on_outcome: None,
     });
     let listener = bind(0).await.expect("bind");
     let port = listener.local_addr().expect("addr").port();

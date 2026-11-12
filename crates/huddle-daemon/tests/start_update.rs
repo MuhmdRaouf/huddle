@@ -122,7 +122,7 @@ fn a_record_naming_another_binary_is_taken_over() {
     assert_eq!(line, "huddle-router: updated (pid 1234 \u{2192} 5678)");
     assert_eq!(
         fs::read_to_string(args).expect("args").trim(),
-        "router serve --takeover"
+        "router serve --takeover --by router start"
     );
 }
 

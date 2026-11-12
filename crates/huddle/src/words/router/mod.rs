@@ -37,3 +37,25 @@ pub(super) fn router_port(env: &Env) -> Option<u16> {
         }
     }
 }
+
+/// Who asked for this start, from `--by <reason>`: letters, digits, spaces, `-` and `_`, at most
+/// 40 characters, so a reason cannot forge a log line. Without one, `router start`.
+pub(super) fn reason_of(args: &[String]) -> String {
+    let Some(raw) = args
+        .iter()
+        .position(|argument| argument == "--by")
+        .and_then(|at| args.get(at + 1))
+    else {
+        return "router start".to_owned();
+    };
+    let clean: String = raw
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric() || matches!(c, ' ' | '-' | '_'))
+        .take(40)
+        .collect();
+    if clean.is_empty() {
+        "router start".to_owned()
+    } else {
+        clean
+    }
+}

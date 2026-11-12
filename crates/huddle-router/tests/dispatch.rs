@@ -184,8 +184,8 @@ fn a_streak_raises_once_and_recovers_once() {
     assert!(!streak.fail(1000));
     assert!(streak.fail(2000), "the third failure within a minute");
     assert!(!streak.fail(3000), "quiet after a raise");
-    assert!(streak.ok(4000), "the first success after a raise");
-    assert!(!streak.ok(5000));
+    assert!(streak.ok(4000).is_some(), "the first success after a raise");
+    assert!(streak.ok(5000).is_none());
 }
 
 #[test]

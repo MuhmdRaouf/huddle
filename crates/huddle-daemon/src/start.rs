@@ -303,7 +303,11 @@ fn daemon_env(env: &Env, port: u16) -> Vec<(String, String)> {
 /// the record until it names a pid that differs from the old one, up to [`UPDATE_WAIT`]. The
 /// same binary, an unknown one, or a start that may not replace the daemon is the quiet
 /// address line as always.
-fn updated_or_up(opts: &StartOptions<'_>, answer: &HealthAnswer) -> Result<String, StartError> {
+fn updated_or_up(
+    opts: &StartOptions<'_>,
+    answer: &HealthAnswer,
+    by: &str,
+) -> Result<String, StartError> {
     let Some(record) = read_record(opts.paths) else {
         return Ok(up_line(opts.port, answer));
     };
@@ -319,7 +323,7 @@ fn updated_or_up(opts: &StartOptions<'_>, answer: &HealthAnswer) -> Result<Strin
         opts.paths,
         opts.port,
         &opts.executable,
-        &["--takeover"],
+        &["--takeover", "--by", by],
     )?;
     let deadline = Instant::now() + UPDATE_WAIT;
     loop {
@@ -348,13 +352,25 @@ fn updated_or_up(opts: &StartOptions<'_>, answer: &HealthAnswer) -> Result<Strin
 /// detached and waited for up to the budget. The line names the address and the providers the
 /// daemon serves; with no provider enabled the daemon still starts.
 pub fn start(opts: &StartOptions<'_>) -> Result<String, StartError> {
+    start_by(opts, "router start")
+}
+
+/// [`start`], naming who asks: the daemon it spawns logs the reason on its start line, and a
+/// daemon asked to hand over logs it on its handover line.
+pub fn start_by(opts: &StartOptions<'_>, by: &str) -> Result<String, StartError> {
     if let Some(answer) = health(opts.port, HEALTH_WAIT) {
-        return updated_or_up(opts, &answer);
+        return updated_or_up(opts, &answer, by);
     }
     // An empty list still spawns: the router serves Anthropic with no provider enabled.
     let _providers = read_enabled(&opts.paths.config_dir, &provider_ids())
         .map_err(|error| StartError::ProvidersFile(error.to_string()))?;
-    spawn_serve(opts.env, opts.paths, opts.port, &opts.executable, &[])?;
+    spawn_serve(
+        opts.env,
+        opts.paths,
+        opts.port,
+        &opts.executable,
+        &["--by", by],
+    )?;
     let deadline = Instant::now() + opts.budget;
     loop {
         if let Some(answer) = health(opts.port, HEALTH_WAIT) {

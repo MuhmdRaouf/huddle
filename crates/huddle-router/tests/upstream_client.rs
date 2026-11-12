@@ -3,7 +3,7 @@ use std::time::Duration;
 use http_body_util::BodyExt;
 use huddle_config::env::Env;
 use huddle_router::upstream::{
-    Failure, FailureCode, IDLE_TIMEOUT, RequestBody, StreamedBody, UpstreamClient, UpstreamConfig,
+    FailureCode, IDLE_TIMEOUT, RequestBody, StreamedBody, UpstreamClient, UpstreamConfig,
     UpstreamRequest, forward_headers, response_headers, upstream_url,
 };
 use huddle_testkit::fake_upstream::{FakeUpstream, Step};
@@ -182,13 +182,8 @@ async fn an_unknown_certificate_is_ecert() {
         .await
         .err()
         .expect("refused");
-    assert_eq!(
-        err,
-        Failure {
-            code: FailureCode::ECert,
-            client_closed: false
-        }
-    );
+    assert_eq!(err.code, FailureCode::ECert);
+    assert!(!err.client_closed);
 }
 
 #[tokio::test]

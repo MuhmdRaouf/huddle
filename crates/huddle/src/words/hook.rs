@@ -40,9 +40,38 @@ fn prompt_submit(env: &Env, paths: &Paths, exe: &Path) {
         return;
     };
     let addr = SocketAddr::from(([127, 0, 0, 1], port));
-    if TcpStream::connect_timeout(&addr, PROMPT_PROBE_TIMEOUT).is_err() {
-        start_router_detached(exe);
+    if let Err(error) = TcpStream::connect_timeout(&addr, PROMPT_PROBE_TIMEOUT) {
+        log_restart(paths, &probe_reason(paths, &error));
+        start_router_detached(exe, PROMPT_SUBMIT);
     }
+}
+
+/// What the hook's probe saw, in the words router.log uses.
+fn probe_reason(paths: &Paths, error: &std::io::Error) -> String {
+    match error.kind() {
+        std::io::ErrorKind::TimedOut | std::io::ErrorKind::WouldBlock => format!(
+            "health timeout after {} ms",
+            PROMPT_PROBE_TIMEOUT.as_millis()
+        ),
+        std::io::ErrorKind::ConnectionRefused
+            if huddle_daemon::start::read_record(paths).is_none() =>
+        {
+            "no router record".to_owned()
+        }
+        std::io::ErrorKind::ConnectionRefused => "connection refused".to_owned(),
+        kind => format!("{kind}"),
+    }
+}
+
+/// One router.log line saying why the hook starts the router.
+fn log_restart(paths: &Paths, reason: &str) {
+    let log = huddle_router::crashlog::rotating_log(
+        &paths.state_dir.join("router.log"),
+        huddle_router::crashlog::ROUTER_LOG_LIMIT,
+    );
+    log(format!(
+        "huddle-router: prompt-submit probe: {reason}; starting the router"
+    ));
 }
 
 fn session_start(env: &Env, paths: &Paths, exe: &Path) {
@@ -54,7 +83,7 @@ fn session_start(env: &Env, paths: &Paths, exe: &Path) {
     if let Ok(port) = huddle_config::paths::router_port(env) {
         let addr = SocketAddr::from(([127, 0, 0, 1], port));
         if TcpStream::connect_timeout(&addr, Duration::from_millis(200)).is_err() {
-            start_router_detached(exe);
+            start_router_detached(exe, SESSION_START);
         }
     }
     let lines = session_providers(env, paths, exe);
@@ -132,9 +161,9 @@ fn key_present(env: &Env, paths: &Paths, provider: &huddle_catalog::providers::P
     )
 }
 
-fn start_router_detached(exe: &Path) {
+fn start_router_detached(exe: &Path, by: &str) {
     let mut cmd = Command::new(exe);
-    cmd.args(["router", "start"])
+    cmd.args(["router", "start", "--by", by])
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())

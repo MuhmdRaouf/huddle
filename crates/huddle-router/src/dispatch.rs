@@ -5,19 +5,22 @@
 
 use crate::answer_facts::{self, AnswerFacts};
 use crate::anthropic::{
-    AnswerOutcome, AnswerTap, AnthropicPath, OutcomeHook, PassCtx, StreamedRoute, WholeRoute,
-    is_model_request, pass_through_handler,
+    AnswerOutcome, AnswerTap, AnthropicPath, OutcomeHook, PassCtx, StreamedRoute, UpstreamFailure,
+    WholeRoute, is_model_request, pass_through_handler,
 };
 use crate::body::model_of;
 use crate::connect::{ConnectCtx, Decrypt, TunnelTracker, connect_handler};
-use crate::dashboard::{Dashboard, DashboardInputs};
+use crate::dashboard::{Dashboard, DashboardInputs, HISTORY_PATH, LIVE_PATH, STATE_PATH};
 use crate::keycache::sources_for;
 use crate::lane::{Lane, LaneError, Logger};
 use crate::live::{Finish, HistorySink, LiveState, RequestStart};
+pub use crate::probe::ProbeTiming;
+use crate::probe::{self, ProbeHandle, ProbeTarget};
 use crate::server::{
     BODY_LIMIT, EntryCtx, Handler, ServerLimits, cut_response, entry_handler, receive,
 };
 use crate::sse::Usage;
+use crate::trace::Trace;
 use crate::upstream::{FailureCode, IDLE_TIMEOUT, UpstreamClient, UpstreamConfig};
 use huddle_catalog::providers::{provider_by_id, provider_ids};
 use huddle_catalog::routing::{ResolvedIds, Route, decide_resolved};
@@ -52,12 +55,26 @@ pub struct FailStreak {
     first_at: u64,
     raised: bool,
     raised_at: u64,
+    /// Failures since the last success, and when the first of them came.
+    run_failures: u32,
+    run_since: u64,
+}
+
+/// What a recovery reports: how long the path was down and how many requests failed.
+#[derive(Debug, PartialEq, Eq)]
+pub struct Recovery {
+    pub down_ms: u64,
+    pub failed: u32,
 }
 
 impl FailStreak {
     /// Counts one failure at `now`. True when this failure is the third within a minute of its
     /// run and the last raise is five minutes old or more.
     pub fn fail(&mut self, now: u64) -> bool {
+        if self.run_failures == 0 {
+            self.run_since = now;
+        }
+        self.run_failures += 1;
         if now.saturating_sub(self.first_at) > FAIL_WINDOW_MS {
             self.count = 1;
             self.first_at = now;
@@ -75,14 +92,48 @@ impl FailStreak {
         true
     }
 
-    /// Counts one success and resets the run. True only for the first success after a raise.
-    pub fn ok(&mut self, _now: u64) -> bool {
+    /// Counts one success and resets the run. Some only for the first success after a raise.
+    pub fn ok(&mut self, now: u64) -> Option<Recovery> {
         self.count = 0;
+        let recovery = Recovery {
+            down_ms: now.saturating_sub(self.run_since),
+            failed: self.run_failures,
+        };
+        self.run_failures = 0;
         if !self.raised {
-            return false;
+            return None;
         }
         self.raised = false;
-        true
+        Some(recovery)
+    }
+}
+
+/// `6m 56s`, `1h 02m 03s`, `12s`.
+fn human_duration(ms: u64) -> String {
+    let secs = ms / 1000;
+    let (hours, minutes, seconds) = (secs / 3600, secs % 3600 / 60, secs % 60);
+    if hours > 0 {
+        format!("{hours}h {minutes:02}m {seconds:02}s")
+    } else if minutes > 0 {
+        format!("{minutes}m {seconds:02}s")
+    } else {
+        format!("{seconds}s")
+    }
+}
+
+/// The router's timings a test may shorten: the probe's rounds and the upstream silence budget.
+#[derive(Debug, Clone, Copy)]
+pub struct Tuning {
+    pub probe: ProbeTiming,
+    pub idle: std::time::Duration,
+}
+
+impl Default for Tuning {
+    fn default() -> Tuning {
+        Tuning {
+            probe: ProbeTiming::default(),
+            idle: IDLE_TIMEOUT,
+        }
     }
 }
 
@@ -132,18 +183,27 @@ pub struct Router {
 impl Router {
     /// Lanes for the given enabled providers; the rest of the wiring is fixed.
     pub fn new(config: RouterConfig, enabled: &[String]) -> Arc<Router> {
+        Router::with_tuning(config, enabled, Tuning::default())
+    }
+
+    /// Like `new`, with the probe and silence timings set by the caller.
+    pub fn with_tuning(config: RouterConfig, enabled: &[String], tuning: Tuning) -> Arc<Router> {
         let log = config.log;
         let roots = os_roots(&*log);
         let client = Arc::new(UpstreamClient::new(UpstreamConfig {
             env: config.env.clone(),
             roots,
-            idle: IDLE_TIMEOUT,
+            idle: tuning.idle,
         }));
         let tunnels = TunnelTracker::new();
         let live = Arc::new(match config.history.clone() {
             Some(sink) => LiveState::with_sink(now_ms(), sink),
             None => LiveState::new(now_ms()),
         });
+
+        // One line per raise and one per recovery: the third failure in a minute names the
+        // code, the phase and its fix hint, the first success after a raise names the recovery.
+        let on_outcome = failure_hook(&log, &config.anthropic_url, tuning.probe);
 
         // Inside a decrypted conversation every non-model request rides to the Anthropic
         // origin unchanged.
@@ -152,34 +212,8 @@ impl Router {
             target: config.anthropic_url.clone(),
             body_limit: BODY_LIMIT,
             note: pass_note(Arc::clone(&log)),
+            on_outcome: Some(Arc::clone(&on_outcome)),
         }));
-
-        // One line per raise and one per recovery: the third failure in a minute names the
-        // code and its fix hint, the first success after a raise names the recovery.
-        let on_outcome: OutcomeHook = {
-            let streak = Mutex::new(FailStreak::default());
-            let log = Arc::clone(&log);
-            Arc::new(move |outcome| {
-                let now = now_ms();
-                match outcome {
-                    AnswerOutcome::Failed { code } | AnswerOutcome::Cut { code, .. } => {
-                        if lock(&streak).fail(now) {
-                            log(format!(
-                                "huddle-router: Anthropic path failing ({}): {}",
-                                code.as_str(),
-                                fail_hint(code)
-                            ));
-                        }
-                    }
-                    AnswerOutcome::Finished { status, .. }
-                        if status < 500 && lock(&streak).ok(now) =>
-                    {
-                        log("huddle-router: Anthropic path recovered".to_string());
-                    }
-                    _ => {}
-                }
-            })
-        };
 
         let lanes = Arc::new(RwLock::new(Arc::new(build_lanes(
             &config.env,
@@ -256,8 +290,15 @@ impl Router {
                             Route::Anthropic => {
                                 events.track("anthropic", &model);
                                 let answer = router.anthropic.forward_whole(parts, body).await;
+                                let why = answer
+                                    .extensions()
+                                    .get::<UpstreamFailure>()
+                                    .map(|f| {
+                                        format!(" error {} {}", f.code.as_str(), f.trace.line())
+                                    })
+                                    .unwrap_or_default();
                                 (router.log)(format!(
-                                    "{method} {path} model={} -> anthropic {}",
+                                    "{method} {path} model={} -> anthropic {}{why}",
                                     model_or_dash(&model),
                                     answer.status().as_u16(),
                                 ));
@@ -342,14 +383,15 @@ impl Router {
             inputs,
             Arc::clone(&providers),
         ));
-        entry_handler(Arc::new(EntryCtx {
+        let entry = entry_handler(Arc::new(EntryCtx {
             port: Some(self.port),
             connect,
             forward,
             providers,
             dashboard: Some(dashboard),
             dashboard_hosts: Arc::clone(&self.dashboard.hosts),
-        }))
+        }));
+        logged_admin(entry, Arc::clone(&self.log))
     }
 
     /// The decrypted conversation's handler. A model request carries its context from the
@@ -688,6 +730,27 @@ fn lane_for(router: &Router, model: &str) -> Option<Arc<Lane>> {
     }
 }
 
+/// Logs every request to `/huddle-router/*` as `<method> <path> -> <status>`, except the
+/// dashboard's own reads of the state, the live feed and the history. Headers, bodies and
+/// queries never reach the line.
+fn logged_admin(inner: Handler, log: Logger) -> Handler {
+    Arc::new(move |req| {
+        let inner = Arc::clone(&inner);
+        let log = Arc::clone(&log);
+        let path = req.uri().path().to_owned();
+        let method = req.method().as_str().to_owned();
+        let logged = path.starts_with("/huddle-router/")
+            && !matches!(path.as_str(), STATE_PATH | LIVE_PATH | HISTORY_PATH);
+        Box::pin(async move {
+            let answer = inner(req).await;
+            if logged {
+                log(format!("{method} {path} -> {}", answer.status().as_u16()));
+            }
+            answer
+        })
+    })
+}
+
 /// The lane serving this provider id, read fresh.
 fn lane_by_id(lanes: &RwLock<Arc<Vec<Arc<Lane>>>>, id: &'static str) -> Option<Arc<Lane>> {
     lanes
@@ -703,16 +766,106 @@ fn pass_note(log: Logger) -> Arc<dyn Fn(&str) + Send + Sync> {
     Arc::new(move |line: &str| log(line.to_string()))
 }
 
-/// The fix hint a failing Anthropic path names, by the failure's code.
-fn fail_hint(code: FailureCode) -> &'static str {
+/// The fix hint a failing Anthropic path names: by the code where it says more than the phase.
+fn fail_hint(code: FailureCode, trace: &Trace) -> &'static str {
     match code {
         FailureCode::ECert => {
             "a certificate check failed; huddle-router never routes through another router, so restart sessions started before an update"
         }
         FailureCode::EConnRefused => "the upstream refused the connection; check HTTPS_PROXY",
-        FailureCode::ETimedOut => "the upstream timed out; check the network",
-        _ => "see the router log",
+        _ => trace.phase.hint(),
     }
+}
+
+/// What the failure hook keeps between outcomes: the streak and the probe that runs while the
+/// path fails.
+struct PathWatch {
+    streak: FailStreak,
+    probe: Option<ProbeHandle>,
+}
+
+/// The hook every Anthropic outcome passes through. A raise starts the probe and logs the
+/// failing line; a recovery stops the probe and logs how long and how many.
+fn failure_hook(log: &Logger, target: &hyper::Uri, timing: ProbeTiming) -> OutcomeHook {
+    let probe_target = probe_target_of(target);
+    let watch = Mutex::new(PathWatch {
+        streak: FailStreak::default(),
+        probe: None,
+    });
+    let log = Arc::clone(log);
+    Arc::new(move |outcome| {
+        let now = now_ms();
+        let line = {
+            let mut watch = lock(&watch);
+            match outcome {
+                AnswerOutcome::Failed { code, trace } => {
+                    let line = raise(&mut watch, now, code, trace);
+                    start_probe_on_raise(&mut watch, &line, &probe_target, timing, &log);
+                    line
+                }
+                AnswerOutcome::Cut { code, .. } => {
+                    let line = raise(&mut watch, now, code, Trace::body());
+                    start_probe_on_raise(&mut watch, &line, &probe_target, timing, &log);
+                    line
+                }
+                AnswerOutcome::Finished { status, trace, .. } if status < 500 => {
+                    watch.streak.ok(now).map(|recovery| {
+                        watch.probe = None;
+                        format!(
+                            "huddle-router: Anthropic path recovered after {}; {} requests failed; now via {}",
+                            human_duration(recovery.down_ms),
+                            recovery.failed,
+                            trace.route()
+                        )
+                    })
+                }
+                _ => None,
+            }
+        };
+        if let Some(line) = line {
+            log(line);
+        }
+    })
+}
+
+/// A raise starts the one probe task that runs until the path recovers.
+fn start_probe_on_raise(
+    watch: &mut PathWatch,
+    raised: &Option<String>,
+    target: &Option<ProbeTarget>,
+    timing: ProbeTiming,
+    log: &Logger,
+) {
+    if raised.is_some() {
+        watch.probe = target
+            .clone()
+            .and_then(|target| probe::start(target, timing, Arc::clone(log)));
+    }
+}
+
+/// Counts one failure; the failing line when it raises.
+fn raise(watch: &mut PathWatch, now: u64, code: FailureCode, trace: Trace) -> Option<String> {
+    watch.streak.fail(now).then(|| {
+        format!(
+            "huddle-router: Anthropic path failing ({} {}): {}",
+            code.as_str(),
+            trace.place(),
+            fail_hint(code, &trace)
+        )
+    })
+}
+
+/// The host and port the probe looks at: the Anthropic origin's own.
+fn probe_target_of(target: &hyper::Uri) -> Option<ProbeTarget> {
+    let host = target.host()?.to_owned();
+    let port = target
+        .port_u16()
+        .unwrap_or(if target.scheme_str() == Some("http") {
+            80
+        } else {
+            443
+        });
+    Some(ProbeTarget { host, port })
 }
 
 /// The model on a log line, or `-` when the body named none.

@@ -166,13 +166,14 @@ async fn the_answer_streams_through_chunk_by_chunk() {
     assert!(!first.contains("data: b"));
     let rest = read_to_end(s).await;
     assert!(rest.contains("data: b"), "{rest}");
-    assert_eq!(
+    assert!(matches!(
         outcome(&rig).await,
         AnswerOutcome::Finished {
             status: 200,
-            bytes: 18
+            bytes: 18,
+            ..
         }
-    );
+    ));
 }
 
 #[tokio::test]
@@ -321,12 +322,13 @@ async fn an_upstream_that_never_answers_is_504() {
         resp.contains("huddle-router router: anthropic unreachable (ETIMEDOUT)"),
         "{resp}"
     );
-    assert_eq!(
+    assert!(matches!(
         outcome(&rig).await,
         AnswerOutcome::Failed {
-            code: FailureCode::ETimedOut
+            code: FailureCode::ETimedOut,
+            ..
         }
-    );
+    ));
 }
 
 #[tokio::test]

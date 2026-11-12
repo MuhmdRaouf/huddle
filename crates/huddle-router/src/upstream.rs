@@ -11,12 +11,13 @@ use std::collections::HashMap;
 use std::error::Error as StdError;
 use std::fmt;
 use std::io::{self, ErrorKind};
-use std::net::{IpAddr, Ipv6Addr};
+use std::net::{IpAddr, Ipv6Addr, SocketAddr};
 use std::pin::Pin;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::task::{Context, Poll};
 use std::time::{Duration, Instant};
 
+use crate::trace::{Conn, Phase, Trace};
 use huddle_config::env::Env;
 use huddle_config::paths::DEFAULT_ROUTER_PORT;
 use hyper::body::{Body, Bytes, Frame, Incoming, SizeHint};
@@ -27,7 +28,7 @@ use hyper_util::rt::TokioIo;
 use rustls::pki_types::ServerName;
 use rustls::{ClientConfig, RootCertStore};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
-use tokio::net::TcpStream;
+use tokio::net::{TcpStream, lookup_host};
 use tokio::sync::mpsc;
 use tokio::sync::{Notify, OwnedSemaphorePermit, Semaphore};
 use tokio_rustls::TlsConnector;
@@ -77,6 +78,8 @@ impl FailureCode {
 pub struct Failure {
     pub code: FailureCode,
     pub client_closed: bool,
+    /// Where the last attempt ended.
+    pub trace: Trace,
 }
 
 /// One failed attempt's verdict: the code a final report carries, whether the attempt ran on a
@@ -84,6 +87,7 @@ pub struct Failure {
 /// socket went away mid-request.
 struct AttemptFailure {
     code: FailureCode,
+    trace: Trace,
     reused: bool,
     handed_over: bool,
     closed_early: bool,
@@ -94,6 +98,7 @@ impl From<AttemptFailure> for Failure {
         Failure {
             code: f.code,
             client_closed: false,
+            trace: f.trace,
         }
     }
 }
@@ -313,6 +318,8 @@ pub struct UpstreamAnswer {
     pub conn: ConnGuard,
     /// The tunnel a `101 Switching Protocols` answer hands over; `None` for every other status.
     pub upgrade: Option<hyper::upgrade::OnUpgrade>,
+    /// The peer and connection kind this answer rode.
+    pub trace: Trace,
 }
 
 /// Set once the request's last byte was handed to the transport.
@@ -404,10 +411,56 @@ impl UpstreamIo for TcpStream {}
 
 impl UpstreamIo for TlsStream<TcpStream> {}
 
-struct IdleConn {
+/// How a socket was dialled: the peer and the time each dial phase took.
+#[derive(Debug, Clone, Copy, Default)]
+struct Dial {
+    peer: Option<SocketAddr>,
+    dns_ms: Option<u64>,
+    connect_ms: Option<u64>,
+    tls_ms: Option<u64>,
+}
+
+impl Dial {
+    /// The trace of an attempt on this socket that stands in `phase`; a pooled socket reports
+    /// its peer and no dial times.
+    fn trace(&self, reused: bool, phase: Phase) -> Trace {
+        if reused {
+            return Trace {
+                phase,
+                peer: self.peer,
+                conn: Conn::Reused,
+                dns_ms: None,
+                connect_ms: None,
+                tls_ms: None,
+            };
+        }
+        Trace {
+            phase,
+            peer: self.peer,
+            conn: Conn::Fresh,
+            dns_ms: self.dns_ms,
+            connect_ms: self.connect_ms,
+            tls_ms: self.tls_ms,
+        }
+    }
+}
+
+/// A connected socket's sender, its pool permit and how it was dialled.
+struct Live {
     sender: SendRequest<AttemptBody>,
     permit: OwnedSemaphorePermit,
+    dial: Dial,
+}
+
+struct IdleConn {
+    live: Live,
     returned_at: Instant,
+}
+
+/// A dial that failed: the error and where the attempt stood.
+struct DialError {
+    error: io::Error,
+    trace: Trace,
 }
 
 struct HostPool {
@@ -845,6 +898,7 @@ impl UpstreamClient {
             return Err(Failure {
                 code: FailureCode::ECanceled,
                 client_closed: true,
+                trace: first.trace,
             });
         }
         if retryable(&first) {
@@ -866,12 +920,10 @@ impl UpstreamClient {
             return Err(dial_failure(FailureCode::EUpstream));
         };
         if !fresh && let Some(conn) = self.checkout(&key) {
-            return self
-                .drive(conn.sender, conn.permit, true, true, &key, req)
-                .await;
+            return self.drive(conn.live, true, true, &key, req).await;
         }
-        let (sender, permit) = self.fresh(&key, &req.url, proxy.as_ref()).await?;
-        self.drive(sender, permit, false, !fresh, &key, req).await
+        let live = self.fresh(&key, &req.url, proxy.as_ref()).await?;
+        self.drive(live, false, !fresh, &key, req).await
     }
 
     /// Pops the most recently returned idle connection that is within its idle time and ready to
@@ -881,7 +933,7 @@ impl UpstreamClient {
         let mut pools = lock_pools(&self.pool);
         let host = pools.get_mut(key)?;
         while let Some(conn) = host.idle.pop() {
-            if conn.returned_at.elapsed() <= IDLE_CONN_TTL && conn.sender.is_ready() {
+            if conn.returned_at.elapsed() <= IDLE_CONN_TTL && conn.live.sender.is_ready() {
                 return Some(conn);
             }
         }
@@ -905,8 +957,9 @@ impl UpstreamClient {
         let Some(host) = pools.get_mut(&key) else {
             return 0;
         };
-        host.idle
-            .retain(|conn| conn.returned_at.elapsed() <= IDLE_CONN_TTL && conn.sender.is_ready());
+        host.idle.retain(|conn| {
+            conn.returned_at.elapsed() <= IDLE_CONN_TTL && conn.live.sender.is_ready()
+        });
         host.idle.len()
     }
 
@@ -916,7 +969,7 @@ impl UpstreamClient {
         key: &str,
         url: &Uri,
         proxy: Option<&ProxyTarget>,
-    ) -> Result<(SendRequest<AttemptBody>, OwnedSemaphorePermit), AttemptFailure> {
+    ) -> Result<Live, AttemptFailure> {
         let permits = {
             let mut pools = lock_pools(&self.pool);
             pools
@@ -932,48 +985,120 @@ impl UpstreamClient {
         let Some((host, port, is_tls)) = target_parts(url) else {
             return Err(dial_failure(FailureCode::EUpstream));
         };
-        let io = self
+        let (io, dial) = self
             .connect(proxy, host, port, is_tls)
             .await
-            .map_err(|err| dial_failure(classify_io(&err)))?;
+            .map_err(|failed| AttemptFailure {
+                code: classify_io(&failed.error),
+                trace: failed.trace,
+                ..dial_failure(FailureCode::EUpstream)
+            })?;
         let (sender, conn) = handshake(TokioIo::new(io))
             .await
-            .map_err(|err| dial_failure(classify(&err)))?;
+            .map_err(|err| AttemptFailure {
+                trace: dial.trace(false, Phase::Send),
+                ..dial_failure(classify(&err))
+            })?;
         tokio::spawn(async move {
             let _ = conn.with_upgrades().await;
         });
-        Ok((sender, permit))
+        Ok(Live {
+            sender,
+            permit,
+            dial,
+        })
     }
 
+    /// Resolves the host, dials each address in turn and, for https, completes the TLS
+    /// handshake, timing each phase.
     async fn connect(
         &self,
         proxy: Option<&ProxyTarget>,
         host: &str,
         port: u16,
         is_tls: bool,
-    ) -> io::Result<Box<dyn UpstreamIo>> {
+    ) -> Result<(Box<dyn UpstreamIo>, Dial), DialError> {
+        let mut dial = Dial::default();
+        let mut trace = Trace::default().at(Phase::Connect);
         let tcp = match proxy {
-            Some(proxy) => dial_tunnel(proxy, host, port, self.idle).await?,
+            Some(proxy) => {
+                let started = Instant::now();
+                let tcp = dial_tunnel(proxy, host, port, self.idle)
+                    .await
+                    .map_err(|error| DialError { error, trace })?;
+                dial.connect_ms = Some(elapsed_ms(started));
+                tcp
+            }
             None => {
-                let tcp = TcpStream::connect((host, port)).await?;
-                tcp.set_nodelay(true)?;
+                let (tcp, reached) = self.dial_tcp(host, port).await?;
+                dial = reached;
                 tcp
             }
         };
+        trace = dial.trace(false, Phase::Tls);
         if !is_tls {
-            return Ok(Box::new(tcp));
+            return Ok((Box::new(tcp), dial));
         }
         let Some(tls) = &self.tls else {
-            return Err(io::Error::other("the TLS client config is unavailable"));
+            return Err(DialError {
+                error: io::Error::other("the TLS client config is unavailable"),
+                trace,
+            });
         };
-        let name = ServerName::try_from(host.to_owned()).map_err(|_| {
-            io::Error::new(
+        let name = ServerName::try_from(host.to_owned()).map_err(|_| DialError {
+            error: io::Error::new(
                 ErrorKind::InvalidInput,
                 "the upstream host is not a TLS name",
-            )
+            ),
+            trace,
         })?;
-        let stream = tls.connect(name, tcp).await?;
-        Ok(Box::new(stream))
+        let started = Instant::now();
+        let stream = tls
+            .connect(name, tcp)
+            .await
+            .map_err(|error| DialError { error, trace })?;
+        dial.tls_ms = Some(elapsed_ms(started));
+        Ok((Box::new(stream), dial))
+    }
+
+    /// DNS, then one TCP dial per resolved address until one connects; the peer of a failure is
+    /// the last address tried.
+    async fn dial_tcp(&self, host: &str, port: u16) -> Result<(TcpStream, Dial), DialError> {
+        let mut dial = Dial::default();
+        let started = Instant::now();
+        let addrs: Vec<SocketAddr> = lookup_host((host, port))
+            .await
+            .map_err(|error| DialError {
+                error,
+                trace: Trace::default().at(Phase::Dns),
+            })?
+            .collect();
+        dial.dns_ms = Some(elapsed_ms(started));
+        let mut last = DialError {
+            error: io::Error::new(ErrorKind::NotFound, "the host has no address"),
+            trace: dial.trace(false, Phase::Dns),
+        };
+        let started = Instant::now();
+        for addr in addrs {
+            dial.peer = Some(addr);
+            let failed_at = dial.trace(false, Phase::Connect);
+            match TcpStream::connect(addr)
+                .await
+                .and_then(|tcp| tcp.set_nodelay(true).map(|()| tcp))
+            {
+                Ok(tcp) => {
+                    dial.connect_ms = Some(elapsed_ms(started));
+                    return Ok((tcp, dial));
+                }
+                Err(error) => {
+                    last = DialError {
+                        error,
+                        trace: failed_at,
+                    }
+                }
+            }
+        }
+        Err(last)
     }
 
     /// Sends one request on one connection and hands back the answer with its connection guard.
@@ -981,13 +1106,17 @@ impl UpstreamClient {
     /// away, so `send` can weigh a retry.
     async fn drive(
         &self,
-        sender: SendRequest<AttemptBody>,
-        permit: OwnedSemaphorePermit,
+        live: Live,
         reused: bool,
         poolable: bool,
         key: &str,
         req: &UpstreamRequest,
     ) -> Result<UpstreamAnswer, AttemptFailure> {
+        let Live {
+            sender,
+            permit,
+            dial,
+        } = live;
         let streamed = matches!(req.body, RequestBody::Streamed(_));
         let total = match &req.body {
             RequestBody::Whole(bytes) => bytes.len() as u64,
@@ -1027,18 +1156,20 @@ impl UpstreamClient {
                 _ = handed.wait() => None,
             };
             match first {
-                Some(answer) => answer.map_err(|err| hyper_failure(&err, reused, &handed))?,
+                Some(answer) => {
+                    answer.map_err(|err| hyper_failure(&err, &dial, reused, &handed))?
+                }
                 None => match tokio::time::timeout(self.idle, head.as_mut()).await {
                     Ok(Ok(answer)) => answer,
-                    Ok(Err(err)) => return Err(hyper_failure(&err, reused, &handed)),
-                    Err(_) => return Err(timeout_failure(reused, &handed)),
+                    Ok(Err(err)) => return Err(hyper_failure(&err, &dial, reused, &handed)),
+                    Err(_) => return Err(timeout_failure(&dial, reused, &handed)),
                 },
             }
         } else {
             match tokio::time::timeout(self.idle, sender.send_request(wire_request)).await {
                 Ok(Ok(answer)) => answer,
-                Ok(Err(err)) => return Err(hyper_failure(&err, reused, &handed)),
-                Err(_) => return Err(timeout_failure(reused, &handed)),
+                Ok(Err(err)) => return Err(hyper_failure(&err, &dial, reused, &handed)),
+                Err(_) => return Err(timeout_failure(&dial, reused, &handed)),
             }
         };
         // A `101` answer hands the connection over: the tunnel is taken before the answer is
@@ -1054,7 +1185,9 @@ impl UpstreamClient {
             headers: parts.headers,
             body,
             upgrade,
+            trace: dial.trace(reused, Phase::Headers),
             conn: ConnGuard {
+                dial,
                 sender: Some(sender),
                 pool: Arc::clone(&self.pool),
                 key: key.to_owned(),
@@ -1068,6 +1201,7 @@ impl UpstreamClient {
 
 /// The client's side of an answer: the pooled connection waits in here until `finish` returns it.
 pub struct ConnGuard {
+    dial: Dial,
     sender: Option<SendRequest<AttemptBody>>,
     pool: Arc<Mutex<HashMap<String, HostPool>>>,
     key: String,
@@ -1085,6 +1219,7 @@ impl ConnGuard {
     /// readers discard it when it reads as not ready.
     pub fn finish(self) {
         let ConnGuard {
+            dial,
             sender,
             permit,
             pool,
@@ -1103,8 +1238,11 @@ impl ConnGuard {
             &mut pools,
             key,
             IdleConn {
-                sender,
-                permit,
+                live: Live {
+                    sender,
+                    permit,
+                    dial,
+                },
                 returned_at: Instant::now(),
             },
         );
@@ -1210,6 +1348,7 @@ fn classify_io(err: &io::Error) -> FailureCode {
 fn dial_failure(code: FailureCode) -> AttemptFailure {
     AttemptFailure {
         code,
+        trace: Trace::default(),
         reused: false,
         handed_over: false,
         closed_early: false,
@@ -1219,10 +1358,11 @@ fn dial_failure(code: FailureCode) -> AttemptFailure {
 /// The attempt verdict for a transport error: the socket went away when hyper says the message
 /// was incomplete or canceled, or the code is a reset or a broken pipe. A timeout, a refused
 /// connection and a certificate failure are never a closed socket.
-fn hyper_failure(err: &HyperError, reused: bool, handed: &Handed) -> AttemptFailure {
+fn hyper_failure(err: &HyperError, dial: &Dial, reused: bool, handed: &Handed) -> AttemptFailure {
     let code = classify(err);
     AttemptFailure {
         code,
+        trace: dial.trace(reused, silent_phase(handed)),
         reused,
         handed_over: handed.is_marked(),
         closed_early: err.is_incomplete_message()
@@ -1233,11 +1373,26 @@ fn hyper_failure(err: &HyperError, reused: bool, handed: &Handed) -> AttemptFail
 }
 
 /// Silence is never a closed socket: no retry rides on a timeout.
-fn timeout_failure(reused: bool, handed: &Handed) -> AttemptFailure {
+fn timeout_failure(dial: &Dial, reused: bool, handed: &Handed) -> AttemptFailure {
     AttemptFailure {
         code: FailureCode::ETimedOut,
+        trace: dial.trace(reused, silent_phase(handed)),
         reused,
         handed_over: handed.is_marked(),
         closed_early: false,
     }
+}
+
+/// The phase an attempt that went wrong after the dial was in: still sending until the body's
+/// last byte left, waiting for the head after.
+fn silent_phase(handed: &Handed) -> Phase {
+    if handed.is_marked() {
+        Phase::Headers
+    } else {
+        Phase::Send
+    }
+}
+
+fn elapsed_ms(since: Instant) -> u64 {
+    since.elapsed().as_millis() as u64
 }

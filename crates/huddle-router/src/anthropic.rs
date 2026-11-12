@@ -26,6 +26,7 @@ use crate::server::{
     safe_path,
 };
 use crate::sse::Usage;
+use crate::trace::Trace;
 use crate::upstream::{
     Failure, FailureCode, RequestBody, StreamedBody, UpstreamAnswer, UpstreamClient,
     UpstreamRequest, forward_headers, response_headers, upstream_url,
@@ -49,9 +50,13 @@ pub type StreamedRoute =
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AnswerOutcome {
     /// The upstream's answer ended and the client got all of it.
-    Finished { status: u16, bytes: u64 },
+    Finished {
+        status: u16,
+        bytes: u64,
+        trace: Trace,
+    },
     /// The upstream failed before the head; the client got the 502 or the 504.
-    Failed { code: FailureCode },
+    Failed { code: FailureCode, trace: Trace },
     /// The upstream's body broke after the head.
     Cut { code: FailureCode, bytes: u64 },
     /// The client left, before or after the head.
@@ -65,7 +70,7 @@ pub type OutcomeHook = Arc<dyn Fn(AnswerOutcome) + Send + Sync>;
 pub fn event_of(outcome: AnswerOutcome) -> (u16, Option<String>) {
     match outcome {
         AnswerOutcome::Finished { status, .. } => (status, None),
-        AnswerOutcome::Failed { code } => (
+        AnswerOutcome::Failed { code, .. } => (
             if code == FailureCode::ETimedOut {
                 504
             } else {
@@ -185,7 +190,10 @@ impl AnthropicPath {
                 cut_response()
             }
             Err(failure) => {
-                done.finish(AnswerOutcome::Failed { code: failure.code });
+                done.finish(AnswerOutcome::Failed {
+                    code: failure.code,
+                    trace: failure.trace,
+                });
                 failed(failure)
             }
         }
@@ -216,7 +224,10 @@ impl AnthropicPath {
                 cut_response()
             }
             Err(failure) => {
-                done.finish(AnswerOutcome::Failed { code: failure.code });
+                done.finish(AnswerOutcome::Failed {
+                    code: failure.code,
+                    trace: failure.trace,
+                });
                 failed(failure)
             }
         }
@@ -264,6 +275,7 @@ impl AnthropicPath {
             failed(Failure {
                 code,
                 client_closed: false,
+                trace: Trace::default(),
             })
         })?;
         let len = match &body {
@@ -425,6 +437,7 @@ async fn pump(
     let sse = is_event_stream(&answer.headers);
     let mut body = answer.body;
     let conn = answer.conn;
+    let trace = answer.trace;
     let mut tail = BoundaryTail::new();
     let mut bytes = 0u64;
     // Bytes the judge held back before releasing the answer reach the client first, as they
@@ -459,7 +472,11 @@ async fn pump(
                 if let Some(tap) = shape.tap.as_mut() {
                     tap.end();
                 }
-                done.finish(AnswerOutcome::Finished { status, bytes });
+                done.finish(AnswerOutcome::Finished {
+                    status,
+                    bytes,
+                    trace,
+                });
                 return;
             }
             Ok(Some(Err(_))) => {
@@ -597,14 +614,27 @@ fn failed(failure: Failure) -> Response<RespBody> {
         FailureCode::ETimedOut => StatusCode::GATEWAY_TIMEOUT,
         _ => StatusCode::BAD_GATEWAY,
     };
-    anthropic_error(
+    let mut answer = anthropic_error(
         status,
         "api_error",
         &format!(
             "huddle-router router: anthropic unreachable ({})",
             failure.code.as_str()
         ),
-    )
+    );
+    answer.extensions_mut().insert(UpstreamFailure {
+        code: failure.code,
+        trace: failure.trace,
+    });
+    answer
+}
+
+/// Rides on the 502 or 504 a failed upstream call answers with, so the caller that logs the
+/// request can name the code and the phase.
+#[derive(Debug, Clone, Copy)]
+pub struct UpstreamFailure {
+    pub code: FailureCode,
+    pub trace: Trace,
 }
 
 /// What the pass-through needs: the upstream client, the Anthropic origin, the body limit,
@@ -616,6 +646,8 @@ pub struct PassCtx {
     pub body_limit: u64,
     /// Receives one metadata-only log line per request.
     pub note: Arc<dyn Fn(&str) + Send + Sync>,
+    /// Told how every passed request ends, exactly once per request.
+    pub on_outcome: Option<OutcomeHook>,
 }
 
 /// Serves every request that is not a model request: it reaches Anthropic with only its host
@@ -658,7 +690,17 @@ async fn pass(ctx: Arc<PassCtx>, req: Request<Incoming>) -> Response<RespBody> {
         .to_owned();
     let url = match upstream_url(&ctx.target, &path_and_query) {
         Ok(url) => url,
-        Err(code) => return pass_error(&ctx, &started, &method, &path, &host, code),
+        Err(code) => {
+            return pass_error(
+                &ctx,
+                &started,
+                &method,
+                &path,
+                &host,
+                code,
+                Trace::default(),
+            );
+        }
     };
     let mut headers = forward_headers(&parts.headers, &ctx.target, body.len() as u64);
     if upgraded {
@@ -675,7 +717,15 @@ async fn pass(ctx: Arc<PassCtx>, req: Request<Incoming>) -> Response<RespBody> {
         body: RequestBody::Whole(body),
     };
     match ctx.client.send(request).await {
-        Err(failure) => pass_error(&ctx, &started, &method, &path, &host, failure.code),
+        Err(failure) => pass_error(
+            &ctx,
+            &started,
+            &method,
+            &path,
+            &host,
+            failure.code,
+            failure.trace,
+        ),
         Ok(mut answer) if answer.status == StatusCode::SWITCHING_PROTOCOLS => {
             match (client_tunnel, answer.upgrade.take()) {
                 (Some(client), Some(upstream)) => {
@@ -701,6 +751,7 @@ async fn pass(ctx: Arc<PassCtx>, req: Request<Incoming>) -> Response<RespBody> {
                         &path,
                         &host,
                         FailureCode::EUpstream,
+                        answer.trace,
                     );
                 }
             }
@@ -712,22 +763,27 @@ async fn pass(ctx: Arc<PassCtx>, req: Request<Incoming>) -> Response<RespBody> {
         Ok(answer) => {
             let status = answer.status.as_u16();
             let note = Arc::clone(&ctx.note);
+            let hook = ctx.on_outcome.clone();
             let report = move |outcome: AnswerOutcome| {
+                if let Some(hook) = &hook {
+                    hook(outcome);
+                }
                 let ms = started.elapsed().as_millis() as u64;
                 let line = match outcome {
-                    AnswerOutcome::Finished { status, bytes } => format!(
+                    AnswerOutcome::Finished { status, bytes, .. } => format!(
                         "{method} {path} host={host} \u{2192} anthropic-pass {status} bytes={bytes} ms={ms}"
                     ),
                     AnswerOutcome::Cut { code, bytes } => format!(
-                        "{method} {path} host={host} \u{2192} anthropic-pass cut ({}) status={status} bytes={bytes} ms={ms}",
+                        "{method} {path} host={host} \u{2192} anthropic-pass cut ({}) status={status} bytes={bytes} ms={ms} phase=body",
                         code.as_str()
                     ),
                     AnswerOutcome::ClientClosed { bytes } => format!(
                         "{method} {path} host={host} \u{2192} anthropic-pass cancelled bytes={bytes} ms={ms}"
                     ),
-                    AnswerOutcome::Failed { code } => format!(
-                        "{method} {path} host={host} \u{2192} anthropic-pass error {} ms={ms}",
-                        code.as_str()
+                    AnswerOutcome::Failed { code, trace } => format!(
+                        "{method} {path} host={host} \u{2192} anthropic-pass error {} ms={ms} {}",
+                        code.as_str(),
+                        trace.line()
                     ),
                 };
                 (note)(&line);
@@ -747,13 +803,18 @@ fn pass_error(
     path: &str,
     host: &str,
     code: FailureCode,
+    trace: Trace,
 ) -> Response<RespBody> {
     let ms = started.elapsed().as_millis() as u64;
     let line = format!(
-        "{method} {path} host={host} \u{2192} anthropic-pass error {} ms={ms}",
-        code.as_str()
+        "{method} {path} host={host} \u{2192} anthropic-pass error {} ms={ms} {}",
+        code.as_str(),
+        trace.line()
     );
     (ctx.note)(&line);
+    if let Some(hook) = &ctx.on_outcome {
+        hook(AnswerOutcome::Failed { code, trace });
+    }
     unreachable_answer()
 }
 

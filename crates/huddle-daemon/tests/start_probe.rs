@@ -159,7 +159,7 @@ fn a_start_with_no_provider_still_starts_the_daemon() {
     assert_eq!(line, format!("huddle-router: http://127.0.0.1:{port}"));
     assert_eq!(
         fs::read_to_string(&args).expect("args").trim(),
-        "router serve"
+        "router serve --by router start"
     );
 }
 

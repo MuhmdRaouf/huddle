@@ -34,6 +34,8 @@ fn options(
         port,
         version: "test".into(),
         takeover,
+        by: "test".into(),
+        signal: Arc::default(),
         log: Arc::new(move |l| sink.lock().expect("lines").push(l)),
     };
     (opts, lines)

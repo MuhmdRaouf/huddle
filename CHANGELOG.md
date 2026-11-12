@@ -24,6 +24,10 @@ The five providers are part of huddle, and a key goes in from a page or a termin
 - `huddle` is linked into `~/.local/bin/huddle` on setup, never over a file that is not its own link, and removed by `huddle uninstall`. Setup says when `~/.local/bin` is not on `PATH`, and carries on when the folder cannot be written.
 - An unknown word or action is answered with the valid ones and is never echoed back, in case it was a key.
 
+### Router log
+
+- `router.log` names where an upstream failure happened (`phase=dns|connect|tls|send|headers|body`, the peer and whether the socket was pooled), how long a failing path lasted and how many requests failed, and why a router started, handed over or exited. While the path fails, a probe line every 15 s shows DNS and connect separately.
+
 ### Dashboard
 
 - One Providers page joins setup and traffic: a row per provider with its status, requests, first-token time, errors and next step, and a drawer with the key, lane, `/model` entries and commands. Providers that are not set up read as neutral, not as failures. The sidebar badges read as ratios with the good part green.

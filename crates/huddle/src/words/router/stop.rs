@@ -49,6 +49,12 @@ pub fn run(_args: &[String], env: &Env) -> i32 {
         return not_running();
     }
     let pid = record.pid;
+    // The daemon's own exit line names the signal; this line names who sent it.
+    let log = huddle_router::crashlog::rotating_log(
+        &paths.state_dir.join("router.log"),
+        huddle_router::crashlog::ROUTER_LOG_LIMIT,
+    );
+    log(format!("huddle-router: the stop word signals pid={pid}"));
     // SAFETY: `kill` is a plain syscall wrapper; it reads no memory and only sets errno on
     // failure. A failed signal changes nothing: the poll decides the outcome.
     let _ = unsafe { libc::kill(pid as libc::pid_t, libc::SIGTERM) };

@@ -32,6 +32,7 @@ use crate::refusal::{
 };
 use crate::server::{RespBody, anthropic_error, cut_response, full_body};
 use crate::sse::{JsonUsageTracker, SseUsageTracker, Usage};
+use crate::trace::{Phase, Trace};
 use crate::upstream::{
     FailureCode, RequestBody, StreamedBody, UpstreamAnswer, UpstreamClient, UpstreamRequest,
     forward_headers, is_loopback_host, response_headers, upstream_url,
@@ -238,7 +239,9 @@ impl Lane {
                 events.emit(499, Some("client closed".to_owned()));
                 cut_response()
             }
-            Err(failure) => self.read_failed(failure.code, method, path, model, &events),
+            Err(failure) => {
+                self.read_failed(failure.code, failure.trace, method, path, model, &events)
+            }
             Ok(answer) => {
                 let status = answer.status.as_u16();
                 let plain = !compressed(&answer.headers);
@@ -261,7 +264,7 @@ impl Lane {
                                 &format!("-> provider {}", answer.status.as_u16()),
                             );
                             stream_answer(
-                                answer,
+                                *answer,
                                 self.client.idle(),
                                 OutcomeWatch::new(hook.clone()),
                                 StreamShape {
@@ -321,6 +324,7 @@ impl Lane {
             mut body,
             conn,
             upgrade,
+            trace,
         } = answer;
         let mut held: Vec<u8> = Vec::new();
         loop {
@@ -331,13 +335,14 @@ impl Lane {
                         if held.len() > INSPECT_LIMIT {
                             return Judged::Oversize {
                                 prefix: Bytes::from(held),
-                                answer: UpstreamAnswer {
+                                answer: Box::new(UpstreamAnswer {
                                     status,
                                     headers,
                                     body,
                                     conn,
                                     upgrade,
-                                },
+                                    trace,
+                                }),
                             };
                         }
                     }
@@ -346,6 +351,7 @@ impl Lane {
                 Ok(Some(Err(_))) => {
                     return Judged::Replaced(self.read_failed(
                         FailureCode::EAborted,
+                        trace.at(Phase::Body),
                         method,
                         path,
                         model,
@@ -355,6 +361,7 @@ impl Lane {
                 Err(_) => {
                     return Judged::Replaced(self.read_failed(
                         FailureCode::ETimedOut,
+                        trace.at(Phase::Body),
                         method,
                         path,
                         model,
@@ -433,6 +440,7 @@ impl Lane {
     fn read_failed(
         &self,
         code: FailureCode,
+        trace: Trace,
         method: &str,
         path: &str,
         model: &str,
@@ -442,7 +450,7 @@ impl Lane {
             method,
             path,
             model,
-            &format!("-> provider error {}", code.as_str()),
+            &format!("-> provider error {} {}", code.as_str(), trace.line()),
         );
         let status = if code == FailureCode::ETimedOut {
             504
@@ -508,7 +516,7 @@ enum Judged {
     /// streams as it arrives.
     Oversize {
         prefix: Bytes,
-        answer: UpstreamAnswer,
+        answer: Box<UpstreamAnswer>,
     },
 }
 
