@@ -206,6 +206,10 @@ fn render(provider: &Provider, store: &str, outcome: &Outcome) -> Vec<String> {
             "! {} knows the key but takes no requests yet (quota or balance): {}",
             provider.display, provider.billing_url
         ),
+        KeyVerdict::Unexpected(code) => format!(
+            "! {} answered HTTP {code} to the check; the key is stored and {id} is on.",
+            provider.display
+        ),
         KeyVerdict::Unknown => format!(
             "! {} didn't answer; the key is stored and {id} is on.",
             provider.display

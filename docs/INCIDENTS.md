@@ -179,3 +179,14 @@ Each incident, its cause, and the test that now stops it. A guard named here mus
 - **Guard:** crates/huddle-router/tests/connect_decrypt.rs:t5_decrypted_model_requests_reach_the_history
 - **Rule:** a model request carries its context and the event sink from the moment it arrives,
   whichever way it arrived.
+
+## 2026-11-12, provider setup said it could not reach a provider that answered
+
+- **What happened:** `/zai:setup` printed "could not reach Z.ai GLM to check the key" while Z.ai
+  was reachable and answered every request.
+- **Cause:** the key check folded every status other than 2xx, 401, 402, 403 and 429 into the same
+  verdict as a network failure, and the report printed "could not reach" for both. The status the
+  provider sent was lost.
+- **Guard:** crates/huddle/tests/provider_setup_word.rs:k10_an_unexpected_status_is_named_in_the_report
+- **Rule:** a check that got an answer reports what the answer was; "could not reach" means no
+  answer came back.

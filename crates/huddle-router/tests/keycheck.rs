@@ -23,7 +23,14 @@ async fn statuses_map_to_verdicts() {
     assert_eq!(verdict_for(403).await, Verdict::Refused);
     assert_eq!(verdict_for(429).await, Verdict::Limited);
     assert_eq!(verdict_for(402).await, Verdict::Limited);
-    assert_eq!(verdict_for(500).await, Verdict::Unknown);
+    assert_eq!(verdict_for(500).await, Verdict::Unexpected(500));
+}
+
+#[tokio::test]
+async fn k10_any_other_status_keeps_its_number() {
+    assert_eq!(verdict_for(400).await, Verdict::Unexpected(400));
+    assert_eq!(verdict_for(404).await, Verdict::Unexpected(404));
+    assert_eq!(verdict_for(503).await, Verdict::Unexpected(503));
 }
 
 #[tokio::test]

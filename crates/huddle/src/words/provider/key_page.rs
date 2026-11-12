@@ -341,6 +341,14 @@ fn answer(provider: &Provider, outcome: &Outcome) -> Answer {
                 warn,
             ),
         ),
+        KeyVerdict::Unexpected(code) => (
+            "unchecked",
+            step(
+                provider.display,
+                &format!("answered HTTP {code} to the check"),
+                warn,
+            ),
+        ),
         KeyVerdict::Unknown => ("unchecked", step(provider.display, "no answer", warn)),
     };
     let routed = outcome
@@ -484,6 +492,26 @@ fn reply(status: StatusCode, content_type: &'static str, body: String) -> Respon
 mod tests {
     use super::*;
     use huddle_catalog::providers::provider_by_id;
+
+    #[test]
+    fn k10_the_page_names_an_unexpected_status() {
+        let zai = provider_by_id("zai").expect("zai");
+        let outcome = Outcome {
+            verdict: KeyVerdict::Unexpected(400),
+            steps: Vec::new(),
+            ready: true,
+            changed: true,
+        };
+        let view = answer(zai, &outcome);
+        assert_eq!(view.state, "unchecked");
+        assert!(
+            view.steps
+                .iter()
+                .any(|step| step.detail == "answered HTTP 400 to the check"),
+            "{:?}",
+            view.steps.iter().map(|s| &s.detail).collect::<Vec<_>>()
+        );
+    }
 
     #[test]
     fn the_input_needs_a_64_digit_hex_token_and_may_shorten_the_life() {

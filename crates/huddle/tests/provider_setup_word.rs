@@ -195,3 +195,28 @@ fn a_limited_key_keeps_setup_ready_and_names_the_billing_page() {
         "{stdout}"
     );
 }
+
+#[test]
+fn k10_an_unexpected_status_is_named_in_the_report() {
+    let home = TempHome::new();
+    let port = free_port();
+    let fake = fake_answering(400);
+    stored_zai_key(&home);
+    let ledger = state_home(&home).join("settings-ledger.toml");
+    fs::create_dir_all(ledger.parent().expect("parent")).expect("mkdir");
+    fs::write(&ledger, "{}").expect("write");
+    let output = huddle_with(
+        &home,
+        port,
+        &["provider", "zai", "setup"],
+        &[("ZAI_BASE_URL", fake.url().as_str())],
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
+    stop(&home, port);
+    assert_eq!(output.status.code(), Some(0), "{stdout}");
+    assert!(
+        stdout.contains("key: Z.ai GLM answered HTTP 400 to the key check; continuing."),
+        "{stdout}"
+    );
+    assert!(!stdout.contains("could not reach"), "{stdout}");
+}

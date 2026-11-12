@@ -29,7 +29,9 @@ pub enum Verdict {
     Limited,
     /// 401 or 403: the provider rejected the key.
     Refused,
-    /// A network failure, a timeout, an unusable base URL, or any other status.
+    /// Any other status, kept so the report can name it.
+    Unexpected(u16),
+    /// A network failure, a timeout or an unusable base URL: no answer at all.
     Unknown,
 }
 
@@ -95,7 +97,7 @@ fn verdict_of(status: StatusCode) -> Verdict {
         200..=299 => Verdict::Accepted,
         401 | 403 => Verdict::Refused,
         402 | 429 => Verdict::Limited,
-        _ => Verdict::Unknown,
+        code => Verdict::Unexpected(code),
     }
 }
 

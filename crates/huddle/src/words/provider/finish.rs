@@ -42,7 +42,9 @@ pub enum KeyVerdict {
     Limited,
     /// The provider rejected the key.
     Refused,
-    /// The provider could not be asked or answered something else.
+    /// The provider answered with another HTTP status.
+    Unexpected(u16),
+    /// The provider could not be asked: no answer at all.
     Unknown,
 }
 
@@ -280,7 +282,7 @@ fn set_state(outcome: &mut Outcome, name: StepName, state: StepState) {
 fn check_state(verdict: KeyVerdict) -> StepState {
     match verdict {
         KeyVerdict::Accepted => StepState::Done,
-        KeyVerdict::Limited | KeyVerdict::Unknown => StepState::Warned,
+        KeyVerdict::Limited | KeyVerdict::Unexpected(_) | KeyVerdict::Unknown => StepState::Warned,
         KeyVerdict::Refused => StepState::Failed,
     }
 }
@@ -294,6 +296,9 @@ fn verdict_line(verdict: KeyVerdict, provider: &Provider) -> String {
             provider.billing_url
         ),
         KeyVerdict::Refused => format!("key: {display} refused the stored key; enter a new one."),
+        KeyVerdict::Unexpected(code) => {
+            format!("key: {display} answered HTTP {code} to the key check; continuing.")
+        }
         KeyVerdict::Unknown => {
             format!("key: could not reach {display} to check the key; continuing.")
         }
@@ -318,6 +323,7 @@ fn check_provider_key(provider: &'static Provider, env: &Env, key: &SecretString
         Verdict::Accepted => KeyVerdict::Accepted,
         Verdict::Limited => KeyVerdict::Limited,
         Verdict::Refused => KeyVerdict::Refused,
+        Verdict::Unexpected(code) => KeyVerdict::Unexpected(code),
         Verdict::Unknown => KeyVerdict::Unknown,
     }
 }
