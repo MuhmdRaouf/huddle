@@ -15,7 +15,8 @@ use huddle_catalog::providers::provider_ids;
 use huddle_config::env::Env;
 use huddle_config::paths::Paths;
 use huddle_config::providers_file::read_enabled;
-use huddle_procs::detached::{DetachError, DetachSpec, start_detached};
+use huddle_procs::detached::{DetachError, DetachSpec, start_detached_pid};
+use huddle_procs::live::is_alive;
 
 use crate::nochain::{PROXY_VARS, is_router_proxy};
 use huddle_config::files::{DIR_MODE, create_dir};
@@ -27,7 +28,7 @@ pub const HEALTH_WAIT: Duration = Duration::from_millis(300);
 pub const SPAWN_POLL: Duration = Duration::from_millis(50);
 
 /// How long a start waits for a spawned daemon's health answer.
-pub const DEFAULT_BUDGET: Duration = Duration::from_secs(3);
+pub const DEFAULT_BUDGET: Duration = Duration::from_secs(10);
 
 /// How long a start waits for the takeover it asked for to publish its record.
 pub const UPDATE_WAIT: Duration = Duration::from_secs(10);
@@ -81,8 +82,10 @@ pub enum StartError {
     Spawn(String),
     /// The spawn was refused before anything ran.
     Refused(String),
-    /// The spawned daemon never answered health within the budget.
+    /// The spawned daemon is alive but never answered health within the budget.
     NeverAnswered { port: u16, log: PathBuf },
+    /// The spawned daemon exited before it answered health.
+    Exited { log: PathBuf },
 }
 
 impl fmt::Display for StartError {
@@ -103,6 +106,11 @@ impl fmt::Display for StartError {
             StartError::NeverAnswered { port, log } => write!(
                 f,
                 "huddle-router: the daemon never answered at http://127.0.0.1:{port} (its log: {})",
+                log.display()
+            ),
+            StartError::Exited { log } => write!(
+                f,
+                "huddle-router: the daemon exited before it answered (its log: {})",
                 log.display()
             ),
         }
@@ -226,14 +234,15 @@ pub fn is_test_harness(executable: &Path) -> bool {
 /// Runs the daemon detached: `<exe> router serve` with `extra_args`, its output appended to
 /// the router log (created 0600, its directory 0700), its working directory the router dir, so
 /// a caller in a deleted directory cannot stop it. A test build, a `HUDDLE_NO_DAEMON`
-/// environment and a Cargo harness path are refused before anything runs.
+/// environment and a Cargo harness path are refused before anything runs. The answer is the
+/// daemon's pid.
 pub fn spawn_serve(
     env: &Env,
     paths: &Paths,
     port: u16,
     executable: &Path,
     extra_args: &[&str],
-) -> Result<(), StartError> {
+) -> Result<u32, StartError> {
     if cfg!(test) {
         return Err(refusal(&executable.display().to_string()));
     }
@@ -269,7 +278,7 @@ pub fn spawn_serve(
         log_file: Some(log),
         cwd: paths.state_dir.clone(),
     };
-    start_detached(&spec).map_err(|error| match error {
+    start_detached_pid(&spec).map_err(|error| match error {
         DetachError::Log { path, source } => StartError::Log { path, source },
         DetachError::Spawn { program, source } => StartError::Spawn(format!(
             "huddle-router: could not start {} ({source})",
@@ -364,7 +373,7 @@ pub fn start_by(opts: &StartOptions<'_>, by: &str) -> Result<String, StartError>
     // An empty list still spawns: the router serves Anthropic with no provider enabled.
     let _providers = read_enabled(&opts.paths.config_dir, &provider_ids())
         .map_err(|error| StartError::ProvidersFile(error.to_string()))?;
-    spawn_serve(
+    let pid = spawn_serve(
         opts.env,
         opts.paths,
         opts.port,
@@ -375,6 +384,15 @@ pub fn start_by(opts: &StartOptions<'_>, by: &str) -> Result<String, StartError>
     loop {
         if let Some(answer) = health(opts.port, HEALTH_WAIT) {
             return Ok(up_line(opts.port, &answer));
+        }
+        if !is_alive(pid) {
+            // A daemon that lost the lock to a concurrent start exits while the winner answers.
+            return match health(opts.port, HEALTH_WAIT) {
+                Some(answer) => Ok(up_line(opts.port, &answer)),
+                None => Err(StartError::Exited {
+                    log: opts.paths.state_dir.join(LOG_NAME),
+                }),
+            };
         }
         if Instant::now() >= deadline {
             return Err(StartError::NeverAnswered {

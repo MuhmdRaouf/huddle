@@ -260,7 +260,7 @@ fn a_daemon_that_never_answers_names_its_log() {
     let home = TempHome::new();
     let paths = paths(&home);
     enable_zai(&paths);
-    let script = write_script(&home, "exit 0");
+    let script = write_script(&home, "sleep 2");
     let env = home_env(&home);
     let free = TcpListener::bind("127.0.0.1:0")
         .expect("bind")
@@ -334,5 +334,76 @@ fn the_key_check_waits_for_the_providers_lane() {
             .expect_err("down")
             .to_string(),
         format!("huddle-router is not running on port {free}")
+    );
+}
+
+#[test]
+fn b1_a_slow_daemon_inside_ten_seconds_counts_as_started() {
+    let home = TempHome::new();
+    let paths = paths(&home);
+    enable_zai(&paths);
+    let script = write_script(&home, "sleep 8");
+    let env = home_env(&home);
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
+    let port = listener.local_addr().expect("addr").port();
+    thread::spawn(move || {
+        thread::sleep(Duration::from_secs(4));
+        for stream in listener.incoming() {
+            let Ok(mut stream) = stream else { return };
+            let mut buffer = [0u8; 2048];
+            let _ = stream.read(&mut buffer);
+            let reply = format!(
+                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{GOOD}",
+                GOOD.len()
+            );
+            let _ = stream.write_all(reply.as_bytes());
+        }
+    });
+    let line = start(&StartOptions {
+        env: &env,
+        paths: &paths,
+        port,
+        executable: script,
+        budget: DEFAULT_BUDGET,
+    })
+    .expect("a daemon answering after 4 s starts");
+    assert_eq!(
+        line,
+        format!("huddle-router: http://127.0.0.1:{port} (zai)")
+    );
+}
+
+#[test]
+fn b1_a_daemon_that_exits_stops_the_wait_at_once() {
+    let home = TempHome::new();
+    let paths = paths(&home);
+    enable_zai(&paths);
+    let script = write_script(&home, "echo gone; exit 3");
+    let env = home_env(&home);
+    let free = TcpListener::bind("127.0.0.1:0")
+        .expect("bind")
+        .local_addr()
+        .expect("addr")
+        .port();
+    let began = Instant::now();
+    let error = start(&StartOptions {
+        env: &env,
+        paths: &paths,
+        port: free,
+        executable: script,
+        budget: DEFAULT_BUDGET,
+    })
+    .expect_err("the daemon exited");
+    assert!(
+        began.elapsed() < Duration::from_secs(2),
+        "waited {:?} for a dead daemon",
+        began.elapsed()
+    );
+    assert_eq!(
+        error.to_string(),
+        format!(
+            "huddle-router: the daemon exited before it answered (its log: {})",
+            paths.state_dir.join("router.log").display()
+        )
     );
 }

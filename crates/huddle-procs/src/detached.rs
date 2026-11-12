@@ -2,7 +2,8 @@
 //! output on a log or nowhere.
 
 use std::fs::OpenOptions;
-use std::io::{self, Write};
+use std::io::{self, Read, Write};
+use std::os::fd::AsRawFd;
 use std::os::unix::fs::OpenOptionsExt;
 use std::os::unix::process::CommandExt;
 use std::path::PathBuf;
@@ -25,9 +26,14 @@ pub enum DetachError {
     Spawn { program: PathBuf, source: io::Error },
 }
 
-/// Starts the child detached: own session, re-parented to init, never waited on. The caller
-/// gets no pid: the daemon and the job driver write their own pid where it is needed.
+/// Starts the child detached: own session, re-parented to init, never waited on.
 pub fn start_detached(spec: &DetachSpec) -> Result<(), DetachError> {
+    start_detached_pid(spec).map(|_| ())
+}
+
+/// Like `start_detached`, answering the child's pid so a caller can watch whether it is still
+/// alive.
+pub fn start_detached_pid(spec: &DetachSpec) -> Result<u32, DetachError> {
     start(spec, Stdio::null())
 }
 
@@ -41,10 +47,18 @@ pub fn start_detached_with_input(spec: &DetachSpec, input: &[u8]) -> Result<(), 
     let (reader, mut writer) = io::pipe().map_err(spawn_error)?;
     writer.write_all(input).map_err(spawn_error)?;
     drop(writer);
-    start(spec, Stdio::from(reader))
+    start(spec, Stdio::from(reader)).map(|_| ())
 }
 
-fn start(spec: &DetachSpec, stdin: Stdio) -> Result<(), DetachError> {
+fn start(spec: &DetachSpec, stdin: Stdio) -> Result<u32, DetachError> {
+    let spawn_error = |source| DetachError::Spawn {
+        program: spec.program.clone(),
+        source,
+    };
+    // The intermediate fork writes the grandchild's pid here before it exits. The pipe is
+    // close-on-exec, so the grandchild's own copy goes away at its exec.
+    let (mut pid_reader, pid_writer) = io::pipe().map_err(spawn_error)?;
+    let pid_fd = pid_writer.as_raw_fd();
     let mut command = Command::new(&spec.program);
     command
         .args(&spec.args)
@@ -73,13 +87,18 @@ fn start(spec: &DetachSpec, stdin: Stdio) -> Result<(), DetachError> {
             command.stdout(Stdio::null()).stderr(Stdio::null());
         }
     }
-    // SAFETY: fork, setsid and _exit are async-signal-safe. The closure touches nothing else.
+    // SAFETY: fork, write, setsid and _exit are async-signal-safe. The closure touches nothing
+    // else; `pid_fd` stays open until the parent drops `pid_writer` after the spawn.
     unsafe {
-        command.pre_exec(|| {
+        command.pre_exec(move || {
             match libc::fork() {
                 -1 => return Err(io::Error::last_os_error()),
                 0 => {}
-                _ => libc::_exit(0),
+                grandchild => {
+                    let bytes = (grandchild as u32).to_ne_bytes();
+                    libc::write(pid_fd, bytes.as_ptr().cast(), bytes.len());
+                    libc::_exit(0)
+                }
             }
             if libc::setsid() == -1 {
                 return Err(io::Error::last_os_error());
@@ -87,12 +106,12 @@ fn start(spec: &DetachSpec, stdin: Stdio) -> Result<(), DetachError> {
             Ok(())
         });
     }
-    let mut child = command.spawn().map_err(|source| DetachError::Spawn {
-        program: spec.program.clone(),
-        source,
-    })?;
+    let mut child = command.spawn().map_err(spawn_error)?;
+    drop(pid_writer);
     // The intermediate fork exits at once: this reaps it. `spawn` returned only after the
     // exec, so a bad program is already reported above.
     let _ = child.wait();
-    Ok(())
+    let mut bytes = [0u8; 4];
+    pid_reader.read_exact(&mut bytes).map_err(spawn_error)?;
+    Ok(u32::from_ne_bytes(bytes))
 }

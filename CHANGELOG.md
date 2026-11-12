@@ -19,6 +19,10 @@ The five providers are part of huddle, and a key goes in from a page or a termin
 - A key file moves to `~/.config/huddle/keys/<p>` on first use.
 - `huddle provider <p>` guides a terminal: a menu, a masked key prompt, backspace, Ctrl-C that stores nothing and restores the terminal, and three refused keys end with exit 6. Off a terminal it prints the next steps and never waits. A piped key is stored as before.
 
+### Router start
+
+- A start waits up to 10 s for the spawned router to answer health, polling every 50 ms, and stops at once with `the daemon exited before it answered` when the process is gone.
+
 ### Terminal
 
 - `huddle` alone shows where you stand: the router, each provider's key and lane, and the next command. `huddle help` lists every word.
