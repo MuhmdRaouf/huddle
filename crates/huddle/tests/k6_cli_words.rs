@@ -196,7 +196,7 @@ If you pasted a key, delete that line from your shell history.
         assert_eq!(output.status.code(), Some(2), "{args:?}");
         assert_eq!(err(&output), expected);
         assert!(!out(&output).contains(FAKE_KEY));
-        assert!(!home.root().join(".config/zai-plugin-cc/env").exists());
+        assert!(!home.root().join(".config/huddle/keys/zai").exists());
     }
     let output = huddle(&home, &["provider", FAKE_KEY], "");
     assert_eq!(output.status.code(), Some(2));

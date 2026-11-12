@@ -17,10 +17,10 @@ fn huddle(home: &TempHome, args: &[&str]) -> Output {
 }
 
 fn write_key(home: &TempHome) -> std::path::PathBuf {
-    let dir = home.root().join(".config/zai-plugin-cc");
+    let dir = home.root().join(".config/huddle/keys");
     fs::create_dir_all(&dir).expect("mkdir");
     fs::set_permissions(&dir, fs::Permissions::from_mode(0o700)).expect("chmod");
-    let file = dir.join("env");
+    let file = dir.join("zai");
     fs::write(&file, "ZAI_API_KEY=abcdefghijklmnop\n").expect("write");
     fs::set_permissions(&file, fs::Permissions::from_mode(0o600)).expect("chmod");
     file
@@ -59,7 +59,7 @@ fn removing_the_provider_restores_settings_byte_for_byte() {
         fs::read_to_string(home.root().join(".config/huddle/providers.toml")).expect("providers");
     assert!(!providers.contains("zai"), "{providers}");
     assert!(
-        !home.root().join(".config/zai-plugin-cc/env").exists(),
+        !home.root().join(".config/huddle/keys/zai").exists(),
         "the stored key is gone"
     );
 }

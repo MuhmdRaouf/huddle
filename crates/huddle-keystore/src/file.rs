@@ -1,4 +1,4 @@
-//! The key file `~/.config/<p>-plugin-cc/env`: `NAME=<key>` lines, 0600 in a 0700 directory.
+//! The key file `<config dir>/keys/<p>`: `NAME=<key>` lines, 0600 in a 0700 directory.
 
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Read, Write};
@@ -14,20 +14,41 @@ const PRIVATE_FILE: u32 = 0o600;
 
 /// The key file as a store: always available, the first key variable name is the line it writes.
 pub struct FileStore {
+    config_dir: PathBuf,
     home: PathBuf,
 }
 
 impl FileStore {
-    pub fn new(home: PathBuf) -> FileStore {
-        FileStore { home }
+    pub fn new(config_dir: PathBuf, home: PathBuf) -> FileStore {
+        FileStore { config_dir, home }
     }
 
     /// The provider's key file.
     pub fn path_for(&self, provider: &str) -> PathBuf {
+        self.config_dir.join("keys").join(provider)
+    }
+
+    /// The key file the removed provider plugin kept: `~/.config/<p>-plugin-cc/env`.
+    fn old_path_for(&self, provider: &str) -> PathBuf {
         self.home
             .join(".config")
             .join(service_name(provider))
             .join("env")
+    }
+
+    /// Moves the old key file's key to the new path, then removes the old file and its folder
+    /// when empty. A failed write leaves the old file in place.
+    fn move_old_key(&self, provider: &str, key: &SecretString) {
+        let old = self.old_path_for(provider);
+        let line = format!("{}={}\n", key_env_names(provider)[0], key.expose());
+        if write_private(&self.path_for(provider), &line).is_err() {
+            return;
+        }
+        if fs::remove_file(&old).is_ok()
+            && let Some(dir) = old.parent()
+        {
+            let _ = fs::remove_dir(dir);
+        }
     }
 }
 
@@ -42,52 +63,14 @@ pub fn key_env_names(provider: &str) -> Vec<String> {
 
 impl Keystore for FileStore {
     fn get(&self, provider: &str) -> Result<Option<SecretString>, KeystoreError> {
-        let path = self.path_for(provider);
-        // One open handle serves the mode checks and the read, so the file cannot be swapped in
-        // between.
-        let mut handle = match File::open(&path) {
-            Ok(handle) => handle,
-            Err(source) => return missing_or_read(&path, source),
-        };
-        let mode = handle
-            .metadata()
-            .map_err(|source| read_error(&path, source))?
-            .permissions()
-            .mode();
-        if mode & 0o077 != 0 {
-            return Err(KeystoreError::InsecureFile {
-                path,
-                mode: mode & 0o777,
-            });
+        if let Some(key) = read_key(&self.path_for(provider), provider)? {
+            return Ok(Some(key));
         }
-        let dir = path
-            .parent()
-            .ok_or_else(|| read_error(&path, no_parent()))?
-            .to_path_buf();
-        let dir_mode = fs::metadata(&dir)
-            .map_err(|source| read_error(&dir, source))?
-            .permissions()
-            .mode();
-        if dir_mode & 0o022 != 0 {
-            return Err(KeystoreError::InsecureDir {
-                path: dir,
-                mode: dir_mode & 0o777,
-            });
+        let key = read_key(&self.old_path_for(provider), provider)?;
+        if let Some(key) = &key {
+            self.move_old_key(provider, key);
         }
-        let mut text = String::new();
-        handle
-            .read_to_string(&mut text)
-            .map_err(|source| read_error(&path, source))?;
-        let names = key_env_names(provider);
-        for line in text.lines() {
-            if let Some(value) = line_value(line, &names) {
-                if value.is_empty() {
-                    continue;
-                }
-                return Ok(Some(SecretString::new(value)));
-            }
-        }
-        Ok(None)
+        Ok(key)
     }
 
     fn set(&self, provider: &str, key: &SecretString) -> Result<(), KeystoreError> {
@@ -110,29 +93,89 @@ impl Keystore for FileStore {
     }
 
     fn delete(&self, provider: &str) -> Result<(), KeystoreError> {
-        let path = self.path_for(provider);
-        let names = key_env_names(provider);
-        let text = match read_text(&path)? {
-            Some(text) => text,
-            None => return Ok(()),
-        };
-        let mut kept: Vec<&str> = Vec::new();
-        let mut removed = false;
-        for line in text.lines() {
-            if line_value(line, &names).is_some() {
-                removed = true;
-            } else {
-                kept.push(line);
-            }
+        let new = delete_key_at(&self.path_for(provider), provider);
+        let old_path = self.old_path_for(provider);
+        let old = delete_key_at(&old_path, provider);
+        if let Some(dir) = old_path.parent() {
+            let _ = fs::remove_dir(dir);
         }
-        if !removed {
-            return Ok(());
-        }
-        if kept.iter().all(|line| line.trim().is_empty()) {
-            return fs::remove_file(&path).map_err(|source| write_error(&path, source));
-        }
-        write_private(&path, &format!("{}\n", kept.join("\n")))
+        new.and(old)
     }
+}
+
+/// Removes the provider's key line from one key file, and the file when nothing else is left.
+fn delete_key_at(path: &Path, provider: &str) -> Result<(), KeystoreError> {
+    let names = key_env_names(provider);
+    let text = match read_text(path)? {
+        Some(text) => text,
+        None => return Ok(()),
+    };
+    let mut kept: Vec<&str> = Vec::new();
+    let mut removed = false;
+    for line in text.lines() {
+        if line_value(line, &names).is_some() {
+            removed = true;
+        } else {
+            kept.push(line);
+        }
+    }
+    if !removed {
+        return Ok(());
+    }
+    if kept.iter().all(|line| line.trim().is_empty()) {
+        return fs::remove_file(path).map_err(|source| write_error(path, source));
+    }
+    write_private(path, &format!("{}\n", kept.join("\n")))
+}
+
+/// The provider's key in one key file: none when the file or the line is missing, an error when
+/// the file or its folder is loose.
+fn read_key(path: &Path, provider: &str) -> Result<Option<SecretString>, KeystoreError> {
+    // One open handle serves the mode checks and the read, so the file cannot be swapped in
+    // between.
+    let mut handle = match File::open(path) {
+        Ok(handle) => handle,
+        Err(source) => return missing_or_read(path, source),
+    };
+    let mode = handle
+        .metadata()
+        .map_err(|source| read_error(path, source))?
+        .permissions()
+        .mode();
+    if mode & 0o077 != 0 {
+        return Err(KeystoreError::InsecureFile {
+            path: path.to_path_buf(),
+            mode: mode & 0o777,
+        });
+    }
+    let dir = path
+        .parent()
+        .ok_or_else(|| read_error(path, no_parent()))?
+        .to_path_buf();
+    let dir_mode = fs::metadata(&dir)
+        .map_err(|source| read_error(&dir, source))?
+        .permissions()
+        .mode();
+    if dir_mode & 0o022 != 0 {
+        return Err(KeystoreError::InsecureDir {
+            path: dir,
+            mode: dir_mode & 0o777,
+        });
+    }
+    let mut text = String::new();
+    handle
+        .read_to_string(&mut text)
+        .map_err(|source| read_error(path, source))?;
+    let names = key_env_names(provider);
+    for line in text.lines() {
+        if let Some(value) = line_value(line, &names) {
+            if value.is_empty() {
+                continue;
+            }
+            return Ok(Some(SecretString::new(value)));
+        }
+    }
+    Ok(None)
 }
 
 /// The file's whole text, none when there is no file.

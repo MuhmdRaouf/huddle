@@ -36,10 +36,10 @@ fn fake_answering(status: u16) -> FakeUpstream {
 
 /// The key file the zai plugin writes: a mode-600 env file in a mode-700 directory.
 fn stored_zai_key(home: &TempHome) {
-    let dir = home.root().join(".config/zai-plugin-cc");
+    let dir = home.root().join(".config/huddle/keys");
     fs::create_dir_all(&dir).expect("mkdir");
     fs::set_permissions(&dir, fs::Permissions::from_mode(0o700)).expect("chmod");
-    let file = dir.join("env");
+    let file = dir.join("zai");
     fs::write(&file, "ZAI_API_KEY=abcdefghijklmnop\n").expect("write");
     fs::set_permissions(&file, fs::Permissions::from_mode(0o600)).expect("chmod");
 }

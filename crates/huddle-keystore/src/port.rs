@@ -319,7 +319,7 @@ fn os_store(_paths: &Paths) -> Option<Box<dyn OsStore>> {
 /// The two halves `platform_default` joins. The router's key cache calls this directly: it gives
 /// the os store a shorter budget than the file.
 pub fn platform_parts(paths: &Paths) -> (Option<Box<dyn OsStore>>, FileStore) {
-    let file = FileStore::new(paths.home.clone());
+    let file = FileStore::new(paths.config_dir.clone(), paths.home.clone());
     let os = if runs_as_login_account(paths) {
         os_store(paths)
     } else {

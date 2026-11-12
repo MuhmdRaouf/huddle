@@ -35,7 +35,7 @@ atomic rename into a private directory. Nothing is written under `~/.agents`.
 
 ## D5: A provider's key
 
-A key is read from the provider's environment variable first, then the OS keystore, then its mode-600 key file.
+A key is read from the provider's environment variable first, then the OS keystore, then its mode-600 key file at `~/.config/huddle/keys/<p>`.
 The lookup is cached, shared between concurrent requests and cleared on refusal. A key of the wrong shape is
 refused without its value ever appearing in an error, a log line or a debug print.
 

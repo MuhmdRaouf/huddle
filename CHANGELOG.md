@@ -16,6 +16,7 @@ The five providers are part of huddle, and a key goes in from a page or a termin
 ### Keys
 
 - With no stored key, `/huddle:<p>:setup` opens a one-time key page on `127.0.0.1`. It needs its token, host and origin, loads nothing from outside, and ends after the key is saved or its time runs out. A second setup stops the first page, and never signals a process that is not huddle's helper.
+- A key file moves to `~/.config/huddle/keys/<p>` on first use.
 - `huddle provider <p>` guides a terminal: a menu, a masked key prompt, backspace, Ctrl-C that stores nothing and restores the terminal, and three refused keys end with exit 6. Off a terminal it prints the next steps and never waits. A piped key is stored as before.
 
 ### Terminal

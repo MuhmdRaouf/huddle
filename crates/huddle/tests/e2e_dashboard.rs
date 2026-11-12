@@ -521,10 +521,10 @@ fn lane_of<'a>(snapshot: &'a Value, id: &str) -> &'a Value {
 fn a_stored_key_shows_as_yes_and_a_missing_one_as_no() {
     use std::os::unix::fs::PermissionsExt;
     let prepared = start_prepared("\"zai\",\"kimi\"", |home, _| {
-        let dir = home.root().join(".config/zai-plugin-cc");
+        let dir = home.root().join(".config/huddle/keys");
         std::fs::create_dir_all(&dir).expect("mkdir");
         std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700)).expect("chmod");
-        let file = dir.join("env");
+        let file = dir.join("zai");
         std::fs::write(&file, "ZAI_API_KEY=abcdefghijklmnop\n").expect("write key");
         std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o600)).expect("chmod");
     });

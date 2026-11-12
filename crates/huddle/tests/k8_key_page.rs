@@ -116,7 +116,7 @@ impl World {
     }
 
     fn keystore_file(&self) -> PathBuf {
-        self.home.root().join(".config/zai-plugin-cc/env")
+        self.home.root().join(".config/huddle/keys/zai")
     }
 }
 

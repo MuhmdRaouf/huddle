@@ -242,7 +242,7 @@ fn k7_a_new_key_is_masked_and_finishes_the_setup() {
     let providers =
         fs::read_to_string(home.root().join(".config/huddle/providers.toml")).expect("providers");
     assert!(providers.contains("zai"), "{providers}");
-    let stored = fs::read_to_string(home.root().join(".config/zai-plugin-cc/env")).expect("key");
+    let stored = fs::read_to_string(home.root().join(".config/huddle/keys/zai")).expect("key");
     assert!(stored.contains(FAKE_KEY));
 }
 
@@ -268,7 +268,7 @@ fn k7_a_refused_key_asks_again_and_stores_nothing() {
         pty.seen
     );
     assert!(
-        !home.root().join(".config/zai-plugin-cc/env").exists(),
+        !home.root().join(".config/huddle/keys/zai").exists(),
         "a refused key is not stored"
     );
     assert!(pty.read_until(PROMPT), "{}", pty.seen);
@@ -306,7 +306,7 @@ fn k7_three_refused_keys_exit_six() {
         }
     }
     assert_eq!(pty.finish(), 6, "{}", pty.seen);
-    assert!(!home.root().join(".config/zai-plugin-cc/env").exists());
+    assert!(!home.root().join(".config/huddle/keys/zai").exists());
 }
 
 #[test]
@@ -332,7 +332,7 @@ fn k7_ctrl_c_stores_nothing_and_restores_the_terminal() {
         pty.seen
     );
     assert_eq!(pty.lflag(), before, "the terminal mode comes back");
-    assert!(!home.root().join(".config/zai-plugin-cc/env").exists());
+    assert!(!home.root().join(".config/huddle/keys/zai").exists());
 }
 
 #[test]
@@ -356,7 +356,7 @@ fn k7_backspace_removes_a_character_and_its_star() {
     stop(&home, port);
     assert_eq!(code, 0, "{seen}");
     assert!(seen.contains("**\x08 \x08\x08 \x08"), "{seen:?}");
-    let stored = fs::read_to_string(home.root().join(".config/zai-plugin-cc/env")).expect("key");
+    let stored = fs::read_to_string(home.root().join(".config/huddle/keys/zai")).expect("key");
     assert!(
         stored.contains(FAKE_KEY) && !stored.contains('X'),
         "{stored}"
@@ -432,6 +432,6 @@ fn k7_a_piped_key_is_still_stored() {
     let home = TempHome::new();
     let port = free_port();
     store_key(&home, port);
-    let stored = fs::read_to_string(home.root().join(".config/zai-plugin-cc/env")).expect("key");
+    let stored = fs::read_to_string(home.root().join(".config/huddle/keys/zai")).expect("key");
     assert!(stored.contains(FAKE_KEY));
 }

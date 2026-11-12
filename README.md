@@ -313,7 +313,7 @@ Files huddle writes on your machine:
 
 | Path | Holds |
 |---|---|
-| `~/.config/huddle/` | `config.toml` (dashboard hosts, `[history] keep_days`), `providers.toml`, `harnesses.toml` |
+| `~/.config/huddle/` | `config.toml` (dashboard hosts, `[history] keep_days`), `providers.toml`, `harnesses.toml`, `keys/<p>` (a key file, mode 0600, only where no OS keystore holds the key) |
 | `~/.local/share/huddle/` | `bin/` (the binaries and the `huddle` link), `ca/` (`huddle-ca.pem`, `huddle-ca-key.pem`) |
 | `~/.local/bin/huddle` | A link to `~/.local/share/huddle/bin/huddle`, removed by `huddle uninstall` |
 | `~/.local/state/huddle/` | `huddle.db`, `router.log` and `router-events.log` (each with five older files), the settings and provider ledgers, `jobs/` |

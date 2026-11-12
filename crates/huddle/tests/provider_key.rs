@@ -34,7 +34,7 @@ fn a_positional_argument_after_key_is_refused() {
         String::from_utf8_lossy(&output.stderr)
             .starts_with("huddle provider zai: unknown action (not shown")
     );
-    assert!(!home.root().join(".config/zai-plugin-cc/env").exists());
+    assert!(!home.root().join(".config/huddle/keys/zai").exists());
 }
 
 #[test]
@@ -46,7 +46,7 @@ fn the_key_word_stores_a_key_read_from_stdin() {
         String::from_utf8_lossy(&output.stdout),
         "Z.ai GLM key saved.\n"
     );
-    let path = home.root().join(".config/zai-plugin-cc/env");
+    let path = home.root().join(".config/huddle/keys/zai");
     assert_eq!(
         fs::read_to_string(&path).expect("read"),
         "ZAI_API_KEY=abcdefghijklmnop\n"
