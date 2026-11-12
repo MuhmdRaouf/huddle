@@ -3,6 +3,7 @@ pub mod env_file;
 pub mod install;
 pub mod ledger_file;
 pub mod model_entries;
+pub mod old_plugins;
 pub mod provider_setup;
 pub mod settings;
 pub mod undo;

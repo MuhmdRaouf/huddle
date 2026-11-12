@@ -10,7 +10,7 @@ use huddle_harness::check::{
     render_json, render_markdown,
 };
 use huddle_harness::user_entries::all_entries;
-use huddle_setup::install;
+use huddle_setup::{install, old_plugins};
 
 const USAGE: &str = "usage: huddle setup [<harness>] [--smoke] [--json]";
 
@@ -65,6 +65,9 @@ pub fn run(args: &[String], env: &Env) -> i32 {
             render_all_markdown(&reports)
         };
         let _ = writeln!(std::io::stdout(), "{text}");
+        if !parsed.has("json") {
+            print_old_plugin_hint(&paths);
+        }
         return 0;
     };
     let Some(entry) = entries.iter().find(|entry| entry.id == id) else {
@@ -91,7 +94,16 @@ pub fn run(args: &[String], env: &Env) -> i32 {
         render_markdown(&report)
     };
     let _ = writeln!(std::io::stdout(), "{text}");
+    if !parsed.has("json") {
+        print_old_plugin_hint(&paths);
+    }
     if report.ready { 0 } else { 6 }
+}
+
+fn print_old_plugin_hint(paths: &Paths) {
+    for line in old_plugins::hint_lines(&paths.claude_dir) {
+        let _ = writeln!(std::io::stdout(), "{line}");
+    }
 }
 
 /// The `--install` word: CA, router, settings patch, one restart line.
@@ -124,6 +136,7 @@ fn install_word(env: &Env) -> i32 {
                     "Restart Claude Code once so it picks up the proxy settings."
                 );
             }
+            print_old_plugin_hint(&paths);
             0
         }
         Err(error) => {
