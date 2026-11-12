@@ -54,15 +54,16 @@ fn state_home(home: &TempHome) -> PathBuf {
 }
 
 #[test]
-fn setup_without_a_key_reports_not_ready_and_names_the_key_word() {
+fn k3_setup_without_a_key_names_the_terminal_flow() {
     let home = TempHome::new();
     let port = free_port();
     let output = huddle(&home, port, &["provider", "zai", "setup"]);
     assert_eq!(output.status.code(), Some(6), "{output:?}");
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.starts_with("zai setup: not ready.\n"), "{stdout}");
-    assert!(stdout.contains("no Z.ai GLM key"), "{stdout}");
-    assert!(stdout.contains("provider zai key"), "{stdout}");
+    assert_eq!(
+        stdout, "zai setup: needs a key.\nIn a terminal: huddle provider zai\n",
+        "{stdout}"
+    );
     assert!(
         !home.root().join(".config/huddle/providers.toml").exists(),
         "no key, no lane"

@@ -1,3 +1,4 @@
+pub mod finish;
 pub mod key;
 pub mod remove;
 pub mod setup;
