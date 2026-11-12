@@ -60,7 +60,7 @@ impl std::error::Error for ProvidersFileError {}
 /// `<config_dir>/providers.toml`.
 /// The file `setup --install` creates when `providers.toml` is missing: no provider enabled.
 pub const DEFAULT_PROVIDERS: &str = "\
-# Providers whose lane huddle-router serves. /<provider>:setup adds one, /<provider>:remove takes it out.
+# Providers whose lane huddle-router serves. /huddle:<provider>:setup adds one, /huddle:<provider>:remove takes it out.
 providers = []
 ";
 

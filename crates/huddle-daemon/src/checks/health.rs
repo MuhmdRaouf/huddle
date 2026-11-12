@@ -137,7 +137,7 @@ fn providers_file(facts: &Facts) -> Check {
             "providers.toml",
             Level::Warn,
             "none enabled".into(),
-            "run /<provider>:setup to add a lane",
+            "run /huddle:<provider>:setup to add a lane",
         ),
         Ok(enabled) => check(
             "providers",
@@ -198,6 +198,18 @@ mod tests {
 
     fn check<'a>(list: &'a [Check], id: &str) -> &'a Check {
         list.iter().find(|c| c.id == id).expect("check")
+    }
+
+    #[test]
+    fn no_provider_names_the_huddle_setup_command() {
+        let keys = HashMap::new();
+        let mut none = facts(&keys);
+        none.enabled = Ok(Vec::new());
+        let list = checks(&none);
+        assert_eq!(
+            check(&list, "providers").detail,
+            "run /huddle:<provider>:setup to add a lane"
+        );
     }
 
     #[test]

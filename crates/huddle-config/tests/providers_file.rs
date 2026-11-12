@@ -227,3 +227,11 @@ fn a_first_enable_starts_from_the_default_file() {
         DEFAULT_PROVIDERS.replace("providers = []", "providers = [\"zai\"]")
     );
 }
+
+#[test]
+fn the_default_file_names_the_huddle_commands() {
+    assert!(
+        DEFAULT_PROVIDERS.contains("/huddle:<provider>:setup adds one, /huddle:<provider>:remove"),
+        "{DEFAULT_PROVIDERS}"
+    );
+}
