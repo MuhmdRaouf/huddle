@@ -29,6 +29,7 @@ fn options(home: &TempHome, port: u16, takeover: bool, by: &str) -> (ServeOption
         by: by.into(),
         signal: Arc::default(),
         log: Arc::new(move |l| sink.lock().expect("lines").push(l)),
+        output: None,
     };
     (opts, lines)
 }

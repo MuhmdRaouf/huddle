@@ -44,6 +44,7 @@ async fn an_idle_daemon_costs_under_half_a_percent_of_one_core() {
         by: "test".into(),
         signal: Arc::default(),
         log: Arc::new(|_| {}),
+        output: None,
     };
     let task = tokio::spawn(run(options, stop_rx));
     tokio::time::sleep(Duration::from_secs(1)).await;

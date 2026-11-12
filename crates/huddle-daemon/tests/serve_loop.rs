@@ -37,6 +37,7 @@ fn options(
         by: "test".into(),
         signal: Arc::default(),
         log: Arc::new(move |l| sink.lock().expect("lines").push(l)),
+        output: None,
     };
     (opts, lines)
 }

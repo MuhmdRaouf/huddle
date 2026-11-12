@@ -109,7 +109,7 @@ impl RouterEvents {
 
 /// The kind of an event line by its text.
 fn kind_of(text: &str) -> &'static str {
-    const KINDS: [(&str, &str); 7] = [
+    const KINDS: [(&str, &str); 8] = [
         ("start ", "start"),
         ("exit ", "exit"),
         ("Anthropic path failing", "failing"),
@@ -117,6 +117,7 @@ fn kind_of(text: &str) -> &'static str {
         ("probe ", "probe"),
         ("took over", "handover"),
         ("handed over", "handover"),
+        ("output: ", "output"),
     ];
     KINDS
         .iter()
@@ -138,13 +139,16 @@ mod tests {
             "huddle-router: probe api.anthropic.com dns=ok(3 ms)",
             "huddle-router: exit pid=1 reason=SIGTERM",
             "huddle-router: now serving zai",
+            "huddle-router: output: thread panicked",
         ] {
             events.note(5, line);
         }
         let kinds: Vec<_> = events.view().0.iter().map(|row| row.kind).collect();
         assert_eq!(
             kinds,
-            ["start", "handover", "handover", "probe", "exit", "event"]
+            [
+                "start", "handover", "handover", "probe", "exit", "event", "output"
+            ]
         );
     }
 

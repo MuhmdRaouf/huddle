@@ -4,6 +4,7 @@ pub mod handover;
 pub mod history_sink;
 pub mod history_upkeep;
 pub mod nochain;
+pub mod output;
 pub mod read_cache;
 pub mod rss;
 pub mod serve;

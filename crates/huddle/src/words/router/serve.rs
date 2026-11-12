@@ -5,6 +5,7 @@ use std::sync::{Arc, OnceLock};
 
 use huddle_config::env::Env;
 use huddle_config::paths::Paths;
+use huddle_daemon::output::{Saved, Sink, capture};
 use huddle_daemon::serve::{ServeOptions, ServeOutcome};
 use huddle_router::crashlog;
 use tokio::signal::unix::{SignalKind, signal};
@@ -28,6 +29,18 @@ pub fn run(args: &[String], env: &Env) -> i32 {
     let log = crashlog::router_logs(&paths.state_dir);
     crashlog::install_crash_hook(&log);
     let signal: Arc<OnceLock<&'static str>> = Arc::default();
+    // Stdout and stderr lines become `output` events; a failed redirect leaves the streams as
+    // they are.
+    let output: Sink = Arc::default();
+    let (output, saved) = match capture(Arc::clone(&log), Arc::clone(&output)) {
+        Ok(saved) => (saved.is_some().then_some(output), saved),
+        Err(error) => {
+            log(format!("huddle-router: output capture: {error}"));
+            (None, None)
+        }
+    };
+    // The word's own last message goes to the caller's streams, not to the pipe.
+    let restore = move || saved.iter().for_each(Saved::restore);
     let options = ServeOptions {
         env: env.clone(),
         paths,
@@ -37,6 +50,7 @@ pub fn run(args: &[String], env: &Env) -> i32 {
         by: super::reason_of(args),
         signal: Arc::clone(&signal),
         log: Arc::clone(&log),
+        output,
     };
     let runtime = match tokio::runtime::Runtime::new() {
         Ok(runtime) => runtime,
@@ -54,6 +68,7 @@ pub fn run(args: &[String], env: &Env) -> i32 {
             Ok(ServeOutcome::Stopped | ServeOutcome::HandedOver) => 0,
             Ok(ServeOutcome::AlreadyServed { pid }) => {
                 log(exit_line(&format!("already served by pid {pid}")));
+                restore();
                 let _ = writeln!(
                     std::io::stdout(),
                     "huddle-router: already served by pid {pid}"
@@ -62,6 +77,7 @@ pub fn run(args: &[String], env: &Env) -> i32 {
             }
             Err(error) => {
                 log(exit_line(&format!("fatal: {error}")));
+                restore();
                 let _ = writeln!(std::io::stderr(), "{error}");
                 1
             }

@@ -77,6 +77,9 @@ pub struct ServeOptions {
     /// The signal that stopped the run, set by the caller's signal task before it sends the stop.
     pub signal: Arc<OnceLock<&'static str>>,
     pub log: Logger,
+    /// Where the daemon's stdout and stderr lines go once the router's logger exists; `None`
+    /// when nothing is captured.
+    pub output: Option<crate::output::Sink>,
 }
 
 /// How one run ended.
@@ -129,6 +132,7 @@ pub async fn run(
         by,
         signal,
         log,
+        output,
     } = options;
 
     // The Anthropic origin is parsed before anything is taken: a bad override ends the run with
@@ -293,6 +297,9 @@ pub async fn run(
         router.note_event(line);
     }
     let log = router.logger();
+    if let Some(output) = &output {
+        let _ = output.set(Arc::clone(&log));
+    }
 
     // The handover socket gives the listening socket to the next binary without closing the
     // port; a socket that cannot open is logged and skipped, the router still serves.
