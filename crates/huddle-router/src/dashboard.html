@@ -72,6 +72,7 @@ kbd{font-family:var(--mono);font-size:10.5px;padding:0 5px;border:1px solid var(
 .nav a[aria-current="page"]{background:var(--subtle);color:var(--text);box-shadow:inset 0 0 0 1px var(--line)}
 .nav a[aria-current="page"] svg{color:var(--accent)}
 .badge{margin-left:auto;font-family:var(--mono);font-size:11px;color:var(--faint);font-variant-numeric:tabular-nums;line-height:18px}
+.badge .good{color:var(--ok)}
 .badge.warn,.badge.bad,.badge.acc{padding:0 7px;border-radius:999px;font-weight:600}
 .badge.warn{background:var(--warn-bg);color:var(--warn)}.badge.bad{background:var(--bad-bg);color:var(--bad)}.badge.acc{background:var(--accent-bg);color:var(--accent)}
 .sbfoot{margin-top:auto;display:flex;flex-direction:column;gap:10px;padding-top:12px;border-top:1px solid var(--line-soft)}
@@ -186,8 +187,12 @@ kbd{font-family:var(--mono);font-size:10.5px;padding:0 5px;border:1px solid var(
 .tbl{overflow-x:auto;scrollbar-width:thin}
 table{width:100%;border-collapse:separate;border-spacing:0;font-size:13.5px}
 th{font-size:12px;font-weight:500;color:var(--muted);text-align:left;padding:9px 12px;background:var(--subtle);border-bottom:1px solid var(--line);white-space:nowrap}
-th.sortable{cursor:pointer;user-select:none}
-th.sortable:hover{color:var(--text)}
+th.sortable{user-select:none}
+th .sortbtn{font:inherit;color:inherit;background:none;border:0;padding:0;margin:0;cursor:pointer;text-align:inherit;display:inline-flex;align-items:center;gap:2px}
+th .sortbtn:hover{color:var(--text)}
+.s14{width:14px;height:14px}.sans{font-family:var(--sans)}.mt12{margin-top:12px}.legendrow.bare{border:0;padding:0}.w36{width:36px}.wrap{white-space:normal}
+.fw4{font-weight:400}.fw5{font-weight:500}.fs13{font-size:13px}.fs15{font-size:15px}.blk{display:block}.padkv{padding:14px 16px}.pad-s{padding:6px 8px}.kpis.two{grid-template-columns:repeat(2,minmax(0,1fr))}
+.drawer:focus{outline:0}
 .caret{margin-left:4px;color:var(--accent);font-size:11px}
 td{padding:10px 12px;border-top:1px solid var(--line-soft);vertical-align:middle;white-space:nowrap}
 tbody tr:first-child td{border-top:0}
@@ -352,6 +357,7 @@ td.empty{text-align:center;color:var(--faint);padding:28px 14px}
 }
 @media (max-width:760px){.kpis,.kpis.k6,.kpis.k5,.kpis.k3{grid-template-columns:repeat(2,minmax(0,1fr))}.kpis.k3 .kpi:last-child{grid-column:1/-1}.mtabs{grid-template-columns:repeat(2,minmax(0,1fr))}.mtab:nth-child(3){border-left:0}.mtab:nth-child(n+3){border-top:1px solid var(--line-soft)}}
 @media (max-width:600px){
+  .cmd{white-space:normal;overflow-wrap:anywhere;max-width:100%}
   .hide-sm{display:none}
   .ph h1{font-size:21px}
   .ph .act{margin-left:0}
@@ -393,14 +399,14 @@ td.empty{text-align:center;color:var(--faint);padding:28px 14px}
       <div class="crumbs" id="crumbs"></div>
       <div class="tbright">
         <span class="livep"><span class="dot ok pulse" id="livedot"></span><b id="livew">Live</b><span class="mono lt" id="clock"></span></span>
-        <button class="tbk" id="openPal2"><svg class="i" viewBox="0 0 24 24" style="width:14px;height:14px"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>Search<kbd>⌘K</kbd></button>
+        <button class="tbk" id="openPal2"><svg class="i s14" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>Search<kbd>⌘K</kbd></button>
       </div>
     </header>
     <main class="content" id="content"></main>
   </div>
 </div>
 <div class="scrim" id="scrim"></div>
-<aside class="drawer" id="drawer" aria-label="Details"></aside>
+<aside class="drawer" id="drawer" role="dialog" aria-modal="true" aria-label="Details" tabindex="-1"></aside>
 <div class="pal" id="pal" role="dialog" aria-label="Search"><div class="palbox"><div class="palin"><svg class="i" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input id="palq" placeholder="Search pages, sessions, models, projects…" autocomplete="off" spellcheck="false"><kbd>Esc</kbd></div><div class="pallist" id="pallist" role="listbox"></div><div class="palfoot"><span><kbd>↑</kbd><kbd>↓</kbd> move</span><span><kbd>↵</kbd> open</span><span><kbd>Esc</kbd> close</span></div></div></div>
 <div class="toast" id="toast" role="status"></div>
 <script>
@@ -409,7 +415,15 @@ td.empty{text-align:center;color:var(--faint);padding:28px 14px}
 const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
 /* Every string from the snapshot passes through esc before it reaches markup; setHtml is the one place markup is written. */
 const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-function setHtml(el,html){el.innerHTML=html}
+function setHtml(el,html){el.innerHTML=html;el.querySelectorAll('[data-css]').forEach(n=>{n.style.cssText=n.dataset.css})}
+/* A region is written only when its markup changed; a focused control comes back by id or data key. */
+const LASTHTML=new WeakMap(), FOCUS_KEYS=['data-copy','data-sort','data-open','data-seg','data-metric','data-focus','data-q','data-hf','data-hp','data-close'];
+function focusSelector(el){if(el.id)return '#'+CSS.escape(el.id);for(const a of FOCUS_KEYS){const v=el.getAttribute(a);if(v!==null)return `[${a}="${CSS.escape(v)}"]`}return null}
+function patch(el,html){if(LASTHTML.get(el)===html)return false;
+ const a=document.activeElement,keep=a&&el.contains(a)&&a!==el?{sel:focusSelector(a),s:a.selectionStart,e:a.selectionEnd}:null;
+ setHtml(el,html);LASTHTML.set(el,html);
+ if(keep&&keep.sel){const n=el.querySelector(keep.sel);if(n){n.focus({preventScroll:true});if(keep.s!=null){try{n.setSelectionRange(keep.s,keep.e)}catch(e){}}}}
+ return true}
 const num=v=>typeof v==='number'&&isFinite(v)?v:null;
 const arr=v=>Array.isArray(v)?v:[];
 const n0=v=>num(v)||0;
@@ -554,11 +568,11 @@ function projects(){
 function pill(k,txt){const icon=k==='ok'?ic('check'):k==='bad'?ic('x'):k==='warn'?ic('alert'):k==='acc'?'<span class="dot acc pulse"></span>':k==='off'?ic('minus'):'';return `<span class="pill ${k}">${icon}${esc(txt)}</span>`}
 const dot=(k,p)=>`<span class="dot ${k}${p?' pulse':''}"></span>`;
 const NA='<span class="faint">—</span>';
-const sw=m=>`<span class="sw" style="background:${col(m)}"></span>`;
+const sw=m=>`<span class="sw" data-css="background:${col(m)}"></span>`;
 const modelTag=m=>m?`<span class="mt">${sw(m)}<span class="mono">${esc(m)}</span></span>`:NA;
 const cmd=c=>`<button class="cmd" data-copy="${esc(c)}" title="Copy">${esc(c)}${ic('copy')}</button>`;
 const cid=t=>t?`<button class="cid" data-copy="${esc(t)}" title="Copy">${esc(t)}</button>`:NA;
-const meter=(p,k)=>`<div class="meter"><i class="${k||''}" style="width:${Math.max(0,Math.min(100,num(p)||0)).toFixed(1)}%"></i></div>`;
+const meter=(p,k)=>`<div class="meter"><i class="${k||''}" data-css="width:${Math.max(0,Math.min(100,num(p)||0)).toFixed(1)}%"></i></div>`;
 function spark(v,color,cls){const n=v.length;if(n<2)return '';const max=Math.max(1e-9,...v);const d=v.map((x,i)=>(i?'L':'M')+(i/(n-1)*100).toFixed(2)+' '+(26-x/max*22).toFixed(2)).join(' ');
  return `<svg class="${cls||'sp'}" viewBox="0 0 100 28" preserveAspectRatio="none" aria-hidden="true"><path d="${d} L100 28 L0 28Z" fill="${color}" fill-opacity=".12"/><path d="${d}" fill="none" stroke="${color}" stroke-width="1.5" vector-effect="non-scaling-stroke" stroke-linejoin="round"/></svg>`}
 function deltaH(cur,prev,goodUp){if(!prev&&!cur)return '';if(!prev)return `<span class="delta flat" title="last 5 min vs the 5 min before">new</span>`;const p=Math.round((cur-prev)/prev*100);if(Math.abs(p)<2)return `<span class="delta flat" title="last 5 min vs the 5 min before">±0%</span>`;const good=(p>0)===goodUp;return `<span class="delta ${goodUp==null?'flat':good?'up':'down'}" title="last 5 min vs the 5 min before">${p>0?'↑':'↓'} ${Math.abs(p)}%</span>`}
@@ -569,23 +583,23 @@ function ctxCell(s){if(s.ctx==null)return NA;const c=Math.round(s.ctx);return `<
 function cacheCell(s){const l=cacheLeft(s);if(l==null)return NA;if(l<=0)return pill('off','Cold');if(l<60e3)return pill('warn','Cools in '+dur(l));return pill('ok','Warm · '+dur(l))}
 function agentsCell(s){const subs=s.agents.slice(1);if(!subs.length)return NA;const run=subs.filter(a=>a.state==='running').length;return `${subs.length}${run?` <span class="muted">· ${run} running</span>`:''}<span class="dots">${subs.map(a=>`<i class="${esc(a.state)}" title="${esc(a.desc)}"></i>`).join('')}</span>`}
 const wtName=p=>p?`<span class="mono">${esc(String(p).split('/').pop())}</span>`:'<span class="faint">session checkout</span>';
-const who=r=>r.s?`<div>${esc(r.s.project||r.s.name)} <span class="mono faint">${esc(r.s.sid)}</span></div><div class="cs" style="font-family:var(--sans)">${r.a?esc(r.a.type==='main'?'main':r.a.desc||r.a.type):'—'}</div>`:NA;
+const who=r=>r.s?`<div>${esc(r.s.project||r.s.name)} <span class="mono faint">${esc(r.s.sid)}</span></div><div class="cs sans">${r.a?esc(r.a.type==='main'?'main':r.a.desc||r.a.type):'—'}</div>`:NA;
 
 /* table: one component for every list; columns are sortable when they carry a sort key */
 const SORT={};
 function table(id,cols,rows,opt){opt=opt||{};const st=SORT[id]||opt.sort;let rs=rows.slice();
  if(st){const c=cols.find(c=>c.k===st.k);if(c&&c.v)rs.sort((a,b)=>{const x=c.v(a),y=c.v(b);return (x>y?1:x<y?-1:0)*st.d})}
  if(opt.limit)rs=rs.slice(0,opt.limit);
- const th=cols.map(c=>`<th class="${c.num?'num ':''}${c.c?'c ':''}${c.sm?'hide-sm ':''}${c.v?'sortable':''}"${c.v?` data-sort="${id}:${c.k}"`:''}${c.w?` style="width:${c.w}"`:''}>${c.label}${st&&st.k===c.k?`<span class="caret">${st.d>0?'↑':'↓'}</span>`:''}</th>`).join('');
+ const th=cols.map(c=>{const on=st&&st.k===c.k,lab=`${c.label}${on?`<span class="caret">${st.d>0?'↑':'↓'}</span>`:''}`;return `<th class="${c.num?'num ':''}${c.c?'c ':''}${c.sm?'hide-sm ':''}${c.v?'sortable':''}"${c.v?` aria-sort="${on?(st.d>0?'ascending':'descending'):'none'}"`:''}${c.w?` data-css="width:${c.w}"`:''}>${c.v?`<button type="button" class="sortbtn" data-sort="${id}:${c.k}">${lab}</button>`:lab}</th>`}).join('');
  const tb=rs.length?rs.map(r=>{const o=opt.row?opt.row(r):null;const cls=[o?'clickable':'',opt.cls?opt.cls(r):'',o&&DR&&DR.key===o?'sel':''].join(' ').trim();
-  return `<tr${cls?` class="${cls}"`:''}${o?` data-open="${esc(o)}"`:''}>${cols.map(c=>`<td class="${c.num?'num ':''}${c.c?'c ':''}${c.sm?'hide-sm ':''}${c.cls||''}">${c.h(r)}</td>`).join('')}</tr>`}).join('')
+  return `<tr${cls?` class="${cls}"`:''}${o?` tabindex="0" data-open="${esc(o)}"`:''}>${cols.map(c=>`<td class="${c.num?'num ':''}${c.c?'c ':''}${c.sm?'hide-sm ':''}${c.cls||''}">${c.h(r)}</td>`).join('')}</tr>`}).join('')
   :`<tr><td colspan="${cols.length}" class="empty">${opt.empty||'Nothing here yet'}</td></tr>`;
  return `<div class="tbl"><table><thead><tr>${th}</tr></thead><tbody>${tb}</tbody></table></div>`}
 
 /* regions: parts of a page that refresh on every snapshot without touching the rest */
 let REG={};
 function reg(name,fn){REG[name]=fn;return `<div class="reg" id="r-${name}">${fn()}</div>`}
-function refresh(){for(const[k,fn]of Object.entries(REG)){const el=document.getElementById('r-'+k);if(!el)continue;const sc=[...el.querySelectorAll('.tbl')].map(t=>t.scrollLeft);setHtml(el,fn());el.querySelectorAll('.tbl').forEach((t,i)=>{t.scrollLeft=sc[i]||0})}}
+function refresh(){for(const[k,fn]of Object.entries(REG)){const el=document.getElementById('r-'+k);if(!el)continue;const sc=[...el.querySelectorAll('.tbl')].map(t=>t.scrollLeft);if(patch(el,fn()))el.querySelectorAll('.tbl').forEach((t,i)=>{t.scrollLeft=sc[i]||0})}}
 const head=(t,d,act)=>`<div class="ph"><div><h1>${t}</h1>${d?`<p>${d}</p>`:''}</div>${act?`<div class="act">${act}</div>`:''}</div>`;
 const secH=(t,extra,more)=>`<div class="sh"><h2>${t}</h2>${extra||''}${more?`<a class="more" href="#${more[0]}">${more[1]}${ic('chev')}</a>`:''}</div>`;
 const F={sess:'all',agents:'all',req:'all',lane:'all',harn:'all',wt:'all',q:{}};
@@ -677,7 +691,7 @@ function histBlock(key,t){const tr=HT.trend[key],head='<h4>History <span class="
   {k:'cost',label:'Cost',num:1,v:m=>n0(m.cost_usd),h:m=>`<span class="mono">${usd(m.cost_usd)}</span>`}];
  return `<div>${head}<div class="facts">${fact('Requests',fmt(t.n)+' · '+fmt(t.err)+' errors')+fact('Tokens in',fmt(tin))+fact('Tokens out',fmt(t.tok_out))
   +fact('Cache hit rate',tin?Math.round(n0(t.cache_read)/tin*100)+'%':'—')+fact('Estimated cost',costCell(t))+fact('First seen',new Date(t.first_ms).toLocaleDateString()+' · '+ago(t.first_ms))+fact('Last seen',new Date(t.last_ms).toLocaleDateString()+' · '+ago(t.last_ms))}</div>
-  <div class="card pad" style="margin-top:12px"><div class="legendrow" style="border:0;padding:0">Requests per day</div>${tr?spark(histSeries(tr).b.map(k=>k.n),'var(--c1)'):checking()}</div></div>
+  <div class="card pad mt12"><div class="legendrow bare">Requests per day</div>${tr?spark(histSeries(tr).b.map(k=>k.n),'var(--c1)'):checking()}</div></div>
   <div><h4>Models used <span class="faint">${arr(t.models).length}</span></h4><div class="card t">${table('d-hm',mcols,arr(t.models),{empty:'No models'})}</div>${pricesLine(HT.meta)}</div>`}
 
 
@@ -731,7 +745,7 @@ const CM={
 function mtabs(){const b=ser().b,t=Math.floor(b.length/3);return `<div class="mtabs" role="tablist">${Object.entries(CM).filter(([k])=>k!=='cost'||!liveRange()).map(([k,c])=>`<button class="mtab" role="tab" data-metric="${k}" aria-selected="${k===CH.metric}"><div class="k">${c.label}</div><div class="v">${c.f(c.agg(b))}${deltaH(c.agg(b.slice(-t)),c.agg(b.slice(-2*t,-t)),c.up)}</div></button>`).join('')}</div>`}
 function modelTotals(metric){const t={},S=ser();S.mn.forEach(m=>{const mb=S.b.map(x=>x.byM[m]||EMPTY);t[m]=metric==='lat'?(CM.lat.agg(mb)||0):sum(mb.map(x=>CM[metric].val(x)))});return t}
 function bars(){const t=modelTotals(CH.metric),max=Math.max(1,...Object.values(t));
- return `<div class="k"><span>By model</span><span class="faint">${CH.focus?'click again for all':'click to focus'}</span></div><div class="bars">${ser().mn.length?ser().mn.slice().sort((a,b)=>t[b]-t[a]).map(m=>`<button class="bar${CH.focus&&CH.focus!==m?' off':''}${CH.focus===m?' on':''}" data-focus="${esc(m)}"><i style="width:${(t[m]/max*100).toFixed(1)}%"></i><span>${sw(m)}<span class="mono">${esc(m)}</span></span><span class="n">${CH.metric==='lat'?Math.round(t[m])+' ms':CH.metric==='cost'?usd(t[m]):fmt(t[m])}</span></button>`).join(''):'<div class="faint" style="padding:6px 8px">No traffic yet</div>'}</div>`}
+ return `<div class="k"><span>By model</span><span class="faint">${CH.focus?'click again for all':'click to focus'}</span></div><div class="bars">${ser().mn.length?ser().mn.slice().sort((a,b)=>t[b]-t[a]).map(m=>`<button class="bar${CH.focus&&CH.focus!==m?' off':''}${CH.focus===m?' on':''}" data-focus="${esc(m)}"><i data-css="width:${(t[m]/max*100).toFixed(1)}%"></i><span>${sw(m)}<span class="mono">${esc(m)}</span></span><span class="n">${CH.metric==='lat'?Math.round(t[m])+' ms':CH.metric==='cost'?usd(t[m]):fmt(t[m])}</span></button>`).join(''):'<div class="faint pad-s">No traffic yet</div>'}</div>`}
 function smooth(p){if(p.length<2)return '';let d=`M${p[0][0].toFixed(1)},${p[0][1].toFixed(1)}`;for(let i=0;i<p.length-1;i++){const[x0,y0]=p[i],[x1,y1]=p[i+1],cx=((x0+x1)/2).toFixed(1);d+=` C${cx},${y0.toFixed(1)} ${cx},${y1.toFixed(1)} ${x1.toFixed(1)},${y1.toFixed(1)}`}return d}
 function niceMax(v){if(v<=0)return 1;const p=Math.pow(10,Math.floor(Math.log10(v))),n=v/p;return (n<=1?1:n<=2?2:n<=2.5?2.5:n<=5?5:10)*p}
 function drawChart(){const svg=$('#chart');if(!svg)return;const W=svg.clientWidth;if(!W)return;const H=240,pl=46,pr=14,pt=10,pb=26;
@@ -785,7 +799,7 @@ function jobPill(j){return j.state==='running'?pill('acc','Running'):j.state==='
 function jobsMini(){if(!JOBS.length)return `<div class="allclear">${ic('info')} No delegated jobs</div>`;return JOBS.slice(0,6).map(j=>`<div class="li"><div class="grow"><div><span class="mono">${esc(j.id)}</span> <span class="muted">· ${esc(j.h)}</span></div><div class="sm">${esc(j.task)}</div></div>${jobPill(j)}</div>`).join('')}
 const upCell=()=>num(SNAP.started_ms)!=null?dur(NOW-SNAP.started_ms):'—';
 const cpuCell=()=>RT.cpu!=null?RT.cpu.toFixed(1)+'%':'—';
-function routerMini(){return `<dl class="kv" style="padding:14px 16px">
+function routerMini(){return `<dl class="kv padkv">
  <dt>Status</dt><dd>${LOST?pill('bad','Down'):pill('ok','Up')} <span class="mono muted">${SNAP.pid!=null?'pid '+esc(SNAP.pid):''}</span></dd>
  <dt>Uptime</dt><dd class="mono">${upCell()}</dd>
  <dt>CPU · memory</dt><dd class="mono">${cpuCell()} · ${mb(RT.rss)}</dd>
@@ -810,7 +824,7 @@ PAGES.sessions={title:'Sessions',body:()=>{const c=k=>k==='all'?SESS.length:SESS
  `<div class="card t">${reg('sess',()=>table('sess',SESS_COLS.filter(c=>c.k!=='last'),SESS.filter(s=>(F.sess==='all'||sstate(s)===F.sess)&&qmatch('sess',s.name+' '+s.project+' '+s.branch+' '+s.id)),{row:s=>'session:'+s.id,sort:{k:'state',d:1},empty:'No sessions match'}))}</div>`}};
 
 const AG_COLS=[
- {k:'agent',label:'Agent',v:a=>a.desc,h:a=>`<div class="ct">${a.type==='main'?'<b>main</b>':`<span class="mono">${esc(a.type)}</span>`}</div><div class="cs" style="font-family:var(--sans)">${esc(a.desc)}</div>`},
+ {k:'agent',label:'Agent',v:a=>a.desc,h:a=>`<div class="ct">${a.type==='main'?'<b>main</b>':`<span class="mono">${esc(a.type)}</span>`}</div><div class="cs sans">${esc(a.desc)}</div>`},
  {k:'session',label:'Session',v:a=>a.s.project,h:a=>`<div>${esc(a.s.project)}</div><div class="cs">${esc(a.s.sid)}</div>`,sm:1},
  {k:'model',label:'Model',v:a=>a.model,h:a=>modelTag(a.model)},
  {k:'state',label:'State',v:a=>({running:0,waiting:1,done:2,idle:3})[a.state],h:agentPill},
@@ -831,7 +845,7 @@ const REQ_COLS=[
  {k:'model',label:'Model',v:r=>r.m,h:r=>modelTag(r.m)},
  {k:'lane',label:'Lane',v:r=>r.lane,h:r=>`<span class="muted">${esc(r.lane)}</span>`,sm:1},
  {k:'who',label:'Session · agent',v:r=>r.s?r.s.project:'',h:who},
- {k:'ttft',label:'TTFT',num:1,v:r=>r.ttft||0,h:r=>`<span class="mono">${msf(r.ttft)}</span>`},
+ {k:'ttft',label:'<span title="Time to first token">1st token</span>',num:1,v:r=>r.ttft||0,h:r=>`<span class="mono">${msf(r.ttft)}</span>`},
  {k:'dur',label:'Duration',num:1,v:r=>r.dur||NOW-r.t,h:r=>`<span class="mono">${r.dur!=null?(r.dur/1e3).toFixed(1)+' s':r.status==null?dur(NOW-r.t):'—'}</span>`,sm:1},
  {k:'speed',label:'Speed',num:1,v:r=>speed(r)||0,h:r=>`<span class="mono">${speed(r)?Math.round(speed(r))+' tok/s':'—'}</span>`,sm:1},
  {k:'in',label:'In',num:1,v:r=>n0(r.in),h:r=>`<span class="mono">${fmt(r.in)}</span>`},
@@ -892,7 +906,7 @@ PAGES.errors={title:'Errors',body:()=>HS.mode==='history'?hview('Errors','Failed
   {k:'last',label:'Last seen',num:1,v:g=>-g.last,h:g=>`<span class="muted">${ago(g.last)}</span>`},
   {k:'counts',label:'Counts as error',c:1,h:g=>g.def[3]?'<span class="badc">Yes</span>':'<span class="faint">No</span>',sm:1}
  ],errGroups(),{sort:{k:'n',d:-1},empty:'No errors in the last 15 minutes'}))}</div></section>`+
- `<section>${secH('What each cause means')}<div class="card list">${Object.entries(ERRDEF).map(([c,d])=>`<div class="li"><span class="mono" style="width:36px">${c}</span><div class="grow"><div><b style="font-weight:500">${d[0]}</b> <span class="mono faint">${d[1]}</span></div><div class="sm" style="white-space:normal">${d[2]}</div></div></div>`).join('')}</div></section>`+
+ `<section>${secH('What each cause means')}<div class="card list">${Object.entries(ERRDEF).map(([c,d])=>`<div class="li"><span class="mono w36">${c}</span><div class="grow"><div><b class="fw5">${d[0]}</b> <span class="mono faint">${d[1]}</span></div><div class="sm wrap">${d[2]}</div></div></div>`).join('')}</div></section>`+
  `<section>${secH('Recent')}<div class="card t">${reg('errr',()=>table('errr',REQ_COLS.filter(c=>['time','status','model','who','dur','in'].includes(c.k)),stats().done.filter(r=>r.status!==200).reverse(),{row:r=>'request:'+r.id,limit:40,empty:'No errors in the last 15 minutes'}))}</div></section>`};
 
 function modelRows(){const t=Math.max(1,sum(MODELS.map(m=>m.n)));return MODELS.map(m=>Object.assign({share:m.n/t,hit:m.tin?m.cr/m.tin:0,trend:BK.map(x=>(x.byM[m.id]||EMPTY).n)},m))}
@@ -904,8 +918,8 @@ PAGES.models={title:'Models',body:()=>head('Models',`Every model seen in the las
   {k:'share',label:'Share',num:1,v:x=>x.share,h:x=>`<div class="sharebar"><span class="mono">${Math.round(x.share*100)}%</span>${meter(x.share*100,'acc')}</div>`,sm:1},
   {k:'trend',label:'Last 15 min',h:x=>spark(x.trend,col(x.id),'tsp'),sm:1},
   {k:'err',label:'Errors',num:1,v:x=>x.err,h:x=>x.err?`<span class="badc">${x.err}</span>`:'<span class="faint">0</span>'},
-  {k:'p50',label:'TTFT p50',num:1,v:x=>x.p50||0,h:x=>`<span class="mono">${msf(x.p50)}</span>`},
-  {k:'p95',label:'TTFT p95',num:1,v:x=>x.p95||0,h:x=>`<span class="mono">${msf(x.p95)}</span>`,sm:1},
+  {k:'p50',label:'Time to first token p50',num:1,v:x=>x.p50||0,h:x=>`<span class="mono">${msf(x.p50)}</span>`},
+  {k:'p95',label:'Time to first token p95',num:1,v:x=>x.p95||0,h:x=>`<span class="mono">${msf(x.p95)}</span>`,sm:1},
   {k:'speed',label:'Output speed',num:1,v:x=>x.speed||0,h:x=>`<span class="mono">${x.speed?Math.round(x.speed)+' tok/s':'—'}</span>`,sm:1},
   {k:'tin',label:'Tokens in',num:1,v:x=>x.tin,h:x=>`<span class="mono">${fmt(x.tin)}</span>`},
   {k:'hit',label:'Cache hit',num:1,v:x=>x.hit,h:x=>`<span class="mono">${Math.round(x.hit*100)}%</span>`,sm:1},
@@ -947,7 +961,7 @@ PAGES.providers={title:'Providers',body:()=>head('Providers','Where your model r
   {k:'name',label:'Provider',h:x=>`<div class="ct">${esc(x.name)}</div>${x.pattern?`<div class="cs">${esc(x.pattern)}</div>`:''}`},
   {k:'status',label:'Status',h:x=>pill(x.status[0],x.status[1])},
   {k:'n',label:'Requests',num:1,h:x=>x.n?`<b>${x.n.toLocaleString('en-US')}</b>`:NA,sm:1},
-  {k:'p50',label:'1st token',num:1,h:x=>x.n&&x.p50?`<span class="mono">${msf(x.p50)}</span>`:NA,sm:1},
+  {k:'p50',label:'<span title="Time to first token">1st token</span>',num:1,h:x=>x.n&&x.p50?`<span class="mono">${msf(x.p50)}</span>`:NA,sm:1},
   {k:'err',label:'Errors',num:1,h:errPct,sm:1},
   {k:'next',label:'Next step',h:x=>x.next?cmd(x.next):NA}
  ],provRows(),{row:x=>'provider:'+x.id,cls:x=>x.rest?x.first?'dim sep':'dim':'',empty:PL.state==='checking'?checking():'No providers found'}))}<div class="legendrow"><span><b>Working</b> set up, and its lane answers</span><span><b>Not set up</b> optional; run the command to add it</span><span><b>Needs a fix</b> a key without a lane, or a failing lane</span></div></div>`+
@@ -957,7 +971,7 @@ PAGES.usage={title:'Usage',body:()=>head('Usage',`Where the tokens went in the l
  `<div class="${'g2e'}">${reg('planbox',()=>PLAN?`<section>${secH('Claude plan','<span class="note">from Anthropic\'s usage headers</span>')}<div class="card pad plan">${
   PLAN.h5!=null?`<div class="planrow"><div><div class="k">5-hour window</div><div class="v">${Math.round(PLAN.h5)}<small>%</small></div></div><div class="r">${PLAN.h5r!=null?'resets in '+dur(PLAN.h5r-NOW)+'<br><span class="faint">at '+clock(PLAN.h5r).slice(0,5)+'</span>':'—'}</div>${meter(PLAN.h5,'acc')}</div>`:''}${
   PLAN.wk!=null?`<div class="planrow"><div><div class="k">This week</div><div class="v">${Math.round(PLAN.wk)}<small>%</small></div></div><div class="r">${PLAN.wkr!=null?'resets in '+dur(PLAN.wkr-NOW):'—'}</div>${meter(PLAN.wk,'acc')}</div>`:''}</div></section>`:'')}
- <section>${secH('Cache')}<div class="card kpis" style="grid-template-columns:repeat(2,minmax(0,1fr))">${reg('cachek',()=>{const rm=RM(),cr=sum(rm.map(m=>m.cr)),cw=sum(rm.map(m=>m.cw)),fresh=sum(rm.map(m=>m.fresh)),out=sum(rm.map(m=>m.out));return kpiGrid([
+ <section>${secH('Cache')}<div class="card kpis two">${reg('cachek',()=>{const rm=RM(),cr=sum(rm.map(m=>m.cr)),cw=sum(rm.map(m=>m.cw)),fresh=sum(rm.map(m=>m.fresh)),out=sum(rm.map(m=>m.out));return kpiGrid([
   {k:'Read from cache',v:fmt(cr),d:cr+cw+fresh?`${Math.round(cr/(cr+cw+fresh)*100)}% of input tokens`:'—'},{k:'Written to cache',v:fmt(cw),d:'new prefixes cached'},{k:'Fresh input',v:fmt(fresh),d:'not cached'},{k:'Output',v:fmt(out),d:`${fmt(out/rangeMin())} per minute`}])})}</div></section></div>`+
  `<section>${secH('Tokens by model')}<div class="card t">${reg('tokm',()=>table('tokm',rangeCols([
   {k:'m',label:'Model',v:x=>x.id,h:x=>modelTag(x.id)},
@@ -971,7 +985,7 @@ PAGES.usage={title:'Usage',body:()=>head('Usage',`Where the tokens went in the l
  `<section>${secH('Projects × models','<span class="note">last 15 min, total tokens, darker is more</span>')}<div class="card t">${reg('matrix',matrix)}</div></section>`};
 function matrix(){const ps=projects().filter(p=>p.reqs.length),cells={};let max=1;ps.forEach(p=>{cells[p.name]={};p.reqs.forEach(r=>{cells[p.name][r.m]=(cells[p.name][r.m]||0)+tokIn(r)+n0(r.out)});Object.values(cells[p.name]).forEach(v=>{max=Math.max(max,v)})});
  if(!ps.length)return `<div class="allclear">${ic('info')} No requests matched to a project yet</div>`;
- return `<div class="tbl"><table class="matrix"><thead><tr><th>Project</th>${MN.map(m=>`<th class="num">${sw(m)} <span class="mono">${esc(m)}</span></th>`).join('')}<th class="num">Total</th></tr></thead><tbody>${ps.map(p=>`<tr><td><b style="font-weight:500">${esc(p.name)}</b></td>${MN.map(m=>{const v=cells[p.name][m]||0;return `<td class="cellv" style="background:${v?`color-mix(in srgb,var(--accent) ${Math.round(6+v/max*44)}%,transparent)`:'transparent'}">${v?fmt(v):'<span class="faint">·</span>'}</td>`}).join('')}<td class="cellv"><b>${fmt(sum(Object.values(cells[p.name])))}</b></td></tr>`).join('')}</tbody></table></div>`}
+ return `<div class="tbl"><table class="matrix"><thead><tr><th>Project</th>${MN.map(m=>`<th class="num">${sw(m)} <span class="mono">${esc(m)}</span></th>`).join('')}<th class="num">Total</th></tr></thead><tbody>${ps.map(p=>`<tr><td><b class="fw5">${esc(p.name)}</b></td>${MN.map(m=>{const v=cells[p.name][m]||0;return `<td class="cellv" data-css="background:${v?`color-mix(in srgb,var(--accent) ${Math.round(6+v/max*44)}%,transparent)`:'transparent'}">${v?fmt(v):'<span class="faint">·</span>'}</td>`}).join('')}<td class="cellv"><b>${fmt(sum(Object.values(cells[p.name])))}</b></td></tr>`).join('')}</tbody></table></div>`}
 
 PAGES.projects={title:'Projects',body:()=>head('Projects','Grouped by repository: sessions, worktrees and delegated jobs together.',search('proj','Filter by project or path'))+
  `<div class="card t">${reg('proj',()=>table('proj',[
@@ -993,7 +1007,7 @@ const changesCell=w=>w.changes==null?NA:w.changes?`<span class="warnc">${w.chang
 PAGES.worktrees={title:'Worktrees',body:()=>{const c=k=>k==='all'?WT.length:WT.filter(w=>w.kind===k).length;
  return head('Worktrees','Every checkout and worktree of the projects in use, read from git worktree list. Read only: huddle never changes them here.',reg('wt-f',()=>seg('wt',[['all','All',c('all')],['checkout','Checkouts',c('checkout')],['agent','Agent',c('agent')],['job','Job',c('job')]],F.wt)))+
  `<div class="card t">${reg('wt',()=>table('wt',[
-  {k:'branch',label:'Branch',v:w=>w.branch,h:w=>`<div class="ct mono" style="font-size:13px">${esc(w.branch||'(detached)')}</div><div class="cs">${esc(tilde(w.path))}</div>`},
+  {k:'branch',label:'Branch',v:w=>w.branch,h:w=>`<div class="ct mono fs13">${esc(w.branch||'(detached)')}</div><div class="cs">${esc(tilde(w.path))}</div>`},
   {k:'project',label:'Project',v:w=>w.project,h:w=>esc(w.project)},
   {k:'kind',label:'Kind',v:w=>w.kind,h:w=>kindPill(w.kind)},
   {k:'by',label:'Used by',v:w=>w.by||'',h:w=>w.stale?pill('warn','No session · '+dur(NOW-w.commit).split(' ')[0]):w.by?`<span class="mono muted">${esc(w.by)}</span>`:NA},
@@ -1006,7 +1020,7 @@ PAGES.jobs={title:'Jobs',body:()=>head('Delegated jobs','Tasks handed to another
  `<div class="card t">${reg('jobs',()=>table('jobs',[
   {k:'id',label:'Job',v:j=>j.id,h:j=>cid(j.id)},
   {k:'h',label:'Harness',v:j=>j.h,h:j=>`<span class="mono">${esc(j.h)}</span>`},
-  {k:'task',label:'Task',v:j=>j.task,h:j=>`<div class="ct" style="font-weight:400">${esc(j.task)}</div>${j.why?`<div class="err-small">${esc(j.why)}</div>`:''}`},
+  {k:'task',label:'Task',v:j=>j.task,h:j=>`<div class="ct fw4">${esc(j.task)}</div>${j.why?`<div class="err-small">${esc(j.why)}</div>`:''}`},
   {k:'repo',label:'Repo',v:j=>j.repo,h:j=>esc(j.repo),sm:1},
   {k:'state',label:'State',v:j=>({running:0,awaiting_review:1,queued:2,dead:3,failed:3,accepted:4})[j.state],h:jobPill},
   {k:'start',label:'Started',num:1,v:j=>-(j.started||0),h:j=>`<span class="muted">${ago(j.started)}</span>`,sm:1},
@@ -1026,16 +1040,16 @@ PAGES.harnesses={title:'Harnesses',body:()=>{const c=k=>k==='all'?HARN.length:k=
   {k:'report',label:'Report',v:h=>h.report,h:h=>h.report?`<span class="muted">${esc(h.report)}</span>`:NA,sm:1},
   {k:'access',label:'Access',h:h=>h.access.length?`<span class="access">${h.access.map(a=>`<span>${esc(a)}</span>`).join('')}</span>`:NA,sm:1},
   {k:'jobs',label:'Jobs',num:1,v:h=>h.jobs,h:h=>h.jobs||'<span class="faint">0</span>'}
- ],HARN.filter(h=>F.harn==='all'||(F.harn==='ready'?h.st==='ready':h.st!=='ready')),{sort:{k:'st',d:1},cls:h=>h.st==='missing'?'dim':'',empty:HARN.state==='checking'?checking():'No harnesses found'}))}</div>`}};
+ ],HARN.filter(h=>F.harn==='all'||(F.harn==='ready'?h.st==='ready':h.st!=='ready')),{sort:{k:'st',d:1},cls:h=>h.st==='missing'?'dim':'',empty:HARN.state==='checking'?checking():'No harnesses found'}))}<div class="legendrow"><span><b>Flags</b> Checked: the flags huddle passes are verified. Unverified: not yet</span><span><b>Access</b> what a job may do: readonly, exec, write</span><span><b>Report</b> how huddle reads the result: checked, extracted or free text</span></div></div>`}};
 
 const wirePill=(on,label)=>WIRE.state==='checking'||on==null?`<span class="muted">Checking…</span>`:pill(on?'ok':'bad',label);
 function wiringCard(){return `<dl class="kv"><dt>Status</dt><dd>${WIRE.state==='ok'?pill('ok','Wired'):WIRE.state==='bad'?pill('bad','Not wired'):'<span class="muted">Checking…</span>'}</dd><dt>HTTPS_PROXY</dt><dd>${wirePill(WIRE.proxy,'Points at the router')}</dd><dt>NODE_EXTRA_CA_CERTS</dt><dd>${wirePill(WIRE.ca,'Trusts the local CA')}</dd><dt>Written by</dt><dd>/huddle:setup, undone by <span class="mono">huddle uninstall</span></dd><dt>Settings file</dt><dd class="mono">~/.claude/settings.json</dd></dl>`}
-PAGES.router={title:'Router',body:()=>head('Router','The local proxy every Claude Code request passes through. It decrypts only api.anthropic.com, with the local CA, to route by model.',cmd('huddle router status'))+
+PAGES.router={title:'Router',body:()=>head('Router','The local proxy every Claude Code request passes through. It checks the traffic to Anthropic with the local CA, to route each request by its model. Everything else passes through untouched.',cmd('huddle router status'))+
  `<div class="card kpis k6">${reg('rk',()=>kpiGrid([
   {k:'Status',v:LOST?'Down':'Up',d:SNAP.pid!=null?'pid '+esc(SNAP.pid):'—'},{k:'Uptime',v:upCell()},{k:'CPU',v:RT.cpu!=null?RT.cpu.toFixed(1):'—',small:RT.cpu!=null?'%':'',d:'idle cost near zero'},
   {k:'Memory',v:RT.rss!=null?(RT.rss/1e6).toFixed(1):'—',small:RT.rss!=null?'MB':'',d:'resident'},{k:'In flight',v:stats().flights.length,small:'streams',d:`${RT.conns!=null?RT.conns:'—'} open connections`},{k:'Live viewers',v:RT.viewers!=null?RT.viewers:'—',small:RT.viewers!=null?'page'+(RT.viewers===1?'':'s'):'',d:'feed sleeps with none'}]))}</div>`+
  `<section>${secH('Health checks')}<div class="card t">${reg('checks',()=>table('checks',[
-  {k:'s',label:'',h:c=>c.level==='pass'?pill('ok','Pass'):c.level==='fail'?pill('bad','Fail'):pill('warn','Check'),w:'1%'},{k:'n',label:'Check',h:c=>`<b style="font-weight:500">${esc(c.label||c.id)}</b>`},{k:'v',label:'Result',h:c=>c.value?`<span class="mono">${esc(c.value)}</span>`:NA},{k:'d',label:'Detail',h:c=>`<span class="muted">${esc(c.detail||'')}</span>`,sm:1}],PL.checks,{empty:PL.state==='checking'?checking():'No checks reported'}))}</div></section>`+
+  {k:'s',label:'',h:c=>c.level==='pass'?pill('ok','Pass'):c.level==='fail'?pill('bad','Fail'):pill('warn','Check'),w:'1%'},{k:'n',label:'Check',h:c=>`<b class="fw5">${esc(c.label||c.id)}</b>`},{k:'v',label:'Result',h:c=>c.value?`<span class="mono">${esc(c.value)}</span>`:NA},{k:'d',label:'Detail',h:c=>`<span class="muted">${esc(c.detail||'')}</span>`,sm:1}],PL.checks,{empty:PL.state==='checking'?checking():'No checks reported'}))}</div></section>`+
  `<div class="g2e"><section>${secH('Claude Code wiring')}<div class="card pad">${reg('wiring',wiringCard)}</div></section>
  <section>${secH('Dashboard hosts')}<div class="card t">${reg('hosts',()=>table('hosts',[{k:'h',label:'Host',h:h=>`<span class="mono">${esc(h[0])}</span>`},{k:'r',label:'Reaches',h:h=>h[1]},{k:'x',label:'Remove',h:h=>h[2]?cmd(h[2]):'<span class="faint">always on</span>'}],arr(SNAP.hosts).map(h=>[h,'Dashboard pages only','huddle remove-dashboard-host '+h]).concat([['127.0.0.1','Everything',null],['localhost','Everything',null]])))}<div class="legendrow">Add one with ${cmd('huddle add-dashboard-host <host>')}</div></div></section></div>`+
  `<section>${secH('Files')}<div class="card t">${table('files',[{k:'p',label:'Path',h:f=>cid(f[0])},{k:'w',label:'Holds',h:f=>`<span class="muted">${f[1]}</span>`}],[
@@ -1048,7 +1062,7 @@ const DRAWERS={
  session(id){const s=SESS.find(x=>x.id===id);if(!s)return '';const rs=sReq(s),cl=cacheLeft(s),c=s.ctx==null?null:Math.round(s.ctx);const t0=NOW-15*MIN;
   const lane=a=>aReq(a).filter(r=>r.t>=t0);
   const unmatched=rs.filter(r=>!r.a&&r.t>=t0);
-  const bar=r=>{const x=Math.max(0,(r.t-t0)/(15*MIN)*100),w=Math.max(.5,(r.dur!=null?r.dur:NOW-r.t)/(15*MIN)*100);return `<i class="${r.status==null?'flight':''}" style="left:${x.toFixed(2)}%;width:${Math.min(w,100-x).toFixed(2)}%;background:${isErr(r)?'var(--bad)':r.status===499?'var(--faint)':col(r.m)}" title="${esc(r.m)} · ${r.status==null?'streaming':r.status}"></i>`};
+  const bar=r=>{const x=Math.max(0,(r.t-t0)/(15*MIN)*100),w=Math.max(.5,(r.dur!=null?r.dur:NOW-r.t)/(15*MIN)*100);return `<i class="${r.status==null?'flight':''}" data-css="left:${x.toFixed(2)}%;width:${Math.min(w,100-x).toFixed(2)}%;background:${isErr(r)?'var(--bad)':r.status===499?'var(--faint)':col(r.m)}" title="${esc(r.m)} · ${r.status==null?'streaming':r.status}"></i>`};
   return `<div class="dh"><div class="grow">${statePill(s)}<h3>${esc(s.name)}</h3><div class="s">${esc([s.project,s.branch].filter(Boolean).join(' · '))} · ${cid(s.sid)}</div></div>${closeBtn()}</div>
   <div class="db">
    <div class="gauges"><div class="gauge"><div class="top"><span>Context window</span><b>${c==null?'—':c+'%'}</b></div>${meter(c,c>=90?'max':c>=80?'hi':'')}<div class="n">${c!=null&&c>=80?'<span class="warnc">Compaction soon.</span> ':''}${s.ctxTok!=null&&s.ctxLim?fmt(s.ctxTok)+' of '+fmt(s.ctxLim)+' tokens':'—'}</div></div>
@@ -1066,7 +1080,7 @@ const DRAWERS={
     <div class="fact"><div class="k">Tokens out</div><div class="v">${fmt(tokOutOf(rs))}</div></div></div></div>
    ${histBlock('session:'+s.id,hOf(HT.ses,s.id))}
    <div><h4>Agents <span class="faint">${s.agents.length}</span></h4><div class="card t">${table('d-ag',AG_COLS.filter(c=>['agent','model','state','dur','req','wt'].includes(c.k)),s.agents,{})}</div></div>
-   <div><h4>Timeline <span class="faint">each bar is one request · last 15 min</span></h4><div class="swim">${s.agents.map(a=>`<div class="row"><div class="who">${a.type==='main'?'<b style="font-weight:500">main</b>':esc(a.desc||a.type)}</div><div class="track">${lane(a).map(bar).join('')}</div></div>`).join('')}${unmatched.length?`<div class="row"><div class="who faint">not matched to an agent</div><div class="track">${unmatched.map(bar).join('')}</div></div>`:''}</div><div class="axis"><span>${clock(t0).slice(0,5)}</span><span>${clock(t0+5*MIN).slice(0,5)}</span><span>${clock(t0+10*MIN).slice(0,5)}</span><span>now</span></div></div>
+   <div><h4>Timeline <span class="faint">each bar is one request · last 15 min</span></h4><div class="swim">${s.agents.map(a=>`<div class="row"><div class="who">${a.type==='main'?'<b class="fw5">main</b>':esc(a.desc||a.type)}</div><div class="track">${lane(a).map(bar).join('')}</div></div>`).join('')}${unmatched.length?`<div class="row"><div class="who faint">not matched to an agent</div><div class="track">${unmatched.map(bar).join('')}</div></div>`:''}</div><div class="axis"><span>${clock(t0).slice(0,5)}</span><span>${clock(t0+5*MIN).slice(0,5)}</span><span>${clock(t0+10*MIN).slice(0,5)}</span><span>now</span></div></div>
    <div><h4>Recent requests</h4><div class="card t">${table('d-req',REQ_COLS.filter(c=>['time','status','model','ttft','in','out'].includes(c.k)),rs.slice().reverse(),{row:r=>'request:'+r.id,limit:12,empty:'No requests kept for this session'})}</div></div>
    <div class="notebox">${ic('info')}<span>Read from Claude Code's session log for ${esc(s.sid)}. Prompt text and tool output are never read into this page.</span></div>
   </div>`},
@@ -1074,9 +1088,9 @@ const DRAWERS={
   const total=r.dur!=null?r.dur:r.status==null?NOW-r.t:null,L=LANES.find(l=>l.id===r.lane);
   let wf='';
   if(total>0){const rt=n0(r.rt),tt=r.ttft!=null?r.ttft:r.status==null?Math.min(total,NOW-r.t):0;const s1=Math.min(100,rt/total*100),s2=Math.max(0,Math.min(100-s1,(tt-rt)/total*100)),s3=Math.max(0,100-s1-s2);
-   wf=`<div><h4>Timing <span class="faint">${(total/1e3).toFixed(2)} s total</span></h4><div class="wf"><i style="width:${s1.toFixed(2)}%;background:var(--faint)"></i><i style="width:${s2.toFixed(2)}%;background:var(--warn)"></i><i style="width:${s3.toFixed(2)}%;background:${col(r.m)}"></i></div>
-    <div class="wfl"><span><span class="sw" style="background:var(--faint)"></span>Router <b>${r.rt==null?'—':r.rt<1?'&lt;1 ms':r.rt+' ms'}</b></span><span><span class="sw" style="background:var(--warn)"></span>First token <b>${msf(r.ttft)}</b></span><span><span class="sw" style="background:${col(r.m)}"></span>Streaming <b>${r.ttft!=null?((total-r.ttft)/1e3).toFixed(1)+' s':'—'}</b></span></div></div>`}
-  return `<div class="dh"><div class="grow">${reqStatus(r)}<h3>${modelTag(r.m)} <span class="muted" style="font-weight:400;font-size:15px">· ${clock(r.t)}</span></h3><div class="s">${cid(r.id.slice(1))}</div></div>${closeBtn()}</div>
+   wf=`<div><h4>Timing <span class="faint">${(total/1e3).toFixed(2)} s total</span></h4><div class="wf"><i data-css="width:${s1.toFixed(2)}%;background:var(--faint)"></i><i data-css="width:${s2.toFixed(2)}%;background:var(--warn)"></i><i data-css="width:${s3.toFixed(2)}%;background:${col(r.m)}"></i></div>
+    <div class="wfl"><span><span class="sw" data-css="background:var(--faint)"></span>Router <b>${r.rt==null?'—':r.rt<1?'&lt;1 ms':r.rt+' ms'}</b></span><span><span class="sw" data-css="background:var(--warn)"></span>Time to first token <b>${msf(r.ttft)}</b></span><span><span class="sw" data-css="background:${col(r.m)}"></span>Streaming <b>${r.ttft!=null?((total-r.ttft)/1e3).toFixed(1)+' s':'—'}</b></span></div></div>`}
+  return `<div class="dh"><div class="grow">${reqStatus(r)}<h3>${modelTag(r.m)} <span class="muted fw4 fs15">· ${clock(r.t)}</span></h3><div class="s">${cid(r.id.slice(1))}</div></div>${closeBtn()}</div>
   <div class="db">${wf}
    <div><h4>Tokens</h4><div class="facts">
     <div class="fact"><div class="k">Fresh input</div><div class="v">${fmt(r.in)}</div></div><div class="fact"><div class="k">Cache write</div><div class="v">${fmt(r.cw)}</div></div>
@@ -1095,7 +1109,7 @@ const DRAWERS={
     <div class="fact"><div class="k">Key</div><div class="v">${x.built?'Claude sign-in':x.key?'Found':'Not found'}</div></div>
     <div class="fact"><div class="k">Lane</div><div class="v">${x.laneOn?'On':'Off'}${x.pattern?` <span class="mono muted">${esc(x.pattern)}</span>`:''}</div></div>
     <div class="fact"><div class="k">Requests</div><div class="v">${x.n.toLocaleString('en-US')}</div></div>
-    <div class="fact"><div class="k">1st token</div><div class="v">${x.n&&x.p50?msf(x.p50):'—'}</div></div>
+    <div class="fact"><div class="k">Time to first token</div><div class="v">${x.n&&x.p50?msf(x.p50):'—'}</div></div>
     <div class="fact"><div class="k">Errors</div><div class="v">${x.err.toLocaleString('en-US')}</div></div>
     ${x.built?'':`<div class="fact"><div class="k">Agents</div><div class="v">${x.nAgents?x.nAgents+' agent'+(x.nAgents===1?'':'s'):'None'}</div></div>`}
    </div>
@@ -1112,9 +1126,15 @@ const DRAWERS={
    ${p.jobs.length?`<div><h4>Jobs</h4><div class="card list">${p.jobs.map(j=>`<div class="li"><div class="grow"><div><span class="mono">${esc(j.id)}</span> <span class="muted">· ${esc(j.h)}</span></div><div class="sm">${esc(j.task)}</div></div>${jobPill(j)}</div>`).join('')}</div></div>`:''}
   </div>`}
 };
-function openDrawer(key){const[k,id]=key.split(/:(.*)/s);if(!DRAWERS[k])return;DR={k,id,key};renderDrawer(false);$('#drawer').classList.add('on');$('#scrim').classList.add('on');refresh();loadTotals()}
-function closeDrawer(){DR=null;$('#drawer').classList.remove('on');if(!$('#sb').classList.contains('on'))$('#scrim').classList.remove('on');refresh()}
-function renderDrawer(keep){if(!DR)return;const body=$('#drawer .db'),top=keep&&body?body.scrollTop:0;setHtml($('#drawer'),DRAWERS[DR.k](DR.id));const nb=$('#drawer .db');if(nb)nb.scrollTop=top}
+let DRBACK=null;
+function openDrawer(key){const[k,id]=key.split(/:(.*)/s);if(!DRAWERS[k])return;if(!DR)DRBACK=document.activeElement;DR={k,id,key};renderDrawer(false);$('#drawer').classList.add('on');$('#scrim').classList.add('on');refresh();$('#drawer').focus({preventScroll:true});loadTotals()}
+function closeDrawer(){const key=DR&&DR.key;DR=null;$('#drawer').classList.remove('on');if(!$('#sb').classList.contains('on'))$('#scrim').classList.remove('on');refresh();
+ const row=key&&document.querySelector(`[data-open="${CSS.escape(key)}"]`),back=row||(DRBACK&&DRBACK.isConnected?DRBACK:null);DRBACK=null;if(back)back.focus({preventScroll:true})}
+function renderDrawer(keep){if(!DR)return;const d=$('#drawer'),body=$('#drawer .db'),top=keep&&body?body.scrollTop:0;patch(d,DRAWERS[DR.k](DR.id));const nb=$('#drawer .db');if(nb)nb.scrollTop=top}
+function trapTab(e){const d=$('#drawer'),f=[...d.querySelectorAll('button,a[href],input,select,textarea,[tabindex="0"]')].filter(n=>!n.disabled&&n.offsetParent!==null);
+ if(!f.length){e.preventDefault();d.focus();return}
+ const first=f[0],last=f[f.length-1],a=document.activeElement;
+ if(e.shiftKey&&(a===first||a===d)){e.preventDefault();last.focus()}else if(!e.shiftKey&&(a===last||!d.contains(a))){e.preventDefault();first.focus()}}
 
 /* ---------- shell: nav, crumbs, router card ---------- */
 const NAV=[
@@ -1129,19 +1149,19 @@ function badge(k){switch(k){
  case 'requests':return `<span class="badge">${Math.round(sum(BK.slice(20).map(b=>b.n))/5)}/m</span>`;
  case 'errors':{const e=stats().done.filter(isErr).length;return e?`<span class="badge bad">${e}</span>`:''}
  case 'models':return `<span class="badge">${MODELS.length}</span>`;
- case 'providers':{const n=PL.rows.filter(r=>r.set_up===true).length;return PL.rows.length?`<span class="badge">${n?`<span style="color:var(--ok)">${n}</span>`:n}/${PL.rows.length}</span>`:''}
+ case 'providers':{const n=PL.rows.filter(r=>r.set_up===true).length;return PL.rows.length?`<span class="badge">${n?`<span class="good">${n}</span>`:n}/${PL.rows.length}</span>`:''}
  case 'projects':return `<span class="badge">${projects().length}</span>`;
  case 'worktrees':return `<span class="badge">${WT.length}</span>`;
  case 'jobs':return `<span class="badge">${JOBS.filter(j=>j.state==='running'||j.state==='awaiting_review').length}</span>`;
- case 'harnesses':{const n=HARN.filter(h=>h.st==='ready').length;return HARN.length?`<span class="badge">${n?`<span style="color:var(--ok)">${n}</span>`:n}/${HARN.length}</span>`:''}
+ case 'harnesses':{const n=HARN.filter(h=>h.st==='ready').length;return HARN.length?`<span class="badge">${n?`<span class="good">${n}</span>`:n}/${HARN.length}</span>`:''}
  default:return ''}}
 function navHtml(){return NAV.map(([g,items])=>`<div><div class="gl">${g}</div>${items.map(([k,l])=>`<a href="#${k}"${k===page?' aria-current="page"':''}>${ic(k)}${l}${badge(k)}</a>`).join('')}</div>`).join('')}
 const dashHost=()=>arr(SNAP.hosts)[0]||location.host||'huddle router';
 const dashUrl=()=>arr(SNAP.hosts)[0]||location.host;
 function rcard(){return `<div class="r1">${dot(LOST?'bad':'ok',!LOST)}Router ${LOST?'down':'up'}${location.port?`<span class="chip">:${esc(location.port)}</span>`:''}</div><div class="r2"><div><span>Uptime</span><b>${upCell().replace(/ \d+s$/,'')}</b></div><div><span>CPU</span><b>${cpuCell()}</b></div><div><span>Memory</span><b>${mb(RT.rss)}</b></div></div>`}
-function shell(){setHtml($('#nav'),navHtml());setHtml($('#rcard'),rcard());$('#clock').textContent=clock(NOW);
+function shell(){patch($('#nav'),navHtml());patch($('#rcard'),rcard());$('#clock').textContent=clock(NOW);
  $('#vchip').textContent=SNAP.version?'v'+SNAP.version:'';
- const hb=$('#hostbtn');hb.dataset.copy=dashUrl();setHtml(hb,`${dot(LOST?'bad':'ok',!LOST)}<span><span class="t" style="display:block">${esc(dashHost())}</span><span class="s">${location.host?'→ '+esc(location.host):'router'}</span></span>`);
+ const hb=$('#hostbtn');hb.dataset.copy=dashUrl();patch(hb,`${dot(LOST?'bad':'ok',!LOST)}<span><span class="t blk">${esc(dashHost())}</span><span class="s">${location.host?'→ '+esc(location.host):'router'}</span></span>`);
  $('#livew').textContent=LOST?'Reconnecting':'Live';
  const lp=$('#livedot');lp.className='dot '+(LOST?'bad':'ok pulse')}
 
@@ -1150,7 +1170,7 @@ let page='overview';
 function render(){REG={};let h=(location.hash||'#overview').slice(1).split('?')[0];h=h==='plugins'?'providers':h;page=PAGES[h]?h:'overview';const p=PAGES[page];
  if(page==='requests'||page==='errors')hload(page);else HS.mode='live';
  const grp=NAV.find(([,its])=>its.some(([k])=>k===page))[0];
- setHtml($('#crumbs'),`<span class="c0">Huddle</span>${ic('chev')}<span>${grp}</span>${ic('chev')}<b>${p.title}</b>`);
+ patch($('#crumbs'),`<span class="c0">Huddle</span>${ic('chev')}<span>${grp}</span>${ic('chev')}<b>${p.title}</b>`);
  setHtml($('#content'),p.body()+(readsMemory()?`<div class="foot">${dot('ok',true)} Memory only. Restarting the router clears this page.</div>`:''));
  if(p.after)p.after();shell();closeSidebar();window.scrollTo(0,0);loadTotals()}
 window.addEventListener('hashchange',render);
@@ -1161,7 +1181,7 @@ function copy(t){const done=()=>toast('Copied '+(t.length>36?t.slice(0,34)+'…'
 document.addEventListener('click',e=>{
  const c=e.target.closest('[data-copy]');if(c){e.stopPropagation();copy(c.dataset.copy);return}
  if(e.target.closest('[data-close]')){closeDrawer();return}
- const so=e.target.closest('[data-sort]');if(so){const[id,k]=so.dataset.sort.split(':');const cur=SORT[id];SORT[id]={k,d:cur&&cur.k===k?-cur.d:(so.classList.contains('num')?-1:1)};refresh();if(DR)renderDrawer(true);return}
+ const so=e.target.closest('[data-sort]');if(so){const[id,k]=so.dataset.sort.split(':');const cur=SORT[id];SORT[id]={k,d:cur&&cur.k===k?-cur.d:(so.closest('th').classList.contains('num')?-1:1)};refresh();if(DR)renderDrawer(true);return}
  const sg=e.target.closest('[data-seg]');if(sg){const[id,k]=sg.dataset.seg.split(':');if(id==='range'){setRange(k);return}if(id==='hmode'){location.hash='#'+page+(k==='history'?'?mode=history':'');return}F[id]=k;$$('[data-seg]').filter(b=>b.dataset.seg.startsWith(id+':')).forEach(b=>b.setAttribute('aria-pressed',String(b===sg)));refresh();return}
  const hp=e.target.closest('[data-hp]');if(hp){HS.off=Math.max(0,HS.off+(hp.dataset.hp==='next'?HPAGE:-HPAGE));hsearch();return}
  const mt=e.target.closest('[data-metric]');if(mt){CH.metric=mt.dataset.metric;refresh();drawChart();return}
@@ -1201,6 +1221,8 @@ document.addEventListener('keydown',e=>{
  if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='k'){e.preventDefault();palOn?palClose():palOpen();return}
  if(palOn){if(e.key==='Escape'){palClose();return}if(e.key==='ArrowDown'){e.preventDefault();PAL.i=Math.min(PAL.items.length-1,PAL.i+1);palRender();return}if(e.key==='ArrowUp'){e.preventDefault();PAL.i=Math.max(0,PAL.i-1);palRender();return}if(e.key==='Enter'){e.preventDefault();palGo(PAL.i);return}return}
  if(e.key==='Escape'){if(DR)closeDrawer();closeSidebar();return}
+ if(DR&&e.key==='Tab'){trapTab(e);return}
+ if((e.key==='Enter'||e.key===' ')&&e.target.matches&&e.target.matches('tr[data-open]')){e.preventDefault();openDrawer(e.target.dataset.open);return}
  if(e.key==='/'&&!/input|textarea/i.test(document.activeElement.tagName)){e.preventDefault();palOpen()}
 });
 window.addEventListener('resize',()=>{if(page==='overview')drawChart()});

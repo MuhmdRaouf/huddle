@@ -70,7 +70,7 @@ fn writes_markup_in_one_helper_that_the_data_cannot_reach_unescaped() {
         1,
         "innerHTML outside setHtml"
     );
-    assert!(PAGE.contains("function setHtml(el,html){el.innerHTML=html}"));
+    assert!(PAGE.contains("function setHtml(el,html){el.innerHTML=html;"));
     for word in ["outerHTML", "insertAdjacentHTML", "document.write"] {
         assert!(!PAGE.contains(word), "{word}");
     }
@@ -340,14 +340,15 @@ fn k11_sidebar_badges_read_as_ratios_with_the_good_part_green() {
         .find(|l| l.contains("case 'providers':"))
         .expect("providers badge");
     assert!(providers.contains("/${"), "{providers}");
-    assert!(providers.contains("var(--ok)"), "{providers}");
+    assert!(providers.contains("class=\"good\""), "{providers}");
     assert!(!providers.contains("badge warn"), "{providers}");
     let harnesses = PAGE
         .lines()
         .find(|l| l.contains("case 'harnesses':"))
         .expect("harnesses badge");
     assert!(harnesses.contains("HARN.length"), "{harnesses}");
-    assert!(harnesses.contains("var(--ok)"), "{harnesses}");
+    assert!(harnesses.contains("class=\"good\""), "{harnesses}");
+    assert!(PAGE.contains(".badge .good{color:var(--ok)}"));
     assert!(harnesses.contains("/${HARN.length}"), "{harnesses}");
 }
 
@@ -395,7 +396,7 @@ fn k13_the_next_step_is_the_huddle_setup_command() {
     assert!(page.contains("label:'Next step'"), "column");
     assert!(page.contains("cmd(x.next)"), "command chip");
     assert!(FIXTURE.contains("/huddle:kimi:setup"));
-    assert!(page.contains("label:'1st token'"));
+    assert!(page.contains(">1st token</span>"));
     assert!(page.contains("label:'Requests'"));
     assert!(page.contains("label:'Errors'"));
     assert!(
@@ -423,7 +424,7 @@ fn k13_the_providers_badge_reads_set_up_of_five() {
         .find(|l| l.contains("case 'providers':"))
         .expect("providers badge");
     assert!(line.contains("set_up===true"), "{line}");
-    assert!(line.contains("var(--ok)"), "{line}");
+    assert!(line.contains("class=\"good\""), "{line}");
     assert!(line.contains("/${"), "{line}");
 }
 
@@ -542,4 +543,73 @@ fn k14_light_theme_faint_and_accent_meet_4_5_to_1() {
         "accent on its tint"
     );
     assert!(contrast(accent, card) >= 4.5, "accent on a card");
+}
+
+#[test]
+fn k15_sortable_headers_are_buttons_with_aria_sort() {
+    assert!(PAGE.contains("<button type=\"button\" class=\"sortbtn\" data-sort="));
+    assert!(PAGE.contains("aria-sort=\"${on?(st.d>0?'ascending':'descending'):'none'}\""));
+    assert!(!PAGE.contains("<th class=\"${c.num?'num ':''}${c.c?'c ':''}${c.sm?'hide-sm ':''}${c.v?'sortable':''}\"${c.v?` data-sort"));
+}
+
+#[test]
+fn k15_rows_open_with_enter_and_the_drawer_traps_and_returns_focus() {
+    assert!(PAGE.contains("` tabindex=\"0\" data-open=\"${esc(o)}\"`"));
+    assert!(PAGE.contains("e.target.matches('tr[data-open]')"));
+    assert!(PAGE.contains("e.key==='Enter'||e.key===' '"));
+    assert!(PAGE.contains("role=\"dialog\" aria-modal=\"true\""));
+    assert!(
+        PAGE.contains("$('#drawer').focus("),
+        "focus moves into the drawer"
+    );
+    assert!(
+        PAGE.contains("function trapTab("),
+        "Tab stays in the drawer"
+    );
+    assert!(
+        PAGE.contains("if(back)back.focus("),
+        "focus returns to the row"
+    );
+    assert!(PAGE.contains("if(e.key==='Escape'){if(DR)closeDrawer()"));
+}
+
+#[test]
+fn k15_redraw_skips_unchanged_regions() {
+    let refresh = page_between("function refresh(){", "\nconst head=");
+    assert!(refresh.contains("patch(el,fn())"), "{refresh}");
+    assert!(!refresh.contains("setHtml(el,fn())"), "{refresh}");
+    assert!(PAGE.contains("if(LASTHTML.get(el)===html)return false;"));
+    assert!(
+        PAGE.contains("n.focus({preventScroll:true})"),
+        "focus comes back"
+    );
+    assert!(PAGE.contains("setSelectionRange("), "selection comes back");
+}
+
+#[test]
+fn k15_one_name_for_time_to_first_token() {
+    assert!(!PAGE.contains("TTFT"), "no TTFT in the page");
+    assert!(!PAGE.contains(">First token"), "one name for one idea");
+    assert!(PAGE.contains("title=\"Time to first token\">1st token"));
+    let harnesses = page_between("PAGES.harnesses=", "const wirePill");
+    for word in ["Flags</b>", "Access</b>", "Report</b>"] {
+        assert!(harnesses.contains(word), "legend for {word}");
+    }
+    assert!(!PAGE.contains("decrypts"), "plain words on the Router page");
+    assert!(PAGE.contains("checks the traffic to Anthropic"));
+}
+
+#[test]
+fn k15_no_inline_styles_left() {
+    assert_eq!(PAGE.matches("style=\"").count(), 0);
+    assert!(PAGE.contains("n.style.cssText=n.dataset.css"));
+}
+
+#[test]
+fn k15_phone_command_chips_wrap() {
+    let phone = page_between(
+        "@media (max-width:600px){",
+        "@media (prefers-reduced-motion",
+    );
+    assert!(phone.contains(".cmd{white-space:normal"), "{phone}");
 }
