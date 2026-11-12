@@ -212,3 +212,13 @@ Each incident, its cause, and the test that now stops it. A guard named here mus
 - **Guard:** crates/huddle/tests/k8_key_page.rs:k8_a_test_home_stops_the_helper_it_started stops
   the helpers; no guard yet stops a router with its test.
 - **Rule:** a test home stops every process it started when it is dropped.
+
+## 2026-11-12, the prompt hook started a second router next to a busy one
+
+- **What happened:** under load the hook's 50 ms probe missed a live router, the hook ran `router start`,
+  and the start spawned a second `router serve` that the singleton lock refused. The logs held a
+  restart line and a refused serve for a router that never stopped.
+- **Cause:** a missed probe was read as a dead router, and nothing checked the router lock before the spawn.
+- **Guard:** crates/huddle/tests/prompt_probe.rs:b2_a_held_lock_means_no_second_router and
+  b2_a_free_lock_still_starts_the_router; crates/huddle-daemon/tests/start_probe.rs:b2_a_start_that_loses_the_lock_waits_for_the_winner
+- **Rule:** a slow answer is not a dead router: nothing spawns while the router lock is held.

@@ -22,6 +22,7 @@ The five providers are part of huddle, and a key goes in from a page or a termin
 ### Router start
 
 - A start waits up to 10 s for the spawned router to answer health, polling every 50 ms, and stops at once with `the daemon exited before it answered` when the process is gone.
+- A start and the prompt hook spawn nothing while another process holds the router lock: the hook logs `hook: router busy (<reason>), not restarted`, and a start waits for the holder's health answer. A spawned daemon that exits while the lock is held keeps the wait going.
 
 ### Terminal
 

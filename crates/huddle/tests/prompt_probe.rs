@@ -127,3 +127,65 @@ fn a_prompt_with_the_router_up_returns_at_once() {
     assert_silent(&out);
     assert!(port_open(port));
 }
+
+fn home_paths(home: &TempHome) -> huddle_config::paths::Paths {
+    let vars = home.env();
+    let pairs: Vec<(&str, &str)> = vars
+        .iter()
+        .map(|(name, value)| (name.as_str(), value.as_str()))
+        .collect();
+    huddle_config::paths::Paths::from_env(&huddle_config::env::Env::with(&pairs)).expect("paths")
+}
+
+/// A home with setup done and its router stopped, so the next prompt probe misses.
+fn home_with_router_stopped(port: u16) -> TempHome {
+    let home = TempHome::new();
+    assert_eq!(
+        huddle(&home, port, &["setup", "--install"]).status.code(),
+        Some(0)
+    );
+    assert!(wait_for(port, true), "router up after setup");
+    assert_eq!(
+        huddle(&home, port, &["router", "stop"]).status.code(),
+        Some(0)
+    );
+    assert!(wait_for(port, false), "router stopped");
+    home
+}
+
+#[test]
+fn b2_a_held_lock_means_no_second_router() {
+    let port = free_port();
+    let home = home_with_router_stopped(port);
+    let paths = home_paths(&home);
+    let _holder = huddle_daemon::singleton::lock(&huddle_daemon::serve::lock_path(&paths), "test")
+        .expect("hold the router lock");
+
+    let out = huddle(&home, port, &["hook", "prompt-submit"]);
+
+    assert_silent(&out);
+    thread::sleep(Duration::from_secs(1));
+    assert!(!port_open(port), "no second router while the lock is held");
+    let log =
+        std::fs::read_to_string(paths.state_dir.join("router-events.log")).unwrap_or_default();
+    assert!(
+        log.contains("hook: router busy (") && log.contains("), not restarted"),
+        "{log}"
+    );
+    assert!(!log.contains("starting the router"), "{log}");
+}
+
+#[test]
+fn b2_a_free_lock_still_starts_the_router() {
+    let port = free_port();
+    let home = home_with_router_stopped(port);
+    let _stop = StopOnDrop(&home, port);
+    let paths = home_paths(&home);
+    let lock = huddle_daemon::serve::lock_path(&paths);
+    drop(huddle_daemon::singleton::lock(&lock, "test").expect("leave a stale lock file"));
+
+    let out = huddle(&home, port, &["hook", "prompt-submit"]);
+
+    assert_silent(&out);
+    assert!(wait_running(&home, port), "the router came back");
+}

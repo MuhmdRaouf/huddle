@@ -407,3 +407,43 @@ fn b1_a_daemon_that_exits_stops_the_wait_at_once() {
         )
     );
 }
+
+#[test]
+fn b2_a_start_that_loses_the_lock_waits_for_the_winner() {
+    let home = TempHome::new();
+    let paths = paths(&home);
+    let script = write_script(&home, "sleep 0.4");
+    let env = home_env(&home);
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
+    let port = listener.local_addr().expect("addr").port();
+    let lock = huddle_daemon::serve::lock_path(&paths);
+    thread::spawn(move || {
+        thread::sleep(Duration::from_millis(100));
+        let _winner = huddle_daemon::singleton::lock(&lock, "winner").expect("winner lock");
+        thread::sleep(Duration::from_millis(1500));
+        for stream in listener.incoming() {
+            let Ok(mut stream) = stream else { return };
+            let mut buffer = [0u8; 2048];
+            let _ = stream.read(&mut buffer);
+            let reply = format!(
+                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{GOOD}",
+                GOOD.len()
+            );
+            let _ = stream.write_all(reply.as_bytes());
+        }
+    });
+    let started = Instant::now();
+    let line = start(&StartOptions {
+        env: &env,
+        paths: &paths,
+        port,
+        executable: script,
+        budget: Duration::from_secs(8),
+    })
+    .expect("the winner answers");
+    assert_eq!(
+        line,
+        format!("huddle-router: http://127.0.0.1:{port} (zai)")
+    );
+    assert!(started.elapsed() >= Duration::from_millis(1500));
+}

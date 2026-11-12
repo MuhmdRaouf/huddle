@@ -19,6 +19,8 @@ use huddle_procs::detached::{DetachError, DetachSpec, start_detached_pid};
 use huddle_procs::live::is_alive;
 
 use crate::nochain::{PROXY_VARS, is_router_proxy};
+use crate::serve::lock_path;
+use crate::singleton::holder;
 use huddle_config::files::{DIR_MODE, create_dir};
 
 /// The probe every start begins with: a daemon answering within it is up.
@@ -373,26 +375,31 @@ pub fn start_by(opts: &StartOptions<'_>, by: &str) -> Result<String, StartError>
     // An empty list still spawns: the router serves Anthropic with no provider enabled.
     let _providers = read_enabled(&opts.paths.config_dir, &provider_ids())
         .map_err(|error| StartError::ProvidersFile(error.to_string()))?;
-    let pid = spawn_serve(
-        opts.env,
-        opts.paths,
-        opts.port,
-        &opts.executable,
-        &["--by", by],
-    )?;
+    // A held router lock means a daemon is up or coming up: wait for its answer, spawn nothing.
+    let router_lock = lock_path(opts.paths);
+    let lock_held = || holder(&router_lock).is_some();
+    let spawned = if lock_held() {
+        None
+    } else {
+        Some(spawn_serve(
+            opts.env,
+            opts.paths,
+            opts.port,
+            &opts.executable,
+            &["--by", by],
+        )?)
+    };
     let deadline = Instant::now() + opts.budget;
     loop {
         if let Some(answer) = health(opts.port, HEALTH_WAIT) {
             return Ok(up_line(opts.port, &answer));
         }
-        if !is_alive(pid) {
-            // A daemon that lost the lock to a concurrent start exits while the winner answers.
-            return match health(opts.port, HEALTH_WAIT) {
-                Some(answer) => Ok(up_line(opts.port, &answer)),
-                None => Err(StartError::Exited {
-                    log: opts.paths.state_dir.join(LOG_NAME),
-                }),
-            };
+        // A daemon that lost the lock to a concurrent start exits while the winner comes up: the
+        // exit is an error only when nobody holds the lock.
+        if spawned.is_some_and(|pid| !is_alive(pid)) && !lock_held() {
+            return Err(StartError::Exited {
+                log: opts.paths.state_dir.join(LOG_NAME),
+            });
         }
         if Instant::now() >= deadline {
             return Err(StartError::NeverAnswered {

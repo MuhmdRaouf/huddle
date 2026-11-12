@@ -41,7 +41,13 @@ fn prompt_submit(env: &Env, paths: &Paths, exe: &Path) {
     };
     let addr = SocketAddr::from(([127, 0, 0, 1], port));
     if let Err(error) = TcpStream::connect_timeout(&addr, PROMPT_PROBE_TIMEOUT) {
-        log_restart(paths, &probe_reason(paths, &error));
+        let reason = probe_reason(paths, &error);
+        // A held router lock means the router is alive and busy: a second one is refused.
+        if huddle_daemon::singleton::holder(&huddle_daemon::serve::lock_path(paths)).is_some() {
+            log_busy(paths, &reason);
+            return;
+        }
+        log_restart(paths, &reason);
         start_router_detached(exe, PROMPT_SUBMIT);
     }
 }
@@ -68,6 +74,14 @@ fn log_restart(paths: &Paths, reason: &str) {
     let log = huddle_router::crashlog::router_logs(&paths.state_dir);
     log(format!(
         "huddle-router: prompt-submit probe: {reason}; starting the router"
+    ));
+}
+
+/// One router log line saying the hook found the router busy and left it alone.
+fn log_busy(paths: &Paths, reason: &str) {
+    let log = huddle_router::crashlog::router_logs(&paths.state_dir);
+    log(format!(
+        "huddle-router: hook: router busy ({reason}), not restarted"
     ));
 }
 

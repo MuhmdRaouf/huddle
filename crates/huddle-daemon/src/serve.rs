@@ -50,6 +50,11 @@ const RECORD_FILE: &str = "router.toml";
 /// The lock under the run dir, `<run_dir>/router.lock`.
 const LOCK_FILE: &str = "router.lock";
 
+/// Where the router lock of this home lives.
+pub fn lock_path(paths: &Paths) -> std::path::PathBuf {
+    paths.run_dir.join(LOCK_FILE)
+}
+
 /// The request history database in the state folder.
 const HISTORY_FILE: &str = "huddle.db";
 
