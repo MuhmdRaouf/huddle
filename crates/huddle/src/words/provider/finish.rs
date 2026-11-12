@@ -116,7 +116,6 @@ impl Outcome {
 #[derive(Debug)]
 pub enum FinishError {
     /// The key could not be written to the key store.
-    #[allow(dead_code)]
     Keystore(KeystoreError),
     /// Recording the lane, the `/model` entries or the router port failed.
     Setup(String),
@@ -136,7 +135,6 @@ impl std::error::Error for FinishError {}
 /// Finishes the setup with a key the user just entered, and stores it unless the provider
 /// refused it: a refused key never replaces a stored one. Callers beyond the setup word use
 /// this entry point.
-#[allow(dead_code)]
 pub fn store_and_finish(
     provider: &'static Provider,
     env: &Env,
@@ -272,7 +270,6 @@ fn step(name: StepName, state: StepState, lines: Vec<String>) -> Step {
     Step { name, state, lines }
 }
 
-#[allow(dead_code)]
 fn set_state(outcome: &mut Outcome, name: StepName, state: StepState) {
     if let Some(step) = outcome.steps.iter_mut().find(|step| step.name == name) {
         step.state = state;
