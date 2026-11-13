@@ -346,6 +346,13 @@ fn send_fds(socket: &UnixStream, data: &[u8], fds: &[RawFd]) -> io::Result<()> {
     Ok(())
 }
 
+/// Linux marks received descriptors close-on-exec at receipt; macOS has no such flag, so
+/// `recv_fds` sets it right after.
+#[cfg(target_os = "linux")]
+const RECV_FLAGS: libc::c_int = libc::MSG_CMSG_CLOEXEC;
+#[cfg(not(target_os = "linux"))]
+const RECV_FLAGS: libc::c_int = 0;
+
 /// Receives one message: the data bytes and every descriptor its SCM_RIGHTS headers carry, each
 /// wrapped in an [`OwnedFd`] so a descriptor nobody takes is closed.
 fn recv_fds(socket: &UnixStream, data: &mut [u8]) -> io::Result<(usize, Vec<OwnedFd>)> {
@@ -362,7 +369,7 @@ fn recv_fds(socket: &UnixStream, data: &mut [u8]) -> io::Result<(usize, Vec<Owne
     msg.msg_controllen = control.len() as _;
     let received: isize = loop {
         // SAFETY: msg and its buffers are initialized; the socket owns a valid descriptor.
-        let count = unsafe { libc::recvmsg(socket.as_raw_fd(), &mut msg, 0) };
+        let count = unsafe { libc::recvmsg(socket.as_raw_fd(), &mut msg, RECV_FLAGS) };
         if count == -1 {
             let source = io::Error::last_os_error();
             if source.kind() != io::ErrorKind::Interrupted {
@@ -383,7 +390,11 @@ fn recv_fds(socket: &UnixStream, data: &mut [u8]) -> io::Result<(usize, Vec<Owne
                     / mem::size_of::<RawFd>();
                 let carried_fds = libc::CMSG_DATA(header) as *const RawFd;
                 for index in 0..carried {
-                    fds.push(OwnedFd::from_raw_fd(carried_fds.add(index).read()));
+                    let fd = carried_fds.add(index).read();
+                    // The kernel hands the descriptor over inheritable; a process the taker
+                    // starts must not carry it.
+                    libc::fcntl(fd, libc::F_SETFD, libc::FD_CLOEXEC);
+                    fds.push(OwnedFd::from_raw_fd(fd));
                 }
             }
             header = libc::CMSG_NXTHDR(&msg, header);
@@ -502,6 +513,38 @@ mod tests {
         let mut answer = String::new();
         client.read_to_string(&mut answer).expect("read");
         assert_eq!(answer, "pong");
+    }
+
+    /// Pids that hold a descriptor on the TCP port, as `lsof` lists them for one process.
+    fn holds_port(pid: u32, port: u16) -> bool {
+        let out = std::process::Command::new("lsof")
+            .args(["-a", "-p", &pid.to_string(), &format!("-iTCP:{port}")])
+            .output()
+            .expect("lsof");
+        !out.stdout.is_empty()
+    }
+
+    #[test]
+    fn e2_spawned_child_holds_no_router_socket() {
+        let home = TempHome::new();
+        let run_dir = home.root().join("run");
+        let (tcp, port) = listener();
+        let (handed, _seen) = mpsc::unbounded_channel();
+        let handover = serve_handover(&run_dir, port, &tcp, handed, no_log());
+        let taken = takeover(&run_dir, 777, "test").expect("takeover");
+        handover.stop();
+        // The taken socket is the router's listener from here on; a process it starts, such as
+        // `git` or `ps`, must not carry it.
+        let mut child = std::process::Command::new("/bin/sleep")
+            .arg("30")
+            .stdin(std::process::Stdio::null())
+            .spawn()
+            .expect("spawn");
+        let leaked = holds_port(child.id(), port);
+        let _ = child.kill();
+        let _ = child.wait();
+        drop(taken);
+        assert!(!leaked, "a child of the taker holds the router's port");
     }
 
     fn fs_mode(path: &Path) -> u32 {

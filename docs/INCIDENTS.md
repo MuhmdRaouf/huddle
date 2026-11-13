@@ -276,3 +276,14 @@ Each incident, its cause, and the test that now stops it. A guard named here mus
 - **Guard:** crates/huddle/tests/s2_router_words.rs:t4_status_names_the_new_worker_after_a_restart
 - **Rule:** a live parent with a worker record is "restarting", never "not running"; a test that reads the
   new worker waits for it to answer, with a bound.
+
+## 2026-11-13, a `git` process held the router's listening socket
+
+- **What happened:** `lsof -iTCP:4835 -sTCP:LISTEN` listed a `git` process next to the router; a child that
+  outlived the router kept the port busy.
+- **Cause:** a router that took over the socket in an update handover received it through SCM_RIGHTS, which
+  delivers the descriptor without close-on-exec. Every process that router then started (`git`, `ps`)
+  inherited the listener.
+- **Guard:** crates/huddle-daemon/src/handover.rs:e2_spawned_child_holds_no_router_socket
+- **Rule:** a descriptor received over a socket is marked close-on-exec at receipt; only the supervisor's
+  spawn of its worker passes the listener on, on descriptor 3.

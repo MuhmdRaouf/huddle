@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.0.8
+
+### Fixes
+
+- A process the router starts no longer inherits its listening socket after an update handover, so a leftover `git` cannot hold port 4835.
+
 ## 0.0.7
 
 Provider setup holds across sessions, and the key check gets a real answer.
