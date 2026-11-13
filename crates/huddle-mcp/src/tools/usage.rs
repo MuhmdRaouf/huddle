@@ -192,7 +192,7 @@ pub fn usage(args: &UsageArgs, now_ms: u64, sources: &dyn Sources) -> Result<Usa
     })
 }
 
-fn now_ms() -> u64 {
+pub(crate) fn now_ms() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|elapsed| elapsed.as_millis() as u64)

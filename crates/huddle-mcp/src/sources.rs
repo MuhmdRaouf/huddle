@@ -17,6 +17,8 @@ pub trait Sources: Send {
     fn router_state(&self) -> Option<Value>;
     /// The five providers as setup left them.
     fn provider_setups(&self) -> Vec<ProviderSetup>;
+    /// The folder that holds the router's log files.
+    fn state_dir(&self) -> PathBuf;
 }
 
 /// Reads state files only. Used while the router is down.
@@ -44,6 +46,10 @@ impl Sources for DiskSources {
     fn provider_setups(&self) -> Vec<ProviderSetup> {
         self.machine.provider_setups()
     }
+
+    fn state_dir(&self) -> PathBuf {
+        self.machine.paths.state_dir.clone()
+    }
 }
 
 /// Reads state files and asks the live router for what only it holds.
@@ -70,6 +76,10 @@ impl Sources for RouterSources {
 
     fn provider_setups(&self) -> Vec<ProviderSetup> {
         self.machine.provider_setups()
+    }
+
+    fn state_dir(&self) -> PathBuf {
+        self.machine.paths.state_dir.clone()
     }
 }
 

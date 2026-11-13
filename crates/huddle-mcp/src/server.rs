@@ -32,7 +32,10 @@ impl HuddleServer {
             version,
             sources,
             env: Env::with(&[]),
-            tool_router: Self::tool_router() + Self::usage_router() + Self::providers_router(),
+            tool_router: Self::tool_router()
+                + Self::usage_router()
+                + Self::providers_router()
+                + Self::router_router(),
         }
     }
 

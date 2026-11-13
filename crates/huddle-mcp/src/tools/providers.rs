@@ -272,6 +272,9 @@ mod tests {
         fn router_state(&self) -> Option<Value> {
             self.state.clone()
         }
+        fn state_dir(&self) -> PathBuf {
+            PathBuf::new()
+        }
         fn provider_setups(&self) -> Vec<ProviderSetup> {
             ["zai", "qwen", "kimi"]
                 .iter()
