@@ -587,11 +587,15 @@ dependencies = [
 name = "huddle-mcp"
 version = "0.0.6"
 dependencies = [
+ "huddle-catalog",
  "huddle-config",
  "huddle-harness",
+ "huddle-history",
  "huddle-jobs",
+ "huddle-keystore",
  "rmcp",
  "serde",
+ "serde_json",
  "tokio",
 ]
 

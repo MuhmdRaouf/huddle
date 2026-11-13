@@ -32,7 +32,7 @@ impl HuddleServer {
             version,
             sources,
             env: Env::with(&[]),
-            tool_router: Self::tool_router(),
+            tool_router: Self::tool_router() + Self::usage_router() + Self::providers_router(),
         }
     }
 
@@ -64,16 +64,29 @@ impl HuddleServer {
     }
 }
 
+impl HuddleServer {
+    /// Runs `work` on a blocking thread against the sources as they are for this call.
+    pub(crate) async fn with_sources<T: Send + 'static>(
+        &self,
+        work: impl FnOnce(&dyn Sources) -> T + Send + 'static,
+    ) -> Result<T, ErrorData> {
+        let factory = Arc::clone(&self.sources);
+        tokio::task::spawn_blocking(move || work(factory().as_ref()))
+            .await
+            .map_err(|err| ErrorData::internal_error(err.to_string(), None))
+    }
+}
+
 #[tool_router]
 impl HuddleServer {
     /// The huddle version, whether the router is up, and the binary's path.
     #[tool(name = "huddle_version")]
     async fn huddle_version(&self) -> Result<Json<VersionInfo>, ErrorData> {
-        let factory = Arc::clone(&self.sources);
-        let sources = tokio::task::spawn_blocking(move || factory())
-            .await
-            .map_err(|err| ErrorData::internal_error(err.to_string(), None))?;
-        Ok(Json(version::version(&self.version, sources.as_ref())))
+        let version = self.version.clone();
+        let info = self
+            .with_sources(move |sources| version::version(&version, sources))
+            .await?;
+        Ok(Json(info))
     }
 
     /// Starts a task on a coding harness in a folder and, unless background is set, waits for

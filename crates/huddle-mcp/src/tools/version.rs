@@ -24,15 +24,14 @@ pub fn version(version: &str, sources: &dyn Sources) -> VersionInfo {
 
 #[cfg(test)]
 mod tests {
-    use std::path::PathBuf;
-
     use super::*;
     use crate::sources::DiskSources;
 
     #[test]
     fn version_reports_the_sources_state() {
+        let home = std::env::temp_dir().join("huddle-mcp-version-unused");
         let sources = DiskSources {
-            binary: PathBuf::from("/bin/huddle"),
+            machine: crate::machine::fixtures::machine(&home, 1),
         };
         let info = version("1.2.3", &sources);
         assert_eq!(info.version, "1.2.3");

@@ -3,8 +3,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use huddle_config::env::Env;
-use huddle_config::paths::router_port;
-use huddle_mcp::{HuddleServer, pick, serve_stdio};
+use huddle_config::paths::{Paths, router_port};
+use huddle_mcp::{HuddleServer, Machine, pick, serve_stdio};
 
 use super::version::VERSION;
 
@@ -24,9 +24,15 @@ pub fn run(_args: &[String], env: &Env) -> i32 {
 fn serve(env: &Env) -> Result<(), String> {
     let port = router_port(env).map_err(|err| err.to_string())?;
     let binary = std::env::current_exe().map_err(|err| err.to_string())?;
+    let machine = Machine {
+        binary,
+        paths: Paths::from_env(env).map_err(|err| err.to_string())?,
+        env: env.clone(),
+        port,
+    };
     let sources = Arc::new(move || {
         let up = huddle_daemon::start::health(port, HEALTH_WITHIN).is_some();
-        pick(up, binary.clone())
+        pick(up, machine.clone())
     });
     let server = HuddleServer::new(VERSION.trim().to_string(), sources).with_env(env.clone());
     let runtime = tokio::runtime::Builder::new_current_thread()
