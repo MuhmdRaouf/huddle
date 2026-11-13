@@ -10,6 +10,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{Duration, Instant};
 
+use crate::guard::processes_naming;
 use crate::ports;
 
 /// How long a drop waits for the record of a router whose lock file exists.
@@ -123,6 +124,7 @@ impl Drop for TempHome {
         }
         stop_key_page_helpers(&self.root);
         stop_recorded_router(&self.root);
+        stop_writers_under(&self.root);
         // A child's last writes can land while the tree is being removed; a
         // few short retries close that race without waiting on a live child.
         for _ in 0..20 {
@@ -132,6 +134,26 @@ impl Drop for TempHome {
                 return;
             }
         }
+    }
+}
+
+/// Stops every process whose command line or environment names this home, so none can write
+/// into the folder again once it is removed. The home's name is random, so only a process this
+/// test caused matches. Looks again after each kill, because a killed shell can have forked.
+fn stop_writers_under(root: &Path) {
+    let dir = root.display().to_string();
+    for _ in 0..50 {
+        let Ok(found) = processes_naming(&dir) else {
+            return;
+        };
+        if found.is_empty() {
+            return;
+        }
+        for (pid, _) in found {
+            // SAFETY: kill only sends a signal; the pid was read from ps a moment ago.
+            unsafe { libc::kill(pid, libc::SIGKILL) };
+        }
+        std::thread::sleep(Duration::from_millis(20));
     }
 }
 

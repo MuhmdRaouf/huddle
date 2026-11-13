@@ -255,3 +255,14 @@ Each incident, its cause, and the test that now stops it. A guard named here mus
 - **Guard:** crates/huddle-testkit/tests/temp_home.rs:a_test_home_points_every_provider_at_a_closed_local_port
 - **Rule:** a test home points every provider at a closed local port; a test that needs an answer brings
   its own fake.
+
+## 2026-11-13, the leak guard failed about 3 of 5 full runs
+
+- **What happened:** every test passed, then `huddle-test-guard` reported "the suite left 1 entries in
+  TMPDIR" (one `h<hex>` temp home); each crate alone was clean.
+- **Cause:** a temp home's drop stopped only the router and the key page helpers it knew by record. Any
+  other child still running under the home kept writing, recreated folders after the removal, and the
+  drop gave up after 20 tries.
+- **Guard:** crates/huddle-testkit/tests/temp_home.rs:t1_a_late_writer_cannot_recreate_a_dropped_home
+- **Rule:** a temp home's drop stops every process whose command line or environment names the home
+  before it removes the folder.

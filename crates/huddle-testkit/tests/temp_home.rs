@@ -324,3 +324,32 @@ fn a_test_home_points_every_provider_at_a_closed_local_port() {
         );
     }
 }
+
+#[test]
+fn t1_a_late_writer_cannot_recreate_a_dropped_home() {
+    let home = TempHome::new();
+    let root = home.root().to_path_buf();
+    let script = root.join("late-writer.sh");
+    fs::write(
+        &script,
+        format!(
+            "while :; do mkdir -p {}/.local/state/late; done\n",
+            root.display()
+        ),
+    )
+    .expect("script");
+    let mut writer = home
+        .command("sh")
+        .arg(&script)
+        .spawn()
+        .expect("the writer starts");
+    thread::sleep(std::time::Duration::from_millis(100));
+    drop(home);
+    let left = root.exists();
+    // SAFETY: the pid is the writer this test started.
+    unsafe { libc::kill(writer.id() as libc::pid_t, libc::SIGKILL) };
+    let _ = writer.wait();
+    thread::sleep(std::time::Duration::from_millis(50));
+    let _ = fs::remove_dir_all(&root);
+    assert!(!left, "the dropped home is gone and stays gone");
+}

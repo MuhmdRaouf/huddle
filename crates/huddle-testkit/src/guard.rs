@@ -129,7 +129,7 @@ fn stop_processes_under(run_dir: &Path, out: &mut dyn Write) -> io::Result<bool>
 // The pid and the start of the ps line of every other process whose command or environment names
 // `dir` as a whole path: followed by `/`, whitespace or the line's end (an environment shows
 // `TMPDIR=<dir>` with nothing after it).
-fn processes_naming(dir: &str) -> io::Result<Vec<(i32, String)>> {
+pub(crate) fn processes_naming(dir: &str) -> io::Result<Vec<(i32, String)>> {
     let listing = Command::new("ps")
         .args(["axeww", "-o", "pid=,command="])
         .output()?;
