@@ -96,6 +96,20 @@ impl Fixture {
             .unwrap_or_default()
     }
 
+    /// The status once the new worker answers: the restart window is bounded by the spec's
+    /// 1 s plus the worker's start.
+    fn status_when_answering(&self) -> serde_json::Value {
+        let deadline = Instant::now() + Duration::from_secs(15);
+        loop {
+            let status = self.status_json();
+            if status["running"] == true {
+                return status;
+            }
+            assert!(Instant::now() < deadline, "the worker never answered");
+            thread::sleep(Duration::from_millis(20));
+        }
+    }
+
     fn status_json(&self) -> serde_json::Value {
         let out = self.huddle(&["router", "status", "--json"]);
         serde_json::from_slice(&out.stdout).unwrap_or(serde_json::Value::Null)
@@ -186,7 +200,7 @@ fn s2_status_names_both_pids_and_restarts() {
 
     kill_9(pids.worker);
     let after = f.pids_when(|now| now.worker > 0 && now.worker != pids.worker);
-    let status = f.status_json();
+    let status = f.status_when_answering();
     assert_eq!(status["pid"], after.parent);
     assert_eq!(status["worker"], after.worker);
     assert_eq!(status["restarts"], 1);
@@ -205,6 +219,33 @@ fn s2_status_names_both_pids_and_restarts() {
         .and_then(|ms| ms.parse().ok())
         .unwrap_or(u64::MAX);
     assert!(waited < 1000, "{line}");
+}
+
+#[test]
+fn t4_status_names_the_new_worker_after_a_restart() {
+    let f = Fixture::started(false);
+    let before = f.pids_when(|pids| pids.worker > 0);
+    kill_9(before.worker);
+    // While the new worker boots the parent holds the socket: status says so, and once the
+    // worker answers it names the new pid.
+    let deadline = Instant::now() + Duration::from_secs(15);
+    loop {
+        let status = f.status_json();
+        if status["running"] == true {
+            // The killed worker may still answer for a moment.
+            if status["worker"] != before.worker {
+                assert!(status["worker"].is_number(), "{status}");
+                break;
+            }
+        } else {
+            assert_eq!(status["restarting"], true, "{status}");
+            assert_eq!(status["pid"], before.parent, "{status}");
+        }
+        assert!(Instant::now() < deadline, "the new worker never answered");
+        thread::sleep(Duration::from_millis(20));
+    }
+    let plain = stdout_of(&f.huddle(&["router", "status"]));
+    assert!(plain.contains("worker pid"), "{plain}");
 }
 
 #[test]

@@ -14,9 +14,6 @@ pub fn run(args: &[String], env: &Env) -> i32 {
         return 2;
     };
     let json = args.iter().any(|argument| argument == "--json");
-    let Some(answer) = health(port, HEALTH_WAIT) else {
-        return not_running(json);
-    };
     let paths = match Paths::from_env(env) {
         Ok(paths) => paths,
         Err(error) => {
@@ -28,6 +25,13 @@ pub fn run(args: &[String], env: &Env) -> i32 {
     // one; a stale record leaves pid, port, version and started unknown.
     let record = read_record(&paths)
         .filter(|record| record.pid > 0 && is_alive(record.pid) && record.port == port);
+    let Some(answer) = health(port, HEALTH_WAIT) else {
+        // A live parent with a worker record holds the socket while its worker restarts.
+        return match record.filter(|record| record.worker > 0) {
+            Some(record) => restarting(json, &record),
+            None => not_running(json),
+        };
+    };
     if json {
         answer_json(&answer, record.as_ref())
     } else {
@@ -41,6 +45,27 @@ fn not_running(json: bool) -> i32 {
         let _ = writeln!(std::io::stdout(), "{{\"running\":false}}");
     } else {
         let _ = writeln!(std::io::stderr(), "huddle-router: not running");
+    }
+    6
+}
+
+/// The parent is alive and holds the port but no worker answers yet: exit 6, as for a router
+/// that is not running, with the parent and the restart count named.
+fn restarting(json: bool, record: &RouterRecord) -> i32 {
+    if json {
+        let _ = writeln!(
+            std::io::stdout(),
+            "{{\"running\":false,\"restarting\":true,\"pid\":{},\"restarts\":{}}}",
+            record.pid,
+            record.restarts
+        );
+    } else {
+        let _ = writeln!(
+            std::io::stdout(),
+            "huddle-router: restarting (parent pid {}, {})",
+            record.pid,
+            restarts_phrase(record)
+        );
     }
     6
 }

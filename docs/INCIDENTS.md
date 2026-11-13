@@ -266,3 +266,13 @@ Each incident, its cause, and the test that now stops it. A guard named here mus
 - **Guard:** crates/huddle-testkit/tests/temp_home.rs:t1_a_late_writer_cannot_recreate_a_dropped_home
 - **Rule:** a temp home's drop stops every process whose command line or environment names the home
   before it removes the folder.
+
+## 2026-11-13, status said "not running" while the router restarted its worker
+
+- **What happened:** right after a worker was killed, `huddle router status --json` answered
+  `{"running":false}` and `s2_status_names_both_pids_and_restarts` failed 3 of 3 alone.
+- **Cause:** status trusted only the health probe (300 ms). While the new worker boots the parent holds the
+  socket but nothing answers, so a live, supervised router read as stopped.
+- **Guard:** crates/huddle/tests/s2_router_words.rs:t4_status_names_the_new_worker_after_a_restart
+- **Rule:** a live parent with a worker record is "restarting", never "not running"; a test that reads the
+  new worker waits for it to answer, with a bound.
