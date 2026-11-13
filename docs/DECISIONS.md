@@ -119,3 +119,11 @@ OS service is involved; the session hooks stay as the backup.
 ## D16: MCP over HTTP stays on the loopback
 
 The router serves the MCP tools at `/mcp` on its own port, answering only `127.0.0.1:<port>` and `localhost:<port>` as Host and the `http` origins of those two, never a dashboard host, and no standalone event stream (a GET is refused). The release binary grew from 7,320,720 to 8,578,240 B on macOS with the HTTP service, and Linux builds run about 1.5 MB larger, so the size limit moved from 10 MB to 12 MB.
+
+## D17: The plugin declares both MCP servers
+
+`plugin/.mcp.json` declares `huddle` (stdio: `huddle mcp` from the installed binary) and `huddle-http` (the router's `http://127.0.0.1:4835/mcp`), both on by default, so the two can be compared in use before one is dropped. They serve the same tools from one library, and an e2e calls every tool on both and requires the same answers.
+
+- stdio works with the router down and starts nothing: it reads the disk, and asks the router for live data when it answers. HTTP needs the router, and the router is the one process that already holds the history and the quota.
+- Turning one off is a client setting (`/mcp`, then disable), not a file edit.
+- The stdio line finds the binary the way the session hook does: `HUDDLE_DATA_HOME`, else `XDG_DATA_HOME/huddle`, else `~/.local/share/huddle`. It reads the variables inside `sh`, because Claude Code expands `${...}` in the file before the shell sees it.

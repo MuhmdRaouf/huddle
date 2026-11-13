@@ -57,6 +57,7 @@ One row per word, with the exit codes it answers. An unknown word or action is n
 | `huddle provider <p> setup` | Checks the key with the provider, enables the lane, writes its agents, starts the router, reports ready or not; with no key it opens the one-time key page. | `0` ready, `6` not ready, `1` |
 | `huddle provider <p> remove` | Takes the lane, the `/model` entries, the agents and the stored key back out; the other providers keep serving. | `0`, `1` |
 | `huddle provider <p> usage` | Requests, tokens and estimated cost per model, today and the last 7 and 30 days. | `0` |
+| `huddle mcp` | The huddle tools as an MCP server on stdin and stdout, started by Claude Code from the plugin's `.mcp.json`. Works with the router down; the router serves the same tools at `http://127.0.0.1:4835/mcp`. Writes nothing but JSON-RPC to stdout. | `0` when the client closes stdin |
 | `huddle hook <event>` | Claude Code's `session-start` and `prompt-submit`: starts the router, re-applies the provider wiring, refreshes the agent files. Never blocks a session. | `0` |
 | `huddle uninstall` | Undoes every patch huddle made, the `~/.local/bin/huddle` link and the provider agents, one line per step. | `0`, `1` |
 

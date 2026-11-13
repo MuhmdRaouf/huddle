@@ -151,6 +151,28 @@ The harness edits the folder directly, and a second write job in the same folder
 is refused. A folder is not a sandbox: the harness can still reach the rest of
 the machine as this user.
 
+## MCP
+
+The plugin gives Claude Code the huddle tools as an MCP server, so it can call them without a slash command. Two servers declare the same tools, `huddle` over stdio and `huddle-http` over the router's `http://127.0.0.1:4835/mcp`, and both are on by default so you can compare them. In Claude Code, open `/mcp` and disable the one you do not want.
+
+| Tool | What it does |
+|---|---|
+| `huddle_run` | Starts a task on a harness in a folder; waits for the report, or returns the job id with `background` |
+| `huddle_status` | Lists this repository's delegated jobs, or every repository's live jobs, with why one is stuck or failed |
+| `huddle_result` | Reads a job's report and diff; `accept`, `accept_no_commit` or `return` with feedback decides it |
+| `huddle_cancel` | Stops a job and leaves its folder as it is |
+| `huddle_usage` | Tokens (fresh, cache read, cache write, output), requests, errors and API price from the history, by provider, model, session or project, for 15m to 90d or a from-to window |
+| `huddle_quota` | Each set-up provider's plan or balance and its resets, or "router down, quota unknown" |
+| `huddle_providers` | Each provider's lane, whether a key is stored (never the key), models, agents and next step |
+| `huddle_router_status` | Whether the router answers, its pid, version, lanes and Anthropic path, or the last exit line and the start command |
+| `huddle_errors` | Failed requests grouped by provider, model, status and plain reason |
+| `huddle_router_log` | The router's event and request lines, like `huddle router log` |
+| `huddle_version` | The huddle version, whether the router is up and the binary's path |
+
+- **stdio** (`huddle mcp`) works with the router down: it reads the disk and asks the router for live data when it answers.
+- **HTTP** is served by the router on the loopback only: it answers a Host of `127.0.0.1:<port>` or `localhost:<port>` and an Origin of the same two, never a dashboard host.
+- No tool returns a key, prompt text or a header value.
+
 ## Dashboard
 
 Open `http://127.0.0.1:4835/` while the router runs. The page updates live,

@@ -33,6 +33,7 @@ fn k9_readme_sections_follow_the_approved_order() {
             "Installation",
             "Providers",
             "Delegation",
+            "MCP",
             "Dashboard",
             "Commands",
             "How it works",

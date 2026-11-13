@@ -44,6 +44,7 @@ const HEADINGS: &[&str] = &[
     "Installation",
     "Providers",
     "Delegation",
+    "MCP",
     "Dashboard",
     "Commands",
     "How it works",

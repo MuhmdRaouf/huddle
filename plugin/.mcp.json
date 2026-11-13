@@ -1,0 +1,15 @@
+{
+  "mcpServers": {
+    "huddle": {
+      "command": "sh",
+      "args": [
+        "-c",
+        "h=$HUDDLE_DATA_HOME; if [ -z \"$h\" ]; then h=$XDG_DATA_HOME; if [ -n \"$h\" ]; then h=$h/huddle; else h=$HOME/.local/share/huddle; fi; fi; exec \"$h/bin/huddle\" mcp"
+      ]
+    },
+    "huddle-http": {
+      "type": "http",
+      "url": "http://127.0.0.1:4835/mcp"
+    }
+  }
+}
