@@ -188,3 +188,206 @@ fn h3_install_makes_the_mcp_token_and_uninstall_removes_it() {
         String::from_utf8_lossy(&uninstall.stdout)
     );
 }
+
+fn huddle_with(home: &TempHome, port: u16, extra: &[(&str, String)], args: &[&str]) -> Output {
+    Command::new(env!("CARGO_BIN_EXE_huddle"))
+        .args(args)
+        .env_clear()
+        .envs(home.env())
+        .env("CLAUDE_CONFIG_DIR", home.root().join(".claude"))
+        .env("HUDDLE_ROUTER_PORT", port.to_string())
+        .envs(extra.iter().map(|(name, value)| (name, value)))
+        .output()
+        .expect("run huddle")
+}
+
+/// Files a used install holds outside the ledger: config, history, logs, cache, jobs.
+fn scatter_files(home: &TempHome) {
+    let root = home.root();
+    for rel in [
+        ".config/huddle/config.toml",
+        ".config/huddle/providers.toml",
+        ".local/state/huddle/huddle.db",
+        ".local/state/huddle/router.log",
+        ".local/state/huddle/jobs/repo/1/job.toml",
+        ".cache/huddle/build.log",
+    ] {
+        let path = root.join(rel);
+        fs::create_dir_all(path.parent().expect("parent")).expect("mkdir");
+        fs::write(path, "x").expect("write");
+    }
+}
+
+fn files_under(dir: &std::path::Path) -> Vec<std::path::PathBuf> {
+    fn walk(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
+        let Ok(entries) = fs::read_dir(dir) else {
+            return;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() && !path.is_symlink() {
+                walk(&path, out);
+            } else {
+                out.push(path);
+            }
+        }
+    }
+    let mut out = Vec::new();
+    walk(dir, &mut out);
+    out
+}
+
+fn install_with_files(home: &TempHome, port: u16) {
+    let install = huddle(home, port, &["setup", "--install"]);
+    assert_eq!(
+        install.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&install.stderr)
+    );
+    scatter_files(home);
+}
+
+#[test]
+fn h1_uninstall_leaves_nothing() {
+    let home = TempHome::new();
+    let port = free_port();
+    let _stop = StopOnDrop(&home, port);
+    install_with_files(&home, port);
+
+    let out = huddle(&home, port, &["uninstall"]);
+
+    assert_eq!(out.status.code(), Some(0), "{out:?}");
+    let root = home.root();
+    for rel in [
+        ".config/huddle",
+        ".local/share/huddle",
+        ".local/state/huddle",
+        ".cache/huddle",
+        "r/huddle",
+    ] {
+        assert!(
+            files_under(&root.join(rel)).is_empty(),
+            "{rel} still holds {:?}",
+            files_under(&root.join(rel))
+        );
+    }
+    assert!(root.join(".config").is_dir(), "the parent folder stays");
+    assert!(
+        root.join(".local/state").is_dir(),
+        "the parent folder stays"
+    );
+}
+
+#[test]
+fn h1_uninstall_names_each_removed_folder() {
+    let home = TempHome::new();
+    let port = free_port();
+    let _stop = StopOnDrop(&home, port);
+    install_with_files(&home, port);
+
+    let out = huddle(&home, port, &["uninstall"]);
+
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let root = home.root().display();
+    for rel in [
+        ".config/huddle",
+        ".local/share/huddle",
+        ".local/state/huddle",
+        ".cache/huddle",
+    ] {
+        let line = format!("removed {root}/{rel}");
+        assert!(
+            stdout.lines().any(|found| found == line),
+            "{line}\n{stdout}"
+        );
+    }
+}
+
+#[test]
+fn h1_uninstall_refuses_a_folder_that_is_not_huddles() {
+    let home = TempHome::new();
+    let port = free_port();
+    let _stop = StopOnDrop(&home, port);
+    install_with_files(&home, port);
+    let marker = home.root().join("notes.txt");
+    fs::write(&marker, "mine").expect("write");
+    let extra = [("HUDDLE_STATE_HOME", home.root().display().to_string())];
+
+    let out = huddle_with(&home, port, &extra, &["uninstall"]);
+
+    assert_eq!(out.status.code(), Some(0), "{out:?}");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        stdout.contains(&format!("left in place: {}", home.root().display())),
+        "{stdout}"
+    );
+    assert_eq!(fs::read_to_string(&marker).expect("kept"), "mine");
+    assert!(home.root().join(".claude").is_dir());
+    assert!(
+        !home.root().join(".config/huddle").exists(),
+        "the other folders still go"
+    );
+}
+
+#[test]
+fn h1_uninstall_does_not_follow_a_symlink_out() {
+    let home = TempHome::new();
+    let port = free_port();
+    let _stop = StopOnDrop(&home, port);
+    install_with_files(&home, port);
+    let outside = home.root().join("outside");
+    fs::create_dir_all(&outside).expect("mkdir");
+    fs::write(outside.join("keep.txt"), "keep").expect("write");
+    std::os::unix::fs::symlink(&outside, home.root().join(".local/state/huddle/jobs/out"))
+        .expect("link");
+    let whole = home.root().join("whole");
+    fs::create_dir_all(&whole).expect("mkdir");
+    fs::write(whole.join("keep.txt"), "keep").expect("write");
+    fs::remove_dir_all(home.root().join(".cache/huddle")).expect("rm");
+    std::os::unix::fs::symlink(&whole, home.root().join(".cache/huddle")).expect("link");
+
+    let out = huddle(&home, port, &["uninstall"]);
+
+    assert_eq!(out.status.code(), Some(0), "{out:?}");
+    assert_eq!(
+        fs::read_to_string(outside.join("keep.txt")).expect("kept"),
+        "keep"
+    );
+    assert_eq!(
+        fs::read_to_string(whole.join("keep.txt")).expect("kept"),
+        "keep"
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.contains("left in place:"), "{stdout}");
+    assert!(!home.root().join(".local/state/huddle").exists());
+}
+
+#[test]
+fn h1_failed_restore_keeps_the_ledger() {
+    let home = TempHome::new();
+    let port = free_port();
+    let _stop = StopOnDrop(&home, port);
+    fs::write(
+        home.root().join(".claude/settings.json"),
+        "{\"theme\": \"dark\"}\n",
+    )
+    .expect("write");
+    install_with_files(&home, port);
+    let state = home.root().join(".local/state/huddle");
+    let ledger = state.join("settings-ledger.toml");
+    assert!(ledger.exists());
+    fs::write(&ledger, "this is not a ledger = [").expect("corrupt");
+
+    let out = huddle(&home, port, &["uninstall"]);
+
+    assert_eq!(out.status.code(), Some(0), "{out:?}");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        stdout.contains(&format!("left in place: {}", state.display())),
+        "{stdout}"
+    );
+    assert!(ledger.exists(), "the ledger stays for a retry");
+    assert!(state.join("settings.json.pristine").exists());
+    assert!(!home.root().join(".config/huddle").exists());
+}

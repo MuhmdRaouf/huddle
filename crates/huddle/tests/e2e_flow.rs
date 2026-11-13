@@ -129,7 +129,15 @@ impl Env<'_> {
 
 impl Drop for Env<'_> {
     fn drop(&mut self) {
-        let _ = self.installed(&["router", "stop"]);
+        // Uninstall deletes the binary; a test that got that far has nothing left to stop.
+        if self
+            .home
+            .root()
+            .join(".local/share/huddle/bin/huddle")
+            .exists()
+        {
+            let _ = self.installed(&["router", "stop"]);
+        }
     }
 }
 

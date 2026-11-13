@@ -1,5 +1,6 @@
 pub mod agent_files;
 pub mod env_file;
+pub mod erase;
 pub mod install;
 pub mod ledger_file;
 pub mod model_entries;

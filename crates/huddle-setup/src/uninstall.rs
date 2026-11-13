@@ -1,5 +1,6 @@
 //! The uninstall work: every set-up provider's remove, the router stop, the MCP token, the settings
-//! undo, the managed agent files. Each step reports a line; a step's failure never stops the rest.
+//! undo, the managed agent files, then huddle's own folders. Each step reports a line; a step's
+//! failure never stops the rest.
 
 use std::path::Path;
 use std::process::Command;
@@ -9,6 +10,7 @@ use huddle_config::paths::Paths;
 use huddle_config::providers_file::read_enabled;
 
 use crate::agent_files::remove_managed;
+use crate::erase::{self, Erased};
 use crate::settings;
 use crate::undo::{UndoOutcome, undo};
 use crate::user_bin_link;
@@ -19,25 +21,34 @@ pub struct UninstallReport {
 }
 
 /// Runs the steps in this order: each set-up provider's remove, the router stop, the MCP token,
-/// the settings undo, the agent files. Each step's failure is reported in `lines` and the rest still run.
+/// the settings undo, the agent files, huddle's folders. Each step's failure is reported in
+/// `lines` and the rest still run.
 pub fn run(paths: &Paths, exe: &Path) -> UninstallReport {
     let mut lines = Vec::new();
     // No providers file (or an unreadable one) means nothing was ever set up.
     let enabled = read_enabled(&paths.config_dir, &provider_ids()).unwrap_or_default();
+    let mut unremoved_provider = None;
     for id in &enabled {
         match Command::new(exe)
             .args(["provider", id.as_str(), "remove"])
             .output()
         {
             Ok(out) if out.status.success() => lines.push(format!("removed {id}")),
-            Ok(out) => lines.push(format!(
-                "could not remove {id}: {}",
-                first_line(&out.stderr)
-            )),
-            Err(error) => lines.push(format!("could not remove {id}: {error}")),
+            Ok(out) => {
+                unremoved_provider.get_or_insert(id.clone());
+                lines.push(format!(
+                    "could not remove {id}: {}",
+                    first_line(&out.stderr)
+                ));
+            }
+            Err(error) => {
+                unremoved_provider.get_or_insert(id.clone());
+                lines.push(format!("could not remove {id}: {error}"));
+            }
         }
     }
 
+    let mut router_stopped = true;
     match Command::new(exe).args(["router", "stop"]).output() {
         Ok(out) => {
             let stdout = String::from_utf8_lossy(&out.stdout);
@@ -46,13 +57,17 @@ pub fn run(paths: &Paths, exe: &Path) -> UninstallReport {
             } else if out.status.success() {
                 lines.push("stopped huddle-router".to_string());
             } else {
+                router_stopped = false;
                 lines.push(format!(
                     "could not stop huddle-router: {}",
                     first_line(&out.stderr)
                 ));
             }
         }
-        Err(error) => lines.push(format!("could not stop huddle-router: {error}")),
+        Err(error) => {
+            router_stopped = false;
+            lines.push(format!("could not stop huddle-router: {error}"));
+        }
     }
 
     let token = huddle_config::mcp_token::token_path(paths);
@@ -62,6 +77,9 @@ pub fn run(paths: &Paths, exe: &Path) -> UninstallReport {
         Err(error) => lines.push(format!("could not remove the MCP token: {error}")),
     }
 
+    // The state folder holds the ledger and the pristine copy: it stays while the settings are
+    // not restored, so a retry still has what it needs.
+    let mut settings_restored = true;
     // The ledger goes with the settings undo, so the link is read and removed first.
     match settings::user_bin_link_recorded(paths) {
         Ok(true) => match user_bin_link::remove_if_ours(paths) {
@@ -70,7 +88,10 @@ pub fn run(paths: &Paths, exe: &Path) -> UninstallReport {
             Err(error) => lines.push(format!("could not remove ~/.local/bin/huddle: {error}")),
         },
         Ok(false) => {}
-        Err(error) => lines.push(format!("could not read the install ledger: {error}")),
+        Err(error) => {
+            settings_restored = false;
+            lines.push(format!("could not read the install ledger: {error}"));
+        }
     }
 
     match undo(paths) {
@@ -86,11 +107,41 @@ pub fn run(paths: &Paths, exe: &Path) -> UninstallReport {
         Ok(UndoOutcome::NotOurs) => {
             lines.push("settings.json no longer points at huddle-router; left it alone".to_string())
         }
-        Err(error) => lines.push(format!("could not undo settings.json: {error}")),
+        Err(error) => {
+            settings_restored = false;
+            lines.push(format!("could not undo settings.json: {error}"));
+        }
     }
 
     if let Err(error) = remove_managed(paths) {
         lines.push(format!("could not remove the agent files: {error}"));
+    }
+
+    for dir in erase::folders(paths) {
+        let held = if dir == paths.config_dir {
+            unremoved_provider
+                .as_ref()
+                .map(|id| format!("{id} was not removed; providers.toml stays for a retry"))
+        } else if dir == paths.state_dir && !settings_restored {
+            Some("settings.json is not restored; the ledger stays for a retry".to_string())
+        } else if !router_stopped
+            && [&paths.state_dir, &paths.run_dir, &paths.data_dir].contains(&&dir)
+        {
+            Some("huddle-router is still running".to_string())
+        } else {
+            None
+        };
+        if let Some(reason) = held {
+            lines.push(format!("left in place: {} ({reason})", dir.display()));
+            continue;
+        }
+        match erase::erase(paths, &dir) {
+            Erased::Removed => lines.push(format!("removed {}", dir.display())),
+            Erased::Absent => {}
+            Erased::LeftInPlace(reason) => {
+                lines.push(format!("left in place: {} ({reason})", dir.display()));
+            }
+        }
     }
 
     UninstallReport { lines }

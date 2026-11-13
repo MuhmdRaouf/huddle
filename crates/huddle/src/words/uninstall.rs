@@ -1,4 +1,4 @@
-//! The `huddle uninstall` word: undoes every patch huddle made, one line per step.
+//! The `huddle uninstall` word: undoes every patch huddle made and deletes its folders, one line per step.
 
 use std::io::Write;
 
