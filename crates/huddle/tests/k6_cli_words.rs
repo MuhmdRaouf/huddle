@@ -1,4 +1,5 @@
-//! K6: bare `huddle`, `huddle help`, and the words that never echo what was typed.
+//! K6: bare `huddle`, `huddle help`, and the words that never echo what was typed. An unknown
+//! provider name is named; actions and keys never are.
 
 use huddle_testkit::temp_home::TempHome;
 use std::{
@@ -176,6 +177,19 @@ fn k6_help_lists_every_word_but_hook() {
 }
 
 #[test]
+fn g3_unknown_provider_is_named() {
+    let home = TempHome::new();
+    let output = huddle(&home, &["provider", "nosuch", "setup"], "");
+    assert_eq!(output.status.code(), Some(2));
+    assert!(
+        err(&output).starts_with("huddle: no provider named \"nosuch\"\n"),
+        "{}",
+        err(&output)
+    );
+    assert!(err(&output).contains("Providers\n  zai       Z.ai GLM"));
+}
+
+#[test]
 fn k6_an_unknown_provider_action_is_never_echoed() {
     let home = TempHome::new();
     let expected = "\
@@ -200,7 +214,7 @@ If you pasted a key, delete that line from your shell history.
     }
     let output = huddle(&home, &["provider", FAKE_KEY], "");
     assert_eq!(output.status.code(), Some(2));
-    assert!(!out(&output).contains(FAKE_KEY) && !err(&output).contains(FAKE_KEY));
+    assert!(!out(&output).contains(FAKE_KEY));
     assert!(err(&output).contains("Providers\n  zai       Z.ai GLM"));
 
     let output = huddle(&home, &[FAKE_KEY], "");

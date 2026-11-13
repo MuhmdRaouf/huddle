@@ -91,5 +91,8 @@ fn an_unknown_provider_is_a_usage_error() {
     let home = TempHome::new();
     let output = huddle(&home, &["provider", "nobody", "key"], "");
     assert_eq!(output.status.code(), Some(2));
-    assert!(String::from_utf8_lossy(&output.stderr).starts_with("Providers\n"));
+    assert!(
+        String::from_utf8_lossy(&output.stderr)
+            .starts_with("huddle: no provider named \"nobody\"\n")
+    );
 }

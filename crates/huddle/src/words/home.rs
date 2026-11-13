@@ -227,13 +227,17 @@ pub fn run_providers(env: &Env) -> i32 {
     }
 }
 
-/// `huddle provider <not a provider>`: the block and the hint on stderr, exit 2. The argument is
-/// never printed, since it may be a key.
-pub fn run_unknown_provider(env: &Env) -> i32 {
+/// `huddle provider <not a provider>`: names the typo, then the block and the hint on stderr,
+/// exit 2. The name is a provider id, never a key: keys are read from hidden stdin in the
+/// `provider <p> key` position.
+pub fn run_unknown_provider(env: &Env, name: &str) -> i32 {
     match standing(env) {
         Ok(standing) => {
-            let text = render_providers(&standing.providers, Style::plain())
-                + &render_provider_hint(Style::plain());
+            let text = format!(
+                "huddle: no provider named \"{name}\"\n\n{}{}",
+                render_providers(&standing.providers, Style::plain()),
+                render_provider_hint(Style::plain()),
+            );
             let _ = write!(std::io::stderr(), "{text}");
             2
         }

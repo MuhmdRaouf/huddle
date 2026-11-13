@@ -21,7 +21,7 @@ pub fn run(args: &[String], env: &Env) -> i32 {
         return home::run_providers(env);
     };
     let Some(provider) = provider_by_id(name) else {
-        return home::run_unknown_provider(env);
+        return home::run_unknown_provider(env, name);
     };
     let Some((word, rest)) = rest.split_first() else {
         return guide::run(provider, env);
