@@ -6,7 +6,7 @@ use huddle_testkit::fake_upstream::{FakeUpstream, Step};
 use huddle_testkit::ports::free_port;
 use huddle_testkit::temp_home::TempHome;
 use serde_json::Value;
-use std::io::{BufRead, BufReader, Write};
+use std::io::{BufRead, BufReader, Read, Write};
 use std::net::TcpStream;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
@@ -163,24 +163,101 @@ fn curl_connect(daemon: &Daemon, body: &str) -> String {
     String::from_utf8_lossy(&out.stdout).into_owned()
 }
 
+/// `GET /` with the given `Accept-Encoding` (none when `None`): the head text and the raw body bytes.
+fn page_exchange(port: u16, accept: Option<&str>) -> (String, Vec<u8>) {
+    let mut stream = TcpStream::connect(("127.0.0.1", port)).expect("connect");
+    stream
+        .set_read_timeout(Some(Duration::from_secs(10)))
+        .expect("timeout");
+    let accept = accept
+        .map(|value| format!("Accept-Encoding: {value}\r\n"))
+        .unwrap_or_default();
+    stream
+        .write_all(
+            format!(
+                "GET / HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nConnection: close\r\n{accept}\r\n"
+            )
+            .as_bytes(),
+        )
+        .expect("write");
+    let mut raw = Vec::new();
+    stream.read_to_end(&mut raw).expect("read");
+    let split = raw
+        .windows(4)
+        .position(|w| w == b"\r\n\r\n")
+        .expect("head end");
+    (
+        String::from_utf8_lossy(&raw[..split]).into_owned(),
+        raw[split + 4..].to_vec(),
+    )
+}
+
+fn gunzip(bytes: &[u8]) -> String {
+    let mut child = Command::new("/usr/bin/gzip")
+        .args(["-dc"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .expect("run gzip");
+    let mut stdin = child.stdin.take().expect("gzip stdin");
+    let input = bytes.to_vec();
+    let writer = std::thread::spawn(move || stdin.write_all(&input));
+    let out = child.wait_with_output().expect("gzip output");
+    writer.join().expect("writer").expect("write gzip input");
+    assert!(out.status.success(), "gzip refused the body");
+    String::from_utf8(out.stdout).expect("utf8 page")
+}
+
 #[test]
 fn the_root_serves_the_page_with_no_store() {
     let (anthropic, zai) = (usage_upstream(), usage_upstream());
     let daemon = fixture_with(&anthropic, &zai);
 
-    let reply = request(daemon.port, "GET", "/", &[], b"");
+    let (head, body) = page_exchange(daemon.port, Some("gzip, deflate"));
+    let lower = head.to_lowercase();
 
-    assert_eq!(reply.status, 200);
-    assert!(
-        reply
-            .header("content-type")
-            .is_some_and(|v| v.starts_with("text/html")),
-        "{:?}",
-        reply.headers
-    );
-    assert_eq!(reply.header("cache-control"), Some("no-store"));
-    assert!(reply.body.contains("<title>"), "{}", reply.body);
+    assert!(head.starts_with("HTTP/1.1 200"), "{head}");
+    assert!(lower.contains("content-type: text/html"), "{head}");
+    assert!(lower.contains("cache-control: no-store"), "{head}");
+    assert!(gunzip(&body).contains("<title>"));
     assert!(anthropic.requests().is_empty(), "the page is not forwarded");
+}
+
+#[test]
+fn e7_dashboard_is_served_gzipped() {
+    let (anthropic, zai) = (usage_upstream(), usage_upstream());
+    let daemon = fixture_with(&anthropic, &zai);
+
+    let (head, body) = page_exchange(daemon.port, Some("gzip"));
+    let lower = head.to_lowercase();
+
+    assert!(lower.contains("content-encoding: gzip"), "{head}");
+    assert!(lower.contains("vary: accept-encoding"), "{head}");
+    assert_eq!(gunzip(&body), huddle_router::dashboard::PAGE);
+    assert!(
+        body.len() < huddle_router::dashboard::PAGE.len() / 2,
+        "{} bytes",
+        body.len()
+    );
+}
+
+#[test]
+fn e7_dashboard_without_gzip_gets_a_plain_notice() {
+    let (anthropic, zai) = (usage_upstream(), usage_upstream());
+    let daemon = fixture_with(&anthropic, &zai);
+
+    for accept in [None, Some("identity"), Some("gzip;q=0")] {
+        let (head, body) = page_exchange(daemon.port, accept);
+        let lower = head.to_lowercase();
+        let text = String::from_utf8(body).expect("plain text");
+
+        assert!(head.starts_with("HTTP/1.1 406"), "{accept:?}: {head}");
+        assert!(lower.contains("content-type: text/plain"), "{head}");
+        assert!(!lower.contains("content-encoding"), "{head}");
+        assert!(lower.contains("cache-control: no-store"), "{head}");
+        assert!(text.contains("gzip"), "{text}");
+        assert!(!text.contains("<script"), "{text}");
+    }
 }
 
 #[test]

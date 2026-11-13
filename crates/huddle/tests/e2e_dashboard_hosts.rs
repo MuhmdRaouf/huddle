@@ -97,7 +97,9 @@ fn a_word_without_a_host_is_a_usage_error() {
 fn host_status(port: u16, host: &str, path: &str) -> u16 {
     let reply = raw_exchange(
         port,
-        &format!("GET {path} HTTP/1.1\r\nHost: {host}\r\nConnection: close\r\n\r\n"),
+        &format!(
+            "GET {path} HTTP/1.1\r\nHost: {host}\r\nConnection: close\r\nAccept-Encoding: gzip\r\n\r\n"
+        ),
     );
     reply
         .split_whitespace()

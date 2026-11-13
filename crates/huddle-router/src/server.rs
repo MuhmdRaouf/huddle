@@ -12,7 +12,7 @@ use std::task::{Context, Poll};
 use http_body_util::combinators::BoxBody;
 use http_body_util::{BodyExt, Full};
 use hyper::body::{Bytes, Frame, Incoming};
-use hyper::header::{CONNECTION, CONTENT_LENGTH, CONTENT_TYPE, HOST, HeaderValue};
+use hyper::header::{ACCEPT_ENCODING, CONNECTION, CONTENT_LENGTH, CONTENT_TYPE, HOST, HeaderValue};
 use hyper::{Method, Request, Response, StatusCode};
 use tokio::net::TcpListener;
 use tokio::sync::watch;
@@ -320,7 +320,13 @@ async fn dashboard_answer(
 ) -> Option<Response<RespBody>> {
     let get = req.method() == Method::GET;
     match req.uri().path() {
-        PAGE_PATH if get => Some(dashboard.page_answer()),
+        PAGE_PATH if get => {
+            let accept = req
+                .headers()
+                .get(ACCEPT_ENCODING)
+                .and_then(|v| v.to_str().ok());
+            Some(dashboard.page_answer(accept))
+        }
         STATE_PATH if get && req.uri().query() == Some("quota=refresh") => {
             Some(dashboard.state_answer_with_quota().await)
         }

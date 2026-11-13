@@ -268,7 +268,9 @@ fn m5_the_dashboard_host_never_serves_mcp() {
     loop {
         let page = raw_exchange(
             daemon.port,
-            &format!("GET / HTTP/1.1\r\nHost: {host}\r\nConnection: close\r\n\r\n"),
+            &format!(
+                "GET / HTTP/1.1\r\nHost: {host}\r\nConnection: close\r\nAccept-Encoding: gzip\r\n\r\n"
+            ),
         );
         if page.starts_with("HTTP/1.1 200") {
             break;

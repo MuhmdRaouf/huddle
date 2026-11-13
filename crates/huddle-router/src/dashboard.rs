@@ -10,7 +10,7 @@ use std::time::Duration;
 
 use http_body_util::BodyExt;
 use hyper::body::{Bytes, Frame};
-use hyper::header::{CACHE_CONTROL, CONTENT_TYPE, HeaderValue};
+use hyper::header::{CACHE_CONTROL, CONTENT_ENCODING, CONTENT_TYPE, HeaderValue, VARY};
 use hyper::{Response, StatusCode};
 use tokio::sync::{mpsc, watch};
 use tokio::time::{Instant, sleep_until};
@@ -35,34 +35,31 @@ pub const STATE_PATH: &str = "/huddle-router/state";
 pub const LIVE_PATH: &str = "/huddle-router/live";
 pub const HISTORY_PATH: &str = "/huddle-router/history";
 
-/// The dashboard page: the files in `dashboard/` joined at compile time into one self-contained document.
-pub const PAGE: &str = concat!(
-    "<!doctype html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n",
-    "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1, viewport-fit=cover\">\n",
-    "<title>Huddle Admin</title>\n<style>\n",
-    include_str!("dashboard/style.css"),
-    "</style>\n</head>\n<body>\n",
-    include_str!("dashboard/index.html"),
-    "<script>\n(function(){\n\"use strict\";\n",
-    include_str!("dashboard/core.js"),
-    include_str!("dashboard/pages/needs-you.js"),
-    include_str!("dashboard/pages/overview.js"),
-    include_str!("dashboard/pages/sessions.js"),
-    include_str!("dashboard/pages/agents.js"),
-    include_str!("dashboard/pages/requests.js"),
-    include_str!("dashboard/pages/errors.js"),
-    include_str!("dashboard/pages/models.js"),
-    include_str!("dashboard/pages/providers.js"),
-    include_str!("dashboard/pages/usage.js"),
-    include_str!("dashboard/pages/projects.js"),
-    include_str!("dashboard/pages/worktrees.js"),
-    include_str!("dashboard/pages/jobs.js"),
-    include_str!("dashboard/pages/harnesses.js"),
-    include_str!("dashboard/pages/router.js"),
-    include_str!("dashboard/drawers.js"),
-    include_str!("dashboard/boot.js"),
-    "})();\n</script>\n</body>\n</html>\n",
-);
+/// The dashboard page: the files in `dashboard/` joined by `build.rs`. Only tests read this; the
+/// router serves `PAGE_GZIP`, so the plain text is not part of the binary.
+pub const PAGE: &str = include_str!(concat!(env!("OUT_DIR"), "/page.html"));
+
+/// The page gzipped at build time: the only copy the binary holds.
+const PAGE_GZIP: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/page.html.gz"));
+
+/// What a client that cannot read gzip is told.
+const NEEDS_GZIP: &str =
+    "The huddle dashboard is served gzip-compressed. Open it in a browser that accepts gzip.\n";
+
+/// True when an `Accept-Encoding` value allows gzip: `gzip` or `*`, with a quality above zero.
+fn accepts_gzip(accept_encoding: Option<&str>) -> bool {
+    accept_encoding.is_some_and(|value| {
+        value.split(',').any(|item| {
+            let mut parts = item.split(';');
+            let coding = parts.next().unwrap_or("").trim();
+            let quality = parts
+                .filter_map(|p| p.trim().strip_prefix("q="))
+                .find_map(|q| q.trim().parse::<f32>().ok())
+                .unwrap_or(1.0);
+            (coding.eq_ignore_ascii_case("gzip") || coding == "*") && quality > 0.0
+        })
+    })
+}
 
 /// The kept history when nothing says otherwise.
 const DEFAULT_KEEP_DAYS: u64 = 90;
@@ -189,14 +186,28 @@ impl Dashboard {
         self
     }
 
-    /// The page, never cached: it changes with the binary.
-    pub fn page_answer(&self) -> Response<RespBody> {
-        let mut response = Response::new(full_body(PAGE));
+    /// The page gzipped, never cached: it changes with the binary. A client whose
+    /// `Accept-Encoding` does not allow gzip gets a short plain-text notice instead.
+    pub fn page_answer(&self, accept_encoding: Option<&str>) -> Response<RespBody> {
+        let gzip = accepts_gzip(accept_encoding);
+        let mut response = if gzip {
+            Response::new(full_body(Bytes::from_static(PAGE_GZIP)))
+        } else {
+            let mut notice = Response::new(full_body(NEEDS_GZIP));
+            *notice.status_mut() = StatusCode::NOT_ACCEPTABLE;
+            notice
+        };
         let headers = response.headers_mut();
-        headers.insert(
-            CONTENT_TYPE,
-            HeaderValue::from_static("text/html; charset=utf-8"),
-        );
+        let content_type = if gzip {
+            "text/html; charset=utf-8"
+        } else {
+            "text/plain; charset=utf-8"
+        };
+        headers.insert(CONTENT_TYPE, HeaderValue::from_static(content_type));
+        if gzip {
+            headers.insert(CONTENT_ENCODING, HeaderValue::from_static("gzip"));
+        }
+        headers.insert(VARY, HeaderValue::from_static("accept-encoding"));
         headers.insert(CACHE_CONTROL, HeaderValue::from_static("no-store"));
         response
     }
@@ -441,3 +452,16 @@ async fn drained(drain: Option<watch::Receiver<Phase>>) {
         std::future::pending::<()>().await;
     }
 }
+
+#[cfg(test)]
+mod gzip_tests {
+    use super::accepts_gzip;
+
+    #[test]
+    fn accept_encoding_allows_gzip_only_with_a_positive_quality() {
+        assert!(accepts_gzip(Some("gzip")));
+        assert!(accepts_gzip(Some("br, GZIP;q=0.5")));
+        assert!(accepts_gzip(Some("*")));
+        assert!(!accepts_gzip(Some("identity")));
+        assert!(!accepts_gzip(Some("gzip;q=0")));
+        assert!(!accepts_gzip(None));

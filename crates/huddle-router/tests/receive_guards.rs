@@ -314,7 +314,11 @@ async fn a_dashboard_host_reaches_the_page_and_the_state_in_any_case_with_or_wit
         format!("HUB.raouf.me:{}", rig.port),
     ] {
         for path in ["/", "/huddle-router/state"] {
-            let resp = raw(rig.port, close_req("GET", path, &host, "", "")).await;
+            let resp = raw(
+                rig.port,
+                close_req("GET", path, &host, "Accept-Encoding: gzip\r\n", ""),
+            )
+            .await;
             assert!(resp.starts_with("HTTP/1.1 200"), "{host} {path}: {resp}");
         }
     }

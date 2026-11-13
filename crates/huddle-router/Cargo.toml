@@ -26,5 +26,8 @@ serde_json.workspace = true
 libc.workspace = true
 ring.workspace = true
 
+[build-dependencies]
+flate2.workspace = true
+
 [dev-dependencies]
 huddle-testkit.workspace = true

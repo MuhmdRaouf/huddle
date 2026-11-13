@@ -30,7 +30,7 @@ cargo run -q -p huddle-testkit --bin huddle-check-attribution  # no AI attributi
 ## Layout
 
 - `crates/huddle`: the one binary. `src/words/` holds one file per word: `setup`, `run`, `status`, `result`, `cancel`, `hook`, `uninstall`, `router/*`, `provider/*`. `tests/` holds one e2e file per area.
-- `crates/huddle-router`, `crates/huddle-daemon`: the router and its run loop, singleton and handover. The dashboard page is the files in `crates/huddle-router/src/dashboard/` (`index.html`, `style.css`, `core.js`, `pages/<page>.js`, `drawers.js`, `boot.js`), joined at compile time into `dashboard::PAGE`.
+- `crates/huddle-router`, `crates/huddle-daemon`: the router and its run loop, singleton and handover. The dashboard page is the files in `crates/huddle-router/src/dashboard/` (`index.html`, `style.css`, `core.js`, `pages/<page>.js`, `drawers.js`, `boot.js`), joined and gzipped by `crates/huddle-router/build.rs` (`flate2`, a build-dependency only) into `page.html` and `page.html.gz` under `OUT_DIR`; the binary holds only the gzipped bytes, and `dashboard::PAGE` (the joined text) is read by tests only. The joined script for `node --check` is the `<script>` body of `target/<profile>/build/huddle-router-*/out/page.html`.
 - `crates/huddle-config`, `crates/huddle-catalog`, `crates/huddle-pki`, `crates/huddle-keystore`: state paths, provider data and routing, local CA, keys in the OS store.
 - `crates/huddle-harness`, `crates/huddle-jobs`, `crates/huddle-procs`: harness table and runners, job model and records, processes.
 - `crates/huddle-mcp`: the MCP tool registry (typed tools, the `Sources` trait with disk and router implementations) that every transport serves; `huddle mcp` is the stdio transport.
