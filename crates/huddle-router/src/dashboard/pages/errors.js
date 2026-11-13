@@ -1,19 +1,55 @@
-function errGroups(){const d=stats().done,o={};d.filter(r=>r.status!==200).forEach(r=>{(o[r.status]=o[r.status]||[]).push(r)});const t0=NOW-15*MIN;
- return Object.entries(o).map(([code,rs])=>{const c=+code;const trend=Array(30).fill(0);rs.forEach(r=>{trend[Math.max(0,Math.min(29,Math.floor((r.t-t0)/30e3)))]++});
-  const reason=(rs.find(r=>r.reason)||{}).reason;
-  return {code:c,def:errDef(c,reason),rs,trend,lanes:[...new Set(rs.map(r=>r.lane))],models:[...new Set(rs.map(r=>r.m))],sessions:new Set(rs.map(r=>r.sess).filter(Boolean)).size,last:rs[rs.length-1].t,share:rs.length/d.length}})}
-PAGES.errors={title:'Errors',body:()=>HS.mode==='history'?hview('Errors',`Failed requests in ${rangeText()}, newest first. Choose the status to include requests you cancelled.`):head('Errors','Failed and cancelled requests in the last 15 minutes, grouped by cause. A 499 means you stopped the stream, so it never counts as an error.',hmodes())+
- `<section>${secH('By cause')}<div class="card t">${reg('errg',()=>table('errg',[
-  {k:'err',label:'Cause',v:g=>g.def[0],h:g=>`<div class="ct">${esc(g.def[0])}</div><div class="cs">${esc(g.def[1])}</div>`},
-  {k:'code',label:'Status',v:g=>g.code,h:g=>g.code===499?pill('off','499'):g.code===429?pill('warn','429'):pill('bad',String(g.code))},
-  {k:'n',label:'Count',num:1,v:g=>g.rs.length,h:g=>`<b>${g.rs.length}</b>`},
-  {k:'trend',label:'Last 15 min',h:g=>spark(g.trend,g.code===499?'var(--faint)':g.code===429?'var(--warn)':'var(--bad)','tsp'),sm:1},
-  {k:'share',label:'Of requests',num:1,v:g=>g.share,h:g=>`${(g.share*100).toFixed(1)}%`,sm:1},
-  {k:'lanes',label:'Lanes',h:g=>`<span class="muted">${esc(g.lanes.join(', '))}</span>`,sm:1},
-  {k:'models',label:'Models',h:g=>g.models.map(modelTag).join(' &nbsp;')},
-  {k:'sess',label:'Sessions',num:1,v:g=>g.sessions,h:g=>g.sessions,sm:1},
-  {k:'last',label:'Last seen',num:1,v:g=>-g.last,h:g=>`<span class="muted">${ago(g.last)}</span>`},
-  {k:'counts',label:'Counts as error',c:1,h:g=>g.def[3]?'<span class="badc">Yes</span>':'<span class="faint">No</span>',sm:1}
- ],errGroups(),{sort:{k:'n',d:-1},empty:'No errors in the last 15 minutes'}))}</div></section>`+
- `<section>${secH('What each cause means')}<div class="card list">${Object.entries(ERRDEF).map(([c,d])=>`<div class="li"><span class="mono w36">${c}</span><div class="grow"><div><b class="fw5">${d[0]}</b> <span class="mono faint">${d[1]}</span></div><div class="sm wrap">${d[2]}</div></div></div>`).join('')}</div></section>`+
- `<section>${secH('Recent')}<div class="card t">${reg('errr',()=>table('errr',REQ_COLS.filter(c=>['time','status','model','who','dur','in'].includes(c.k)),stats().done.filter(r=>r.status!==200).reverse(),{row:r=>'request:'+r.id,limit:40,empty:'No errors in the last 15 minutes'}))}</div></section>`};
+/* The rows behind the page: the live memory in the 15 minute range, the kept history in every other range. */
+const EG={q:null,at:0,rows:[],total:0,err:false};
+function loadErrors(){if(liveRange())return;const q=rangeQuery();if(EG.q===q&&Date.now()-EG.at<6e4)return;
+ if(EG.q!==q){EG.rows=[];EG.total=0;EG.err=false}EG.q=q;
+ hget(HQ+'search&'+q+'&status=error&limit=500').then(d=>{if(EG.q!==q)return;EG.rows=arr(d.rows).map(hrow);EG.total=n0(d.total);EG.at=Date.now();EG.err=false;paint()},()=>{if(EG.q!==q)return;EG.err=true;paint()})}
+const errRows=()=>liveRange()?stats().done.filter(r=>r.status!==200):EG.rows;
+const errSess=r=>r.sess||(r.s&&r.s.id)||null;
+const causeName=(code,reason)=>reason==='quota'?'Quota used up':code===529?'Overloaded':code===429?'Throttled':code===502?'Upstream failed':code===499?'Cancelled':code===401||code===403?'Key refused':errDef(code,reason)[0];
+/* what to do about one cause; a used-up quota says when it resets */
+function fixText(g){
+ if(g.reason==='quota'){const t=quotaState(provQuota(g.lane)).reset;return {head:t?`quota used up, resets ${resetAt(t)}`:'quota used up',tail:'Wait for the reset, or pick a model from another provider.'}}
+ if(g.code===529)return {head:'',tail:'Anthropic is busy. Claude Code retries; nothing to fix.'};
+ if(g.code===429)return {head:'',tail:'The provider is throttling. Claude Code backs off and retries.'};
+ if(g.code===502)return {head:'',tail:'The router could not reach the provider. Check the network and the provider status page.'};
+ if(g.code===401||g.code===403)return {head:'',tail:g.lane==='anthropic'?'Sign in to Claude Code again.':`The key was refused. Run /huddle:${g.lane}:setup to enter a new one.`};
+ if(g.code===499)return {head:'',tail:'You stopped the stream. Not an error.'};
+ return {head:'',tail:errDef(g.code,g.reason)[2]}}
+/* one group per provider and reason */
+function errGroups(rows){const o={};
+ rows.forEach(r=>{const k=r.lane+'|'+(r.reason||r.status);(o[k]=o[k]||[]).push(r)});
+ return Object.values(o).map(rs=>{const code=rs[0].status,reason=rs.find(r=>r.reason)?rs.find(r=>r.reason).reason:null,ts=rs.map(r=>r.t);
+  return {lane:rs[0].lane,code,reason,n:rs.length,first:Math.min(...ts),last:Math.max(...ts),sessions:new Set(rs.map(errSess).filter(Boolean)).size,models:[...new Set(rs.map(r=>r.m))]}})}
+/* error rate per provider over time, from the live buckets or the history buckets */
+function errSeries(){
+ const laneOf={};
+ if(liveRange())MODELS.forEach(m=>{laneOf[m.id]=m.lane});
+ else Object.values(HP.lane||{}).forEach(t=>arr(t.models).forEach(m=>{laneOf[m.model]=t.key}));
+ const cols=[];
+ if(liveRange())BK.forEach(k=>{const c={t:k.t,by:{}};Object.entries(k.byM).forEach(([m,o])=>{const l=laneOf[m];if(!l)return;const x=c.by[l]=c.by[l]||{n:0,err:0};x.n+=o.n;x.err+=o.err});cols.push(c)});
+ else{const at={};arr(HP.bk&&HP.bk.buckets).forEach(b=>{const l=laneOf[b.model];if(!l)return;const c=at[b.start_ms]=at[b.start_ms]||{t:b.start_ms,by:{}};const x=c.by[l]=c.by[l]||{n:0,err:0};x.n+=n0(b.n);x.err+=n0(b.err)});
+  Object.values(at).sort((a,b)=>a.t-b.t).forEach(c=>cols.push(c))}
+ const tot={};cols.forEach(c=>Object.entries(c.by).forEach(([l,x])=>{const y=tot[l]=tot[l]||{n:0,err:0};y.n+=x.n;y.err+=x.err}));
+ const lanes=Object.keys(tot).filter(l=>tot[l].n>0).sort();
+ return {cols,lanes,tot,rate:l=>cols.map(c=>c.by[l]&&c.by[l].n?c.by[l].err/c.by[l].n:0)}}
+function errChart(){const S=errSeries();
+ if(!S.lanes.length||S.cols.length<2)return `<div class="legendrow bare">${liveRange()||HP.bk||HP.err?`No requests in ${rangeText()}`:checking()}</div>`;
+ const rates=S.lanes.map(l=>S.rate(l)),top=Math.max(.05,...rates.flat()),n=S.cols.length;
+ const line=(v,i)=>`<path d="${v.map((x,j)=>(j?'L':'M')+(j/(n-1)*600).toFixed(1)+' '+(130-x/top*120).toFixed(1)).join(' ')}" fill="none" stroke="var(--c${i%6+1})" stroke-width="2" vector-effect="non-scaling-stroke" stroke-linejoin="round"/>`;
+ const lg=S.lanes.map((l,i)=>{const t=S.tot[l];return `<span><span class="sw errsw${i%6+1}"></span>${esc(provName(l))} <b>${t.n?(t.err/t.n*100).toFixed(1):'0.0'}%</b></span>`}).join('');
+ return `<div class="errch"><div class="eyt"><span>${(top*100).toFixed(0)}%</span><span>0%</span></div><svg viewBox="0 0 600 134" preserveAspectRatio="none" role="img" aria-label="Error rate per provider, ${esc(rangeText())}"><path d="M0 130 L600 130" stroke="var(--line)" stroke-width="1" vector-effect="non-scaling-stroke"/>${rates.map(line).join('')}</svg></div><div class="legendrow">${lg}</div>`}
+const errCols=[
+ {k:'lane',label:'Provider',v:g=>g.lane,h:g=>`<b class="fw5">${esc(provName(g.lane))}</b><div class="cs">${g.models.map(esc).join(', ')}</div>`},
+ {k:'cause',label:'Cause',v:g=>causeName(g.code,g.reason),h:g=>`<div class="ct">${esc(causeName(g.code,g.reason))}</div><div class="cs">${g.code===499?pill('off','499'):g.code===429?pill('warn','429'):pill('bad',String(g.code))}</div>`},
+ {k:'n',label:'Count',num:1,v:g=>g.n,h:g=>`<b>${g.n.toLocaleString('en-US')}</b>`},
+ {k:'first',label:'First seen',num:1,v:g=>-g.first,h:g=>`<span class="muted">${liveRange()?ago(g.first):when(g.first)}</span>`,sm:1},
+ {k:'last',label:'Last seen',num:1,v:g=>-g.last,h:g=>`<span class="muted">${liveRange()?ago(g.last):when(g.last)}</span>`},
+ {k:'sess',label:'Sessions hit',num:1,v:g=>g.sessions,h:g=>g.sessions,sm:1},
+ {k:'fix',label:'Fix',h:g=>{const f=fixText(g);return `${f.head?`<div class="warnc">${esc(f.head)}</div>`:''}<div class="cs cw fixt">${esc(f.tail)}</div>`}}
+];
+const errNote=()=>liveRange()?'':EG.err?`<div class="legendrow badc">Could not load history. Showing the last data.</div>`:EG.q&&EG.at?(EG.total>EG.rows.length?`<div class="legendrow">Grouped from the latest ${EG.rows.length.toLocaleString('en-US')} of ${EG.total.toLocaleString('en-US')} errors in ${rangeText()}.</div>`:''):`<div class="legendrow">${checking()}</div>`;
+PAGES.errors={title:'Errors',after:()=>{loadProviders();loadErrors()},body:()=>head('Errors',`Failed requests in ${rangeText()}, grouped by provider and cause. A cancelled request means you stopped the stream; it is not an error.`)+
+ `<section>${secH('By provider and cause')}<div class="card t">${reg('errg',()=>table('errg',errCols,errGroups(errRows()),{sort:{k:'n',d:-1},stack:1,empty:liveRange()||EG.at?`No errors in ${rangeText()}`:'Checking…'})+errNote())}</div></section>`+
+ `<section>${secH('Error rate per provider')}<div class="card">${reg('errch',errChart)}</div></section>`+
+ `<section>${secH('Recent')}<div class="card t">${reg('errr',()=>table('errr',REQ_COLS.filter(c=>['time','status','lane','model','who'].includes(c.k)),errRows().slice().sort((a,b)=>b.t-a.t),{row:r=>'request:'+r.id,limit:40,stack:1,empty:liveRange()||EG.at?`No errors in ${rangeText()}`:'Checking…'}))}</div></section>`+
+ `<details class="fold"><summary>What each cause means</summary><div class="card list">${Object.entries(ERRDEF).map(([c,d])=>`<div class="li"><span class="mono w36">${c}</span><div class="grow"><div><b class="fw5">${d[0]}</b> <span class="mono faint">${d[1]}</span></div><div class="sm wrap">${d[2]}</div></div></div>`).join('')}</div></details>`};

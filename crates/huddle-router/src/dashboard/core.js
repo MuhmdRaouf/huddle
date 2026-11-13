@@ -210,7 +210,7 @@ const HIST={range:'15m',from:0,to:0,keep:90,picking:false,bk:null,tot:null,ser:n
 try{const r=localStorage.getItem('huddle-range');if(r==='custom'){const c=JSON.parse(localStorage.getItem('huddle-range-custom')||'null');if(c&&c.from<c.to){HIST.range='custom';HIST.from=c.from;HIST.to=c.to}}else if(RANGES.some(x=>x[0]===r))HIST.range=r}catch(e){}
 const liveRange=()=>HIST.range==='15m';
 /* Only pages that read the router's live memory say a restart clears them; the rest read disk or settings. */
-const readsMemory=()=>({overview:liveRange(),models:liveRange(),usage:liveRange(),sessions:true,agents:true,requests:HS.mode==='live',errors:HS.mode==='live'})[page]===true;
+const readsMemory=()=>({overview:liveRange(),models:liveRange(),usage:liveRange(),sessions:true,agents:true,requests:HS.mode==='live',errors:liveRange()})[page]===true;
 const MON=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'],p2=n=>String(n).padStart(2,'0');
 const when=t=>{const d=new Date(t);return `${d.getDate()} ${MON[d.getMonth()]} ${p2(d.getHours())}:${p2(d.getMinutes())}`};
 const rangeShort=()=>HIST.range==='custom'?'custom':RANGES.find(x=>x[0]===HIST.range)[1];
@@ -345,7 +345,7 @@ function shell(){patch($('#nav'),navHtml());patch($('#rcard'),rcard());$('#clock
 /* ---------- routing ---------- */
 let page='overview';
 function render(){REG={};let h=(location.hash||'#overview').slice(1).split('?')[0];h=h==='plugins'?'providers':h;page=PAGES[h]?h:'overview';const p=PAGES[page];
- if(page==='requests'||page==='errors')hload(page);else HS.mode='live';
+ if(page==='requests')hload(page);else HS.mode='live';
  const grp=NAV.find(([,its])=>its.some(([k])=>k===page))[0];
  patch($('#crumbs'),`<span class="c0">Huddle</span>${ic('chev')}<span>${grp}</span>${ic('chev')}<b>${p.title}</b>`);
  setHtml($('#content'),p.body()+(readsMemory()?`<div class="foot">${dot('ok',true)} Memory only. Restarting the router clears this page.</div>`:''));

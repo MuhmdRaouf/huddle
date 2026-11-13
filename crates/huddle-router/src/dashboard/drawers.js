@@ -27,7 +27,7 @@ const DRAWERS={
    <div><h4>Recent requests</h4><div class="card t">${table('d-req',REQ_COLS.filter(c=>['time','status','model','ttft','in','out'].includes(c.k)).concat([{k:'reason',label:'Reason',v:r=>r.reason||'',h:r=>r.reason?`<span class="muted">${esc(r.reason)}</span>`:isErr(r)?`<span class="muted">${esc(errDef(r.status)[0])}</span>`:NA}]),rs.slice().reverse(),{row:r=>'request:'+r.id,limit:12,empty:'No requests kept for this session'})}</div></div>
    <div class="notebox">${ic('info')}<span>Read from Claude Code's session log for ${esc(s.sid)}. Prompt text and tool output are never read into this page.</span></div>
   </div>`},
- request(id){const r=REQS.find(x=>x.id===id)||HS.rows.find(x=>x.id===id);if(!r)return '';
+ request(id){const r=REQS.find(x=>x.id===id)||HS.rows.find(x=>x.id===id)||EG.rows.find(x=>x.id===id);if(!r)return '';
   const total=r.dur!=null?r.dur:r.status==null?NOW-r.t:null,L=LANES.find(l=>l.id===r.lane);
   let wf='';
   if(total>0){const rt=n0(r.rt),tt=r.ttft!=null?r.ttft:r.status==null?Math.min(total,NOW-r.t):0;const s1=Math.min(100,rt/total*100),s2=Math.max(0,Math.min(100-s1,(tt-rt)/total*100)),s3=Math.max(0,100-s1-s2);

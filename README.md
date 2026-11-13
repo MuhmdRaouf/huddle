@@ -165,6 +165,9 @@ It shows:
 - Sessions (six states, a chip for each, grouped by repository on request), Agents
   (main agents, subagents and open background tasks), Requests and Errors, with
   search over the history.
+- Sessions and Agents, with search over the history.
+- Requests: provider, failure reason, agent, upstream id and API price; the live list holds still while you scroll.
+- Errors: grouped by provider and cause with the fix, and the error rate per provider over time.
 - Models and Usage, with the Claude plan windows when Anthropic's replies carry
   them.
 - Sessions, Agents, Requests and Errors, with search over the history.

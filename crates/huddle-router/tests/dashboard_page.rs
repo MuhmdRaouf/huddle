@@ -451,7 +451,7 @@ fn k14_memory_footer_only_on_live_pages() {
         "sessions:true",
         "agents:true",
         "requests:HS.mode==='live'",
-        "errors:HS.mode==='live'",
+        "errors:liveRange()",
     ] {
         assert!(rule.contains(live), "{live}");
     }
@@ -1253,5 +1253,89 @@ fn d11_matrix_follows_the_range() {
     assert!(
         USAGE_JS.contains("function matrix("),
         "Usage owns the matrix"
+    );
+}
+
+const REQUESTS_JS: &str = include_str!("../src/dashboard/pages/requests.js");
+const ERRORS_JS: &str = include_str!("../src/dashboard/pages/errors.js");
+
+#[test]
+fn d10_failures_show_their_reason() {
+    for word in [
+        "function reasonChip(",
+        "quota used up",
+        "overloaded",
+        "429",
+        "529",
+        "label:'Provider'",
+        "label:'Router'",
+        "r.up",
+        "r.agentId",
+        "label:'API price'",
+    ] {
+        assert!(REQUESTS_JS.contains(word), "{word}");
+    }
+    assert!(
+        REQUESTS_JS.contains("lanesWithTraffic()"),
+        "the filter lists only providers with traffic"
+    );
+    assert!(
+        REQUESTS_JS.contains("loadReqCost("),
+        "live rows take their price from the 15 minute history"
+    );
+    assert!(
+        REQUESTS_JS.contains("rangeQuery()"),
+        "history follows the global range"
+    );
+    assert!(
+        REQUESTS_JS.contains("liveRange()?'live':'history'"),
+        "a range past 15 minutes opens the history list"
+    );
+}
+
+#[test]
+fn d10_errors_group_by_provider_and_reason() {
+    for word in [
+        "function errGroups(",
+        "r.lane+'|'+",
+        "label:'Provider'",
+        "label:'Count'",
+        "label:'First seen'",
+        "label:'Last seen'",
+        "label:'Sessions hit'",
+        "label:'Fix'",
+        "quota used up, resets",
+        "resetAt(",
+        "quotaState(",
+        "Error rate per provider",
+        "<details",
+        "What each cause means",
+        "status=error",
+        "function errSeries(",
+        "loadErrors",
+    ] {
+        assert!(ERRORS_JS.contains(word), "{word}");
+    }
+    assert!(
+        !ERRORS_JS.contains("g.def[3]"),
+        "no per-status table with a counts-as-error column"
+    );
+}
+
+#[test]
+fn d10_live_tail_pauses_while_scrolled() {
+    for word in [
+        "const TAIL=",
+        "function tailRows(",
+        "data-tail=\"jump\"",
+        "addEventListener('scroll'",
+        "scrollY",
+        " new</button>",
+    ] {
+        assert!(REQUESTS_JS.contains(word), "{word}");
+    }
+    assert!(
+        REQUESTS_JS.contains("r.t<=TAIL.cut"),
+        "rows newer than the pause point stay out of the list"
     );
 }
