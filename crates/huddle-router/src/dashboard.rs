@@ -31,7 +31,33 @@ pub const STATE_PATH: &str = "/huddle-router/state";
 pub const LIVE_PATH: &str = "/huddle-router/live";
 pub const HISTORY_PATH: &str = "/huddle-router/history";
 
-const PAGE: &str = include_str!("dashboard.html");
+/// The dashboard page: the files in `dashboard/` joined at compile time into one self-contained document.
+pub const PAGE: &str = concat!(
+    "<!doctype html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n",
+    "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1, viewport-fit=cover\">\n",
+    "<title>Huddle Admin</title>\n<style>\n",
+    include_str!("dashboard/style.css"),
+    "</style>\n</head>\n<body>\n",
+    include_str!("dashboard/index.html"),
+    "<script>\n(function(){\n\"use strict\";\n",
+    include_str!("dashboard/core.js"),
+    include_str!("dashboard/pages/overview.js"),
+    include_str!("dashboard/pages/sessions.js"),
+    include_str!("dashboard/pages/agents.js"),
+    include_str!("dashboard/pages/requests.js"),
+    include_str!("dashboard/pages/errors.js"),
+    include_str!("dashboard/pages/models.js"),
+    include_str!("dashboard/pages/providers.js"),
+    include_str!("dashboard/pages/usage.js"),
+    include_str!("dashboard/pages/projects.js"),
+    include_str!("dashboard/pages/worktrees.js"),
+    include_str!("dashboard/pages/jobs.js"),
+    include_str!("dashboard/pages/harnesses.js"),
+    include_str!("dashboard/pages/router.js"),
+    include_str!("dashboard/drawers.js"),
+    include_str!("dashboard/boot.js"),
+    "})();\n</script>\n</body>\n</html>\n",
+);
 
 /// The fewest milliseconds between two snapshots on one feed.
 const MIN_GAP: Duration = Duration::from_secs(1);

@@ -93,6 +93,7 @@ the owner's `~/.claude`, `~/.agents` or the network.
 | The docs: README sections in order, no old provider plugin or command named, no key file in the catalog | crates/huddle/tests/k9_docs.rs:k9_readme_sections_follow_the_approved_order; crates/huddle/tests/k9_docs.rs:k9_no_doc_names_a_provider_plugin_or_an_old_command; crates/huddle/tests/k9_docs.rs:k9_the_catalog_has_no_key_file |
 | A held router lock stops the prompt hook and a start from spawning a second router; a free lock still starts one; a start whose daemon loses the lock waits for the winner | crates/huddle/tests/prompt_probe.rs:b2_a_held_lock_means_no_second_router; crates/huddle/tests/prompt_probe.rs:b2_a_free_lock_still_starts_the_router; crates/huddle-daemon/tests/start_probe.rs:b2_a_start_that_loses_the_lock_waits_for_the_winner |
 | A router start waits 200 ms for the lock, so a probe never refuses it while a live holder still does; a test home stops the router recorded under its own root and leaves other pids alone | crates/huddle-daemon/src/singleton.rs:b6_a_probe_never_refuses_a_starting_router; crates/huddle-daemon/src/singleton.rs:b6_a_live_holder_still_refuses_a_start_after_its_wait; crates/huddle-testkit/tests/temp_home.rs:b6_a_test_home_stops_the_router_it_caused |
+| The dashboard source is one file per page, and the router serves them joined once, in order, with no `dashboard.html` left | crates/huddle-router/tests/dashboard_page.rs:d0_the_served_page_is_the_joined_parts |
 
 ## Needs a human
 

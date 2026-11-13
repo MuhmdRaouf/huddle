@@ -1,9 +1,9 @@
-//! The dashboard page is one self-contained file: no framework, no build step, nothing loaded
+//! The dashboard page is one self-contained page, joined from the files in `src/dashboard/`: no framework, no build step, nothing loaded
 //! from outside the router, and no snapshot data ever parsed as markup outside one helper.
 
 use serde_json::Value;
 
-const PAGE: &str = include_str!("../src/dashboard.html");
+use huddle_router::dashboard::PAGE;
 const FIXTURE: &str = include_str!("fixtures/state-v2.json");
 
 const PAGE_IDS: [&str; 13] = [
@@ -257,7 +257,8 @@ fn t9_tables_carry_the_three_30_day_columns() {
 fn t9_session_and_project_sheets_carry_a_history_block() {
     for sheet in [" session(id){", " project(name){"] {
         let start = PAGE.find(sheet).expect("sheet");
-        let end = start + PAGE[start..].find("\n request(").unwrap_or(9000).min(9000);
+        let end =
+            (start + PAGE[start..].find("\n request(").unwrap_or(9000).min(9000)).min(PAGE.len());
         assert!(PAGE[start..end].contains("histBlock("), "{sheet}");
     }
     assert!(PAGE.contains("function histBlock("));
@@ -686,4 +687,38 @@ fn b4_phone_tables_stack_their_cells() {
     assert!(harn.contains("stack:1"), "the Harnesses table stacks");
     let overview = page_between("PAGES.overview=", "PAGES.requests");
     assert!(overview.contains("stack:1"), "the Overview table stacks");
+}
+
+const PARTS: [&str; 18] = [
+    include_str!("../src/dashboard/style.css"),
+    include_str!("../src/dashboard/index.html"),
+    include_str!("../src/dashboard/core.js"),
+    include_str!("../src/dashboard/pages/overview.js"),
+    include_str!("../src/dashboard/pages/sessions.js"),
+    include_str!("../src/dashboard/pages/agents.js"),
+    include_str!("../src/dashboard/pages/requests.js"),
+    include_str!("../src/dashboard/pages/errors.js"),
+    include_str!("../src/dashboard/pages/models.js"),
+    include_str!("../src/dashboard/pages/providers.js"),
+    include_str!("../src/dashboard/pages/usage.js"),
+    include_str!("../src/dashboard/pages/projects.js"),
+    include_str!("../src/dashboard/pages/worktrees.js"),
+    include_str!("../src/dashboard/pages/jobs.js"),
+    include_str!("../src/dashboard/pages/harnesses.js"),
+    include_str!("../src/dashboard/pages/router.js"),
+    include_str!("../src/dashboard/drawers.js"),
+    include_str!("../src/dashboard/boot.js"),
+];
+
+#[test]
+fn d0_the_served_page_is_the_joined_parts() {
+    let mut at = 0;
+    for (i, part) in PARTS.iter().enumerate() {
+        assert_eq!(PAGE.matches(part).count(), 1, "part {i} appears once");
+        let found = PAGE[at..].find(part);
+        assert!(found.is_some(), "part {i} comes after the one before it");
+        at += found.unwrap_or(0) + part.len();
+    }
+    let old = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/dashboard.html");
+    assert!(!old.exists(), "no leftover dashboard.html");
 }

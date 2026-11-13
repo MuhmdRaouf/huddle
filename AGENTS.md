@@ -30,7 +30,7 @@ cargo run -q -p huddle-testkit --bin huddle-check-attribution  # no AI attributi
 ## Layout
 
 - `crates/huddle`: the one binary. `src/words/` holds one file per word: `setup`, `run`, `status`, `result`, `cancel`, `hook`, `uninstall`, `router/*`, `provider/*`. `tests/` holds one e2e file per area.
-- `crates/huddle-router`, `crates/huddle-daemon`: the router and its run loop, singleton and handover.
+- `crates/huddle-router`, `crates/huddle-daemon`: the router and its run loop, singleton and handover. The dashboard page is the files in `crates/huddle-router/src/dashboard/` (`index.html`, `style.css`, `core.js`, `pages/<page>.js`, `drawers.js`, `boot.js`), joined at compile time into `dashboard::PAGE`.
 - `crates/huddle-config`, `crates/huddle-catalog`, `crates/huddle-pki`, `crates/huddle-keystore`: state paths, provider data and routing, local CA, keys in the OS store.
 - `crates/huddle-harness`, `crates/huddle-jobs`, `crates/huddle-procs`: harness table and runners, job model and records, processes.
 - `crates/huddle-history`: the `huddle.db` request history: writer, queries, pruning, prices.
