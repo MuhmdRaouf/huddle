@@ -63,12 +63,19 @@ build; on Windows, run Claude Code and huddle inside WSL.
 
 1. Update the plugin: `/plugin marketplace update muhmdraouf`, then
    `/reload-plugins`.
-2. Run `/huddle:update`. It installs the binary of the version the plugin
-   carries: it downloads the release, checks it against `SHA256SUMS`, switches
-   the `huddle` link and hands the running router to the new binary without
-   dropping a connection.
-3. It prints `huddle 0.0.2 → 0.0.3`, or `huddle 0.0.3 is the latest`. A failed
-   checksum leaves the old binary in place. It does not touch `settings.json`.
+2. Run `/huddle:update`. It asks GitHub for the latest published release. When that
+   release is newer than the installed binary it downloads it, checks it against
+   `SHA256SUMS`, switches the `huddle` link and hands the running router to the new binary
+   without dropping a connection. It never builds, and it exits 0 in every case below.
+3. It prints one of:
+   - `huddle 0.0.6 → 0.0.7`, plus `Plugin is 0.0.7: run /plugin to update it too.` when the
+     installed binary is newer than the plugin;
+   - `huddle 0.0.6 is the latest published version. Nothing to update.`, plus
+     `0.0.7 is not published yet. Try again in a few minutes.` when the plugin is ahead;
+   - `huddle: could not check for updates (GitHub unreachable). You stay on 0.0.6.`
+
+   A failed checksum installs nothing and leaves the old binary in place. It does not touch
+   `settings.json`.
 
 ### Uninstall
 
@@ -248,7 +255,7 @@ Slash commands in Claude Code. `<p>` is `zai`, `kimi`, `deepseek`, `minimax` or 
 | Command | What it does |
 |---|---|
 | `/huddle:setup [harness]` | Install the binary and wire Claude Code to the router; with a harness, show whether that CLI is ready |
-| `/huddle:update` | Install the binary of the version the plugin carries and hand the router over |
+| `/huddle:update` | Install the latest published release when it is newer and hand the router over |
 | `/huddle:run <harness> <task>` | Run a task on another coding CLI in this folder or `--dir`; `--background` returns at once |
 | `/huddle:status [job-id]` | Show every delegated job, or one in full |
 | `/huddle:result <job-id>` | Read a job's report and diff, then `--accept` it or `--return` it with feedback |
@@ -499,7 +506,7 @@ part of a release:
 
 - `release.yml` refuses a tag that does not match `VERSION`.
 - `plugin/dist/run` carries the version it downloads, and it equals `VERSION`.
-  `/huddle:update` installs exactly that version.
+  `/huddle:setup` installs exactly that version; `/huddle:update` installs the latest published one.
 - `CHANGELOG.md` has one `## <version>` section per release.
   `huddle-release section <version> CHANGELOG.md` prints it for the tag
   message, and `huddle-release notes` builds the release notes from it.

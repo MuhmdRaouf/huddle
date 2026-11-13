@@ -1,15 +1,18 @@
 #!/bin/sh
 # Gets the huddle binary for this OS and CPU, then runs it.
 #   sh "${CLAUDE_PLUGIN_ROOT}/dist/run" <word> [args...]
-# The words `setup` and `update` install the binary: they download the release, or build the
-# checkout with cargo while no release is published. `update` then switches the link, hands the
-# running router to the new binary and prints the version change; it leaves settings.json alone.
+# The word `setup` installs the binary: it downloads the release, or builds the checkout with
+# cargo while no release is published. The word `update` asks GitHub for the latest published
+# release and never builds: when that release is newer than the installed binary it downloads
+# it, switches the link, hands the running router over and prints the version change. It exits 0
+# for "nothing to update" and "GitHub unreachable", and leaves settings.json alone.
 # Every other word runs the installed binary. A hook does nothing and exits 0 until
 # /huddle:setup has installed a binary.
-# HUDDLE_DOWNLOAD_BASE moves the release URL for tests.
+# HUDDLE_DOWNLOAD_BASE and HUDDLE_LATEST_URL move the release URLs for tests.
 
 version=0.0.7
 base=${HUDDLE_DOWNLOAD_BASE:-https://github.com/MuhmdRaouf/huddle/releases/download}
+latest_url=${HUDDLE_LATEST_URL:-https://api.github.com/repos/MuhmdRaouf/huddle/releases/latest}
 # A relative XDG or HUDDLE value is invalid and ignored, as the XDG Base Directory spec says.
 absolute() {
   case "$1" in
@@ -92,9 +95,9 @@ fail_download() {
   exit 127
 }
 
-fetch_release() {
-  # Darwin runs the system curl: it trusts the keychain where a PATH curl may not. HUDDLE_CURL
-  # pins the binary for tests.
+# Darwin runs the system curl: it trusts the keychain where a PATH curl may not. HUDDLE_CURL
+# pins the binary for tests.
+pick_curl() {
   if [ -n "${HUDDLE_CURL:-}" ] && [ "$os" = darwin ]; then
     curl_bin=$HUDDLE_CURL
   elif [ "$os" = darwin ] && [ -x /usr/bin/curl ]; then
@@ -102,6 +105,10 @@ fetch_release() {
   else
     curl_bin=curl
   fi
+}
+
+fetch_release() {
+  pick_curl
   make_dir "$bin_dir" && make_dir "$cache_home" || fail_download
   tmp=$cache_home/.huddle.$$.download
   sums=$cache_home/.huddle.$$.sums
@@ -194,19 +201,59 @@ router_running() {
   [ -x "$link" ] && "$link" router status --json >/dev/null 2>&1
 }
 
+# True when dotted number version $1 is newer than $2.
+newer() {
+  a=$1
+  b=$2
+  while [ -n "$a$b" ]; do
+    a_part=${a%%.*}
+    b_part=${b%%.*}
+    [ "${a_part:-0}" -gt "${b_part:-0}" ] 2>/dev/null && return 0
+    [ "${a_part:-0}" -lt "${b_part:-0}" ] 2>/dev/null && return 1
+    case "$a" in *.*) a=${a#*.} ;; *) a= ;; esac
+    case "$b" in *.*) b=${b#*.} ;; *) b= ;; esac
+  done
+  return 1
+}
+
+# The tag of the latest published release, without its leading v; empty when GitHub does not answer.
+latest_published() {
+  pick_curl
+  "$curl_bin" -fsSL --max-time 15 -H 'Accept: application/vnd.github+json' "$latest_url" 2>/dev/null |
+    sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"v\{0,1\}\([0-9][0-9.]*\)".*/\1/p' | sed -n 1p
+}
+
 from=
 if [ "$word" = update ]; then
+  plugin_version=$version
   if [ -L "$link" ]; then
     from=$(readlink "$link")
     from=${from#huddle-}
   fi
   running_version=$(router_version)
-  if [ -x "$target" ] && [ ! -e "$target.local" ] && [ "$from" = "$version" ]; then
-    if [ -z "$running_version" ] || [ "$running_version" = "$version" ]; then
-      printf 'huddle %s is the latest\n' "$version"
+  latest=$(latest_published)
+  if [ -z "$latest" ]; then
+    printf 'huddle: could not check for updates (GitHub unreachable). You stay on %s.\n' "${from:-none}"
+    exit 0
+  fi
+  if [ -z "$from" ] || newer "$latest" "$from"; then
+    version=$latest
+    target=$bin_dir/huddle-$version
+    url=$base/v$version/$asset
+    sums_url=$base/v$version/SHA256SUMS
+  else
+    version=$from
+    target=$bin_dir/huddle-$version
+    if [ -n "$running_version" ] && [ "$running_version" != "$version" ] && [ -x "$target" ]; then
+      router_running && "$target" router start >/dev/null
+      printf 'huddle %s → %s\n' "$running_version" "$version"
       exit 0
     fi
-    from=$running_version
+    printf 'huddle %s is the latest published version. Nothing to update.\n' "$version"
+    if newer "$plugin_version" "$version"; then
+      printf '%s is not published yet. Try again in a few minutes.\n' "$plugin_version"
+    fi
+    exit 0
   fi
   [ -n "$from" ] || from=none
   was_running=0
@@ -214,8 +261,10 @@ if [ "$word" = update ]; then
 fi
 
 # A local build carries no version, so its .local marker makes every setup try the release
-# first, then rebuild.
-if [ ! -x "$target" ] || [ -e "$target.local" ]; then
+# first, then rebuild. An update never builds.
+if [ "$word" = update ]; then
+  fetch_release || fail_download
+elif [ ! -x "$target" ] || [ -e "$target.local" ]; then
   fetch_release
   status=$?
   if [ "$status" -ne 0 ]; then
@@ -229,6 +278,9 @@ if [ "$word" = update ]; then
     exit 1
   fi
   printf 'huddle %s → %s\n' "$from" "$version"
+  if newer "$version" "$plugin_version"; then
+    printf 'Plugin is %s: run /plugin to update it too.\n' "$plugin_version"
+  fi
   exit 0
 fi
 exec "$target" "$@"

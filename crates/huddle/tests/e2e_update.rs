@@ -99,7 +99,18 @@ fn install(root: &Path, version: &str) {
     fs::write(root.join("router-version"), version).expect("router version");
 }
 
-fn update(home: &TempHome, base: &str) -> Output {
+/// A fake "latest release" answer: GitHub's JSON with the tag, as a file:// URL.
+fn latest_url(root: &Path, tag: &str) -> String {
+    let path = root.join("latest.json");
+    fs::write(
+        &path,
+        format!("{{\n  \"tag_name\": \"v{tag}\",\n  \"draft\": false\n}}\n"),
+    )
+    .expect("write latest");
+    format!("file://{}", path.display())
+}
+
+fn update(home: &TempHome, base: &str, latest: &str) -> Output {
     let mut cmd = Command::new("sh");
     cmd.arg(dist_run()).arg("update");
     cmd.env_clear().envs(home.env());
@@ -108,6 +119,7 @@ fn update(home: &TempHome, base: &str) -> Output {
         format!("{}:/usr/bin:/bin", shims(home.root()).display()),
     );
     cmd.env("HUDDLE_DOWNLOAD_BASE", base);
+    cmd.env("HUDDLE_LATEST_URL", latest);
     cmd.output().expect("run dist/run update")
 }
 
@@ -124,14 +136,14 @@ fn router_calls(root: &Path) -> String {
 }
 
 #[test]
-fn update_switches_the_link_hands_the_router_over_and_prints_the_arrow() {
+fn e3_update_newer_published_switches_the_link_and_hands_the_router_over() {
     let home = TempHome::new();
     let root = home.root().to_path_buf();
     let new = pinned_version();
     install(&root, OLD);
     let base = fake_release(&root, &new, false);
 
-    let out = update(&home, &base);
+    let out = update(&home, &base, &latest_url(&root, &new));
 
     assert_eq!(out.status.code(), Some(0), "{out:?}");
     assert_eq!(stdout_of(&out), format!("huddle {OLD} → {new}\n"));
@@ -148,49 +160,119 @@ fn update_switches_the_link_hands_the_router_over_and_prints_the_arrow() {
 }
 
 #[test]
-fn a_second_update_says_it_is_the_latest_and_does_nothing() {
-    let home = TempHome::new();
-    let root = home.root().to_path_buf();
-    let new = pinned_version();
-    install(&root, OLD);
-    let base = fake_release(&root, &new, false);
-    assert_eq!(update(&home, &base).status.code(), Some(0));
-
-    let out = update(&home, &base);
-
-    assert_eq!(out.status.code(), Some(0), "{out:?}");
-    assert_eq!(stdout_of(&out), format!("huddle {new} is the latest\n"));
-    assert_eq!(router_calls(&root), format!("start {new}\n"));
-}
-
-#[test]
-fn a_router_still_on_the_old_version_is_handed_over_though_the_link_is_current() {
+fn e3_update_nothing_newer_says_so_and_does_nothing() {
     let home = TempHome::new();
     let root = home.root().to_path_buf();
     let new = pinned_version();
     install(&root, &new);
-    fs::write(root.join("router-version"), OLD).expect("stale router");
     let base = fake_release(&root, &new, false);
 
-    let out = update(&home, &base);
+    let out = update(&home, &base, &latest_url(&root, &new));
 
     assert_eq!(out.status.code(), Some(0), "{out:?}");
-    assert_eq!(stdout_of(&out), format!("huddle {OLD} → {new}\n"));
-    assert_eq!(router_calls(&root), format!("start {new}\n"));
+    assert_eq!(
+        stdout_of(&out),
+        format!("huddle {new} is the latest published version. Nothing to update.\n")
+    );
+    assert_eq!(router_calls(&root), "");
 }
 
 #[test]
-fn a_bad_checksum_exits_non_zero_and_leaves_the_link_alone() {
+fn e3_update_plugin_ahead_says_the_plugin_version_is_not_published_yet() {
+    let home = TempHome::new();
+    let root = home.root().to_path_buf();
+    let plugin = pinned_version();
+    install(&root, OLD);
+    let base = fake_release(&root, OLD, false);
+
+    let out = update(&home, &base, &latest_url(&root, OLD));
+
+    assert_eq!(out.status.code(), Some(0), "{out:?}");
+    assert_eq!(
+        stdout_of(&out),
+        format!(
+            "huddle {OLD} is the latest published version. Nothing to update.\n\
+             {plugin} is not published yet. Try again in a few minutes.\n"
+        )
+    );
+    assert_eq!(link_of(&root), PathBuf::from(format!("huddle-{OLD}")));
+}
+
+#[test]
+fn e3_update_unreachable_github_keeps_the_installed_version() {
+    let home = TempHome::new();
+    let root = home.root().to_path_buf();
+    install(&root, OLD);
+    let base = fake_release(&root, &pinned_version(), false);
+    let missing = format!("file://{}", root.join("no-such-answer.json").display());
+
+    let out = update(&home, &base, &missing);
+
+    assert_eq!(out.status.code(), Some(0), "{out:?}");
+    assert_eq!(
+        stdout_of(&out),
+        format!("huddle: could not check for updates (GitHub unreachable). You stay on {OLD}.\n")
+    );
+    assert_eq!(link_of(&root), PathBuf::from(format!("huddle-{OLD}")));
+    assert_eq!(router_calls(&root), "");
+}
+
+#[test]
+fn e3_update_binary_newer_than_the_plugin_points_to_the_plugin_update() {
+    let home = TempHome::new();
+    let root = home.root().to_path_buf();
+    let plugin = pinned_version();
+    let newer = "99.0.0";
+    install(&root, OLD);
+    let base = fake_release(&root, newer, false);
+
+    let out = update(&home, &base, &latest_url(&root, newer));
+
+    assert_eq!(out.status.code(), Some(0), "{out:?}");
+    assert_eq!(
+        stdout_of(&out),
+        format!("huddle {OLD} → {newer}\nPlugin is {plugin}: run /plugin to update it too.\n")
+    );
+    assert_eq!(link_of(&root), PathBuf::from(format!("huddle-{newer}")));
+}
+
+#[test]
+fn e3_update_never_builds() {
+    let home = TempHome::new();
+    let root = home.root().to_path_buf();
+    install(&root, OLD);
+    // The release the answer names has no assets, so the download fails.
+    let base = format!("file://{}", root.join("release").display());
+    let cargo_log = root.join("cargo-calls");
+    write_executable(
+        &shims(&root).join("cargo"),
+        &format!("#!/bin/sh\necho \"$*\" >> \"{}\"\n", cargo_log.display()),
+    )
+    .expect("write cargo shim");
+
+    let out = update(&home, &base, &latest_url(&root, &pinned_version()));
+
+    assert_ne!(out.status.code(), Some(0));
+    assert!(!cargo_log.exists(), "update ran cargo");
+    assert_eq!(link_of(&root), PathBuf::from(format!("huddle-{OLD}")));
+}
+
+#[test]
+fn e3_update_refuses_a_bad_checksum() {
     let home = TempHome::new();
     let root = home.root().to_path_buf();
     let new = pinned_version();
     install(&root, OLD);
     let base = fake_release(&root, &new, true);
 
-    let out = update(&home, &base);
+    let out = update(&home, &base, &latest_url(&root, &new));
 
     assert_ne!(out.status.code(), Some(0));
     assert_eq!(stdout_of(&out), "");
+    assert!(
+        String::from_utf8_lossy(&out.stderr).contains("failed its checksum"),
+        "{out:?}"
+    );
     assert_eq!(link_of(&root), PathBuf::from(format!("huddle-{OLD}")));
     assert!(
         !root
@@ -198,4 +280,20 @@ fn a_bad_checksum_exits_non_zero_and_leaves_the_link_alone() {
             .exists()
     );
     assert_eq!(router_calls(&root), "");
+}
+
+#[test]
+fn e3_update_hands_a_stale_router_over_though_the_link_is_current() {
+    let home = TempHome::new();
+    let root = home.root().to_path_buf();
+    let new = pinned_version();
+    install(&root, &new);
+    fs::write(root.join("router-version"), OLD).expect("stale router");
+    let base = fake_release(&root, &new, false);
+
+    let out = update(&home, &base, &latest_url(&root, &new));
+
+    assert_eq!(out.status.code(), Some(0), "{out:?}");
+    assert_eq!(stdout_of(&out), format!("huddle {OLD} → {new}\n"));
+    assert_eq!(router_calls(&root), format!("start {new}\n"));
 }

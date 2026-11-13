@@ -8,6 +8,7 @@
 ### Router
 
 - After an update hands the socket to the new binary, the old router closes its idle connections and open dashboard feeds at once, lets a request in flight finish for up to 10 minutes (`HUDDLE_ROUTER_DRAIN_LIMIT_MS` moves the limit), closes a tunnel that carries no byte for 3 seconds, then exits. It lets go of the listening socket at the handover, and logs one line when the limit cut a request off.
+- `/huddle:update` installs the latest published release and never builds. It says `Nothing to update` when nothing newer is published, says when the plugin is ahead of the release, says when GitHub is unreachable, points to `/plugin` when the binary is newer than the plugin, and exits 0 in each case. A failed checksum installs nothing.
 
 ## 0.0.7
 

@@ -1,5 +1,5 @@
 ---
-description: Update the huddle binary to the version this plugin carries
+description: Update the huddle binary to the latest published release
 allowed-tools: Bash(sh:*)
 ---
 
