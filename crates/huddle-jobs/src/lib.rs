@@ -13,5 +13,6 @@ pub mod overview;
 pub mod render;
 pub mod report;
 pub mod return_job;
+pub mod review;
 pub mod store;
 pub mod verify;

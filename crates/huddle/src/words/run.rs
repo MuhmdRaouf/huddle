@@ -2,7 +2,7 @@
 //! or return at once. `--drive` is the driver's own entry.
 
 use std::io::Write;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::thread;
 use std::time::Duration;
 
@@ -13,11 +13,11 @@ use huddle_harness::user_entries::all_entries;
 use huddle_jobs::checks::{self, Checks};
 use huddle_jobs::checks_render;
 use huddle_jobs::driver::{self, DriveError, SubmitInput};
-use huddle_jobs::git::{self, ChangeSet, DiffMode, GitError};
 use huddle_jobs::id::{new_job_id, now_ms};
 use huddle_jobs::liveness;
-use huddle_jobs::model::{Access, Job, JobState};
-use huddle_jobs::render::{self, ReviewView};
+use huddle_jobs::model::{Access, JobState};
+use huddle_jobs::render;
+use huddle_jobs::review;
 use huddle_jobs::store::JobStore;
 
 const USAGE: &str = "usage: huddle run <harness> [--background] [--readonly|--exec|--write] [--dir <path>] [--effort <e>] [--setup <cmd>]... [--gate <cmd>]... [--scope <glob>]... [--forbid <glob>]... <task>";
@@ -237,7 +237,7 @@ fn wait_and_report(store: &JobStore, job_id: &str) -> i32 {
         if job.state.is_active() {
             continue;
         }
-        match review_view(&job, false) {
+        match review::review_view(&job, false) {
             Ok(view) => {
                 let _ = writeln!(std::io::stdout(), "{}", render::result_packet(&job, &view));
                 let verification = job
@@ -261,29 +261,6 @@ fn wait_and_report(store: &JobStore, job_id: &str) -> i32 {
             _ => 3,
         };
     }
-}
-
-/// Changes and stat of a job's folder when it still exists and the job awaits review or
-/// failed; with_diff adds the capped patch. Otherwise an empty ChangeSet and no diff.
-pub(crate) fn review_view(job: &Job, with_diff: bool) -> Result<ReviewView, GitError> {
-    let mut view = ReviewView {
-        changes: ChangeSet::default(),
-        diff_stat: None,
-        diff: None,
-    };
-    let open = job.state == JobState::AwaitingReview || job.state == JobState::Failed;
-    let dir = Path::new(&job.dir);
-    if !open || !dir.exists() {
-        return Ok(view);
-    }
-    view.changes = git::changes(dir, &job.base_sha)?;
-    let stat = git::diff(dir, &job.base_sha, DiffMode::Stat)?;
-    view.diff_stat = Some(stat);
-    if with_diff {
-        let patch = git::diff(dir, &job.base_sha, DiffMode::Patch)?;
-        view.diff = Some(render::cap_diff(&patch, render::DIFF_CAP_CHARS));
-    }
-    Ok(view)
 }
 
 /// One parsed command line, for the words of this crate.

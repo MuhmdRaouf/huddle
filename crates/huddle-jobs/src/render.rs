@@ -1,6 +1,7 @@
 //! huddle-jobs: render. Plain text for the slash commands: no ANSI, no colour, and no renderer
 //! adds a trailing newline. Facts on one line are joined by " · ".
 
+use crate::accept::AcceptOutcome;
 use crate::git::ChangeSet;
 use crate::id::parse_iso_ms;
 use crate::model::{Access, Attempt, AttemptKind, AttemptOutcome, Job, JobState};
@@ -448,4 +449,31 @@ fn fence_for(text: &str) -> String {
         }
     }
     "`".repeat(longest + 1)
+}
+
+/// Where the accepted work landed.
+pub fn accepted_line(outcome: &AcceptOutcome, no_commit: bool) -> String {
+    let id = &outcome.job.id;
+    let dir = &outcome.job.dir;
+    if no_commit {
+        return format!("huddle job {id} accepted: the change stays uncommitted in {dir}");
+    }
+    match outcome.commit.as_deref() {
+        Some(sha) => {
+            let short = sha.get(..12).unwrap_or(sha);
+            format!("huddle job {id} accepted: commit {short} on the current branch of {dir}")
+        }
+        None => format!("huddle job {id} accepted: no changes to commit"),
+    }
+}
+
+/// What a return tells the caller once the harness runs the feedback detached.
+pub fn returned_line(job: &Job) -> String {
+    format!(
+        "huddle job {} returned with feedback: attempt {} runs detached. /huddle:result {} once \
+         it awaits review again.",
+        job.id,
+        job.attempts.len(),
+        job.id
+    )
 }

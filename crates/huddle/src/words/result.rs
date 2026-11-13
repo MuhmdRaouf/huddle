@@ -4,7 +4,7 @@ use std::io::Write;
 
 use huddle_config::env::Env;
 use huddle_config::paths::Paths;
-use huddle_jobs::accept::{self, AcceptError, AcceptOutcome};
+use huddle_jobs::accept::{self, AcceptError};
 use huddle_jobs::checks;
 use huddle_jobs::checks_render;
 use huddle_jobs::driver;
@@ -89,25 +89,9 @@ fn accept_job(store: &JobStore, id: &str, no_commit: bool, json: bool) -> i32 {
     if json {
         return print_json(&outcome.job);
     }
-    let line = accept_line(&outcome, no_commit);
+    let line = render::accepted_line(&outcome, no_commit);
     let _ = writeln!(std::io::stdout(), "{line}");
     0
-}
-
-/// Where the accepted work landed.
-fn accept_line(outcome: &AcceptOutcome, no_commit: bool) -> String {
-    let id = &outcome.job.id;
-    let dir = &outcome.job.dir;
-    if no_commit {
-        return format!("huddle job {id} accepted: the change stays uncommitted in {dir}");
-    }
-    match outcome.commit.as_deref() {
-        Some(sha) => {
-            let short = sha.get(..12).unwrap_or(sha);
-            format!("huddle job {id} accepted: commit {short} on the current branch of {dir}")
-        }
-        None => format!("huddle job {id} accepted: no changes to commit"),
-    }
 }
 
 /// Reports an accept that did not happen: the job still awaits review.
@@ -170,14 +154,7 @@ fn return_to_harness(store: &JobStore, id: &str, feedback: &str, json: bool, env
     if json {
         return print_json(&job);
     }
-    let _ = writeln!(
-        std::io::stdout(),
-        "huddle job {} returned with feedback: attempt {} runs detached. /huddle:result {} once \
-         it awaits review again.",
-        job.id,
-        job.attempts.len(),
-        job.id
-    );
+    let _ = writeln!(std::io::stdout(), "{}", render::returned_line(&job));
     0
 }
 
@@ -212,7 +189,7 @@ fn show_report(store: &JobStore, id: &str, with_diff: bool, json: bool) -> i32 {
         Ok(job) => job,
         Err(error) => return store_failed(&error),
     };
-    let view = match run::review_view(&job, with_diff) {
+    let view = match huddle_jobs::review::review_view(&job, with_diff) {
         Ok(view) => view,
         Err(error) => return fail(&error.to_string()),
     };

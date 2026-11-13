@@ -587,6 +587,9 @@ dependencies = [
 name = "huddle-mcp"
 version = "0.0.6"
 dependencies = [
+ "huddle-config",
+ "huddle-harness",
+ "huddle-jobs",
  "rmcp",
  "serde",
  "tokio",
