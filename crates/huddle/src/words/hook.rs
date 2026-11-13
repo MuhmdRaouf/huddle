@@ -127,11 +127,17 @@ fn session_providers(env: &Env, paths: &Paths) -> Vec<String> {
         };
         let _ = huddle_setup::model_entries::apply(paths, provider);
         if !key_present(env, paths, provider) {
+            let enter = match provider.key_env.first() {
+                Some(name) => format!(
+                    "Run {slash}setup to enter it or export {name} before starting Claude Code.",
+                    slash = provider.slash
+                ),
+                None => format!("Run {slash}setup to enter it.", slash = provider.slash),
+            };
             lines.push(format!(
-                "{id}: no {display} key found, so the {id} agents cannot reach {display}. Run {slash}setup to enter it.",
+                "{id}: no {display} key found, so the {id} agents cannot reach {display}. {enter}",
                 id = provider.id,
                 display = provider.display,
-                slash = provider.slash,
             ));
         }
     }

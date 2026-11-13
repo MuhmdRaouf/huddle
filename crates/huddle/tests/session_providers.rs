@@ -128,6 +128,28 @@ fn a_missing_key_prints_one_json_object_naming_setup() {
 }
 
 #[test]
+fn h2_missing_key_line_names_the_variable() {
+    let home = TempHome::new();
+    let port = free_port();
+    let _stop = StopOnDrop(&home, port);
+    set_up_state(&home);
+
+    let out = huddle(&home, port, None, &["hook", "session-start"]);
+
+    assert_eq!(out.status.code(), Some(0));
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let doc: serde_json::Value = serde_json::from_str(stdout.trim()).expect("json");
+    let msg = doc["systemMessage"].as_str().expect("systemMessage");
+    assert!(
+        msg.ends_with(
+            "Run /huddle:zai:setup to enter it or export ZAI_API_KEY before starting Claude Code."
+        ),
+        "{msg}"
+    );
+    wait_running(&home, port);
+}
+
+#[test]
 fn a_session_start_keeps_a_provider_set_up_inside_huddle() {
     let home = TempHome::new();
     let port = free_port();

@@ -74,6 +74,8 @@ impl std::error::Error for SettingsError {}
 pub struct PatchOutcome {
     pub changed: bool,
     pub mode: RouteMode,
+    /// The patch pointed NODE_EXTRA_CA_CERTS at the local CA in this run.
+    pub ca_set: bool,
     pub lines: Vec<String>,
 }
 
@@ -296,6 +298,7 @@ fn apply_once(paths: &Paths, target: &RouterTarget) -> Result<PatchOutcome, Sett
         return Ok(PatchOutcome {
             changed: false,
             mode: plan.mode,
+            ca_set: false,
             lines: plan.lines,
         });
     }
@@ -348,6 +351,7 @@ fn apply_once(paths: &Paths, target: &RouterTarget) -> Result<PatchOutcome, Sett
     Ok(PatchOutcome {
         changed: true,
         mode: plan.mode,
+        ca_set: plan.set.iter().any(|(key, _)| key == "NODE_EXTRA_CA_CERTS"),
         lines: plan.lines,
     })
 }

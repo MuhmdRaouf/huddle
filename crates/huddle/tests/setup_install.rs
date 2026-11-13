@@ -88,6 +88,62 @@ fn install_starts_the_router_patches_settings_and_says_restart_once() {
 }
 
 #[test]
+fn h2_install_names_the_ca() {
+    let home = TempHome::new();
+    let port = free_port();
+    let _stop = StopOnDrop(&home, port);
+
+    let out = huddle(&home, port, &["setup", "--install"]);
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let expected = format!(
+        "wrote the local CA to {} and pointed NODE_EXTRA_CA_CERTS at it",
+        home.root().join(".local/share/huddle/ca").display()
+    );
+    assert!(stdout.contains(&expected), "{stdout}");
+}
+
+#[test]
+fn h2_repeated_install_says_up_to_date() {
+    let home = TempHome::new();
+    let port = free_port();
+    let _stop = StopOnDrop(&home, port);
+
+    let first = huddle(&home, port, &["setup", "--install"]);
+    assert_eq!(
+        first.status.code(),
+        Some(0),
+        "stderr: {}",
+        String::from_utf8_lossy(&first.stderr)
+    );
+    let first_out = String::from_utf8_lossy(&first.stdout);
+    assert!(
+        first_out.contains(&format!("started huddle-router on port {port}")),
+        "{first_out}"
+    );
+
+    let second = huddle(&home, port, &["setup", "--install"]);
+    assert_eq!(
+        second.status.code(),
+        Some(0),
+        "stderr: {}",
+        String::from_utf8_lossy(&second.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&second.stdout);
+    assert!(stdout.contains("settings already up to date"), "{stdout}");
+    assert!(
+        stdout.contains(&format!("huddle-router is running on port {port}")),
+        "{stdout}"
+    );
+    assert!(!stdout.contains("Restart Claude Code"), "{stdout}");
+}
+
+#[test]
 fn t1_install_keeps_the_ca_and_the_router_record_in_the_xdg_folders() {
     let home = TempHome::new();
     let port = free_port();
@@ -305,7 +361,7 @@ fn k4_setup_says_when_the_user_bin_folder_is_not_on_path() {
     let out = huddle_on_path(&home, port, "/usr/bin", &["setup", "--install"]);
     let stdout = String::from_utf8_lossy(&out.stdout);
     let expected = format!(
-        "~/.local/bin is not on your PATH; run huddle as {}",
+        "~/.local/bin is not on your PATH; add it to PATH, or run huddle as {}",
         stable_link(&home).display()
     );
     assert!(stdout.contains(&expected), "{stdout}");

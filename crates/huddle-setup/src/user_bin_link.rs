@@ -68,9 +68,41 @@ pub fn lines(env: &Env, paths: &Paths, outcome: &LinkOutcome) -> Vec<String> {
     }
     if !on_path(env, paths) {
         lines.push(format!(
-            "~/.local/bin is not on your PATH; run huddle as {}",
+            "~/.local/bin is not on your PATH; add it to PATH, or run huddle as {}",
             paths.bin_dir.join("huddle").display()
         ));
     }
     lines
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use huddle_testkit::temp_home::TempHome;
+
+    #[test]
+    fn h2_path_warning_says_add_it() {
+        let home = TempHome::new();
+        let root = home.root().to_string_lossy().into_owned();
+        let env = Env::with(&[("HOME", root.as_str()), ("PATH", "/usr/bin")]);
+        let paths = Paths::from_env(&env).expect("paths");
+
+        let report = lines(&env, &paths, &LinkOutcome::AlreadyOurs);
+        assert_eq!(
+            report,
+            vec![format!(
+                "~/.local/bin is not on your PATH; add it to PATH, or run huddle as {}",
+                paths.bin_dir.join("huddle").display()
+            )]
+        );
+
+        let on_path_env = Env::with(&[
+            ("HOME", root.as_str()),
+            (
+                "PATH",
+                &format!("{}:/usr/bin", paths.user_bin_dir.display()),
+            ),
+        ]);
+        assert!(lines(&on_path_env, &paths, &LinkOutcome::AlreadyOurs).is_empty());
+    }
 }

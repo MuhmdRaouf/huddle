@@ -79,6 +79,7 @@ pub fn run(env: &Env, paths: &Paths, exe: &Path) -> Result<InstallReport, Instal
             .map_err(|error| InstallError::Config(format!("{}: {error}", path.display())))?;
     }
 
+    let up_before = router_answers(port);
     start_router(exe)?;
     if !router_answers(port) {
         return Err(InstallError::Router(format!(
@@ -96,7 +97,21 @@ pub fn run(env: &Env, paths: &Paths, exe: &Path) -> Result<InstallReport, Instal
         ca_error,
     };
     let outcome = settings::apply_proxy(paths, &target).map_err(InstallError::Settings)?;
-    let mut lines = outcome.lines;
+    let mut lines = vec![if up_before {
+        format!("huddle-router is running on port {port}")
+    } else {
+        format!("started huddle-router on port {port}")
+    }];
+    if outcome.ca_set {
+        lines.push(format!(
+            "wrote the local CA to {} and pointed NODE_EXTRA_CA_CERTS at it",
+            paths.ca_dir.display()
+        ));
+    }
+    lines.extend(outcome.lines);
+    if !outcome.changed {
+        lines.push("settings already up to date".to_string());
+    }
     // The link is a convenience: a folder that cannot take it never fails the install.
     match user_bin_link::ensure(paths) {
         Ok(link) => {
