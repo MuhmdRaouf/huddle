@@ -35,6 +35,7 @@ const mb=b=>num(b)==null?'—':(b/1e6).toFixed(1)+' MB';
 /* ---------- icons ---------- */
 const ICONS={
  overview:'<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>',
+ 'needs-you':'<path d="M6 8a6 6 0 0 1 12 0c0 7 3 8 3 8H3s3-1 3-8"/><path d="M10.3 21a1.7 1.7 0 0 0 3.4 0"/>',
  sessions:'<rect x="3" y="4" width="18" height="16" rx="2.5"/><path d="m7 9 3 3-3 3M12.5 15H17"/>',
  agents:'<rect x="5" y="8" width="14" height="11" rx="3"/><path d="M12 4v4M9.5 13h.01M14.5 13h.01M2.5 12.5v3M21.5 12.5v3"/>',
  requests:'<path d="M3 12h4l3-8 4 16 3-8h4"/>',
@@ -158,6 +159,17 @@ function projects(){
    branches:[...new Set(wts.map(w=>w.branch).filter(Boolean))],last:Math.max(0,...ss.map(lastT),...jobs.map(j=>j.end||j.started||0))||null}});
 }
 
+const FAIL_RATE=0.2;
+/* Live facts decide the status, in this order: quota, error rate, wiring. A provider with traffic is never Not set up. */
+function provStatus(x){
+ if(x.quotaOut)return ['bad','Out of quota'];
+ if(x.id==='anthropic'&&RT.path.state==='failing')return ['bad','Failing'];
+ if(x.n&&x.err/x.n>FAIL_RATE)return ['bad','Failing'];
+ if(!x.built&&(x.n||x.laneOn)&&!x.key)return ['bad','Needs a fix'];
+ if(!x.built&&x.key&&!x.laneOn)return ['bad','Needs a fix'];
+ return x.built||x.laneOn?['ok','Working']:['off','Not set up'];
+}
+
 /* ---------- components ---------- */
 function pill(k,txt,short){const icon=k==='ok'?ic('check'):k==='bad'?ic('x'):k==='warn'?ic('alert'):k==='acc'?'<span class="dot acc pulse"></span>':k==='off'?ic('minus'):'';return `<span class="pill ${k}">${icon}${short?`<span class="stl">${esc(txt)}</span><span class="stword">${esc(short)}</span>`:esc(txt)}</span>`}
 const dot=(k,p)=>`<span class="dot ${k}${p?' pulse':''}"></span>`;
@@ -241,17 +253,6 @@ const rangeRows=()=>liveRange()?modelRows():histRows();
 const rangeEmpty=()=>HIST.bk||HIST.err||liveRange()?`No requests in ${rangeText()}`:'Checking…';
 const clampNote=d=>d&&d.clamped_from_ms?`<div class="legendrow">Showing from ${when(d.clamped_from_ms)}: huddle keeps ${HIST.keep} days of history.</div>`:'';
 const rangeStatus=()=>liveRange()?'':HIST.err?`<div class="legendrow badc">Could not load history. Showing the last data.</div>`:HIST.bk?clampNote(HIST.bk):`<div class="legendrow">${checking()}</div>`;
-function histKpis(){if(!HIST.tot)return `<div class="card pad">${checking()}</div>`;
- const ts=arr(HIST.tot.totals),reqs=sum(ts.map(t=>n0(t.n)));
- if(!reqs)return `<div class="card"><div class="allclear">${ic('info')} No requests in ${rangeText()}</div></div>`;
- const errs=sum(ts.map(t=>n0(t.err))),tin=sum(ts.map(t=>n0(t.tok_in))),cr=sum(ts.map(t=>n0(t.cache_read))),cw=sum(ts.map(t=>n0(t.cache_write))),out=sum(ts.map(t=>n0(t.tok_out))),cost=sum(ts.map(t=>n0(t.cost_usd))),aq=ts.some(t=>t.api_equivalent);
- return kpiCard([
-  {k:'Requests',v:fmt(reqs),d:`in ${rangeText()}`},
-  {k:'Errors',v:fmt(errs),d:`${(errs/reqs*100).toFixed(1)}% of requests`,color:'var(--bad)'},
-  {k:'Tokens in',v:fmt(tin),d:'cache reads and writes included'},
-  {k:'Tokens out',v:fmt(out),d:'generated'},
-  {k:'Cache hit rate',v:tin?Math.round(tokSplit(tin,cr,cw).hit*100):'—',small:tin?'%':'',d:'read from cache / tokens in'},
-  {k:'Estimated cost',v:usd(cost),d:aq?`includes Claude cost, ${apiq()}`:'from list prices'}],'k6')}
 const hget=u=>fetch(u,{cache:'no-store'}).then(x=>{if(!x.ok)throw new Error(String(x.status));return x.json()});
 function loadHistory(){if(liveRange())return;const get=hget;
  const q=rangeQuery();
@@ -314,13 +315,14 @@ function histBlock(key,t){const tr=HT.trend[key],head=`<h4>History <span class="
 const PAGES={};
 /* ---------- shell: nav, crumbs, router card ---------- */
 const NAV=[
- ['Monitor',[['overview','Overview'],['sessions','Sessions'],['agents','Agents'],['requests','Requests'],['errors','Errors']]],
+ ['Monitor',[['overview','Overview'],['needs-you','Needs you'],['sessions','Sessions'],['agents','Agents'],['requests','Requests'],['errors','Errors']]],
  ['Usage',[['models','Models'],['providers','Providers'],['usage','Usage']]],
  ['Workspace',[['projects','Projects'],['worktrees','Worktrees'],['jobs','Jobs']]],
  ['System',[['harnesses','Harnesses'],['router','Router']]]
 ];
 const bdg=(txt,title,cls)=>`<span class="badge${cls?' '+cls:''}" title="${title}">${txt}</span>`;
 function badge(k){switch(k){
+ case 'needs-you':{const n=needsCount();return n?bdg(n,'things that need you','bad'):''}
  case 'sessions':return bdg(SESS.length,'sessions in the last 24 hours');
  case 'agents':return bdg(AGENTS.length,'main agents and subagents','acc');
  case 'requests':return bdg(rate(sum(PS.slice(-10))/10)+'/s','requests per second, last 10 seconds');
@@ -411,7 +413,7 @@ window.addEventListener('resize',()=>{if(page==='overview')drawChart()});
 /* ---------- live: a feed while it holds, polling while it does not ---------- */
 function paint(){refresh();shell();if(page==='overview')drawChart();if(DR)renderDrawer(true)}
 let first=true;
-function update(s){build(s);if(first){first=false;render()}else paint()}
+function update(s){build(s);loadOvCost();if(first){first=false;render()}else paint()}
 function onSnapshot(s){const n=num(s&&s.now_ms);if(n!=null)OFFSET=n-Date.now();LOST=false;update(s)}
 let poll=null;
 function getState(){fetch('/huddle-router/state',{cache:'no-store'}).then(r=>r.json()).then(onSnapshot,()=>{LOST=true;update(SNAP)})}
@@ -420,6 +422,8 @@ function stopPoll(){if(poll!==null){clearInterval(poll);poll=null}}
 
 /* ---------- provider plan and quota, read by Providers and Usage ---------- */
 const PNAME={zai:'Z.ai GLM',kimi:'Kimi',deepseek:'DeepSeek',minimax:'MiniMax',qwen:'Qwen'};
+/* a provider's display name: its lane's name, else the catalog's, else its id */
+const provName=id=>{const l=LANES.find(x=>x.id===id);return (l&&l.name)||PNAME[id]||id||'—'};
 const resetAt=t=>new Date(t).toDateString()===new Date(NOW).toDateString()?clock(t).slice(0,5):when(t);
 const provConsole=id=>{const p=SNAP.providers&&typeof SNAP.providers==='object'?SNAP.providers[id]:null;return p&&typeof p.console_url==='string'?p.console_url:null};
 const provQuota=id=>{const p=SNAP.providers&&typeof SNAP.providers==='object'?SNAP.providers[id]:null;return p&&p.quota&&typeof p.quota==='object'?p.quota:null};

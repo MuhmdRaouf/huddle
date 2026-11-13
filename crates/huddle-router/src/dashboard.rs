@@ -44,6 +44,7 @@ pub const PAGE: &str = concat!(
     include_str!("dashboard/index.html"),
     "<script>\n(function(){\n\"use strict\";\n",
     include_str!("dashboard/core.js"),
+    include_str!("dashboard/pages/needs-you.js"),
     include_str!("dashboard/pages/overview.js"),
     include_str!("dashboard/pages/sessions.js"),
     include_str!("dashboard/pages/agents.js"),

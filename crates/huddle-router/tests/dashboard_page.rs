@@ -484,17 +484,6 @@ fn k14_optional_providers_fold_into_one_quiet_row() {
     assert!(rows < quiet && list.rfind("+quiet").is_some_and(|i| i > quiet));
 }
 
-#[test]
-fn k14_needs_you_comes_before_the_kpis() {
-    let overview = page_between("PAGES.overview={", "after:()=>{bindChart()");
-    let needs = overview.find("secH('Needs you'").expect("needs you");
-    let kpis = overview.find("reg('kpis'").expect("kpis");
-    let chart = overview.find("secH('Traffic'").expect("chart");
-    assert!(needs < kpis && needs < chart);
-    let header = overview.find("head('Overview'").expect("header");
-    assert!(header < needs);
-}
-
 /// Relative luminance of `#rrggbb` per WCAG 2.
 fn luminance(hex: &str) -> f64 {
     let channel = |i: usize| {
@@ -612,7 +601,7 @@ fn k18_a_failing_path_is_the_first_needs_you_item() {
     let state: Value = serde_json::from_str(FIXTURE).expect("fixture parses");
     assert_eq!(state["router"]["path"]["state"], "failing");
     let items = page_between("function attnItems(){", "const unsetProviders");
-    let anthropic = items.find("Anthropic is not answering:").expect("the item");
+    let anthropic = items.find("Anthropic is not answering").expect("the item");
     let first_other = items.find("SESS.filter").expect("session items");
     assert!(anthropic < first_other, "the failing path leads the list");
     assert!(items.contains("requests failed)"));
@@ -681,10 +670,11 @@ fn b4_phone_tables_stack_their_cells() {
     assert!(overview.contains("stack:1"), "the Overview table stacks");
 }
 
-const PARTS: [&str; 18] = [
+const PARTS: [&str; 19] = [
     include_str!("../src/dashboard/style.css"),
     include_str!("../src/dashboard/index.html"),
     include_str!("../src/dashboard/core.js"),
+    include_str!("../src/dashboard/pages/needs-you.js"),
     include_str!("../src/dashboard/pages/overview.js"),
     include_str!("../src/dashboard/pages/sessions.js"),
     include_str!("../src/dashboard/pages/agents.js"),
@@ -732,7 +722,7 @@ fn d6_live_and_history_split_tokens_the_same() {
         "function buildRequests",
         "function buildModels",
         "function histRows",
-        "function histKpis",
+        "function overviewKpis",
     ] {
         let start = PAGE.find(site).unwrap_or_else(|| panic!("{site}"));
         let body = &PAGE[start..PAGE.len().min(start + 2500)];
@@ -903,8 +893,9 @@ const PROVIDERS_JS: &str = include_str!("../src/dashboard/pages/providers.js");
 
 #[test]
 fn d8_status_follows_live_traffic() {
-    let start = PROVIDERS_JS.find("function provStatus(").expect("status");
-    let body = &PROVIDERS_JS[start..start + 900];
+    let core = include_str!("../src/dashboard/core.js");
+    let start = core.find("function provStatus(").expect("status");
+    let body = &core[start..start + 1100];
     for word in [
         "['bad','Out of quota']",
         "['bad','Failing']",
@@ -914,10 +905,7 @@ fn d8_status_follows_live_traffic() {
     ] {
         assert!(body.contains(word), "{word}: {body}");
     }
-    assert!(
-        PROVIDERS_JS.contains("const FAIL_RATE=0.2"),
-        "20 % threshold"
-    );
+    assert!(core.contains("const FAIL_RATE=0.2"), "20 % threshold");
     assert!(body.contains("x.err/x.n>FAIL_RATE"), "{body}");
     assert!(
         !PROVIDERS_JS.contains("'Built in'"),
@@ -1338,4 +1326,147 @@ fn d10_live_tail_pauses_while_scrolled() {
         REQUESTS_JS.contains("r.t<=TAIL.cut"),
         "rows newer than the pause point stay out of the list"
     );
+}
+
+#[test]
+fn d7_cards_come_first_in_a_full_grid() {
+    let overview = page_between("PAGES.overview={", "after:()=>{bindChart()");
+    let header = overview.find("head('Overview'").expect("header");
+    let kpis = overview.find("reg('kpis'").expect("kpis");
+    let needs = overview.find("secH('Needs you'").expect("needs you");
+    let chart = overview.find("secH('Traffic'").expect("traffic");
+    let provs = overview.find("secH('Providers'").expect("providers");
+    let sess = overview.find("secH('Top sessions'").expect("top sessions");
+    assert!(header < kpis && kpis < needs && needs < chart && chart < provs);
+    assert!(chart < sess, "the working sessions close the page");
+    let cards = page_between("function overviewKpis()", "const CH=");
+    assert!(cards.contains("kpis k8"), "eight cards in one grid class");
+    assert!(cards.contains(".slice(0,8)"), "never more than eight");
+    for label in [
+        "'Sessions'",
+        "'Requests'",
+        "'Tokens'",
+        "'Cost'",
+        "'Time to first token'",
+        "'Errors'",
+    ] {
+        assert!(cards.contains(label), "card {label}");
+    }
+    assert!(cards.contains("API price"), "the cost card says API price");
+    assert!(
+        cards.contains("planCards()"),
+        "plan cards come from the quota"
+    );
+    assert!(cards.contains("fillers"), "a short row fills to eight");
+    let css = include_str!("../src/dashboard/style.css");
+    assert!(css.contains(".kpis.k8{grid-template-columns:repeat(4,"));
+}
+
+#[test]
+fn d7_needs_you_shows_five_then_show_all() {
+    let list = page_between("function attnList()", "function overviewKpis");
+    assert!(list.contains(".slice(0,5)"), "at most five items");
+    assert!(list.contains("Show all"), "a Show all link");
+    assert!(list.contains("#needs-you"), "it opens the Needs you page");
+    let overview = page_between("PAGES.overview={", "after:()=>{bindChart()");
+    assert!(
+        overview.contains("['needs-you','Show all']"),
+        "the header link too"
+    );
+}
+
+#[test]
+fn d7_needs_you_page_groups_items() {
+    assert!(PAGE.contains("PAGES['needs-you']={"), "the page");
+    assert!(PAGE.contains("['needs-you','Needs you']"), "the nav entry");
+    let nav = page_between("const NAV=[", "const bdg=");
+    let monitor = nav.find("'Monitor'").expect("monitor");
+    let usage = nav.find("'Usage'").expect("usage");
+    assert!(
+        nav.find("['needs-you','Needs you']")
+            .is_some_and(|i| i > monitor && i < usage)
+    );
+    assert!(PAGE.contains("case 'needs-you':"), "the badge");
+    let page = page_between("PAGES['needs-you']={", "\n\n");
+    for group in [
+        "Questions",
+        "Providers",
+        "Router",
+        "Jobs to review",
+        "Setup checks",
+        "Context",
+    ] {
+        assert!(PAGE.contains(&format!("'{group}'")), "group {group}");
+    }
+    assert!(page.contains("NEED_GROUPS"), "items group by kind");
+    let items = page_between("function attnItems(){", "const unsetProviders");
+    for part in ["since:", "why:", "act:"] {
+        assert!(items.contains(part), "each item carries {part}");
+    }
+}
+
+#[test]
+fn d7_turn_ended_sessions_are_not_needs_you() {
+    let state = fixture();
+    let states: Vec<&str> = state["sessions"]
+        .as_array()
+        .expect("sessions")
+        .iter()
+        .filter_map(|s| s["state"].as_str())
+        .collect();
+    assert!(states.contains(&"your_turn") && states.contains(&"needs_you"));
+    let items = page_between("function attnItems(){", "const unsetProviders");
+    assert!(items.contains("s.state==='needs_you'"));
+    assert!(!items.contains("your_turn"), "a turn that ended is no item");
+    assert!(!items.contains("sstate("), "the folded state is not used");
+    assert!(!items.contains("429"), "rate limits are not asks");
+    assert!(!items.contains("stale"), "stale worktrees are not asks");
+    assert!(items.contains("ctx>=90"), "context over 90 percent");
+    assert!(items.contains("'working'") && items.contains("'background'"));
+}
+
+#[test]
+fn d7_overview_providers_use_the_providers_page_status() {
+    let core = include_str!("../src/dashboard/core.js");
+    assert!(
+        core.contains("function provStatus("),
+        "one shared helper in core.js"
+    );
+    let providers = include_str!("../src/dashboard/pages/providers.js");
+    assert!(
+        !providers.contains("function provStatus("),
+        "the Providers page uses it"
+    );
+    let overview = include_str!("../src/dashboard/pages/overview.js");
+    assert!(
+        overview.contains("provStatus("),
+        "the mini panel calls the helper"
+    );
+    assert!(!PAGE.contains("Built in"), "Anthropic gets a live status");
+    assert!(
+        core.contains("RT.path.state==='failing'"),
+        "a failing Anthropic path reads Failing"
+    );
+}
+
+/// The page is one script joined from many files: a name defined twice stops the whole page, so
+/// every top-level `const`, `let` and `function` name appears once.
+#[test]
+fn the_joined_page_defines_each_name_once() {
+    let mut seen = std::collections::HashSet::new();
+    for line in PAGE.lines() {
+        let Some(rest) = ["const ", "let ", "function "]
+            .iter()
+            .find_map(|kw| line.strip_prefix(kw))
+        else {
+            continue;
+        };
+        let name: String = rest
+            .chars()
+            .take_while(|c| c.is_alphanumeric() || *c == '_' || *c == '$')
+            .collect();
+        if !name.is_empty() {
+            assert!(seen.insert(name.clone()), "{name} is defined twice");
+        }
+    }
 }

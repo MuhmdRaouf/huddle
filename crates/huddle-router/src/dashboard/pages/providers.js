@@ -1,18 +1,11 @@
-const FAIL_RATE=0.2;
+
 const CAUSE={quota:'quota used up'};
 /* totals by provider for the picked range, and the latency buckets that belong to them */
 const HP={q:null,at:0,lane:null,bk:null,err:false};
 function loadProviders(){const q=rangeQuery();if(HP.q===q&&HP.lane&&Date.now()-HP.at<6e4)return;
  if(HP.q!==q){HP.lane=HP.bk=null;HP.err=false}HP.q=q;
  Promise.all([hget(HQ+'totals&by=lane&'+q),liveRange()?null:hget(HQ+'buckets&'+q)]).then(([t,b])=>{if(HP.q!==q)return;HP.lane=hmap(t);HP.bk=b;HP.at=Date.now();HP.err=false;paint()},()=>{if(HP.q!==q)return;HP.err=true;paint()})}
-/* Live facts decide the status, in this order: quota, error rate, wiring. A provider with traffic is never Not set up. */
-function provStatus(x){
- if(x.quotaOut)return ['bad','Out of quota'];
- if(x.n&&x.err/x.n>FAIL_RATE)return ['bad','Failing'];
- if(!x.built&&(x.n||x.laneOn)&&!x.key)return ['bad','Needs a fix'];
- if(!x.built&&x.key&&!x.laneOn)return ['bad','Needs a fix'];
- return x.built||x.laneOn?['ok','Working']:['off','Not set up'];
-}
+
 const lastIsQuota=id=>{const rs=stats().byLane[id]||[],l=rs[rs.length-1];return !!l&&l.status===429&&l.reason==='quota'};
 /* the finished requests of a lane that failed, grouped by the router's reason */
 function causes(id){const g={};(stats().byLane[id]||[]).filter(isErr).forEach(r=>{const k=r.reason||String(r.status);g[k]=(g[k]||0)+1});return Object.entries(g).sort((a,b)=>b[1]-a[1])}

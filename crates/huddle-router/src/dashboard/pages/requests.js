@@ -1,5 +1,4 @@
 function speed(r){if(r.dur==null||r.ttft==null||!r.out||r.dur<=r.ttft)return null;return r.out/((r.dur-r.ttft)/1e3)}
-const provName=id=>{const l=LANES.find(x=>x.id===id);return (l&&l.name)||PNAME[id]||id||'—'};
 const REASON={quota:'quota used up',overloaded_error:'overloaded',rate_limit_error:'rate limited',upstream:'upstream failed'};
 /* why a request failed, in plain words; a cancelled request already says so in its status */
 function reasonChip(r){if(r.status==null||r.status===200||r.status===499)return '';
