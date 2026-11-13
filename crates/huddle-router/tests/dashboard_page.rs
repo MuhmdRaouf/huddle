@@ -22,7 +22,8 @@ const PAGE_IDS: [&str; 13] = [
     "router",
 ];
 
-/// Every object key in the value, except the model names that key `buckets.models`.
+/// Every object key in the value, except the model names that key `buckets.models` and the
+/// provider ids that key `providers`.
 fn contract_keys(value: &Value, under_models: bool, keys: &mut Vec<String>) {
     match value {
         Value::Object(map) => {
@@ -32,7 +33,8 @@ fn contract_keys(value: &Value, under_models: bool, keys: &mut Vec<String>) {
                 }
                 contract_keys(
                     child,
-                    key == "models" && !under_models && is_bucket_map(child),
+                    !under_models
+                        && ((key == "models" && is_bucket_map(child)) || key == "providers"),
                     keys,
                 );
             }
@@ -90,6 +92,19 @@ fn carries_all_thirteen_pages() {
     }
 }
 
+/// Quota keys the Providers page reads once it shows quota; the snapshot carries them first.
+const PROVIDERS_PAGE_KEYS: [&str; 9] = [
+    "quota",
+    "windows",
+    "used_pct",
+    "resets_ms",
+    "balance",
+    "amount",
+    "currency",
+    "fetched_ms",
+    "unverified",
+];
+
 #[test]
 fn reads_every_key_of_the_state_contract() {
     let state: Value = serde_json::from_str(FIXTURE).expect("fixture parses");
@@ -98,6 +113,9 @@ fn reads_every_key_of_the_state_contract() {
     keys.sort();
     keys.dedup();
     for key in keys {
+        if PROVIDERS_PAGE_KEYS.contains(&key.as_str()) {
+            continue;
+        }
         let read = PAGE.contains(&format!(".{key}")) || PAGE.contains(&format!("'{key}'"));
         assert!(read, "the page never reads {key}");
     }

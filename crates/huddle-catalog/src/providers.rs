@@ -34,6 +34,32 @@ pub struct Provider {
     pub strip: &'static [&'static str],
     /// The model id prefixes the provider's lane claims in huddle-router.
     pub model_prefixes: &'static [&'static str],
+    /// Where the provider reports quota or balance; always on the provider's own API host.
+    pub quota: Quota,
+}
+
+/// How a provider reports what is left of the plan or the balance.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Quota {
+    /// No quota or balance API; the dashboard links to the provider's console.
+    None,
+    /// Z.ai's plan limits: usage windows with reset times.
+    Zai(&'static str),
+    /// A money balance with no reset (DeepSeek, Kimi).
+    Balance(&'static str),
+    /// MiniMax's plan remains: a usage window with a reset. Its answer shape is not yet
+    /// confirmed against a live key.
+    MiniMax(&'static str),
+}
+
+impl Quota {
+    /// The URL to ask, or `None` when the provider has no quota API.
+    pub fn url(self) -> Option<&'static str> {
+        match self {
+            Quota::None => None,
+            Quota::Zai(url) | Quota::Balance(url) | Quota::MiniMax(url) => Some(url),
+        }
+    }
 }
 
 /// The five providers in compiled order; lanes and lists use this order.
@@ -59,6 +85,7 @@ static PROVIDERS: [Provider; 5] = [
         key_env: &["ZAI_API_KEY"],
         billing_url: "https://z.ai/manage-apikey/billing",
         keys_url: "https://z.ai/manage-apikey/apikey-list",
+        quota: Quota::Zai("https://api.z.ai/api/monitor/usage/quota/limit"),
         strip: &[],
         model_prefixes: &["glm-"],
     },
@@ -84,6 +111,7 @@ static PROVIDERS: [Provider; 5] = [
         key_env: &["KIMI_API_KEY"],
         billing_url: "https://platform.kimi.ai/console",
         keys_url: "https://platform.kimi.ai/console/api-keys",
+        quota: Quota::Balance("https://api.moonshot.ai/v1/users/me/balance"),
         strip: &[],
         model_prefixes: &["kimi-"],
     },
@@ -108,6 +136,7 @@ static PROVIDERS: [Provider; 5] = [
         key_env: &["DEEPSEEK_API_KEY"],
         billing_url: "https://platform.deepseek.com/top_up",
         keys_url: "https://platform.deepseek.com/api_keys",
+        quota: Quota::Balance("https://api.deepseek.com/user/balance"),
         strip: &[],
         model_prefixes: &["deepseek-"],
     },
@@ -134,6 +163,7 @@ static PROVIDERS: [Provider; 5] = [
         key_env: &["MINIMAX_API_KEY"],
         billing_url: "https://platform.minimax.io/user-center/payment/balance",
         keys_url: "https://platform.minimax.io/console/access",
+        quota: Quota::MiniMax("https://api.minimax.io/v1/token_plan/remains"),
         strip: &[],
         model_prefixes: &["MiniMax-"],
     },
@@ -158,6 +188,7 @@ static PROVIDERS: [Provider; 5] = [
         key_env: &["QWEN_API_KEY", "DASHSCOPE_API_KEY"],
         billing_url: "https://usercenter2-intl.aliyun.com/billing",
         keys_url: "https://modelstudio.console.alibabacloud.com/?tab=playground#/api-key",
+        quota: Quota::None,
         // Qwen rejects context_management.
         strip: &["context_management"],
         // "qwen" without a dash: it also claims qwen3.8-max and qwen3.8-flash.
@@ -178,4 +209,37 @@ pub fn provider_by_id(id: &str) -> Option<&'static Provider> {
 /// The five provider ids, in compiled order.
 pub fn provider_ids() -> [&'static str; 5] {
     ["zai", "kimi", "deepseek", "minimax", "qwen"]
+}
+
+#[cfg(test)]
+mod quota_tests {
+    use super::*;
+
+    fn host(url: &str) -> &str {
+        url.split("://")
+            .nth(1)
+            .and_then(|rest| rest.split('/').next())
+            .unwrap_or("")
+    }
+
+    #[test]
+    fn d5_every_quota_url_is_on_the_providers_own_host() {
+        for provider in providers() {
+            if let Some(url) = provider.quota.url() {
+                assert!(url.starts_with("https://"), "{}", provider.id);
+                assert_eq!(host(url), host(provider.base_url), "{}", provider.id);
+            }
+        }
+    }
+
+    #[test]
+    fn d5_qwen_has_no_quota_api_and_the_rest_do() {
+        assert_eq!(provider_by_id("qwen").map(|p| p.quota), Some(Quota::None));
+        for id in ["zai", "kimi", "deepseek", "minimax"] {
+            assert!(
+                provider_by_id(id).and_then(|p| p.quota.url()).is_some(),
+                "{id}"
+            );
+        }
+    }
 }

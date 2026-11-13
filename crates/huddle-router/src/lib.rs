@@ -15,6 +15,7 @@ pub mod keycheck;
 pub mod lane;
 pub mod live;
 pub mod probe;
+pub mod quota;
 pub mod refusal;
 pub mod reload;
 pub mod router_events;

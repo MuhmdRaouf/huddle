@@ -17,6 +17,7 @@ use crate::lane::{Lane, LaneError, Logger};
 use crate::live::{Finish, HistorySink, LiveState, RequestStart};
 pub use crate::probe::ProbeTiming;
 use crate::probe::{self, ProbeHandle, ProbeTarget};
+use crate::quota::{QuotaFetcher, catalog_urls};
 use crate::router_events::{PathFailing, PathRecovery};
 use crate::server::{
     BODY_LIMIT, EntryCtx, Handler, ServerLimits, cut_response, entry_handler, receive,
@@ -396,11 +397,18 @@ impl Router {
         let mut inputs = self.dashboard.clone();
         let tunnels = Arc::clone(&self.tunnels);
         inputs.connections = Arc::new(move || tunnels.count());
-        let dashboard = Arc::new(Dashboard::new(
-            Arc::clone(&self.live),
-            inputs,
-            Arc::clone(&providers),
-        ));
+        let quota = QuotaFetcher::new(
+            Arc::clone(&self.client),
+            {
+                let (env, paths) = (self.env.clone(), self.paths.clone());
+                Arc::new(move |provider| sources_for(provider, &env, &paths))
+            },
+            catalog_urls(&self.env),
+        );
+        let dashboard = Arc::new(
+            Dashboard::new(Arc::clone(&self.live), inputs, Arc::clone(&providers))
+                .with_quota(quota),
+        );
         let entry = entry_handler(Arc::new(EntryCtx {
             port: Some(self.port),
             connect,

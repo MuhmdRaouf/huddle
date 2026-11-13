@@ -1,7 +1,7 @@
 //! huddle-router: live state. The dashboard's counters, request ring and in-flight set, held in memory.
 //! The core takes every timestamp as a parameter and does no I/O.
 
-use std::collections::{HashMap, VecDeque};
+use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
@@ -10,6 +10,7 @@ use huddle_sessions::{RequestTag, Session, Worktree};
 use tokio::sync::watch;
 
 use crate::answer_facts::PlanUsage;
+use crate::quota::QuotaView;
 use crate::router_events::{EventRow, PathFailing, PathRecovery, PathView, RouterEvents};
 use crate::sse::Usage;
 use crate::stats::{self, Buckets, MAX_MODELS, ModelRow, ModelSeries, Sample, percentile};
@@ -138,6 +139,8 @@ pub struct SnapshotInputs {
     pub plugins: serde_json::Value,
     pub harnesses: serde_json::Value,
     pub hosts: Vec<String>,
+    /// Each set-up provider's quota, as the quota fetcher last answered.
+    pub quota: BTreeMap<String, QuotaView>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
@@ -250,6 +253,14 @@ pub struct Snapshot {
     pub plugins: serde_json::Value,
     pub harnesses: serde_json::Value,
     pub hosts: Vec<String>,
+    /// What each provider says is left of its plan or balance, by provider id.
+    pub providers: BTreeMap<String, ProviderView>,
+}
+
+/// One provider as the Providers page reads it beyond its lane row.
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct ProviderView {
+    pub quota: QuotaView,
 }
 
 struct Active {
@@ -594,12 +605,40 @@ impl LiveState {
             plugins: inputs.plugins.clone(),
             harnesses: inputs.harnesses.clone(),
             hosts: inputs.hosts.clone(),
+            providers: provider_views(&inputs.quota, inner.plan),
         }
     }
 
     fn bump(&self) {
         self.changes.send_modify(|count| *count += 1);
     }
+}
+
+/// Each provider's quota, with Anthropic's read from the latest answer headers.
+fn provider_views(
+    quota: &BTreeMap<String, QuotaView>,
+    plan: Option<PlanUsage>,
+) -> BTreeMap<String, ProviderView> {
+    let mut views: BTreeMap<String, ProviderView> = quota
+        .iter()
+        .map(|(id, quota)| {
+            (
+                id.clone(),
+                ProviderView {
+                    quota: quota.clone(),
+                },
+            )
+        })
+        .collect();
+    let anthropic = match plan {
+        Some(plan) => QuotaView::anthropic(
+            (plan.five_hour_pct, plan.five_hour_reset_ms),
+            (plan.week_pct, plan.week_reset_ms),
+        ),
+        None => QuotaView::anthropic((None, None), (None, None)),
+    };
+    views.insert("anthropic".to_owned(), ProviderView { quota: anthropic });
+    views
 }
 
 /// Files the finished request in the ring, the series and the lane counters, and returns its
@@ -1122,6 +1161,33 @@ mod tests {
     }
 
     #[test]
+    fn d5_anthropic_windows_say_not_reported_when_absent() {
+        let live = LiveState::new(T0);
+        let none = live.snapshot(T0, &inputs(&[])).providers;
+        let windows = &none["anthropic"].quota.windows;
+        assert_eq!(windows.len(), 2);
+        assert!(
+            windows
+                .iter()
+                .all(|w| w.note.as_deref() == Some("not reported"))
+        );
+        assert!(
+            windows
+                .iter()
+                .all(|w| w.used_pct.is_none() && w.resets_ms.is_none())
+        );
+    }
+
+    #[test]
+    fn d5_anthropic_windows_carry_the_header_numbers() {
+        let view = QuotaView::anthropic((Some(63), Some(1_794_303_600_000)), (None, None));
+        assert_eq!(view.windows[0].name, "5 hours");
+        assert_eq!(view.windows[0].used_pct, Some(63));
+        assert_eq!(view.windows[0].note, None);
+        assert_eq!(view.windows[1].note.as_deref(), Some("not reported"));
+    }
+
+    #[test]
     fn the_snapshot_serializes_to_the_contract() {
         let live = LiveState::new(T0);
         let id = begin(&live, "zai", "glm-5.3", T0 + 1000);
@@ -1180,7 +1246,8 @@ mod tests {
                 "worktrees",
                 "plugins",
                 "harnesses",
-                "hosts"
+                "hosts",
+                "providers"
             ])
         );
         assert_eq!(json["version"], "0.0.2");

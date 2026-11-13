@@ -89,6 +89,9 @@ A writer thread batches the inserts off the request path, and rows older than `[
 open and when a history query runs. `huddle provider <p> usage` and the dashboard's history views read the database.
 Claude models are priced at API list rates and labelled API-equivalent.
 
+The router asks providers for quota or balance only while a dashboard is open: each set-up provider at most every 5
+minutes, with its own key sent only to its own API host, and the last answer is cached with its time.
+
 ## D13: Delegation through jobs
 
 `huddle run <harness> <task>` starts a job: the caller's folder (or the one `--dir` names), a driver running the named

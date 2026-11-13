@@ -1677,5 +1677,88 @@
  ],
  "hosts": [
   "hub.raouf.me"
- ]
+ ],
+ "providers": {
+  "anthropic": {
+   "quota": {
+    "kind": "plan",
+    "windows": [
+     {
+      "name": "5 hours",
+      "used_pct": 62,
+      "resets_ms": 1800006480000
+     },
+     {
+      "name": "7 days",
+      "used_pct": null,
+      "resets_ms": null,
+      "note": "not reported"
+     }
+    ],
+    "balance": null,
+    "fetched_ms": null,
+    "error": null,
+    "unverified": false
+   }
+  },
+  "zai": {
+   "quota": {
+    "kind": "plan",
+    "windows": [
+     {
+      "name": "5 hours",
+      "used_pct": 63,
+      "resets_ms": 1800004800000
+     },
+     {
+      "name": "7 days",
+      "used_pct": 12,
+      "resets_ms": 1800345600000
+     },
+     {
+      "name": "Month",
+      "used_pct": 4,
+      "resets_ms": null
+     }
+    ],
+    "balance": null,
+    "fetched_ms": 1799999700000,
+    "error": null,
+    "unverified": false
+   }
+  },
+  "deepseek": {
+   "quota": {
+    "kind": "balance",
+    "windows": [],
+    "balance": {
+     "amount": 110.5,
+     "currency": "CNY"
+    },
+    "fetched_ms": 1799999700000,
+    "error": null,
+    "unverified": false
+   }
+  },
+  "kimi": {
+   "quota": {
+    "kind": "balance",
+    "windows": [],
+    "balance": null,
+    "fetched_ms": 1799999700000,
+    "error": "quota unknown",
+    "unverified": false
+   }
+  },
+  "qwen": {
+   "quota": {
+    "kind": "none",
+    "windows": [],
+    "balance": null,
+    "fetched_ms": null,
+    "error": null,
+    "unverified": false
+   }
+  }
+ }
 }

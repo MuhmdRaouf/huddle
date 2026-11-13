@@ -22,6 +22,7 @@ use crate::join;
 use crate::live::{
     JobRow, LaneMeta, LiveState, ProcessUsage, Snapshot, SnapshotInputs, Wiring, WiringState,
 };
+use crate::quota::QuotaFetcher;
 use crate::server::{RespBody, full_body, json_answer};
 use huddle_catalog::providers::providers;
 use huddle_history::{GroupBy, History};
@@ -142,6 +143,8 @@ pub struct Dashboard {
     inputs: DashboardInputs,
     /// The provider ids with a lane now.
     enabled: Arc<dyn Fn() -> Vec<String> + Send + Sync>,
+    /// Asks each set-up provider for its quota while a page is open.
+    quota: Option<Arc<QuotaFetcher>>,
 }
 
 impl Dashboard {
@@ -154,7 +157,14 @@ impl Dashboard {
             live,
             inputs,
             enabled,
+            quota: None,
         }
+    }
+
+    /// Asks each set-up provider for its quota while a page is open.
+    pub fn with_quota(mut self, quota: Arc<QuotaFetcher>) -> Dashboard {
+        self.quota = Some(quota);
+        self
     }
 
     /// The page, never cached: it changes with the binary.
@@ -307,6 +317,12 @@ impl Dashboard {
             ..SnapshotInputs::default()
         };
         if watched {
+            // The asks run off the snapshot's path; the answers land in a later snapshot.
+            if let Some(quota) = &self.quota {
+                let (fetcher, viewers, ids) = (Arc::clone(quota), self.live.viewers(), enabled);
+                inputs.quota = quota.view();
+                tokio::spawn(async move { fetcher.refresh(now_ms(), viewers, &ids).await });
+            }
             let machine = (self.inputs.sessions)();
             inputs.process = (self.inputs.process)();
             inputs.sessions = machine.sessions;
