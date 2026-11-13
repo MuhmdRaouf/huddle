@@ -371,6 +371,10 @@ async fn engine(
         let db = history_db.clone();
         Arc::new(move || history_upkeep::open_for_read(&db))
     };
+    dashboard.keep_days = {
+        let config = dashboard_hosts::config_path(&paths);
+        Arc::new(move || history_upkeep::keep_days(&config))
+    };
     // The database is created and migrated once, here, so the writer threads that open it next
     // never race to create it.
     let opened = tokio::task::spawn_blocking({

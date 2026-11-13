@@ -61,6 +61,9 @@ pub const PAGE: &str = concat!(
     "})();\n</script>\n</body>\n</html>\n",
 );
 
+/// The kept history when nothing says otherwise.
+const DEFAULT_KEEP_DAYS: u64 = 90;
+
 /// The fewest milliseconds between two snapshots on one feed.
 const MIN_GAP: Duration = Duration::from_secs(1);
 /// How often an open feed with no request in flight sends a comment so the connection stays up.
@@ -103,6 +106,8 @@ pub struct DashboardInputs {
     pub harnesses: Arc<dyn Fn() -> serde_json::Value + Send + Sync>,
     /// The history database for `/huddle-router/history`. Called only when such a request comes.
     pub history: HistoryOpen,
+    /// How many days of history the router keeps (`[history] keep_days`).
+    pub keep_days: Arc<dyn Fn() -> u64 + Send + Sync>,
 }
 
 /// What the session logs and git say about the machine.
@@ -133,6 +138,7 @@ impl Default for DashboardInputs {
             plugins: Arc::new(checking),
             harnesses: Arc::new(checking),
             history: Arc::new(|| None),
+            keep_days: Arc::new(|| DEFAULT_KEEP_DAYS),
         }
     }
 }
@@ -191,7 +197,7 @@ impl Dashboard {
     /// The history answer for a query string. The database work runs on a blocking thread.
     pub async fn history_answer(&self, query: &str) -> Response<RespBody> {
         let now = now_ms();
-        let parsed = match history_view::parse(query, now) {
+        let parsed = match history_view::parse(query, now, (self.inputs.keep_days)()) {
             Ok(parsed) => parsed,
             Err(Refusal::Bad(reason)) => return plain(StatusCode::BAD_REQUEST, &reason),
             Err(Refusal::UnknownView) => return plain(StatusCode::NOT_FOUND, "no such view"),
@@ -199,14 +205,14 @@ impl Dashboard {
         let open = Arc::clone(&self.inputs.history);
         let machine = Arc::clone(&self.inputs.sessions);
         let worked = tokio::task::spawn_blocking(move || match open() {
-            None => Ok(history_view::empty_answer(&parsed, now)),
+            None => Ok(history_view::empty_answer(&parsed)),
             Some(history) => {
                 let aliases = if matches!(parsed, Query::Totals(_, GroupBy::Project)) {
                     folder_aliases(&machine().worktrees)
                 } else {
                     BTreeMap::new()
                 };
-                history_view::answer(&history, &parsed, now, &aliases)
+                history_view::answer(&history, &parsed, &aliases)
             }
         })
         .await;

@@ -1,5 +1,5 @@
 function modelRows(){const t=Math.max(1,sum(MODELS.map(m=>m.n)));return MODELS.map(m=>Object.assign({share:m.n/t,hit:m.tin?m.cr/m.tin:0,trend:BK.map(x=>(x.byM[m.id]||EMPTY).n)},m))}
-PAGES.models={title:'Models',body:()=>head('Models',`Every model seen in the last ${rangeLabel()}, with latency, cache use, errors and estimated cost.`,rangeSeg())+reg('rstat',rangeStatus)+
+PAGES.models={title:'Models',body:()=>head('Models',`Every model seen in ${rangeText()}, with latency, cache use, errors and estimated cost.`)+reg('rstat',rangeStatus)+
  `<div class="card t">${reg('models',()=>table('models',rangeCols([
   {k:'model',label:'Model',v:x=>x.id,h:x=>modelTag(x.id)},
   {k:'lane',label:'Lane',v:x=>x.lane,h:x=>`<span class="muted">${esc(x.lane)}</span>`,sm:1},

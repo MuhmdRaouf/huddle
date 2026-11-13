@@ -184,20 +184,12 @@ fn q4_a_sub_millisecond_router_hop_reads_under_one_ms() {
 
 #[test]
 fn t8_fetches_history_only_for_a_range_longer_than_the_live_one() {
-    assert!(PAGE.contains("/huddle-router/history?view=buckets&range="));
-    assert!(PAGE.contains("/huddle-router/history?view=totals&by=model&range="));
+    assert!(PAGE.contains("/huddle-router/history?view=buckets&'+rangeQuery()"));
+    assert!(PAGE.contains("/huddle-router/history?view=totals&by=model&'+rangeQuery()"));
     assert!(PAGE.contains("function loadHistory(){if(liveRange())return"));
     assert!(PAGE.contains(
         "setInterval(()=>{if(document.visibilityState==='visible')loadHistory()},60000)"
     ));
-    for label in ["15 min", "24 h", "7 d", "30 d"] {
-        assert!(PAGE.contains(&format!("'{label}'")), "range {label}");
-    }
-    for page in ["overview", "models", "usage"] {
-        let start = PAGE.find(&format!("PAGES.{page}={{")).expect("page");
-        let body = &PAGE[start..start + 700];
-        assert!(body.contains("rangeSeg()"), "{page} lacks the range switch");
-    }
 }
 
 #[test]
@@ -244,9 +236,9 @@ fn t8_remembers_the_range_and_shows_a_failed_fetch_without_dropping_data() {
 #[test]
 fn t9_fetches_30_day_totals_by_session_and_project_and_a_trend_per_sheet() {
     assert!(PAGE.contains("/huddle-router/history?view="));
-    assert!(PAGE.contains("totals&by=session&range=30d"));
-    assert!(PAGE.contains("totals&by=project&range=30d"));
-    assert!(PAGE.contains("buckets&range=30d&'+q.k+'='+encodeURIComponent(q.id)"));
+    assert!(PAGE.contains("totals&by=session&'+rangeQuery()"));
+    assert!(PAGE.contains("totals&by=project&'+rangeQuery()"));
+    assert!(PAGE.contains("buckets&'+rangeQuery()+'&'+q.k+'='+encodeURIComponent(q.id)"));
     assert!(PAGE.contains("function loadTotals(){if(!wantTotals())return"));
     assert!(
         PAGE.contains(
@@ -262,7 +254,11 @@ fn t9_fetches_30_day_totals_by_session_and_project_and_a_trend_per_sheet() {
 
 #[test]
 fn t9_tables_carry_the_three_30_day_columns() {
-    for label in ["Requests (30 d)", "Tokens (30 d)", "Cost (30 d)"] {
+    for label in [
+        "Requests (${rangeShort()})",
+        "Tokens (${rangeShort()})",
+        "Cost (${rangeShort()})",
+    ] {
         assert_eq!(PAGE.matches(label).count(), 1, "{label} defined once");
     }
     assert!(
@@ -285,8 +281,8 @@ fn t9_session_and_project_sheets_carry_a_history_block() {
         "Cache hit rate",
         "First seen",
         "Last seen",
-        "last 30 days",
-        "No requests in the last 30 d",
+        "${rangeText()}",
+        "No requests in ${rangeText()}",
     ] {
         assert!(PAGE.contains(part), "history block lacks {part}");
     }
@@ -309,14 +305,10 @@ fn t9_shows_loading_and_failed_states_and_reuses_the_cost_label() {
 fn t10_requests_and_errors_search_the_history_with_every_filter_and_paging() {
     assert!(PAGE.contains("const HPAGE=100"));
     assert!(PAGE.contains("HFIL=['model','lane','session','agent','project','status']"));
-    assert!(PAGE.contains("HQ+'search&range='"));
+    assert!(PAGE.contains("HQ+'search&'+rangeQuery()"));
     assert!(PAGE.contains("'&limit='+HPAGE+'&offset='"));
     assert!(PAGE.contains("encodeURIComponent("));
     assert!(PAGE.contains("data-hf="), "filter inputs");
-    assert!(
-        PAGE.contains("HRANGES=[...RANGES.filter(r=>r[0]!=='15m'),['90d','90 d']]"),
-        "search offers 24 h to 90 d"
-    );
     for status in ["'any'", "'ok'", "'error'", "'left'"] {
         assert!(PAGE.contains(status), "status {status}");
     }
@@ -867,4 +859,60 @@ fn d6_each_badge_counts_its_page() {
     assert!(!badge_line("agents").contains("type!=='main'"));
     assert!(badge_line("jobs").contains("JOBS.length"));
     assert!(badge_line("errors").contains("!==200"));
+}
+
+#[test]
+fn d2_one_range_control_in_the_top_bar() {
+    let start = PAGE.find("<header class=\"topbar\">").expect("top bar");
+    let bar = &PAGE[start..start + PAGE[start..].find("</header>").expect("end")];
+    assert!(
+        bar.contains("id=\"rangebar\""),
+        "the range control sits in the top bar"
+    );
+    assert_eq!(PAGE.matches("id=\"rangebar\"").count(), 1);
+    assert!(
+        !PAGE.contains("rangeSeg("),
+        "no page carries its own range switch"
+    );
+    assert!(
+        !PAGE.contains("data-hf=\"range\""),
+        "the request search has none either"
+    );
+    assert!(!PAGE.contains("HS.range"));
+    for label in [
+        "15 min", "1 hour", "24 hours", "7 days", "30 days", "90 days", "Custom",
+    ] {
+        assert!(PAGE.contains(label), "preset {label}");
+    }
+    for subtitle in ["'last 7 days'", "' to '"] {
+        assert!(PAGE.contains(subtitle), "the subtitle reads {subtitle}");
+    }
+    assert!(PAGE.contains("localStorage.setItem('huddle-range-custom'"));
+    assert!(PAGE.contains("function rangeQuery(){"));
+    for page in ["overview", "models", "usage"] {
+        let at = PAGE.find(&format!("PAGES.{page}={{")).expect("page");
+        assert!(
+            PAGE[at..at + 700].contains("rangeText()"),
+            "{page} names the range"
+        );
+    }
+}
+
+#[test]
+fn d2_custom_picker_stops_at_kept_history() {
+    assert!(PAGE.contains("/huddle-router/history?view=meta"));
+    assert!(PAGE.contains("HIST.keep"));
+    assert!(PAGE.contains("type=\"datetime-local\""));
+    assert_eq!(
+        PAGE.matches("type=\"datetime-local\"").count(),
+        2,
+        "from and to"
+    );
+    assert!(PAGE.contains("min=\"${stamp(earliest())}\""));
+    assert!(PAGE.contains("max=\"${stamp(Date.now())}\""));
+    assert!(PAGE.contains("clamped_from_ms"));
+    assert!(
+        PAGE.contains("RANGE_MIN[k]/1440>HIST.keep?' disabled'"),
+        "presets past the kept history are off"
+    );
 }

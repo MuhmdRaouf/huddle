@@ -1,4 +1,4 @@
-PAGES.usage={title:'Usage',body:()=>head('Usage',`Where the tokens went in the last ${rangeLabel()}.`,rangeSeg())+reg('rstat',rangeStatus)+
+PAGES.usage={title:'Usage',body:()=>head('Usage',`Where the tokens went in ${rangeText()}.`)+reg('rstat',rangeStatus)+
  `<div class="${'g2e'}">${reg('planbox',()=>PLAN?`<section>${secH('Claude plan','<span class="note">from Anthropic\'s usage headers</span>')}<div class="card pad plan">${
   PLAN.h5!=null?`<div class="planrow"><div><div class="k">5-hour window</div><div class="v">${Math.round(PLAN.h5)}<small>%</small></div></div><div class="r">${PLAN.h5r!=null?'resets in '+dur(PLAN.h5r-NOW)+'<br><span class="faint">at '+clock(PLAN.h5r).slice(0,5)+'</span>':'—'}</div>${meter(PLAN.h5,'acc')}</div>`:''}${
   PLAN.wk!=null?`<div class="planrow"><div><div class="k">This week</div><div class="v">${Math.round(PLAN.wk)}<small>%</small></div></div><div class="r">${PLAN.wkr!=null?'resets in '+dur(PLAN.wkr-NOW):'—'}</div>${meter(PLAN.wk,'acc')}</div>`:''}</div></section>`:'')}

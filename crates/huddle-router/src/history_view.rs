@@ -21,61 +21,70 @@ const DAY: u64 = 24 * HOUR;
 pub const MAX_LIMIT: u64 = 500;
 const DEFAULT_LIMIT: u64 = 100;
 
-/// The time windows the page asks for, each with its bucket width.
+/// The preset ranges, as the page names them, each with its length.
+const PRESETS: [(&str, u64); 6] = [
+    ("15m", 15 * MINUTE),
+    ("1h", HOUR),
+    ("24h", DAY),
+    ("7d", 7 * DAY),
+    ("30d", 30 * DAY),
+    ("90d", 90 * DAY),
+];
+
+/// Bucket widths from fine to coarse; a window takes the finest one that gives at most
+/// `MAX_BUCKETS` buckets.
+const WIDTHS: [u64; 12] = [
+    30 * SECOND,
+    MINUTE,
+    5 * MINUTE,
+    10 * MINUTE,
+    15 * MINUTE,
+    30 * MINUTE,
+    HOUR,
+    2 * HOUR,
+    3 * HOUR,
+    6 * HOUR,
+    12 * HOUR,
+    DAY,
+];
+const MAX_BUCKETS: u64 = 120;
+
+/// One time window the page asks for: a preset or a custom from-to, cut to the kept history.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Span {
-    QuarterHour,
-    Day,
-    Week,
-    Month,
-    Quarter,
+pub struct Window {
+    name: &'static str,
+    from_ms: u64,
+    to_ms: u64,
+    /// The start the window was cut to when it began before the kept history.
+    clamped_from_ms: Option<u64>,
 }
 
-impl Span {
-    fn parse(text: &str) -> Option<Span> {
-        match text {
-            "15m" => Some(Span::QuarterHour),
-            "24h" => Some(Span::Day),
-            "7d" => Some(Span::Week),
-            "30d" => Some(Span::Month),
-            "90d" => Some(Span::Quarter),
-            _ => None,
+impl Window {
+    /// The window from `from_ms` to `to_ms`, cut to start no earlier than `earliest_ms`.
+    fn new(name: &'static str, from_ms: u64, to_ms: u64, earliest_ms: u64) -> Window {
+        let clamped = from_ms < earliest_ms;
+        Window {
+            name,
+            from_ms: from_ms.max(earliest_ms),
+            to_ms,
+            clamped_from_ms: clamped.then_some(earliest_ms),
         }
     }
 
-    fn name(self) -> &'static str {
-        match self {
-            Span::QuarterHour => "15m",
-            Span::Day => "24h",
-            Span::Week => "7d",
-            Span::Month => "30d",
-            Span::Quarter => "90d",
-        }
-    }
-
-    fn length_ms(self) -> u64 {
-        match self {
-            Span::QuarterHour => 15 * MINUTE,
-            Span::Day => DAY,
-            Span::Week => 7 * DAY,
-            Span::Month => 30 * DAY,
-            Span::Quarter => 90 * DAY,
-        }
-    }
-
+    /// The bucket width: the finest step that keeps the window within `MAX_BUCKETS` buckets.
     pub fn width_ms(self) -> u64 {
-        match self {
-            Span::QuarterHour => 30 * SECOND,
-            Span::Day => 15 * MINUTE,
-            Span::Week => HOUR,
-            Span::Month | Span::Quarter => DAY,
-        }
+        let length = self.to_ms.saturating_sub(self.from_ms);
+        WIDTHS
+            .iter()
+            .copied()
+            .find(|width| length.div_ceil(*width) <= MAX_BUCKETS)
+            .unwrap_or(DAY)
     }
 
-    fn range(self, now_ms: u64) -> Range {
+    fn range(self) -> Range {
         Range {
-            from_ms: now_ms.saturating_sub(self.length_ms()),
-            to_ms: now_ms + 1,
+            from_ms: self.from_ms,
+            to_ms: self.to_ms,
         }
     }
 }
@@ -84,15 +93,19 @@ impl Span {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Query {
     Buckets {
-        span: Span,
+        window: Window,
         session: Option<String>,
         project: Option<String>,
     },
-    Totals(Span, GroupBy),
+    Totals(Window, GroupBy),
     Search {
-        span: Span,
+        window: Window,
         filter: Filter,
         page: Page,
+    },
+    /// How much history the router keeps.
+    Meta {
+        keep_days: u64,
     },
 }
 
@@ -143,8 +156,46 @@ fn bad(reason: impl Into<String>) -> Refusal {
     Refusal::Bad(reason.into())
 }
 
+/// The window a query names: `from` and `to` together (custom), or a preset `range`
+/// (24 h when neither is given). A start before the kept history is cut to it.
+fn window_of(
+    range: Option<&str>,
+    from: Option<&str>,
+    to: Option<&str>,
+    now_ms: u64,
+    keep_days: u64,
+) -> Result<Window, Refusal> {
+    let earliest = now_ms.saturating_sub(keep_days.saturating_mul(DAY));
+    let end = now_ms + 1;
+    let window = match (from, to) {
+        (None, None) => {
+            let (name, length) = match range {
+                None => PRESETS[2],
+                Some(text) => PRESETS
+                    .iter()
+                    .copied()
+                    .find(|(name, _)| *name == text)
+                    .ok_or_else(|| bad("range must be 15m, 1h, 24h, 7d, 30d or 90d"))?,
+            };
+            Window::new(name, now_ms.saturating_sub(length), end, earliest)
+        }
+        (Some(from), Some(to)) => {
+            let whole = |text: &str| {
+                text.parse::<u64>()
+                    .map_err(|_| bad("from and to must be whole milliseconds"))
+            };
+            Window::new("custom", whole(from)?, whole(to)?.min(end), earliest)
+        }
+        _ => return Err(bad("from and to go together")),
+    };
+    if window.from_ms >= window.to_ms {
+        return Err(bad("from must be before to, inside the kept history"));
+    }
+    Ok(window)
+}
+
 /// Parses `query` (the part after `?`) at time `now_ms`.
-pub fn parse(query: &str, now_ms: u64) -> Result<Query, Refusal> {
+pub fn parse(query: &str, now_ms: u64, keep_days: u64) -> Result<Query, Refusal> {
     let pairs = pairs(query);
     let get = |name: &str| {
         pairs
@@ -153,16 +204,12 @@ pub fn parse(query: &str, now_ms: u64) -> Result<Query, Refusal> {
             .map(|(_, value)| value.as_str())
             .filter(|value| !value.is_empty())
     };
-    let span = match get("range") {
-        None => Span::Day,
-        Some(text) => {
-            Span::parse(text).ok_or_else(|| bad("range must be 15m, 24h, 7d, 30d or 90d"))?
-        }
-    };
+    let window = window_of(get("range"), get("from"), get("to"), now_ms, keep_days)?;
     match get("view") {
-        None => Err(bad("view is required: buckets, totals or search")),
+        None => Err(bad("view is required: buckets, totals, search or meta")),
+        Some("meta") => Ok(Query::Meta { keep_days }),
         Some("buckets") => Ok(Query::Buckets {
-            span,
+            window,
             session: get("session").map(str::to_owned),
             project: get("project").map(str::to_owned),
         }),
@@ -176,10 +223,10 @@ pub fn parse(query: &str, now_ms: u64) -> Result<Query, Refusal> {
                 Some("day") => GroupBy::Day,
                 Some(_) => return Err(bad("by must be session, project, model, lane or day")),
             };
-            Ok(Query::Totals(span, by))
+            Ok(Query::Totals(window, by))
         }
         Some("search") => {
-            let mut filter = Filter::new(span.range(now_ms));
+            let mut filter = Filter::new(window.range());
             let text = |name| get(name).map(str::to_owned);
             filter.model = text("model");
             filter.lane = text("lane");
@@ -203,7 +250,11 @@ pub fn parse(query: &str, now_ms: u64) -> Result<Query, Refusal> {
                 limit: number("limit", DEFAULT_LIMIT)?.min(MAX_LIMIT),
                 offset: number("offset", 0)?,
             };
-            Ok(Query::Search { span, filter, page })
+            Ok(Query::Search {
+                window,
+                filter,
+                page,
+            })
         }
         Some(_) => Err(Refusal::UnknownView),
     }
@@ -241,18 +292,20 @@ fn row_cost(row: &Row) -> Option<f64> {
     ))
 }
 
-fn envelope(view: &str, span: Span, now_ms: u64) -> serde_json::Map<String, Value> {
-    let range = span.range(now_ms);
-    let Value::Object(map) = json!({
+fn envelope(view: &str, window: Window) -> serde_json::Map<String, Value> {
+    let Value::Object(mut map) = json!({
         "view": view,
-        "range": span.name(),
-        "from_ms": range.from_ms,
-        "to_ms": range.to_ms,
+        "range": window.name,
+        "from_ms": window.from_ms,
+        "to_ms": window.to_ms,
         "prices_retrieved": PRICES_RETRIEVED,
         "claude_prices_retrieved": CLAUDE_PRICES_RETRIEVED,
     }) else {
         return serde_json::Map::new();
     };
+    if let Some(clamped) = window.clamped_from_ms {
+        map.insert("clamped_from_ms".into(), json!(clamped));
+    }
     map
 }
 
@@ -261,18 +314,17 @@ fn envelope(view: &str, span: Span, now_ms: u64) -> serde_json::Map<String, Valu
 pub fn answer(
     history: &History,
     query: &Query,
-    now_ms: u64,
     aliases: &BTreeMap<String, String>,
 ) -> Result<Value, HistoryError> {
     match query {
         Query::Buckets {
-            span,
+            window,
             session,
             project,
         } => {
             let buckets = history.buckets(
-                span.range(now_ms),
-                span.width_ms(),
+                window.range(),
+                window.width_ms(),
                 session.as_deref(),
                 project.as_deref(),
             )?;
@@ -288,13 +340,13 @@ pub fn answer(
                     })
                 })
                 .collect();
-            let mut out = envelope("buckets", *span, now_ms);
-            out.insert("width_ms".into(), json!(span.width_ms()));
+            let mut out = envelope("buckets", *window);
+            out.insert("width_ms".into(), json!(window.width_ms()));
             out.insert("buckets".into(), Value::Array(rows));
             Ok(Value::Object(out))
         }
-        Query::Totals(span, by) => {
-            let totals = history.totals_with_aliases(span.range(now_ms), *by, aliases)?;
+        Query::Totals(window, by) => {
+            let totals = history.totals_with_aliases(window.range(), *by, aliases)?;
             let rows: Vec<Value> = totals
                 .iter()
                 .map(|t| {
@@ -325,22 +377,31 @@ pub fn answer(
                     })
                 })
                 .collect();
-            let mut out = envelope("totals", *span, now_ms);
+            let mut out = envelope("totals", *window);
             out.insert("by".into(), json!(group_name(*by)));
             out.insert("totals".into(), Value::Array(rows));
             Ok(Value::Object(out))
         }
-        Query::Search { span, filter, page } => {
+        Query::Search {
+            window,
+            filter,
+            page,
+        } => {
             let found = history.search(filter.clone(), *page)?;
             let rows: Vec<Value> = found.rows.iter().map(row_json).collect();
-            let mut out = envelope("search", *span, now_ms);
+            let mut out = envelope("search", *window);
             out.insert("total".into(), json!(found.total));
             out.insert("limit".into(), json!(page.limit));
             out.insert("offset".into(), json!(page.offset));
             out.insert("rows".into(), Value::Array(rows));
             Ok(Value::Object(out))
         }
+        Query::Meta { keep_days } => Ok(meta_answer(*keep_days)),
     }
+}
+
+fn meta_answer(keep_days: u64) -> Value {
+    json!({ "view": "meta", "keep_days": keep_days })
 }
 
 fn group_name(by: GroupBy) -> &'static str {
@@ -366,16 +427,17 @@ fn row_json(row: &Row) -> Value {
 }
 
 /// The answer with no database: the same shape, no rows.
-pub fn empty_answer(query: &Query, now_ms: u64) -> Value {
-    let (view, span) = match query {
-        Query::Buckets { span, .. } => ("buckets", *span),
-        Query::Totals(span, _) => ("totals", *span),
-        Query::Search { span, .. } => ("search", *span),
+pub fn empty_answer(query: &Query) -> Value {
+    let (view, window) = match query {
+        Query::Buckets { window, .. } => ("buckets", *window),
+        Query::Totals(window, _) => ("totals", *window),
+        Query::Search { window, .. } => ("search", *window),
+        Query::Meta { keep_days } => return meta_answer(*keep_days),
     };
-    let mut out = envelope(view, span, now_ms);
+    let mut out = envelope(view, window);
     match query {
-        Query::Buckets { span, .. } => {
-            out.insert("width_ms".into(), json!(span.width_ms()));
+        Query::Buckets { window, .. } => {
+            out.insert("width_ms".into(), json!(window.width_ms()));
             out.insert("buckets".into(), json!([]));
         }
         Query::Totals(_, by) => {
@@ -388,6 +450,7 @@ pub fn empty_answer(query: &Query, now_ms: u64) -> Value {
             out.insert("offset".into(), json!(page.offset));
             out.insert("rows".into(), json!([]));
         }
+        Query::Meta { .. } => {}
     }
     Value::Object(out)
 }

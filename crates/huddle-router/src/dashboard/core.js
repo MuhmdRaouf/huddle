@@ -201,21 +201,25 @@ function kpiGrid(items){return items.map(k=>`<div class="kpi"><div class="k">${k
 const checking=(what)=>`<span class="muted">Checking…</span>`;
 
 /* ---------- time ranges ---------- */
-const RANGES=[['15m','15 min'],['24h','24 h'],['7d','7 d'],['30d','30 d']],RANGE_MIN={'15m':15,'24h':1440,'7d':10080,'30d':43200};
+const RANGES=[['15m','15 min','last 15 minutes'],['1h','1 hour','last hour'],['24h','24 hours','last 24 hours'],['7d','7 days','last 7 days'],['30d','30 days','last 30 days'],['90d','90 days','last 90 days']],RANGE_MIN={'15m':15,'1h':60,'24h':1440,'7d':10080,'30d':43200,'90d':129600};
 const FLAT='Claude plan usage is flat-rate; this is what the same tokens cost on the API';
-const HIST={range:'15m',bk:null,tot:null,ser:null,err:false},HCOLOR={};
-try{const r=localStorage.getItem('huddle-range');if(RANGES.some(x=>x[0]===r))HIST.range=r}catch(e){}
+const HIST={range:'15m',from:0,to:0,keep:90,picking:false,bk:null,tot:null,ser:null,err:false},HCOLOR={};
+try{const r=localStorage.getItem('huddle-range');if(r==='custom'){const c=JSON.parse(localStorage.getItem('huddle-range-custom')||'null');if(c&&c.from<c.to){HIST.range='custom';HIST.from=c.from;HIST.to=c.to}}else if(RANGES.some(x=>x[0]===r))HIST.range=r}catch(e){}
 const liveRange=()=>HIST.range==='15m';
 /* Only pages that read the router's live memory say a restart clears them; the rest read disk or settings. */
 const readsMemory=()=>({overview:liveRange(),models:liveRange(),usage:liveRange(),sessions:true,agents:true,requests:HS.mode==='live',errors:HS.mode==='live'})[page]===true;
-const rangeLabel=()=>RANGES.find(x=>x[0]===HIST.range)[1];
-const rangeSeg=()=>seg('range',RANGES,HIST.range);
+const MON=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'],p2=n=>String(n).padStart(2,'0');
+const when=t=>{const d=new Date(t);return `${d.getDate()} ${MON[d.getMonth()]} ${p2(d.getHours())}:${p2(d.getMinutes())}`};
+const rangeShort=()=>HIST.range==='custom'?'custom':RANGES.find(x=>x[0]===HIST.range)[1];
+const rangeText=()=>HIST.range==='custom'?when(HIST.from)+' to '+when(HIST.to):RANGES.find(x=>x[0]===HIST.range)[2];
+function rangeQuery(){return HIST.range==='custom'?'from='+HIST.from+'&to='+HIST.to:'range='+HIST.range}
 const usd=v=>num(v)==null?'—':'$'+(v>0&&v<0.01?v.toFixed(4):v.toFixed(2));
 const apiq=()=>`<span class="faint" title="${FLAT}">API-equivalent</span>`;
 const SER0={b:[0,1].map(i=>Object.assign({byM:{},t:i,w:0},EMPTY)),mn:[],bw:3e4};
 const ser=()=>liveRange()?{b:BK,mn:MN,bw:BW}:(HIST.ser||SER0);
-const rangeMin=()=>RANGE_MIN[HIST.range];
-const tickLabel=t=>HIST.range==='7d'||HIST.range==='30d'?new Date(t).toLocaleDateString(undefined,{month:'short',day:'numeric'}):clock(t).slice(0,5);
+const rangeMin=()=>HIST.range==='custom'?Math.max(1,(HIST.to-HIST.from)/6e4):RANGE_MIN[HIST.range];
+const longBuckets=()=>ser().bw>=72e5;
+const tickLabel=t=>longBuckets()?new Date(t).toLocaleDateString(undefined,{month:'short',day:'numeric'}):clock(t).slice(0,5);
 function histSeries(d){const w=Math.max(1,num(d.width_ms)||3e5),s0=Math.floor(d.from_ms/w)*w,N=Math.max(2,Math.floor((d.to_ms-s0)/w)+1);
  const b=Array.from({length:N},(_,i)=>Object.assign({byM:{},t:s0+i*w,w:0},EMPTY)),names=new Set();
  arr(d.buckets).forEach(x=>{const k=b[Math.min(N-1,Math.max(0,Math.floor((x.start_ms-s0)/w)))],o={n:n0(x.n),err:n0(x.err),tok:n0(x.tok_in)+n0(x.tok_out),p50:n0(x.ttft_p50),cost:n0(x.cost_usd)};
@@ -231,26 +235,44 @@ const HIDE_IN_RANGE=['lane','trend','speed','sess','last'];
 const COSTCOL={k:'cost',label:'Est. cost',num:1,v:x=>x.cost||0,h:x=>`<span class="mono">${usd(x.cost)}</span>${x.apiq?' '+apiq():''}`};
 const rangeCols=cols=>liveRange()?cols:cols.filter(c=>!HIDE_IN_RANGE.includes(c.k)).concat([COSTCOL]);
 const rangeRows=()=>liveRange()?modelRows():histRows();
-const rangeEmpty=()=>HIST.bk||HIST.err||liveRange()?`No requests in the last ${rangeLabel()}`:'Checking…';
-const rangeStatus=()=>liveRange()?'':HIST.err?`<div class="legendrow badc">Could not load history. Showing the last data.</div>`:HIST.bk?'':`<div class="legendrow">${checking()}</div>`;
+const rangeEmpty=()=>HIST.bk||HIST.err||liveRange()?`No requests in ${rangeText()}`:'Checking…';
+const clampNote=d=>d&&d.clamped_from_ms?`<div class="legendrow">Showing from ${when(d.clamped_from_ms)}: huddle keeps ${HIST.keep} days of history.</div>`:'';
+const rangeStatus=()=>liveRange()?'':HIST.err?`<div class="legendrow badc">Could not load history. Showing the last data.</div>`:HIST.bk?clampNote(HIST.bk):`<div class="legendrow">${checking()}</div>`;
 function histKpis(){if(!HIST.tot)return `<div class="card pad">${checking()}</div>`;
  const ts=arr(HIST.tot.totals),reqs=sum(ts.map(t=>n0(t.n)));
- if(!reqs)return `<div class="card"><div class="allclear">${ic('info')} No requests in the last ${rangeLabel()}</div></div>`;
+ if(!reqs)return `<div class="card"><div class="allclear">${ic('info')} No requests in ${rangeText()}</div></div>`;
  const errs=sum(ts.map(t=>n0(t.err))),tin=sum(ts.map(t=>n0(t.tok_in))),cr=sum(ts.map(t=>n0(t.cache_read))),cw=sum(ts.map(t=>n0(t.cache_write))),out=sum(ts.map(t=>n0(t.tok_out))),cost=sum(ts.map(t=>n0(t.cost_usd))),aq=ts.some(t=>t.api_equivalent);
  return kpiCard([
-  {k:'Requests',v:fmt(reqs),d:`in the last ${rangeLabel()}`},
+  {k:'Requests',v:fmt(reqs),d:`in ${rangeText()}`},
   {k:'Errors',v:fmt(errs),d:`${(errs/reqs*100).toFixed(1)}% of requests`,color:'var(--bad)'},
   {k:'Tokens in',v:fmt(tin),d:'cache reads and writes included'},
   {k:'Tokens out',v:fmt(out),d:'generated'},
   {k:'Cache hit rate',v:tin?Math.round(tokSplit(tin,cr,cw).hit*100):'—',small:tin?'%':'',d:'read from cache / tokens in'},
   {k:'Estimated cost',v:usd(cost),d:aq?`includes Claude cost, ${apiq()}`:'from list prices'}],'k6')}
 const hget=u=>fetch(u,{cache:'no-store'}).then(x=>{if(!x.ok)throw new Error(String(x.status));return x.json()});
-function loadHistory(){if(liveRange())return;const r=HIST.range,get=hget;
- Promise.all([get('/huddle-router/history?view=buckets&range='+r),get('/huddle-router/history?view=totals&by=model&range='+r)]).then(([bk,tot])=>{if(HIST.range!==r)return;
-  HIST.bk=bk;HIST.tot=tot;HIST.ser=histSeries(bk);HIST.err=false;HIST.ser.mn.forEach((m,i)=>{HCOLOR[m]='var(--c'+(i%6+1)+')'});paint()},()=>{if(HIST.range!==r)return;HIST.err=true;paint()})}
-function setRange(k){if(!RANGES.some(r=>r[0]===k))return;HIST.range=k;HIST.bk=HIST.tot=HIST.ser=null;HIST.err=false;CH.focus=null;if(liveRange()&&CH.metric==='cost')CH.metric='req';
- try{localStorage.setItem('huddle-range',k)}catch(e){}
- render();loadHistory()}
+function loadHistory(){if(liveRange())return;const get=hget;
+ const q=rangeQuery();
+ Promise.all([get('/huddle-router/history?view=buckets&'+rangeQuery()),get('/huddle-router/history?view=totals&by=model&'+rangeQuery())]).then(([bk,tot])=>{if(rangeQuery()!==q)return;
+  HIST.bk=bk;HIST.tot=tot;HIST.ser=histSeries(bk);HIST.err=false;HIST.ser.mn.forEach((m,i)=>{HCOLOR[m]='var(--c'+(i%6+1)+')'});paint()},()=>{if(rangeQuery()!==q)return;HIST.err=true;paint()})}
+/* the one range control: a preset or a custom from-to, kept in the top bar */
+const stamp=t=>{const d=new Date(t);return `${d.getFullYear()}-${p2(d.getMonth()+1)}-${p2(d.getDate())}T${p2(d.getHours())}:${p2(d.getMinutes())}`};
+const earliest=()=>Date.now()-HIST.keep*864e5;
+function rangeBar(){const sel=HIST.picking?'custom':HIST.range;
+ const opts=RANGES.map(([k,s])=>`<option value="${k}"${k===sel?' selected':''}${RANGE_MIN[k]/1440>HIST.keep?' disabled':''}>${s}</option>`).join('')+`<option value="custom"${sel==='custom'?' selected':''}>Custom</option>`;
+ const f=HIST.range==='custom'?HIST.from:Date.now()-864e5,t=HIST.range==='custom'?HIST.to:Date.now();
+ const pop=HIST.picking?`<div class="rangepop" role="group" aria-label="Custom range"><label>From<input type="datetime-local" id="rfrom" min="${stamp(earliest())}" max="${stamp(Date.now())}" value="${stamp(Math.max(f,earliest()))}"></label><label>To<input type="datetime-local" id="rto" min="${stamp(earliest())}" max="${stamp(Date.now())}" value="${stamp(t)}"></label><div class="rerr" id="rerr" role="alert"></div><div class="racts"><button id="rapply">Apply</button><button id="rcancel">Cancel</button></div></div>`:'';
+ return `<select id="rangesel" aria-label="Time range">${opts}</select>${pop}`}
+function renderRangeBar(){const el=$('#rangebar');if(el)setHtml(el,rangeBar())}
+function applyRange(){HIST.bk=HIST.tot=HIST.ser=null;HIST.err=false;HIST.picking=false;CH.focus=null;if(liveRange()&&CH.metric==='cost')CH.metric='req';
+ HT.ses=HT.prj=HT.meta=null;HT.trend={};
+ try{localStorage.setItem('huddle-range',HIST.range);if(HIST.range==='custom')localStorage.setItem('huddle-range-custom',JSON.stringify({from:HIST.from,to:HIST.to}))}catch(e){}
+ renderRangeBar();render();loadHistory()}
+function setRange(k){if(!RANGES.some(r=>r[0]===k))return;HIST.range=k;applyRange()}
+function applyCustom(){const f=Date.parse($('#rfrom').value),t=Math.min(Date.parse($('#rto').value),Date.now()),err=m=>{setHtml($('#rerr'),esc(m))};
+ if(!(f<t))return err('Pick a start that is before the end.');
+ if(f<earliest())return err(`huddle keeps ${HIST.keep} days of history. Pick a start inside it.`);
+ HIST.range='custom';HIST.from=f;HIST.to=t;applyRange()}
+function loadMeta(){hget('/huddle-router/history?view=meta').then(d=>{const k=num(d.keep_days);if(k>0){HIST.keep=k;if(!HIST.picking)renderRangeBar()}},()=>{})}
 const pricesLine=d=>d?`<div class="legendrow">Estimated from list prices. Prices retrieved ${esc(d.prices_retrieved)}; Claude prices retrieved ${esc(d.claude_prices_retrieved)}.</div>`:'';
 const priceNote=()=>liveRange()?'':pricesLine(HIST.bk);
 
@@ -263,17 +285,17 @@ const hCell=(t,f)=>t?f(t):HT.err?NA:checking();
 const sheetKey=()=>DR&&(DR.k==='session'||DR.k==='project')?DR:null;
 const wantTotals=()=>page==='sessions'||page==='projects'||!!sheetKey();
 function loadTotals(){if(!wantTotals())return;const q=sheetKey(),key=q&&q.key;
- Promise.all([hget(HQ+'totals&by=session&range=30d'),hget(HQ+'totals&by=project&range=30d'),q?hget(HQ+'buckets&range=30d&'+q.k+'='+encodeURIComponent(q.id)):null]).then(([s,p,t])=>{
+ Promise.all([hget(HQ+'totals&by=session&'+rangeQuery()),hget(HQ+'totals&by=project&'+rangeQuery()),q?hget(HQ+'buckets&'+rangeQuery()+'&'+q.k+'='+encodeURIComponent(q.id)):null]).then(([s,p,t])=>{
   HT.ses=hmap(s);HT.prj=hmap(p);HT.meta=s;if(t)HT.trend[key]=t;HT.err=false;paint()},()=>{HT.err=true;paint()})}
 const costCell=t=>`<span class="mono">${usd(t.cost_usd)}</span>${t.api_equivalent?' '+apiq():''}`;
 const histCols=get=>[
- {k:'hreq',label:'Requests (30 d)',num:1,sm:1,v:x=>n0((get(x)||HZERO).n),h:x=>hCell(get(x),t=>t.n?fmt(t.n):'<span class="faint">0</span>')},
- {k:'htok',label:'Tokens (30 d)',num:1,sm:1,v:x=>n0((get(x)||HZERO).tok_in)+n0((get(x)||HZERO).tok_out),h:x=>hCell(get(x),t=>t.n?`${fmt(t.tok_in)} <span class="faint">/</span> ${fmt(t.tok_out)}`:NA)},
- {k:'hcost',label:'Cost (30 d)',num:1,v:x=>n0((get(x)||HZERO).cost_usd),h:x=>hCell(get(x),t=>t.n?costCell(t):NA)}];
+ {k:'hreq',get label(){return `Requests (${rangeShort()})`},num:1,sm:1,v:x=>n0((get(x)||HZERO).n),h:x=>hCell(get(x),t=>t.n?fmt(t.n):'<span class="faint">0</span>')},
+ {k:'htok',get label(){return `Tokens (${rangeShort()})`},num:1,sm:1,v:x=>n0((get(x)||HZERO).tok_in)+n0((get(x)||HZERO).tok_out),h:x=>hCell(get(x),t=>t.n?`${fmt(t.tok_in)} <span class="faint">/</span> ${fmt(t.tok_out)}`:NA)},
+ {k:'hcost',get label(){return `Cost (${rangeShort()})`},num:1,v:x=>n0((get(x)||HZERO).cost_usd),h:x=>hCell(get(x),t=>t.n?costCell(t):NA)}];
 /* the History block of a session or project sheet: totals, a daily trend and the models used */
-function histBlock(key,t){const tr=HT.trend[key],head='<h4>History <span class="faint">last 30 days</span></h4>';
+function histBlock(key,t){const tr=HT.trend[key],head=`<h4>History <span class="faint">${rangeText()}</span></h4>`;
  if(!t)return `<div>${head}<div class="card pad">${HT.err?'<span class="badc">Could not load history. Showing the last data.</span>':checking()}</div></div>`;
- if(!t.n)return `<div>${head}<div class="card"><div class="allclear">${ic('info')} No requests in the last 30 d</div></div></div>`;
+ if(!t.n)return `<div>${head}<div class="card"><div class="allclear">${ic('info')} No requests in ${rangeText()}</div></div></div>`;
  const tin=n0(t.tok_in),fact=(k,v)=>`<div class="fact"><div class="k">${k}</div><div class="v">${v}</div></div>`;
  const mcols=[
   {k:'model',label:'Model',v:m=>m.model,h:m=>modelTag(m.model)},
@@ -282,7 +304,7 @@ function histBlock(key,t){const tr=HT.trend[key],head='<h4>History <span class="
   {k:'cost',label:'Cost',num:1,v:m=>n0(m.cost_usd),h:m=>`<span class="mono">${usd(m.cost_usd)}</span>`}];
  return `<div>${head}<div class="facts">${fact('Requests',fmt(t.n)+' · '+fmt(t.err)+' errors')+fact('Tokens in',fmt(tin))+fact('Tokens out',fmt(t.tok_out))
   +fact('Cache hit rate',tin?Math.round(tokSplit(tin,t.cache_read,t.cache_write).hit*100)+'%':'—')+fact('Estimated cost',costCell(t))+fact('First seen',new Date(t.first_ms).toLocaleDateString()+' · '+ago(t.first_ms))+fact('Last seen',new Date(t.last_ms).toLocaleDateString()+' · '+ago(t.last_ms))}</div>
-  <div class="card pad mt12"><div class="legendrow bare">Requests per day</div>${tr?spark(histSeries(tr).b.map(k=>k.n),'var(--c1)'):checking()}</div></div>
+  <div class="card pad mt12"><div class="legendrow bare">Requests over time</div>${tr?spark(histSeries(tr).b.map(k=>k.n),'var(--c1)'):checking()}</div></div>
   <div><h4>Models used <span class="faint">${arr(t.models).length}</span></h4><div class="card t">${table('d-hm',mcols,arr(t.models),{empty:'No models'})}</div>${pricesLine(HT.meta)}</div>`}
 
 
@@ -331,18 +353,21 @@ window.addEventListener('hashchange',render);
 function toast(t){const el=$('#toast');setHtml(el,ic('check')+esc(t));el.classList.add('on');clearTimeout(toast.h);toast.h=setTimeout(()=>el.classList.remove('on'),1400)}
 function copy(t){const done=()=>toast('Copied '+(t.length>36?t.slice(0,34)+'…':t));try{navigator.clipboard.writeText(t).then(done,()=>toast('Select and copy: '+t))}catch(e){toast('Select and copy: '+t)}}
 document.addEventListener('click',e=>{
+ if(e.target.closest('#rapply')){applyCustom();return}
+ if(e.target.closest('#rcancel')){HIST.picking=false;renderRangeBar();return}
  const c=e.target.closest('[data-copy]');if(c){e.stopPropagation();copy(c.dataset.copy);return}
  if(e.target.closest('[data-close]')){closeDrawer();return}
  const so=e.target.closest('[data-sort]');if(so){const[id,k]=so.dataset.sort.split(':');const cur=SORT[id];SORT[id]={k,d:cur&&cur.k===k?-cur.d:(so.closest('th').classList.contains('num')?-1:1)};refresh();if(DR)renderDrawer(true);return}
- const sg=e.target.closest('[data-seg]');if(sg){const[id,k]=sg.dataset.seg.split(':');if(id==='range'){setRange(k);return}if(id==='hmode'){location.hash='#'+page+(k==='history'?'?mode=history':'');return}F[id]=k;$$('[data-seg]').filter(b=>b.dataset.seg.startsWith(id+':')).forEach(b=>b.setAttribute('aria-pressed',String(b===sg)));refresh();return}
+ const sg=e.target.closest('[data-seg]');if(sg){const[id,k]=sg.dataset.seg.split(':');if(id==='hmode'){location.hash='#'+page+(k==='history'?'?mode=history':'');return}F[id]=k;$$('[data-seg]').filter(b=>b.dataset.seg.startsWith(id+':')).forEach(b=>b.setAttribute('aria-pressed',String(b===sg)));refresh();return}
  const hp=e.target.closest('[data-hp]');if(hp){HS.off=Math.max(0,HS.off+(hp.dataset.hp==='next'?HPAGE:-HPAGE));hsearch();return}
  const mt=e.target.closest('[data-metric]');if(mt){CH.metric=mt.dataset.metric;refresh();drawChart();return}
  const fo=e.target.closest('[data-focus]');if(fo){CH.focus=CH.focus===fo.dataset.focus?null:fo.dataset.focus;refresh();drawChart();return}
  const op=e.target.closest('[data-open]');if(op){openDrawer(op.dataset.open);return}
  const th=e.target.closest('[data-theme-set]');if(th){setTheme(th.dataset.themeSet);return}
 });
+document.addEventListener('change',e=>{if(e.target.id!=='rangesel')return;const k=e.target.value;if(k==='custom'){HIST.picking=true;renderRangeBar();const n=$('#rfrom');if(n)n.focus()}else{HIST.picking=false;if(k===HIST.range)renderRangeBar();else setRange(k)}});
 document.addEventListener('input',e=>{const q=e.target.closest('[data-q]');if(q){F.q[q.dataset.q]=q.value;refresh()}
- const hf=e.target.closest('[data-hf]');if(hf){const k=hf.dataset.hf;if(k==='range')HS.range=hf.value;else HS.f[k]=hf.value;HS.off=0;clearTimeout(HS.t);HS.t=setTimeout(hsearch,300)}});
+ const hf=e.target.closest('[data-hf]');if(hf){const k=hf.dataset.hf;HS.f[k]=hf.value;HS.off=0;clearTimeout(HS.t);HS.t=setTimeout(hsearch,300)}});
 $('#scrim').onclick=()=>{closeDrawer();closeSidebar()};
 $('#menu').onclick=()=>{$('#sb').classList.add('on');$('#scrim').classList.add('on')};
 function closeSidebar(){$('#sb').classList.remove('on');if(!DR)$('#scrim').classList.remove('on')}

@@ -69,7 +69,7 @@ function drawChart(){const svg=$('#chart');if(!svg)return;const W=svg.clientWidt
  if(CH.hover!=null){const i=CH.hover;g+=`<line x1="${x(i).toFixed(1)}" x2="${x(i).toFixed(1)}" y1="${pt}" y2="${H-pb}" stroke="var(--faint)" stroke-dasharray="3 3"/><circle cx="${x(i).toFixed(1)}" cy="${y(data[i]).toFixed(1)}" r="4" fill="var(--surface)" stroke="${color}" stroke-width="2"/>`;
   const bk=b[i],rows=S.mn.map(m=>({m,v:c.val(bk.byM[m]||EMPTY)})).filter(r=>r.v>0&&(!CH.focus||r.m===CH.focus)).sort((a,b)=>b.v-a.v);
   const f=v=>CH.metric==='lat'?Math.round(v)+' ms':CH.metric==='cost'?usd(v):fmt(v);
-  setHtml(tip,`<div class="h">${HIST.range==='7d'||HIST.range==='30d'?tickLabel(bk.t):clock(bk.t)+'–'+clock(bk.t+S.bw).slice(3)}</div>${rows.map(r=>`<div class="r"><span>${sw(r.m)}${esc(r.m)}</span><span>${f(r.v)}</span></div>`).join('')||'<div class="r"><span>No requests</span><span></span></div>'}<div class="r tot"><span>${CH.focus?esc(CH.focus):'All models'}</span><span>${f(data[i])}</span></div>`);
+  setHtml(tip,`<div class="h">${longBuckets()?tickLabel(bk.t):clock(bk.t)+'–'+clock(bk.t+S.bw).slice(3)}</div>${rows.map(r=>`<div class="r"><span>${sw(r.m)}${esc(r.m)}</span><span>${f(r.v)}</span></div>`).join('')||'<div class="r"><span>No requests</span><span></span></div>'}<div class="r tot"><span>${CH.focus?esc(CH.focus):'All models'}</span><span>${f(data[i])}</span></div>`);
   const rect=svg.getBoundingClientRect(),left=x(i)*rect.width/W;tip.classList.add('on');const tw=tip.offsetWidth;tip.style.left=Math.max(0,left>rect.width/2?left-tw-14:left+14)+'px'}
  else tip.classList.remove('on');
  setHtml(svg,g)}
@@ -114,7 +114,7 @@ function routerMini(){return `<dl class="kv padkv">
 
 const kpiCard=(items,cls)=>`<div class="card kpis${cls?' '+cls:''}">${kpiGrid(items)}</div>`;
 PAGES.overview={title:'Overview',body:()=>
- head('Overview',liveRange()?'Everything huddle sees right now, kept in memory. A router restart starts it fresh.':`Requests, tokens and cost for the last ${rangeLabel()}, from the history database. Sessions, jobs and providers below stay live.`,rangeSeg())+
+ head('Overview',liveRange()?'Everything huddle sees right now, kept in memory. A router restart starts it fresh.':`Requests, tokens and cost for ${rangeText()}, from the history database. Sessions, jobs and providers below stay live.`)+
  `<section>${secH('Needs you',reg('attn-n',()=>`<span class="note">${attnItems().length} items</span>`))}<div class="card">${reg('attn',attnList)}</div></section>`+
  reg('rstat',rangeStatus)+reg('kpis',overviewKpis)+
  `<section>${secH('Traffic',reg('bw',()=>`<span class="note">${liveRange()?'30-second':dur(ser().bw)} buckets</span>`),['requests','All requests'])}<div class="card chart">${reg('mtabs',mtabs)}<div class="chart-body"><div class="plot"><svg id="chart" role="img" aria-label="Traffic over the selected range"></svg><div class="tip" id="tip"></div></div><div class="split">${reg('bars',bars)}</div></div></div></section>`+

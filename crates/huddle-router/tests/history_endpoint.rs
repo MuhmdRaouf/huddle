@@ -184,9 +184,10 @@ async fn t6_range_widths_follow_the_range() {
     let rig = rig(true).await;
     for (range, width) in [
         ("15m", 30_000u64),
+        ("1h", 60_000),
         ("24h", 900_000),
-        ("7d", 3_600_000),
-        ("30d", 86_400_000),
+        ("7d", 7_200_000),
+        ("30d", 43_200_000),
         ("90d", 86_400_000),
     ] {
         let v = json(&rig, &format!("view=buckets&range={range}")).await;

@@ -2,7 +2,7 @@ function errGroups(){const d=stats().done,o={};d.filter(r=>r.status!==200).forEa
  return Object.entries(o).map(([code,rs])=>{const c=+code;const trend=Array(30).fill(0);rs.forEach(r=>{trend[Math.max(0,Math.min(29,Math.floor((r.t-t0)/30e3)))]++});
   const reason=(rs.find(r=>r.reason)||{}).reason;
   return {code:c,def:errDef(c,reason),rs,trend,lanes:[...new Set(rs.map(r=>r.lane))],models:[...new Set(rs.map(r=>r.m))],sessions:new Set(rs.map(r=>r.sess).filter(Boolean)).size,last:rs[rs.length-1].t,share:rs.length/d.length}})}
-PAGES.errors={title:'Errors',body:()=>HS.mode==='history'?hview('Errors','Failed requests kept in history, newest first. Choose the status to include requests you cancelled.'):head('Errors','Failed and cancelled requests in the last 15 minutes, grouped by cause. A 499 means you stopped the stream, so it never counts as an error.',hmodes())+
+PAGES.errors={title:'Errors',body:()=>HS.mode==='history'?hview('Errors',`Failed requests in ${rangeText()}, newest first. Choose the status to include requests you cancelled.`):head('Errors','Failed and cancelled requests in the last 15 minutes, grouped by cause. A 499 means you stopped the stream, so it never counts as an error.',hmodes())+
  `<section>${secH('By cause')}<div class="card t">${reg('errg',()=>table('errg',[
   {k:'err',label:'Cause',v:g=>g.def[0],h:g=>`<div class="ct">${esc(g.def[0])}</div><div class="cs">${esc(g.def[1])}</div>`},
   {k:'code',label:'Status',v:g=>g.code,h:g=>g.code===499?pill('off','499'):g.code===429?pill('warn','429'):pill('bad',String(g.code))},

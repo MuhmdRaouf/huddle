@@ -22,6 +22,7 @@ use tokio::runtime::Handle;
 
 use crate::checks::harnesses::{self};
 use crate::checks::plugins::{self, PluginsReport};
+use crate::history_upkeep;
 use crate::read_cache::{Cache, Read};
 use crate::rss::read_usage;
 
@@ -113,6 +114,8 @@ pub fn start(version: String, env: Env, paths: Paths, port: u16) -> DashboardInp
         harnesses: Arc::new(move || json_of(&*harness_checks.latest())),
         // The daemon points this at the database file once it knows the state folder.
         history: Arc::new(|| None),
+        // The daemon points this at the config file once it knows the config folder.
+        keep_days: Arc::new(|| history_upkeep::DEFAULT_KEEP_DAYS),
     }
 }
 

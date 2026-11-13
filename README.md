@@ -156,8 +156,11 @@ the machine as this user.
 Open `http://127.0.0.1:4835/` while the router runs. The page updates live,
 works on a narrow screen and loads nothing from outside the router.
 
-It shows:
+The top bar holds one time range (15 min, 1 hour, 24 hours, 7, 30 or 90 days, or
+Custom from-to) that every page follows; Custom cannot start before the kept
+history, and the choice is remembered.
 
+It shows:
 - Overview: what needs you first, then stats, the traffic chart and live sessions.
 - Sessions, Agents, Requests and Errors, with search over the history.
 - Models and Usage, with the Claude plan windows when Anthropic's replies carry
@@ -299,8 +302,8 @@ drain.
 
 Every finished request is one row in `huddle.db` (no prompt, key or header
 value), kept `[history] keep_days` days in `config.toml`, 90 by default. The
-dashboard's range switch (15 min, 24 h, 7 d, 30 d), the session and project
-totals and the request search (24 h to 90 d) read it. Claude models are priced
+dashboard's range (15 min to 90 days, or a custom from-to), the session and
+project totals and the request search read it. Claude models are priced
 at API list rates and shown as API-equivalent.
 
 The router keeps live counts and its own CPU and memory in memory only; a

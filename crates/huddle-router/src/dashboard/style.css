@@ -358,7 +358,7 @@ td.empty{text-align:center;color:var(--faint);padding:28px 14px}
   .ph h1{font-size:21px}
   .ph .act{margin-left:0}
   .search{width:100%;min-width:0}.sbox{flex:1}
-  .livep .lt{display:none}
+  .livep .lt,.tbk,.crumbs .c0{display:none}.tbright{gap:8px}
   .attn-row{flex-wrap:wrap}.attn-row .tag{min-width:0}
   .attn-row .what{flex:1 1 100%}.attn-row .t,.attn-row .m{white-space:normal;overflow:visible;text-overflow:clip}
   .gauges{grid-template-columns:1fr}
@@ -377,3 +377,9 @@ td.empty{text-align:center;color:var(--faint);padding:28px 14px}
   table.fold td.empty::before{content:none}
 }
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+.rangebar{position:relative}.rangebar select{border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--text);padding:5px 10px;font:13px var(--sans);height:30px}
+.rangepop{position:absolute;right:0;top:38px;z-index:30;display:grid;gap:10px;min-width:240px;padding:14px;border:1px solid var(--line);border-radius:10px;background:var(--surface);box-shadow:0 8px 30px rgb(0 0 0/.18)}
+.rangepop label{display:grid;gap:4px;font-size:12.5px;color:var(--muted)}.rangepop input{border:1px solid var(--line);border-radius:8px;background:var(--page);color:var(--text);padding:5px 8px;font:13px var(--sans);height:32px;min-width:0}
+.rangepop .rerr{font-size:12.5px;color:var(--bad);min-height:0}.rangepop .rerr:empty{display:none}
+.racts{display:flex;gap:8px}.racts button{border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--text);padding:5px 14px;font:13px var(--sans);cursor:pointer}.racts #rapply{border-color:var(--accent);font-weight:500}
+@media (max-width:600px){.rangepop{position:fixed;left:16px;right:16px;top:60px;min-width:0}}
