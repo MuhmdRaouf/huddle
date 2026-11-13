@@ -465,3 +465,5 @@ mod gzip_tests {
         assert!(!accepts_gzip(Some("identity")));
         assert!(!accepts_gzip(Some("gzip;q=0")));
         assert!(!accepts_gzip(None));
+    }
+}
