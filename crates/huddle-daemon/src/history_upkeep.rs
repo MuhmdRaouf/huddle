@@ -37,7 +37,7 @@ pub fn prune(db_path: &Path, config_path: &Path, now_ms: u64) -> Result<usize, H
 }
 
 /// Fills the rows of the last `window_ms` whose usage is unknown from the session logs under
-/// `claude_dir`. Returns how many rows changed.
+/// `claude_dir`, and marks error answers as having no tokens. Returns how many rows changed.
 pub fn fill_missing(
     history: &mut History,
     claude_dir: &Path,
@@ -45,6 +45,7 @@ pub fn fill_missing(
     window_ms: u64,
 ) -> Result<usize, HistoryError> {
     let since = now_ms.saturating_sub(window_ms);
+    let settled = history.settle_failed(since)?;
     let ids = history.missing_usage(since)?;
     let credits: Vec<Credit> = usage_for(claude_dir, &ids, since)
         .into_iter()
@@ -62,9 +63,9 @@ pub fn fill_missing(
         })
         .collect();
     if credits.is_empty() {
-        return Ok(0);
+        return Ok(settled);
     }
-    history.fill(&credits)
+    Ok(settled + history.fill(&credits)?)
 }
 
 /// One fill of an existing database: none when there is no database (a fill never creates one).
@@ -242,6 +243,32 @@ mod tests {
             .find(|r| r.upstream_id.as_deref() == Some("req_2"))
             .expect("other row");
         assert_eq!(other.tokens_out, None);
+    }
+
+    #[test]
+    fn h5_old_error_answer_row_gets_usage() {
+        let home = TempHome::new();
+        let mut history = History::open(&home.root().join("huddle.db")).expect("open");
+        let failed = |status: u16| Row {
+            status,
+            ..row(NOW - DAY / 2, Some("req_err"))
+        };
+        history
+            .insert(&[failed(429), failed(499), row(NOW - DAY / 2, Some("req_ok"))])
+            .expect("insert");
+
+        fill_missing(&mut history, home.root(), NOW, FILL_WINDOW_MS).expect("fill");
+
+        let rows = rows_of(&history);
+        let by = |status: u16| rows.iter().find(|r| r.status == status).expect("row");
+        assert_eq!(
+            by(429).tokens_out,
+            Some(0),
+            "an error answer carries no tokens"
+        );
+        assert_eq!(by(429).tokens_in, Some(0));
+        assert_eq!(by(499).tokens_out, None, "a client that left stays unknown");
+        assert_eq!(by(200).tokens_out, None, "a success waits for its log");
     }
 
     #[test]

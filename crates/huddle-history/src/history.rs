@@ -149,6 +149,20 @@ impl History {
         Ok(changed)
     }
 
+    /// Marks the rows since `since_ms` that ended in an error answer and have unknown tokens as
+    /// having none: an error answer is not billed, so no log will ever credit it. A client that
+    /// left (499) stays unknown, since its answer may have been billed. Returns how many changed.
+    pub fn settle_failed(&self, since_ms: u64) -> Result<usize, HistoryError> {
+        Ok(self.conn.execute(
+            &format!(
+                "UPDATE requests SET tokens_in = 0, cache_read = 0, cache_write = 0, tokens_out = 0
+                 WHERE at_ms >= ?1 AND (status = 0 OR status >= 400) AND status != 499
+                   AND {UNKNOWN_USAGE}"
+            ),
+            [to_db(since_ms)],
+        )?)
+    }
+
     /// Upstream ids of rows since `since_ms` whose tokens are still unknown.
     pub fn missing_usage(&self, since_ms: u64) -> Result<Vec<String>, HistoryError> {
         let mut stmt = self.conn.prepare(&missing_usage_sql())?;

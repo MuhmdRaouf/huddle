@@ -697,6 +697,15 @@ fn record(inner: &mut Inner, id: u64, active: Active, finish: Finish) -> RecentR
         .usage
         .as_ref()
         .and_then(|usage| usage.stop_reason.clone());
+    // An error answer costs no tokens: zero marks it as known, so it never waits for a log.
+    let none_spent = failed && finish.usage.is_none();
+    let known_none = |count: Option<u64>| if none_spent { Some(0) } else { count };
+    let (tokens_in, tokens_out, cache_read, cache_write) = (
+        known_none(tokens_in),
+        known_none(tokens_out),
+        known_none(cache_read),
+        known_none(cache_write),
+    );
     let ttft_ms = active
         .first_byte_ms
         .map(|at| at.saturating_sub(active.started_ms));
@@ -995,6 +1004,38 @@ mod tests {
         let snapshot = live.snapshot(T0 + 20, &inputs(&["anthropic"]));
         assert_eq!(snapshot.recent[0].tokens_in, Some(1110));
         assert_eq!(snapshot.lanes[0].tokens_in, 1110);
+    }
+
+    #[test]
+    fn h5_error_answer_row_gets_usage() {
+        let live = LiveState::new(T0);
+        for status in [429u16, 400, 503, 0] {
+            let id = begin(&live, "zai", "glm-5.3-flash", T0);
+            live.finish(id, end(status, None, T0 + 10));
+        }
+        let left = begin(&live, "zai", "glm-5.3-flash", T0);
+        live.finish(left, end(499, None, T0 + 10));
+
+        let recent = live.snapshot(T0 + 20, &inputs(&["zai"])).recent;
+
+        for row in recent.iter().filter(|r| r.status != 499) {
+            assert_eq!(
+                (
+                    row.tokens_in,
+                    row.cache_read,
+                    row.cache_write,
+                    row.tokens_out
+                ),
+                (Some(0), Some(0), Some(0), Some(0)),
+                "an error answer carries no tokens: status {}",
+                row.status
+            );
+        }
+        let cut = recent.iter().find(|r| r.status == 499).expect("499 row");
+        assert_eq!(
+            cut.tokens_in, None,
+            "a client that left may still be billed"
+        );
     }
 
     #[test]
