@@ -5,6 +5,9 @@
 ### Fixes
 
 - A process the router starts no longer inherits its listening socket after an update handover, so a leftover `git` cannot hold port 4835.
+### Router
+
+- After an update hands the socket to the new binary, the old router closes its idle connections and open dashboard feeds at once, lets a request in flight finish for up to 10 minutes (`HUDDLE_ROUTER_DRAIN_LIMIT_MS` moves the limit), closes a tunnel that carries no byte for 3 seconds, then exits. It lets go of the listening socket at the handover, and logs one line when the limit cut a request off.
 
 ## 0.0.7
 

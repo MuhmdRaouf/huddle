@@ -17,6 +17,7 @@ use hyper::{Method, Request, Response, StatusCode};
 use tokio::net::TcpListener;
 use tokio::sync::watch;
 
+use crate::connect::{TunnelTracker, drive_through_drain};
 use crate::dashboard::{Dashboard, HISTORY_PATH, LIVE_PATH, PAGE_PATH, STATE_PATH};
 use crate::health::{HEALTH_PATH, health_answer};
 
@@ -344,12 +345,25 @@ pub async fn bind(port: u16) -> io::Result<TcpListener> {
     TcpListener::bind(SocketAddr::from((Ipv4Addr::LOCALHOST, port))).await
 }
 
-/// Serves `listener` until `stop` becomes true, then stops accepting and returns.
+/// Serves `listener` until `stop` becomes true, then stops accepting and returns. Connections
+/// already open keep running.
 pub async fn serve(
     listener: TcpListener,
     handler: Handler,
     limits: ServerLimits,
+    stop: watch::Receiver<bool>,
+) -> io::Result<()> {
+    serve_tracked(listener, handler, limits, stop, TunnelTracker::new()).await
+}
+
+/// [`serve`], counting every connection in `tracker`: a drain closes the idle ones at once,
+/// waits for the ones with a request in flight, and drops what is left at its deadline.
+pub async fn serve_tracked(
+    listener: TcpListener,
+    handler: Handler,
+    limits: ServerLimits,
     mut stop: watch::Receiver<bool>,
+    tracker: Arc<TunnelTracker>,
 ) -> io::Result<()> {
     loop {
         tokio::select! {
@@ -364,20 +378,23 @@ pub async fn serve(
                 };
                 let _ = stream.set_nodelay(true);
                 let handler = handler.clone();
+                let guard = tracker.track();
+                let phase_rx = tracker.phase_signal();
                 tokio::spawn(async move {
+                    let _guard = guard;
                     let svc = hyper::service::service_fn(move |req: Request<Incoming>| {
                         let handler = handler.clone();
                         async move { Ok::<_, Infallible>(handler(req).await) }
                     });
                     // One timer covers the header read and the keep-alive idle: an idle connection
                     // closes at the header limit, and a request in flight has no read or write timeout.
-                    let _ = hyper::server::conn::http1::Builder::new()
+                    let mut conn = hyper::server::conn::http1::Builder::new()
                         .timer(hyper_util::rt::TokioTimer::new())
                         .header_read_timeout(limits.header_read)
                         .keep_alive(true)
                         .serve_connection(hyper_util::rt::TokioIo::new(stream), svc)
-                        .with_upgrades()
-                        .await;
+                        .with_upgrades();
+                    drive_through_drain(&mut conn, phase_rx, |conn| conn.graceful_shutdown()).await;
                 });
             }
             _ = wait_stop(&mut stop) => return Ok(()),

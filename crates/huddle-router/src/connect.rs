@@ -7,13 +7,15 @@
 //! answered with the 200, and piped blind both ways — the bytes are never read here, so a
 //! client's TLS inside the tunnel is with its target. While the CA cannot load, the Anthropic
 //! target is a blind tunnel too, so the client keeps working. Every tunnel is counted while it
-//! is open, so a drain can wait for them or close them.
+//! is open, so a drain can wait for them or close them. A drain closes a blind tunnel that has
+//! carried no byte for [`DRAIN_QUIET`].
 
 use std::convert::Infallible;
 use std::io;
 use std::net::IpAddr;
 use std::pin::Pin;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, SystemTime};
 
 use hyper::Uri;
@@ -34,9 +36,15 @@ use huddle_pki::ca::ROUTER_HOST;
 use huddle_pki::leaf::LeafCache;
 
 use crate::server::{Handler, RespBody, ServerLimits, anthropic_error, empty_body};
+use crate::watched::Watched;
 
 /// A direct dial to a name that resolves nowhere gives up after this long.
 const LOCAL_DIAL_DEADLINE: Duration = Duration::from_secs(10);
+
+/// A blind tunnel that carries no byte for this long while the router drains is closed: the
+/// router cannot tell an idle keep-alive tunnel from a quiet one, and a client retries on the
+/// router that took over.
+pub const DRAIN_QUIET: Duration = Duration::from_secs(3);
 
 /// A blind tunnel through a proxy gives the proxy this long to answer CONNECT.
 const PROXY_DIAL_DEADLINE: Duration = Duration::from_secs(600);
@@ -130,10 +138,14 @@ async fn connect(
             let Ok(upgraded) = upgraded.await else {
                 return;
             };
-            let mut client = TokioIo::new(upgraded);
+            let quiet_rx = phase_rx.clone();
+            let activity = Arc::new(AtomicU64::new(0));
+            let mut client = Watched::new(TokioIo::new(upgraded), Arc::clone(&activity));
+            let mut target = Watched::new(&mut target, Arc::clone(&activity));
             tokio::select! {
                 _ = tokio::io::copy_bidirectional(&mut client, &mut target) => {}
                 _ = phase_rx.wait_for(|phase| *phase == Phase::Closing) => {}
+                _ = quiet_while_draining(quiet_rx, &activity) => {}
             }
         });
     }
@@ -168,7 +180,7 @@ fn decrypted(host: &str, port: u16, decrypt: Option<&Arc<Decrypt>>) -> Option<Ar
 async fn serve_decrypted(
     upgraded: Upgraded,
     decrypt: Arc<Decrypt>,
-    mut phase_rx: watch::Receiver<Phase>,
+    phase_rx: watch::Receiver<Phase>,
 ) {
     let config = match decrypted_config(decrypt.leaf.clone()) {
         Ok(config) => config,
@@ -195,19 +207,49 @@ async fn serve_decrypted(
             }),
         )
         .with_upgrades();
-    // The phase comes out owned: the watch borrow must not reach into the await below, its
+    drive_through_drain(&mut conn, phase_rx, |conn| conn.graceful_shutdown()).await;
+}
+
+/// Resolves once a drain has seen no byte cross a blind tunnel for [`DRAIN_QUIET`]. Never
+/// resolves while the router serves.
+async fn quiet_while_draining(mut phase_rx: watch::Receiver<Phase>, activity: &AtomicU64) {
+    if phase_rx
+        .wait_for(|phase| *phase != Phase::Serving)
+        .await
+        .is_err()
+    {
+        return std::future::pending().await;
+    }
+    let mut seen = activity.load(Ordering::Relaxed);
+    loop {
+        tokio::time::sleep(DRAIN_QUIET).await;
+        let now = activity.load(Ordering::Relaxed);
+        if now == seen {
+            return;
+        }
+        seen = now;
+    }
+}
+
+/// Drives one HTTP/1.1 connection to its end. On a drain the answer in flight finishes and an
+/// idle connection closes at once; on a close the connection is dropped now.
+pub(crate) async fn drive_through_drain<C: Future + Unpin>(
+    conn: &mut C,
+    mut phase_rx: watch::Receiver<Phase>,
+    graceful: impl FnOnce(Pin<&mut C>),
+) {
+    // The phase comes out owned: the watch borrow must not reach into the awaits below, its
     // guard is not Send.
     let stop = tokio::select! {
-        _ = &mut conn => None,
-        phase = phase_rx.wait_for(|phase| *phase == Phase::Draining || *phase == Phase::Closing) => {
-            phase.ok().map(|phase| *phase)
-        }
+        _ = &mut *conn => return,
+        phase = phase_rx.wait_for(|phase| *phase != Phase::Serving) => phase.ok().map(|phase| *phase),
     };
-    // A drain lets the answer in flight finish; an idle conversation closes at once. A close
-    // drops the conversation now.
     if stop == Some(Phase::Draining) {
-        Pin::new(&mut conn).graceful_shutdown();
-        let _ = (&mut conn).await;
+        graceful(Pin::new(&mut *conn));
+        tokio::select! {
+            _ = &mut *conn => {}
+            _ = phase_rx.wait_for(|phase| *phase == Phase::Closing) => {}
+        }
     }
 }
 

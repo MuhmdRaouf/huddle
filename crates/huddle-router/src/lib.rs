@@ -25,3 +25,4 @@ pub mod sse;
 pub mod stats;
 pub mod trace;
 pub mod upstream;
+pub mod watched;

@@ -287,3 +287,14 @@ Each incident, its cause, and the test that now stops it. A guard named here mus
 - **Guard:** crates/huddle-daemon/src/handover.rs:e2_spawned_child_holds_no_router_socket
 - **Rule:** a descriptor received over a socket is marked close-on-exec at receipt; only the supervisor's
   spawn of its worker passes the listener on, on descriptor 3.
+
+## 2026-11-13, the old router stayed alive after the 0.0.7 update handover
+
+- **What happened:** the 0.0.6 router logged `handed over to pid 38665; draining` and was still alive 9
+  minutes later with one open connection and its listening socket.
+- **Cause:** the drain waited only for CONNECT tunnels. A dashboard live feed, an idle keep-alive
+  connection or a quiet blind tunnel never ended on its own, and the old process kept the handover socket
+  and its listener until the 10-minute budget ran out.
+- **Guard:** crates/huddle-daemon/tests/e1_handover_exit.rs:e1_old_router_exits_after_handover_with_an_idle_connection
+- **Rule:** a handover releases the listening socket at once, closes idle connections and open feeds,
+  lets a request in flight finish, and ends at the drain limit with one log line.

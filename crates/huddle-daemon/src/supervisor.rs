@@ -17,8 +17,8 @@ use tokio::sync::{mpsc, watch};
 
 use crate::handover::serve_handover;
 use crate::serve::{
-    DRAIN_BUDGET, RECORD_FILE, Refused, STOP_BUDGET, ServeError, ServeOptions, ServeOutcome,
-    Workers, acquire, anthropic_url, make_run_dir, write_record,
+    RECORD_FILE, Refused, STOP_BUDGET, ServeError, ServeOptions, ServeOutcome, Workers, acquire,
+    anthropic_url, drain_limit, make_run_dir, write_record,
 };
 
 /// The descriptor number the worker finds the listening socket on.
@@ -131,6 +131,7 @@ pub async fn run(
         Err(Refused::Failed(error)) => return Err(error),
     };
     let ServeOptions {
+        env,
         paths,
         port,
         version,
@@ -269,22 +270,27 @@ pub async fn run(
                 log(format!(
                     "huddle-router: handed over to pid {taker}; draining"
                 ));
-                if let State::Running { pid, .. } = &state {
-                    // The worker stops accepting and keeps its open tunnels; a signal to the
-                    // parent ends the drain at once.
-                    tokio::select! {
-                        _ = end_worker(*pid, libc::SIGUSR1, DRAIN_BUDGET, &mut exit_rx) => {}
-                        _ = stopped(&mut stop) => {
-                            end_worker(*pid, libc::SIGTERM, STOP_BUDGET, &mut exit_rx).await;
-                        }
-                    }
-                }
                 // The record stays for the taker to overwrite.
                 break ServeOutcome::HandedOver;
             }
         }
     };
     handover.stop();
+    if outcome == ServeOutcome::HandedOver {
+        // The taker owns the port: this process lets go of the listener while the worker
+        // drains.
+        drop(held);
+        if let State::Running { pid, .. } = &state {
+            // The worker stops accepting, closes its idle connections and finishes the
+            // requests in flight; a signal to the parent ends the drain at once.
+            tokio::select! {
+                _ = end_worker(*pid, libc::SIGUSR1, drain_limit(&env), &mut exit_rx) => {}
+                _ = stopped(&mut stop) => {
+                    end_worker(*pid, libc::SIGTERM, STOP_BUDGET, &mut exit_rx).await;
+                }
+            }
+        }
+    }
     let reason = match outcome {
         ServeOutcome::HandedOver => "handover",
         _ => signal.get().copied().unwrap_or("stop"),
@@ -293,7 +299,6 @@ pub async fn run(
         "huddle-router: exit pid={} reason={reason}",
         std::process::id()
     ));
-    drop(held);
     Ok(outcome)
 }
 

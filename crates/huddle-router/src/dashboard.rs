@@ -12,10 +12,11 @@ use http_body_util::BodyExt;
 use hyper::body::{Bytes, Frame};
 use hyper::header::{CACHE_CONTROL, CONTENT_TYPE, HeaderValue};
 use hyper::{Response, StatusCode};
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, watch};
 use tokio::time::{Instant, sleep_until};
 
 use crate::anthropic::StreamingBody;
+use crate::connect::Phase;
 use crate::dispatch::now_ms;
 use crate::history_view::{self, Query, Refusal};
 use crate::join;
@@ -156,6 +157,9 @@ pub struct Dashboard {
     enabled: Arc<dyn Fn() -> Vec<String> + Send + Sync>,
     /// Asks each set-up provider for its quota while a page is open.
     quota: Option<Arc<QuotaFetcher>>,
+    /// The server's drain: the live feed ends once it starts, and the page reconnects to the
+    /// router that took over.
+    drain: Option<watch::Receiver<Phase>>,
 }
 
 impl Dashboard {
@@ -169,12 +173,19 @@ impl Dashboard {
             inputs,
             enabled,
             quota: None,
+            drain: None,
         }
     }
 
     /// Asks each set-up provider for its quota while a page is open.
     pub fn with_quota(mut self, quota: Arc<QuotaFetcher>) -> Dashboard {
         self.quota = Some(quota);
+        self
+    }
+
+    /// Ends every live feed when `drain` leaves Serving.
+    pub fn ending_with(mut self, drain: watch::Receiver<Phase>) -> Dashboard {
+        self.drain = Some(drain);
         self
     }
 
@@ -282,6 +293,7 @@ impl Dashboard {
                 }
                 _ = sleep_until(last_sent + wait) => false,
                 _ = tx.closed() => return,
+                () = drained(self.drain.clone()) => return,
             };
             if moved {
                 // Changes that land during the gap fold into the one snapshot that follows it.
@@ -414,4 +426,18 @@ async fn send(
     text: String,
 ) -> bool {
     tx.send(Ok(Frame::data(Bytes::from(text)))).await.is_ok()
+}
+
+/// Resolves once `drain` has left Serving; never when there is no drain to watch.
+async fn drained(drain: Option<watch::Receiver<Phase>>) {
+    let Some(mut drain) = drain else {
+        return std::future::pending().await;
+    };
+    if drain
+        .wait_for(|phase| *phase != Phase::Serving)
+        .await
+        .is_err()
+    {
+        std::future::pending::<()>().await;
+    }
 }

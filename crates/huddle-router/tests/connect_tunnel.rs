@@ -200,3 +200,46 @@ async fn a_drain_past_its_deadline_closes_the_open_tunnels() {
         .unwrap_or(0);
     assert_eq!(n, 0, "the tunnel closed");
 }
+
+#[tokio::test]
+async fn e1_a_drain_closes_a_blind_tunnel_that_carries_no_byte() {
+    let echo = echo_server().await;
+    let tracker = TunnelTracker::new();
+    let port = router(Some(dial_to(echo)), tracker.clone()).await;
+    let (mut s, _head) = connect(port, "example.test:443").await;
+    let outcome = tokio::time::timeout(
+        Duration::from_secs(8),
+        tracker.drain(Duration::from_secs(60)),
+    )
+    .await
+    .expect("a quiet tunnel ends the drain well before the limit");
+    assert_eq!(outcome, DrainOutcome::Finished);
+    let mut buf = [0u8; 1];
+    let n = tokio::time::timeout(Duration::from_secs(1), s.read(&mut buf))
+        .await
+        .expect("timely")
+        .unwrap_or(0);
+    assert_eq!(n, 0, "the quiet tunnel is closed");
+}
+
+#[tokio::test]
+async fn e1_a_drain_keeps_a_blind_tunnel_that_is_carrying_bytes() {
+    let echo = echo_server().await;
+    let tracker = TunnelTracker::new();
+    let port = router(Some(dial_to(echo)), tracker.clone()).await;
+    let (mut s, _head) = connect(port, "example.test:443").await;
+    let draining = {
+        let tracker = tracker.clone();
+        tokio::spawn(async move { tracker.drain(Duration::from_secs(60)).await })
+    };
+    for _ in 0..5 {
+        tokio::time::sleep(Duration::from_secs(1)).await;
+        s.write_all(b"x").await.expect("write");
+        let mut buf = [0u8; 1];
+        tokio::time::timeout(Duration::from_secs(2), s.read_exact(&mut buf))
+            .await
+            .expect("timely")
+            .expect("the busy tunnel still echoes");
+    }
+    assert!(!draining.is_finished(), "a busy tunnel holds the drain");
+}

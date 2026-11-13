@@ -70,8 +70,8 @@ goes direct. A proxy that is no router is kept and honoured, CONNECT tunnel and 
 ## D10: Never cut claude off
 
 The router runs in its own process (D2) and every expected failure is a value. A binary update takes the
-listening socket over through the handover socket without the port closing, and the old daemon drains the
-tunnels it carries within its budget. A router whose resident size passes the ceiling (1 GiB by default,
+listening socket over through the handover socket without the port closing, and the old daemon drains within its
+budget: idle connections and feeds close at once, a request in flight finishes, a tunnel quiet for 3 s closes. A router whose resident size passes the ceiling (1 GiB by default,
 `HUDDLE_ROUTER_RSS_CEILING_MB`, checked every 30 s) hands itself over the same way.
 
 ## D11: A streamed request is sent once

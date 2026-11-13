@@ -339,7 +339,8 @@ panic, so the router's request paths never panic.
 The daemon re-reads `~/.config/huddle/providers.toml` every 2 s, so
 adding or removing a provider needs no restart. A binary update, or a resident
 size past 1 GiB, hands the socket to a new process while the requests in flight
-drain.
+drain: the old router closes idle connections at once and exits after the last
+request ends, or after 10 minutes.
 
 ### History
 

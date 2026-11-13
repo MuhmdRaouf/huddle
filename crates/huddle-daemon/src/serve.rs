@@ -19,9 +19,10 @@ use huddle_config::paths::Paths;
 use huddle_config::providers_file::read_enabled;
 use huddle_history::History;
 use huddle_router::clock::{iso_utc_ms, now_ms};
+use huddle_router::connect::{DrainOutcome, TunnelTracker};
 use huddle_router::dispatch::{Router, RouterConfig};
 use huddle_router::reload::{DashboardHostsWatch, POLL, ProvidersWatch, ReloadAction};
-use huddle_router::server::{ROUTER_NAME, ServerLimits, serve as serve_http};
+use huddle_router::server::{ROUTER_NAME, ServerLimits, serve_tracked};
 use tokio::sync::{mpsc, watch};
 
 use crate::dashboard_inputs;
@@ -37,8 +38,32 @@ use huddle_config::files::{DIR_MODE, FILE_MODE, create_dir};
 /// How long a clean stop keeps the requests it already accepted.
 pub const STOP_BUDGET: Duration = Duration::from_secs(10);
 
-/// How long a daemon that handed its socket over keeps the tunnels it already accepted.
+/// How long a daemon that handed its socket over keeps the requests it already accepted.
 pub const DRAIN_BUDGET: Duration = Duration::from_secs(600);
+
+/// `$HUDDLE_ROUTER_DRAIN_LIMIT_MS` moves [`DRAIN_BUDGET`]; a value that is not a positive
+/// number of milliseconds is ignored.
+pub fn drain_limit(env: &Env) -> Duration {
+    env.get("HUDDLE_ROUTER_DRAIN_LIMIT_MS")
+        .and_then(|raw| raw.parse::<u64>().ok())
+        .filter(|ms| *ms > 0)
+        .map_or(DRAIN_BUDGET, Duration::from_millis)
+}
+
+/// Drains every tunnel and every connection together: idle ones close at once, a request in
+/// flight finishes, and whatever is left at `limit` is cut.
+async fn drain_all(
+    tunnels: &TunnelTracker,
+    connections: &TunnelTracker,
+    limit: Duration,
+) -> DrainOutcome {
+    let (tunnels, connections) = tokio::join!(tunnels.drain(limit), connections.drain(limit));
+    if tunnels == DrainOutcome::TimedOut || connections == DrainOutcome::TimedOut {
+        DrainOutcome::TimedOut
+    } else {
+        DrainOutcome::Finished
+    }
+}
 
 /// How long a takeover start waits for the router lock the previous daemon still holds while it
 /// drains: the drain's budget plus a minute of margin.
@@ -413,7 +438,7 @@ async fn engine(
     // The handover socket gives the listening socket to the next binary without closing the
     // port; a socket that cannot open is logged and skipped, the router still serves.
     let (handed_tx, mut handed_rx) = mpsc::unbounded_channel::<u32>();
-    let handover = (mode == Mode::Standalone)
+    let mut handover = (mode == Mode::Standalone)
         .then(|| serve_handover(&run_dir, port, &listener, handed_tx, Arc::clone(&log)));
     if let Some(drain) = drain {
         handed_rx = drain;
@@ -444,11 +469,13 @@ async fn engine(
             });
         }
     };
-    let mut serve_task = tokio::spawn(serve_http(
+    let connections = router.connections();
+    let mut serve_task = tokio::spawn(serve_tracked(
         tokio_listener,
         router.handler(),
         ServerLimits::default(),
         serve_stop_rx,
+        Arc::clone(&connections),
     ));
     let tunnels = router.tunnels();
 
@@ -471,7 +498,7 @@ async fn engine(
         tokio::select! {
             _ = stop_fired(&mut stop) => {
                 let _ = serve_stop.send(true);
-                let _ = tunnels.drain(STOP_BUDGET).await;
+                let _ = drain_all(&tunnels, &connections, STOP_BUDGET).await;
                 // A clean stop takes the record with it; status reads no ghost.
                 remove_record(mode, &record_path);
                 outcome = Ok(ServeOutcome::Stopped);
@@ -480,9 +507,18 @@ async fn engine(
             Some(taker) = handed_rx.recv() => {
                 log(format!("huddle-router: handed over to pid {taker}; draining"));
                 let _ = serve_stop.send(true);
+                // The taker owns the port now: the socket file and this process's copy of the
+                // listener go first, so nothing queues behind a router that no longer accepts.
+                if let Some(handover) = handover.take() {
+                    handover.stop();
+                }
                 // A signal ends the drain at once: the daemon is going anyway.
                 tokio::select! {
-                    _ = tunnels.drain(DRAIN_BUDGET) => {}
+                    drained = drain_all(&tunnels, &connections, drain_limit(&cleaned)) => {
+                        if drained == DrainOutcome::TimedOut {
+                            log("huddle-router: drain limit reached; open requests cut".to_owned());
+                        }
+                    }
                     _ = stop_fired(&mut stop) => {}
                 }
                 // The record stays for the taker to overwrite.

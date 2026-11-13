@@ -188,6 +188,7 @@ pub struct Router {
     live: Arc<LiveState>,
     dashboard: DashboardInputs,
     tunnels: Arc<TunnelTracker>,
+    connections: Arc<TunnelTracker>,
 }
 
 impl Router {
@@ -210,6 +211,7 @@ impl Router {
             idle: tuning.idle,
         }));
         let tunnels = TunnelTracker::new();
+        let connections = TunnelTracker::new();
 
         // One line per raise and one per recovery: the third failure in a minute names the
         // code, the phase and its fix hint, the first success after a raise names the recovery.
@@ -341,6 +343,7 @@ impl Router {
                 live,
                 dashboard: config.dashboard,
                 tunnels,
+                connections,
             }
         })
     }
@@ -421,7 +424,8 @@ impl Router {
         );
         let dashboard = Arc::new(
             Dashboard::new(Arc::clone(&self.live), inputs, Arc::clone(&providers))
-                .with_quota(quota),
+                .with_quota(quota)
+                .ending_with(self.connections.phase_signal()),
         );
         let entry = entry_handler(Arc::new(EntryCtx {
             port: Some(self.port),
@@ -477,6 +481,11 @@ impl Router {
     /// The CONNECT tunnel counter, for the update drain.
     pub fn tunnels(&self) -> Arc<TunnelTracker> {
         Arc::clone(&self.tunnels)
+    }
+
+    /// The counter of every client connection the server holds, for the update drain.
+    pub fn connections(&self) -> Arc<TunnelTracker> {
+        Arc::clone(&self.connections)
     }
 
     /// The enabled providers' ids, in lane order.
