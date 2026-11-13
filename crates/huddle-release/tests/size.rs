@@ -61,19 +61,16 @@ fn manifest_section(manifest: &str, header: &str) -> String {
 }
 
 #[test]
-fn t5_release_profile_builds_own_crates_for_size() {
+fn t6_release_profile_builds_everything_for_size() {
     let manifest = fs::read_to_string(repo_root().join("Cargo.toml")).unwrap();
     let release = manifest_section(&manifest, "[profile.release]");
     assert!(
         release.contains("opt-level = \"s\""),
-        "[profile.release] builds the workspace's own crates for size \
-         (opt-level = \"s\"), found:\n{release}"
+        "[profile.release] builds everything for size (opt-level = \"s\"), found:\n{release}"
     );
-    let deps = manifest_section(&manifest, "[profile.release.package.\"*\"]");
     assert!(
-        deps.contains("opt-level = 3"),
-        "[profile.release.package.\"*\"] keeps every dependency at full speed \
-         (opt-level = 3), found:\n{deps}"
+        !manifest.contains("[profile.release.package."),
+        "[profile.release] carries no per-package opt-level override, found:\n{manifest}"
     );
 }
 
