@@ -6,6 +6,7 @@ mod error;
 mod history;
 mod query;
 mod row;
+mod scan;
 mod schema;
 mod writer;
 

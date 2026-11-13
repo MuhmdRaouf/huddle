@@ -13,6 +13,8 @@ pub enum HistoryError {
     },
     /// A bucket width of zero milliseconds.
     ZeroWidth,
+    /// A scan thread panicked.
+    Worker,
 }
 
 impl fmt::Display for HistoryError {
@@ -25,6 +27,7 @@ impl fmt::Display for HistoryError {
                 "history schema version {found} is newer than the supported version {supported}"
             ),
             HistoryError::ZeroWidth => write!(f, "bucket width must be at least 1 ms"),
+            HistoryError::Worker => write!(f, "history scan stopped unexpectedly"),
         }
     }
 }

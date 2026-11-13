@@ -1,8 +1,8 @@
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
-use rusqlite::{Connection, params};
+use rusqlite::{Connection, OpenFlags, params};
 
 use crate::error::HistoryError;
 use crate::row::{Credit, Row};
@@ -18,6 +18,7 @@ pub(crate) const UNKNOWN_USAGE: &str =
 /// The request history in one SQLite file.
 pub struct History {
     pub(crate) conn: Connection,
+    pub(crate) path: PathBuf,
 }
 
 pub(crate) fn to_db(value: u64) -> i64 {
@@ -42,7 +43,25 @@ impl History {
         conn.busy_timeout(std::time::Duration::from_secs(5))?;
         conn.pragma_update_and_check(None, "journal_mode", "WAL", |_| Ok(()))?;
         schema::migrate(&conn)?;
-        Ok(History { conn })
+        Ok(History {
+            conn,
+            path: path.to_path_buf(),
+        })
+    }
+
+    /// Opens an existing file for reading only. Nothing is created, migrated or changed, and a
+    /// read never waits for the writer: the file is in WAL mode, so readers and the writer run
+    /// side by side.
+    pub fn open_read(path: &Path) -> Result<History, HistoryError> {
+        let conn = Connection::open_with_flags(
+            path,
+            OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+        )?;
+        conn.busy_timeout(std::time::Duration::from_secs(5))?;
+        Ok(History {
+            conn,
+            path: path.to_path_buf(),
+        })
     }
 
     /// Inserts the rows in one transaction.

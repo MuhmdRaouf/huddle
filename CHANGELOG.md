@@ -15,6 +15,7 @@ Provider setup holds across sessions, and the key check gets a real answer.
 - A project is a git repository: a session in any worktree belongs to its repository, new history rows carry the repository's name, and the project totals roll old folder names into their repository.
 - Token numbers split the same way live and in history (fresh input, cache read, cache write, output), cache hit matches between ranges, rates read per second, the Agents page counts each agent's requests and tokens, and each sidebar badge counts what its page lists.
 - The state carries each set-up provider's quota or balance: Claude's 5 hour and 7 day windows, Z.ai's plan windows with their resets, DeepSeek's and Kimi's balance, MiniMax's plan (unverified until a live check). The router asks only while a dashboard is open, at most every 5 minutes per provider, and an answer it cannot read shows as "quota unknown".
+- Every history view answers in under 300 ms on a 90-day database of a million rows. A request no longer scans the session logs: a background tick credits missing usage every minute, and the views read the database read-only, one slice of the time range per thread.
 
 ## 0.0.6
 

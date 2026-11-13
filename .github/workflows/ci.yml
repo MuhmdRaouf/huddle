@@ -198,7 +198,8 @@ jobs:
       - name: Tests (nothing left in TMPDIR, no process left running)
         run: cargo run -q -p huddle-testkit --bin huddle-test-guard -- --workspace --locked
 
-  # The router overhead timing gate: release build only, alone on its runner so no other load competes with the timings.
+  # The timing gates: release build only, alone on their runner so no other load competes with the timings. The router
+  # overhead gate, and the history gate (every view answers in 300 ms on a 90-day, million-row database).
   overhead:
     name: "Test: router overhead"
     needs: plan
@@ -209,6 +210,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: dtolnay/rust-toolchain@d124f86f28ff42855784ff3319f48ac182c248f8 # 1.99.1
       - run: cargo test --release -p huddle --test router_overhead
+      - run: cargo test --release -p huddle-history --test d1_speed -- --test-threads=1
 
   # 4. Release
 

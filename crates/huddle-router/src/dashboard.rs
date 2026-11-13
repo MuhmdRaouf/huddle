@@ -71,8 +71,8 @@ const BUSY_EVERY: Duration = Duration::from_secs(5);
 /// Answers whether the keystore holds a key for a provider id; `None` when unknown.
 pub type KeyPresent = Arc<dyn Fn(&str) -> Option<bool> + Send + Sync>;
 
-/// Opens the history database, with its missing usage filled, or answers none when there is no
-/// database. Called on a blocking thread, once per history request.
+/// Opens the history database for reading, or answers none when there is no database. Called on
+/// a blocking thread, once per history request.
 pub type HistoryOpen = Arc<dyn Fn() -> Option<History> + Send + Sync>;
 
 /// What the snapshot needs from outside the router. Each closure answers from a cache and

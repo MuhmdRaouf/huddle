@@ -2,6 +2,9 @@
 //! usage the router could not read from the session logs.
 
 use std::path::Path;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::thread;
 
 use huddle_history::{Credit, History, HistoryError};
 use huddle_sessions::usage_for;
@@ -9,8 +12,12 @@ use huddle_sessions::usage_for;
 /// Rows are kept this many days when `config.toml` does not say.
 pub const DEFAULT_KEEP_DAYS: u64 = 90;
 
-/// How far back rows with unknown usage are looked up in the session logs.
-const FILL_WINDOW_MS: u64 = 30 * 86_400_000;
+/// How far back the first fill after a start looks up rows with unknown usage in the session logs.
+pub const FIRST_FILL_WINDOW_MS: u64 = 30 * 86_400_000;
+
+/// How far back every later fill looks. A log changes right after its request, so a day is
+/// enough, and rows no log will ever credit (other providers') stay cheap to skip.
+pub const FILL_WINDOW_MS: u64 = 86_400_000;
 
 /// `[history] keep_days` of the config file; the default when the file, the table or the key
 /// is missing or not a positive integer.
@@ -29,14 +36,15 @@ pub fn prune(db_path: &Path, config_path: &Path, now_ms: u64) -> Result<usize, H
     History::open(db_path)?.prune(keep_days(config_path), now_ms)
 }
 
-/// Fills the rows of the last 30 days whose usage is unknown from the session logs under
+/// Fills the rows of the last `window_ms` whose usage is unknown from the session logs under
 /// `claude_dir`. Returns how many rows changed.
 pub fn fill_missing(
     history: &mut History,
     claude_dir: &Path,
     now_ms: u64,
+    window_ms: u64,
 ) -> Result<usize, HistoryError> {
-    let since = now_ms.saturating_sub(FILL_WINDOW_MS);
+    let since = now_ms.saturating_sub(window_ms);
     let ids = history.missing_usage(since)?;
     let credits: Vec<Credit> = usage_for(claude_dir, &ids, since)
         .into_iter()
@@ -59,16 +67,66 @@ pub fn fill_missing(
     history.fill(&credits)
 }
 
-/// Opens an existing database for a history request, with its missing usage filled first.
-/// None when there is no database (a read never creates one) or it cannot be opened; a failed
-/// fill leaves the rows as they are.
-pub fn open_filled(db_path: &Path, claude_dir: &Path, now_ms: u64) -> Option<History> {
+/// One fill of an existing database: none when there is no database (a fill never creates one).
+/// Runs off the request path, on its own write connection.
+pub fn fill(
+    db_path: &Path,
+    claude_dir: &Path,
+    now_ms: u64,
+    window_ms: u64,
+) -> Result<usize, HistoryError> {
+    if !db_path.exists() {
+        return Ok(0);
+    }
+    let mut history = History::open(db_path)?;
+    fill_missing(&mut history, claude_dir, now_ms, window_ms)
+}
+
+/// Opens an existing database for a history request, read-only. None when there is no database
+/// (a read never creates one) or it cannot be opened. A request reads what the rows hold and
+/// never scans the session logs: the background fill credits usage.
+pub fn open_for_read(db_path: &Path) -> Option<History> {
     if !db_path.exists() {
         return None;
     }
-    let mut history = History::open(db_path).ok()?;
-    let _ = fill_missing(&mut history, claude_dir, now_ms);
-    Some(history)
+    History::open_read(db_path).ok()
+}
+
+/// Runs fills on a thread of their own, one at a time. A caller never waits for a fill, so the
+/// serve loop keeps answering stop, handover and reload while one reads 30 days of logs; the
+/// thread is not joined, so ending the process does not wait for it either.
+#[derive(Clone, Default)]
+pub struct FillGate {
+    running: Arc<AtomicBool>,
+}
+
+impl FillGate {
+    /// Starts `work` on its own thread. False, with nothing started, while a fill still runs.
+    pub fn start(&self, work: impl FnOnce() + Send + 'static) -> bool {
+        if self.running.swap(true, Ordering::AcqRel) {
+            return false;
+        }
+        let running = Arc::clone(&self.running);
+        let started = thread::Builder::new()
+            .name("huddle-history-fill".into())
+            .spawn(move || {
+                let _release = Release(running);
+                work();
+            });
+        if started.is_err() {
+            self.running.store(false, Ordering::Release);
+        }
+        started.is_ok()
+    }
+}
+
+/// Clears the running flag when the fill ends, also by a panic.
+struct Release(Arc<AtomicBool>);
+
+impl Drop for Release {
+    fn drop(&mut self) {
+        self.0.store(false, Ordering::Release);
+    }
 }
 
 #[cfg(test)]
@@ -76,6 +134,7 @@ mod tests {
     use super::*;
     use huddle_history::{Filter, Page, Range, Row};
     use huddle_testkit::temp_home::TempHome;
+    use std::time::Instant;
 
     const NOW: u64 = 1_800_000_000_000;
     const DAY: u64 = 86_400_000;
@@ -165,7 +224,7 @@ mod tests {
             .insert(&[row(NOW - DAY, Some("req_1")), row(NOW - DAY, Some("req_2"))])
             .expect("insert");
 
-        let changed = fill_missing(&mut history, home.root(), NOW).expect("fill");
+        let changed = fill_missing(&mut history, home.root(), NOW, FILL_WINDOW_MS).expect("fill");
 
         assert_eq!(changed, 1);
         let rows = rows_of(&history);
@@ -186,17 +245,56 @@ mod tests {
     }
 
     #[test]
-    fn t6_open_filled_answers_none_without_a_database_and_fills_an_existing_one() {
+    fn t6_open_for_read_answers_none_without_a_database_and_fill_credits_an_existing_one() {
         let home = TempHome::new();
         let db = home.root().join("huddle.db");
-        assert!(open_filled(&db, home.root(), NOW).is_none());
-        assert!(!db.exists(), "a read never creates the database");
+        assert!(open_for_read(&db).is_none());
+        assert_eq!(
+            fill(&db, home.root(), NOW, FILL_WINDOW_MS).expect("fill"),
+            0
+        );
+        assert!(
+            !db.exists(),
+            "neither a read nor a fill creates the database"
+        );
 
         History::open(&db)
             .expect("open")
-            .insert(&[row(NOW - DAY, Some("req_9"))])
+            .insert(&[row(NOW - DAY / 2, Some("req_9"))])
             .expect("insert");
-        let log = home.root().join("projects/-w-huddle/s9.jsonl");
+        write_log(home.root());
+
+        assert_eq!(
+            fill(&db, home.root(), NOW, FILL_WINDOW_MS).expect("fill"),
+            1
+        );
+
+        let read = open_for_read(&db).expect("open");
+        assert_eq!(rows_of(&read)[0].tokens_out, Some(2));
+    }
+
+    #[test]
+    fn d1_a_history_read_never_scans_the_session_logs() {
+        let home = TempHome::new();
+        let db = home.root().join("huddle.db");
+        History::open(&db)
+            .expect("open")
+            .insert(&[row(NOW - DAY / 2, Some("req_9"))])
+            .expect("insert");
+        write_log(home.root());
+
+        let read = open_for_read(&db).expect("open");
+
+        assert_eq!(
+            rows_of(&read)[0].tokens_out,
+            None,
+            "a read leaves the usage to the background fill"
+        );
+    }
+
+    /// A session log, changed an hour ago, that credits `req_9`.
+    fn write_log(root: &Path) {
+        let log = root.join("projects/-w-huddle/s9.jsonl");
         std::fs::create_dir_all(log.parent().expect("parent")).expect("mkdir");
         std::fs::write(
             &log,
@@ -212,9 +310,28 @@ mod tests {
                 )
             })
             .expect("set mtime");
+    }
 
-        let history = open_filled(&db, home.root(), NOW).expect("open");
+    #[test]
+    fn d1_a_slow_fill_never_delays_a_stop() {
+        let gate = FillGate::default();
+        let (release, hold) = std::sync::mpsc::channel::<()>();
+        let begun = Instant::now();
 
-        assert_eq!(rows_of(&history)[0].tokens_out, Some(2));
+        assert!(gate.start(move || {
+            let _ = hold.recv_timeout(std::time::Duration::from_secs(10));
+        }));
+        assert!(
+            begun.elapsed() < std::time::Duration::from_millis(500),
+            "starting a fill returns at once"
+        );
+        assert!(!gate.start(|| {}), "a second fill waits for the first");
+
+        release.send(()).expect("release");
+        let deadline = Instant::now() + std::time::Duration::from_secs(5);
+        while !gate.start(|| {}) {
+            assert!(Instant::now() < deadline, "the gate reopens after the fill");
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
     }
 }

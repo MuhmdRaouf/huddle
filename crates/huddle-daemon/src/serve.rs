@@ -27,7 +27,7 @@ use tokio::sync::{mpsc, watch};
 use crate::dashboard_inputs;
 use crate::handover::{serve_handover, takeover as take_over_socket};
 use crate::history_sink::HistoryBridge;
-use crate::history_upkeep;
+use crate::history_upkeep::{self, FILL_WINDOW_MS, FIRST_FILL_WINDOW_MS};
 use crate::nochain::clean_proxy_env;
 use crate::rss::{RssDecision, RssWatch, ceiling_of, interval_of, read_rss};
 use crate::singleton::{self, SingletonError};
@@ -60,6 +60,8 @@ const HISTORY_FILE: &str = "huddle.db";
 
 /// How often old history rows are pruned; the first run is at start.
 const PRUNE_EVERY: Duration = Duration::from_secs(24 * 3600);
+/// How often the missing usage of finished requests is credited from the session logs.
+const FILL_EVERY: Duration = Duration::from_secs(60);
 
 /// The Anthropic the Claude models go to when no override is set.
 const ANTHROPIC_DEFAULT: &str = "https://api.anthropic.com";
@@ -266,10 +268,8 @@ pub async fn run(
     };
     let history_db = paths.state_dir.join(HISTORY_FILE);
     dashboard.history = {
-        let (db, claude_dir) = (history_db.clone(), paths.claude_dir.clone());
-        Arc::new(move || {
-            history_upkeep::open_filled(&db, &claude_dir, u64::try_from(now_ms()).unwrap_or(0))
-        })
+        let db = history_db.clone();
+        Arc::new(move || history_upkeep::open_for_read(&db))
     };
     // The database is created and migrated once, here, so the writer threads that open it next
     // never race to create it.
@@ -344,6 +344,9 @@ pub async fn run(
 
     let mut stop = stop;
     let mut prune_timer = tokio::time::interval(PRUNE_EVERY);
+    let mut fill_timer = tokio::time::interval(FILL_EVERY);
+    let mut first_fill = true;
+    let fill_gate = history_upkeep::FillGate::default();
     let mut rss_watch = RssWatch::new(ceiling_of(&cleaned), rss_interval);
     let outcome;
     loop {
@@ -392,6 +395,11 @@ pub async fn run(
                 }
             }
             _ = prune_timer.tick() => prune_history(&paths, &log).await,
+            _ = fill_timer.tick() => {
+                let window = if first_fill { FIRST_FILL_WINDOW_MS } else { FILL_WINDOW_MS };
+                first_fill = false;
+                fill_history(&fill_gate, &paths, window, &log);
+            }
             _ = rss_timer.tick() => rss_check(&mut rss_watch, &cleaned, &paths, port, executable.as_deref(), &log).await,
         }
     }
@@ -542,6 +550,20 @@ fn write_record(path: &Path, port: u16, version: &str, executable: Option<&Path>
         }
         Err(error) => log(format!("huddle-router: {error}")),
     }
+}
+
+/// Starts one fill of the history database's missing usage from the session logs, on its own
+/// thread, unless the last one still runs. The caller never waits for it. A failure is one log line.
+fn fill_history(gate: &history_upkeep::FillGate, paths: &Paths, window_ms: u64, log: &Logger) {
+    let db = paths.state_dir.join(HISTORY_FILE);
+    let claude_dir = paths.claude_dir.clone();
+    let now = u64::try_from(now_ms()).unwrap_or(0);
+    let log = Arc::clone(log);
+    gate.start(move || {
+        if let Err(error) = history_upkeep::fill(&db, &claude_dir, now, window_ms) {
+            log(format!("huddle-router: history fill: {error}"));
+        }
+    });
 }
 
 /// One prune of the history database, off the async runtime. A failure is one log line.

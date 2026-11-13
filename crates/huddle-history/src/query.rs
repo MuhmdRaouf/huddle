@@ -1,4 +1,6 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
+
+use crate::scan::{Interner, Sums, text_at};
 
 use rusqlite::types::Value;
 use rusqlite::{Row as SqlRow, params_from_iter};
@@ -38,13 +40,14 @@ pub enum GroupBy {
 
 impl GroupBy {
     /// The key expression; an unknown session, agent or project groups under the empty key.
-    fn expr(self) -> &'static str {
+    /// A day is its number since the epoch; `totals` names it afterwards.
+    fn key_column(self) -> &'static str {
         match self {
             GroupBy::Session => "COALESCE(session, '')",
             GroupBy::Project => "COALESCE(project, '')",
             GroupBy::Model => "model",
             GroupBy::Lane => "lane",
-            GroupBy::Day => "strftime('%Y-%m-%d', at_ms / 1000, 'unixepoch')",
+            GroupBy::Day => "at_ms / 86400000",
         }
     }
 }
@@ -147,11 +150,11 @@ pub struct SearchResult {
     pub total: u64,
 }
 
-fn count(r: &SqlRow<'_>, i: usize) -> rusqlite::Result<u64> {
+pub(crate) fn count(r: &SqlRow<'_>, i: usize) -> rusqlite::Result<u64> {
     Ok(from_db(r.get(i)?))
 }
 
-fn opt_count(r: &SqlRow<'_>, i: usize) -> rusqlite::Result<Option<u64>> {
+pub(crate) fn opt_count(r: &SqlRow<'_>, i: usize) -> rusqlite::Result<Option<u64>> {
     Ok(r.get::<_, Option<i64>>(i)?.map(from_db))
 }
 
@@ -177,11 +180,23 @@ impl History {
         if width_ms == 0 {
             return Err(HistoryError::ZeroWidth);
         }
-        let width = to_db(width_ms);
+        let parts = self.sliced(range, width_ms, |history, slice| {
+            history.buckets_part(slice, width_ms, session, project)
+        })?;
+        // The slices are disjoint and aligned to the width, so their buckets are already in order.
+        Ok(parts.into_iter().flatten().collect())
+    }
+
+    fn buckets_part(
+        &self,
+        range: Range,
+        width_ms: u64,
+        session: Option<&str>,
+        project: Option<&str>,
+    ) -> Result<Vec<Bucket>, HistoryError> {
         let mut args = vec![
             Value::Integer(to_db(range.from_ms)),
             Value::Integer(to_db(range.to_ms)),
-            Value::Integer(width),
         ];
         let mut narrow = String::new();
         for (column, wanted) in [("session", session), ("project", project)] {
@@ -191,109 +206,142 @@ impl History {
             }
         }
         let mut stmt = self.conn.prepare(&format!(
-            "SELECT (at_ms / ?3) * ?3 AS start, model, COUNT(*),
-                    COALESCE(SUM({IS_ERROR}), 0),
-                    COALESCE(SUM(tokens_in), 0), COALESCE(SUM(cache_read), 0),
-                    COALESCE(SUM(cache_write), 0), COALESCE(SUM(tokens_out), 0)
-             FROM requests WHERE at_ms >= ?1 AND at_ms < ?2{narrow}
-             GROUP BY start, model ORDER BY start, model"
+            "SELECT model, at_ms, {IS_ERROR}, tokens_in, cache_read, cache_write, tokens_out, ttft_ms
+             FROM requests WHERE at_ms >= ?1 AND at_ms < ?2{narrow}"
         ))?;
-        let mut buckets = stmt
-            .query_map(params_from_iter(&args), |r| {
-                Ok(Bucket {
-                    start_ms: count(r, 0)?,
-                    model: r.get(1)?,
-                    n: count(r, 2)?,
-                    err: count(r, 3)?,
-                    tok_in: count(r, 4)?,
-                    cache_read: count(r, 5)?,
-                    cache_write: count(r, 6)?,
-                    tok_out: count(r, 7)?,
-                    ttft_p50: None,
-                    ttft_p95: None,
-                })
-            })?
-            .collect::<Result<Vec<_>, _>>()?;
-
-        let mut ttft = self.conn.prepare(&format!(
-            "SELECT (at_ms / ?3) * ?3, model, ttft_ms FROM requests
-             WHERE at_ms >= ?1 AND at_ms < ?2{narrow} AND ttft_ms IS NOT NULL ORDER BY ttft_ms"
-        ))?;
-        let mut samples: BTreeMap<(u64, String), Vec<u64>> = BTreeMap::new();
-        let found = ttft.query_map(params_from_iter(&args), |r| {
-            Ok((count(r, 0)?, r.get::<_, String>(1)?, count(r, 2)?))
-        })?;
-        for sample in found {
-            let (start, model, ms) = sample?;
-            samples.entry((start, model)).or_default().push(ms);
-        }
-        for bucket in &mut buckets {
-            if let Some(sorted) = samples.get(&(bucket.start_ms, bucket.model.clone())) {
-                bucket.ttft_p50 = nearest_rank(sorted, 50);
-                bucket.ttft_p95 = nearest_rank(sorted, 95);
+        let mut models = Interner::default();
+        let mut cells: HashMap<(u64, usize), (Sums, Vec<u64>)> = HashMap::new();
+        let mut rows = stmt.query(params_from_iter(&args))?;
+        while let Some(r) = rows.next()? {
+            let model = models.id(&text_at(r, 0)?);
+            let start = count(r, 1)? / width_ms * width_ms;
+            let (sums, ttft) = cells.entry((start, model)).or_default();
+            sums.add(r, 1)?;
+            if let Some(ms) = opt_count(r, 7)? {
+                ttft.push(ms);
             }
         }
+        let mut buckets: Vec<Bucket> = cells
+            .into_iter()
+            .map(|((start_ms, model), (sums, mut ttft))| {
+                ttft.sort_unstable();
+                Bucket {
+                    start_ms,
+                    model: models.names.get(model).cloned().unwrap_or_default(),
+                    n: sums.n,
+                    err: sums.err,
+                    tok_in: sums.tok_in,
+                    cache_read: sums.cache_read,
+                    cache_write: sums.cache_write,
+                    tok_out: sums.tok_out,
+                    ttft_p50: nearest_rank(&ttft, 50),
+                    ttft_p95: nearest_rank(&ttft, 95),
+                }
+            })
+            .collect();
+        buckets.sort_by(|a, b| (a.start_ms, &a.model).cmp(&(b.start_ms, &b.model)));
         Ok(buckets)
     }
 
     /// Per key, ordered by key: counts, token sums, first and last request, and the per-model sums.
+    ///
+    /// Each slice of the range adds its rows into a map in memory (a `GROUP BY` over a million
+    /// rows spends most of its time in SQLite's temporary sorter); the slices then merge.
     pub fn totals(&self, range: Range, by: GroupBy) -> Result<Vec<Total>, HistoryError> {
-        let mut stmt = self.conn.prepare(&format!(
-            "SELECT {key} AS k, model, COUNT(*), COALESCE(SUM({IS_ERROR}), 0),
-                    COALESCE(SUM(tokens_in), 0), COALESCE(SUM(cache_read), 0),
-                    COALESCE(SUM(cache_write), 0), COALESCE(SUM(tokens_out), 0),
-                    MIN(at_ms), MAX(at_ms)
-             FROM requests WHERE at_ms >= ?1 AND at_ms < ?2
-             GROUP BY k, model ORDER BY k, model",
-            key = by.expr()
-        ))?;
-        let groups = stmt.query_map([to_db(range.from_ms), to_db(range.to_ms)], |r| {
-            let usage = ModelUsage {
-                model: r.get(1)?,
-                n: count(r, 2)?,
-                tok_in: count(r, 4)?,
-                cache_read: count(r, 5)?,
-                cache_write: count(r, 6)?,
-                tok_out: count(r, 7)?,
-            };
-            Ok((
-                r.get::<_, String>(0)?,
-                usage,
-                count(r, 3)?,
-                count(r, 8)?,
-                count(r, 9)?,
-            ))
-        })?;
-        let mut totals: Vec<Total> = Vec::new();
-        for group in groups {
-            let (key, usage, err, first, last) = group?;
-            match totals.last_mut().filter(|t| t.key == key) {
-                Some(total) => {
-                    total.n += usage.n;
-                    total.err += err;
-                    total.tok_in += usage.tok_in;
-                    total.cache_read += usage.cache_read;
-                    total.cache_write += usage.cache_write;
-                    total.tok_out += usage.tok_out;
-                    total.first_ms = total.first_ms.min(first);
-                    total.last_ms = total.last_ms.max(last);
-                    total.models.push(usage);
-                }
-                None => totals.push(Total {
-                    key,
-                    n: usage.n,
-                    err,
-                    tok_in: usage.tok_in,
-                    cache_read: usage.cache_read,
-                    cache_write: usage.cache_write,
-                    tok_out: usage.tok_out,
-                    first_ms: first,
-                    last_ms: last,
-                    models: vec![usage],
-                }),
-            }
+        let parts = self.sliced(range, 1, |history, slice| history.totals_part(slice, by))?;
+        let mut merged: BTreeMap<String, BTreeMap<String, Sums>> = BTreeMap::new();
+        for ((key, model), sums) in parts.into_iter().flatten() {
+            merged
+                .entry(key)
+                .or_default()
+                .entry(model)
+                .or_default()
+                .merge(&sums);
         }
-        Ok(totals)
+        Ok(merged
+            .into_iter()
+            .map(|(key, per_model)| {
+                let mut total = Total {
+                    key,
+                    n: 0,
+                    err: 0,
+                    tok_in: 0,
+                    cache_read: 0,
+                    cache_write: 0,
+                    tok_out: 0,
+                    first_ms: u64::MAX,
+                    last_ms: 0,
+                    models: Vec::with_capacity(per_model.len()),
+                };
+                for (model, sums) in per_model {
+                    total.n += sums.n;
+                    total.err += sums.err;
+                    total.tok_in += sums.tok_in;
+                    total.cache_read += sums.cache_read;
+                    total.cache_write += sums.cache_write;
+                    total.tok_out += sums.tok_out;
+                    total.first_ms = total.first_ms.min(sums.first_ms);
+                    total.last_ms = total.last_ms.max(sums.last_ms);
+                    total.models.push(ModelUsage {
+                        model,
+                        n: sums.n,
+                        tok_in: sums.tok_in,
+                        cache_read: sums.cache_read,
+                        cache_write: sums.cache_write,
+                        tok_out: sums.tok_out,
+                    });
+                }
+                total
+            })
+            .collect())
+    }
+
+    fn totals_part(
+        &self,
+        range: Range,
+        by: GroupBy,
+    ) -> Result<HashMap<(String, String), Sums>, HistoryError> {
+        let mut stmt = self.conn.prepare(&format!(
+            "SELECT {key}, model, at_ms, {IS_ERROR}, tokens_in, cache_read, cache_write, tokens_out
+             FROM requests WHERE at_ms >= ?1 AND at_ms < ?2",
+            key = by.key_column()
+        ))?;
+        let mut keys = Interner::default();
+        let mut models = Interner::default();
+        let mut sums: HashMap<(usize, usize), Sums> = HashMap::new();
+        let mut rows = stmt.query([to_db(range.from_ms), to_db(range.to_ms)])?;
+        while let Some(r) = rows.next()? {
+            let key = keys.id(&text_at(r, 0)?);
+            let model = models.id(&text_at(r, 1)?);
+            sums.entry((key, model)).or_default().add(r, 2)?;
+        }
+        let names = if by == GroupBy::Day {
+            self.day_names(&keys.names)?
+        } else {
+            keys.names
+        };
+        Ok(sums
+            .into_iter()
+            .map(|((key, model), sums)| {
+                let key = names.get(key).cloned().unwrap_or_default();
+                let model = models.names.get(model).cloned().unwrap_or_default();
+                ((key, model), sums)
+            })
+            .collect())
+    }
+
+    /// The `YYYY-MM-DD` name of each day number in `numbers` (decimal text), in the same order.
+    fn day_names(&self, numbers: &[String]) -> Result<Vec<String>, HistoryError> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT strftime('%Y-%m-%d', ?1 * 86400, 'unixepoch')")?;
+        numbers
+            .iter()
+            .map(|n| {
+                let day: i64 = n.parse().unwrap_or(0);
+                Ok(stmt.query_row([day], |r| r.get::<_, String>(0))?)
+            })
+            .collect()
     }
 
     /// `totals`, with each project key found in `aliases` replaced by its value and the groups
@@ -324,22 +372,44 @@ impl History {
     }
 
     /// Matching rows newest first, one page of them, and the count across all pages.
+    ///
+    /// Each slice of the range counts its matches and reads its newest `offset + limit` rows; the
+    /// slices are consecutive in time, so the newest slice's rows come first.
     pub fn search(&self, filter: Filter, page: Page) -> Result<SearchResult, HistoryError> {
-        let (clause, mut args) = where_clause(&filter);
+        let limit = page.limit.min(MAX_PAGE);
+        let parts = self.sliced(filter.range, 1, |history, slice| {
+            history.search_part(
+                &Filter {
+                    range: slice,
+                    ..filter.clone()
+                },
+                limit.saturating_add(page.offset),
+            )
+        })?;
+        let total = parts.iter().map(|(n, _)| n).sum();
+        let rows = parts
+            .into_iter()
+            .rev()
+            .flat_map(|(_, rows)| rows)
+            .skip(usize::try_from(page.offset).unwrap_or(usize::MAX))
+            .take(usize::try_from(limit).unwrap_or(usize::MAX))
+            .collect();
+        Ok(SearchResult { rows, total })
+    }
+
+    fn search_part(&self, filter: &Filter, take: u64) -> Result<(u64, Vec<Row>), HistoryError> {
+        let (clause, mut args) = where_clause(filter);
         let total: i64 = self.conn.query_row(
             &format!("SELECT COUNT(*) FROM requests WHERE {clause}"),
             params_from_iter(args.iter()),
             |r| r.get(0),
         )?;
-        args.push(Value::Integer(to_db(page.limit.min(MAX_PAGE))));
-        args.push(Value::Integer(to_db(page.offset)));
+        args.push(Value::Integer(to_db(take)));
         let mut stmt = self.conn.prepare(&format!(
             "SELECT at_ms, session, project, agent, model, lane, status, reason, ttft_ms, dur_ms,
                     tokens_in, cache_read, cache_write, tokens_out, stop, upstream_id
-             FROM requests WHERE {clause} ORDER BY at_ms DESC, id DESC
-             LIMIT ?{limit} OFFSET ?{offset}",
-            limit = args.len() - 1,
-            offset = args.len()
+             FROM requests WHERE {clause} ORDER BY at_ms DESC, id DESC LIMIT ?{limit}",
+            limit = args.len()
         ))?;
         let rows = stmt
             .query_map(params_from_iter(args.iter()), |r| {
@@ -363,10 +433,7 @@ impl History {
                 })
             })?
             .collect::<Result<Vec<_>, _>>()?;
-        Ok(SearchResult {
-            rows,
-            total: from_db(total),
-        })
+        Ok((from_db(total), rows))
     }
 }
 
