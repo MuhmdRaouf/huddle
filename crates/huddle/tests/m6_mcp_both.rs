@@ -381,9 +381,11 @@ fn t3_mcp_http_url_follows_the_router_port() {
         .as_str()
         .expect("a url")
         .to_string();
+    // guard-allow: compares url strings only; nothing connects to this port
     assert_eq!(url, "http://127.0.0.1:${HUDDLE_ROUTER_PORT:-4835}/mcp");
 
     // Unset, the documented expansion gives the default port. The test never connects to it.
+    // guard-allow: compares url strings only; nothing connects to this port
     assert_eq!(expand(&url, None), "http://127.0.0.1:4835/mcp");
 
     // Set, the expanded url reaches a router on that port through /mcp.
