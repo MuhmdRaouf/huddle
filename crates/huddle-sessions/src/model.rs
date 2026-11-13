@@ -21,10 +21,18 @@ impl Default for Limits {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "lowercase")]
+#[serde(rename_all = "snake_case")]
 pub enum SessionState {
+    /// An unanswered `AskUserQuestion` or `ExitPlanMode`.
+    NeedsYou,
+    /// A request is in flight or a tool is running.
     Working,
-    Waiting,
+    /// The turn ended and background tasks or agents are still open.
+    Background,
+    /// The turn ended in an interactive session.
+    YourTurn,
+    /// The turn ended in a driven session, or a subagent finished.
+    Done,
     Idle,
 }
 
@@ -84,7 +92,12 @@ pub struct Session {
     pub state: SessionState,
     pub started_ms: Option<u64>,
     pub last_ms: Option<u64>,
-    pub waiting_since_ms: Option<u64>,
+    /// When the current state began; null for `idle` and `working`.
+    pub state_since_ms: Option<u64>,
+    /// Background tasks and agents launched and not yet reported finished.
+    pub open_tasks: u32,
+    /// For `needs_you`: the name of the tool asking, never its text.
+    pub question_tool: Option<String>,
     pub context_tokens: Option<u64>,
     pub context_limit: u64,
     pub cache_ttl_ms: u64,

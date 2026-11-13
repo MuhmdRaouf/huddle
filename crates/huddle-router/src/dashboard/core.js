@@ -56,7 +56,7 @@ const ic=(n,c)=>`<svg class="i${c?' '+c:''}" viewBox="0 0 24 24" aria-hidden="tr
 /* ---------- the world, read from the snapshot ---------- */
 let SESS=[],AGENTS=[],REQS=[],MODELS=[],MN=[],COLOR={},LANES=[],JOBS=[],WT=[],HARN=[],BK=[],BW=3e4,PLAN=null,PL={state:'checking',rows:[],checks:[]},WIRE={state:'checking'},RT={},ST=null;
 const col=m=>COLOR[m]||HCOLOR[m]||'var(--faint)';
-const sstate=s=>s.state==='working'||s.state==='waiting'?s.state:'idle';
+const sstate=s=>({needs_you:'waiting',your_turn:'waiting',working:'working',background:'working'})[s.state]||'idle';
 const mainA=s=>s.agents[0];
 const isErr=r=>r.status!=null&&r.status>=400&&r.status!==499;
 const EMPTY={n:0,tok:0,err:0,p50:0,cost:0};
@@ -71,7 +71,7 @@ const errDef=(c,reason)=>ERRDEF[c]||['Status '+c,reason||'',reason||'The provide
 function buildSessions(){
  SESS=arr(SNAP.sessions).map(x=>{
   const tok=num(x.context_tokens),lim=num(x.context_limit);
-  const o={id:String(x.id||''),title:x.title||'',project:x.project||'',cwd:x.cwd||'',branch:x.branch||'',model:x.model||'',state:x.state||'idle',started:num(x.started_ms),last:num(x.last_ms),waitingSince:num(x.waiting_since_ms),ctxTok:tok,ctxLim:lim,ctx:tok!=null&&lim?tok/lim*100:null,ttl:num(x.cache_ttl_ms),lastReq:num(x.last_request_ms)};
+  const o={id:String(x.id||''),title:x.title||'',project:x.project||'',cwd:x.cwd||'',branch:x.branch||'',model:x.model||'',state:x.state||'idle',started:num(x.started_ms),last:num(x.last_ms),waitingSince:num(x.state_since_ms),openTasks:num(x.open_tasks),questionTool:x.question_tool||'',ctxTok:tok,ctxLim:lim,ctx:tok!=null&&lim?tok/lim*100:null,ttl:num(x.cache_ttl_ms),lastReq:num(x.last_request_ms)};
   o.sid=o.id.slice(0,8);o.name=o.title||o.project||o.sid||'Session';
   let ag=arr(x.agents).map(a=>({id:String(a.id||''),type:a.type||'',desc:a.description||'',model:a.model||'',state:a.state||'idle',start:num(a.started_ms),end:num(a.ended_ms),wt:a.worktree||null,s:o}));
   let m=ag.find(a=>a.id==='main');ag=ag.filter(a=>a!==m);

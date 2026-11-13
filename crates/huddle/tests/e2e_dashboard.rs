@@ -648,7 +648,10 @@ fn a_request_is_credited_to_the_agent_whose_log_carries_its_request_id() {
     assert_eq!(row["tokens_out"], 9);
     let session = &snapshot["sessions"][0];
     assert_eq!(session["id"], LOG_SESSION);
-    assert_eq!(session["state"], "waiting");
+    assert_eq!(session["state"], "your_turn");
+    assert_eq!(session["open_tasks"], 0);
+    assert!(session["state_since_ms"].is_u64());
+    assert!(session.get("waiting_since_ms").is_none());
     assert_eq!(session["cwd"], "/tmp/proj");
     let text = snapshot.to_string();
     assert!(!text.contains("PRIVATE REPLY TEXT"), "no message text");

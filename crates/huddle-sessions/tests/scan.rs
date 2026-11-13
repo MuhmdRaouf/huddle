@@ -108,7 +108,7 @@ fn d1_a_missing_claude_dir_lists_nothing() {
 }
 
 #[test]
-fn d1_waiting_session_carries_its_identity_and_timing() {
+fn d1_a_session_awaiting_you_carries_its_identity_and_timing() {
     let sessions = scanned();
     let s = by_id(&sessions, "s-waiting");
     assert_eq!(s.title, "Fix the router");
@@ -116,9 +116,9 @@ fn d1_waiting_session_carries_its_identity_and_timing() {
     assert_eq!(s.cwd.as_deref(), Some("/Users/x/huddle"));
     assert_eq!(s.branch.as_deref(), Some("main"));
     assert_eq!(s.model.as_deref(), Some("claude-opus-5-5"));
-    assert_eq!(s.state, SessionState::Waiting);
+    assert_eq!(s.state, SessionState::YourTurn);
     let ended = parse_iso_ms("2026-11-11T11:50:00.000Z");
-    assert_eq!(s.waiting_since_ms, ended);
+    assert_eq!(s.state_since_ms, ended);
     assert_eq!(s.last_ms, ended);
     assert_eq!(s.started_ms, parse_iso_ms("2026-11-11T11:00:00.000Z"));
     assert_eq!(s.last_request_ms, ended);
@@ -141,12 +141,12 @@ fn d1_working_idle_and_the_ai_title_fallback() {
     let sessions = scanned();
     let w = by_id(&sessions, "s-working");
     assert_eq!(w.state, SessionState::Working);
-    assert_eq!(w.waiting_since_ms, None);
+    assert_eq!(w.state_since_ms, None);
     assert_eq!(w.title, "Only an AI title");
     assert_eq!(w.branch.as_deref(), Some("dev"));
     let i = by_id(&sessions, "s-idle");
     assert_eq!(i.state, SessionState::Idle);
-    assert_eq!(i.waiting_since_ms, None);
+    assert_eq!(i.state_since_ms, None);
     assert_eq!(i.title, "");
 }
 
@@ -174,7 +174,7 @@ fn d1_subagents_come_from_their_logs_and_meta_files() {
         (idle.kind.as_str(), idle.description.as_str()),
         ("Explore", "Map the router")
     );
-    assert_eq!(idle.state, AgentState::Waiting);
+    assert_eq!(idle.state, AgentState::Done);
     assert_eq!(idle.ended_ms, None);
 }
 
@@ -216,7 +216,7 @@ fn d1_a_small_tail_cap_drops_the_cut_line_and_keeps_the_end() {
     };
     let sessions = scan(&claude_dir(&home), now_ms(), limits);
     let s = by_id(&sessions, "s-waiting");
-    assert_eq!(s.state, SessionState::Waiting);
+    assert_eq!(s.state, SessionState::YourTurn);
     assert_eq!(
         s.request_ids.last().map(|t| t.request_id.as_str()),
         Some("req_b1")
@@ -253,8 +253,8 @@ fn q1_a_tool_running_for_minutes_is_working() {
 fn q1_an_interrupted_turn_is_waiting_since_the_interrupt() {
     let sessions = scanned();
     let s = by_id(&sessions, "s-interrupted");
-    assert_eq!(s.state, SessionState::Waiting);
-    assert_eq!(s.waiting_since_ms, parse_iso_ms("2026-11-11T11:41:00.000Z"));
+    assert_eq!(s.state, SessionState::YourTurn);
+    assert_eq!(s.state_since_ms, parse_iso_ms("2026-11-11T11:41:00.000Z"));
 }
 
 #[test]

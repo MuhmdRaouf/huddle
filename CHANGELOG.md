@@ -59,6 +59,7 @@ The five providers are part of huddle, and a key goes in from a page or a termin
 - The dashboard source is one file per page under `crates/huddle-router/src/dashboard/`, joined at compile time. The page you see is the same.
 - On a 360 px phone the Harnesses and Overview tables stack each row as a block of `label: value` lines, with no sideways scroll. Desktop is unchanged.
 - When the Anthropic path fails, the Overview leads with `Anthropic is not answering` and the router log command, and keeps `Anthropic recovered` for 30 minutes. The Router page lists the last 20 router events.
+- Session states say who is waiting on whom: needs you (an unanswered question or plan approval), working, background (the turn ended with tasks or agents still open), your turn, done (a driven session or a finished subagent) and idle. Each session carries when its state began and how many background tasks are open.
 
 ### Tests
 

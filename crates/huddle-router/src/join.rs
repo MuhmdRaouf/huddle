@@ -22,7 +22,7 @@ fn mark_working(snapshot: &mut Snapshot) {
             .any(|row| row.session.as_deref() == Some(session.id.as_str()));
         if busy {
             session.state = SessionState::Working;
-            session.waiting_since_ms = None;
+            session.state_since_ms = None;
         }
     }
 }
@@ -92,10 +92,12 @@ mod tests {
             cwd: Some(cwd.into()),
             branch: None,
             model: None,
-            state: SessionState::Waiting,
+            state: SessionState::YourTurn,
             started_ms: None,
             last_ms: None,
-            waiting_since_ms: Some(5),
+            state_since_ms: Some(5),
+            open_tasks: 0,
+            question_tool: None,
             context_tokens: None,
             context_limit: 200_000,
             cache_ttl_ms: 300_000,
@@ -146,8 +148,8 @@ mod tests {
         }];
         apply(&mut snap);
         assert_eq!(snap.sessions[0].state, SessionState::Working);
-        assert_eq!(snap.sessions[0].waiting_since_ms, None);
-        assert_eq!(snap.sessions[1].state, SessionState::Waiting);
+        assert_eq!(snap.sessions[0].state_since_ms, None);
+        assert_eq!(snap.sessions[1].state, SessionState::YourTurn);
     }
 
     #[test]

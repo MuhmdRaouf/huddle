@@ -1,8 +1,9 @@
 //! Parses the text of a session log into a `Summary`. Only the fields named in `Line` are
-//! decoded; message content, tool input and tool output are skipped by the deserializer and
-//! never held in memory.
+//! decoded. Message content is read for tool-call ids, tool names and task ids only; text,
+//! tool input and tool output are never kept in the `Summary`.
 
 use serde::Deserialize;
+use serde::de::IgnoredAny;
 
 use crate::model::{RequestTag, Usage};
 use crate::time::parse_iso_ms;
@@ -25,7 +26,59 @@ struct Line {
     ai_title: Option<String>,
     #[serde(rename = "interruptedMessageId")]
     interrupted_message_id: Option<String>,
+    entrypoint: Option<String>,
+    #[serde(rename = "promptSource")]
+    prompt_source: Option<String>,
+    origin: Option<Origin>,
+    #[serde(rename = "toolUseResult")]
+    tool_use_result: Option<ToolUseResult>,
     message: Option<Message>,
+}
+
+#[derive(Deserialize)]
+struct Origin {
+    kind: Option<String>,
+}
+
+/// `toolUseResult` is an object for launches and a plain string for some errors.
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum ToolUseResult {
+    Fields(ToolFields),
+    Other(IgnoredAny),
+}
+
+#[derive(Deserialize)]
+struct ToolFields {
+    #[serde(rename = "backgroundTaskId")]
+    background_task_id: Option<String>,
+    #[serde(rename = "agentId")]
+    agent_id: Option<String>,
+    status: Option<String>,
+}
+
+/// A message's content is a string or a list of blocks.
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum Content {
+    Text(String),
+    Blocks(Vec<Block>),
+}
+
+#[derive(Deserialize)]
+struct Block {
+    #[serde(rename = "type")]
+    kind: Option<String>,
+    id: Option<String>,
+    name: Option<String>,
+    tool_use_id: Option<String>,
+    input: Option<ToolInput>,
+    text: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct ToolInput {
+    run_in_background: Option<bool>,
 }
 
 #[derive(Deserialize)]
@@ -33,6 +86,7 @@ struct Message {
     model: Option<String>,
     stop_reason: Option<String>,
     usage: Option<RawUsage>,
+    content: Option<Content>,
 }
 
 #[derive(Deserialize)]
@@ -84,7 +138,30 @@ pub(crate) struct Summary {
     /// One entry per request id, holding the last usage and stop reason seen for it, in order
     /// of first sight.
     pub requests: Vec<(String, Usage, Option<String>)>,
+    /// A line carried a driven marker: `entrypoint` `sdk-*` or `promptSource` `sdk`.
+    pub driven: bool,
+    /// Questions asked and not yet answered: tool-call id, tool name, when.
+    pub questions: Vec<Question>,
+    /// Background tasks launched and not yet reported finished.
+    pub tasks: Vec<Task>,
+    /// Ids of background `Bash` calls whose result has not arrived.
+    launching: Vec<String>,
 }
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct Question {
+    pub call_id: String,
+    pub tool: String,
+    pub at_ms: Option<u64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct Task {
+    pub id: String,
+    pub at_ms: Option<u64>,
+}
+
+const QUESTION_TOOLS: [&str; 2] = ["AskUserQuestion", "ExitPlanMode"];
 
 impl Summary {
     /// Reads every line; a line that is not a JSON object of the expected shape is skipped.
@@ -98,7 +175,7 @@ impl Summary {
         summary
     }
 
-    fn add(&mut self, line: Line) {
+    fn add(&mut self, mut line: Line) {
         let at_ms = line.timestamp.as_deref().and_then(parse_iso_ms);
         if let Some(at) = at_ms {
             self.first_ms.get_or_insert(at);
@@ -108,14 +185,117 @@ impl Summary {
         replace_some(&mut self.branch, line.git_branch);
         replace_some(&mut self.custom_title, line.custom_title);
         replace_some(&mut self.ai_title, line.ai_title);
+        if line
+            .entrypoint
+            .as_deref()
+            .is_some_and(|e| e.starts_with("sdk"))
+            || line.prompt_source.as_deref() == Some("sdk")
+        {
+            self.driven = true;
+        }
         match line.kind.as_deref() {
             Some("assistant") => {
+                let blocks = line.message.as_mut().and_then(|m| m.content.take());
+                self.add_blocks(at_ms, blocks);
                 self.add_assistant(at_ms, line.request_id, line.requested_model, line.message)
             }
             Some("api-request") => self.turn(at_ms, Phase::Asked),
-            Some("user") if line.interrupted_message_id.is_some() => self.turn(at_ms, Phase::Ended),
+            Some("user") => {
+                let notified = line
+                    .origin
+                    .as_ref()
+                    .is_some_and(|o| o.kind.as_deref() == Some("task-notification"));
+                let blocks = line.message.and_then(|m| m.content);
+                self.add_user(at_ms, notified, blocks, line.tool_use_result);
+                if line.interrupted_message_id.is_some() {
+                    self.turn(at_ms, Phase::Ended);
+                }
+            }
             _ => {}
         }
+    }
+
+    /// Tool calls of an assistant line: questions that wait for an answer, and background
+    /// `Bash` calls whose task id arrives with the result.
+    fn add_blocks(&mut self, at_ms: Option<u64>, content: Option<Content>) {
+        let Some(Content::Blocks(blocks)) = content else {
+            return;
+        };
+        for block in blocks {
+            if block.kind.as_deref() != Some("tool_use") {
+                continue;
+            }
+            let (Some(id), Some(name)) = (block.id, block.name) else {
+                continue;
+            };
+            if QUESTION_TOOLS.contains(&name.as_str()) {
+                self.questions.push(Question {
+                    call_id: id,
+                    tool: name,
+                    at_ms,
+                });
+            } else if name == "Bash" && block.input.and_then(|i| i.run_in_background) == Some(true)
+            {
+                self.launching.push(id);
+            }
+        }
+    }
+
+    /// Tool results answer questions and launch tasks; a task notification closes one.
+    fn add_user(
+        &mut self,
+        at_ms: Option<u64>,
+        notified: bool,
+        content: Option<Content>,
+        result: Option<ToolUseResult>,
+    ) {
+        let fields = match result {
+            Some(ToolUseResult::Fields(fields)) => Some(fields),
+            _ => None,
+        };
+        match content {
+            Some(Content::Blocks(blocks)) => {
+                for block in blocks {
+                    if block.kind.as_deref() == Some("tool_result")
+                        && let Some(call) = block.tool_use_id
+                    {
+                        self.answer(&call, at_ms, fields.as_ref());
+                    } else if notified && let Some(text) = block.text {
+                        self.finish_task(&text);
+                    }
+                }
+            }
+            Some(Content::Text(text)) if notified => self.finish_task(&text),
+            _ => {}
+        }
+    }
+
+    fn answer(&mut self, call: &str, at_ms: Option<u64>, fields: Option<&ToolFields>) {
+        self.questions.retain(|q| q.call_id != call);
+        let Some(fields) = fields else { return };
+        let launched = match (&fields.background_task_id, &fields.agent_id) {
+            (Some(task), _) if self.launching.iter().any(|id| id == call) => Some(task),
+            (_, Some(agent)) if fields.status.as_deref() == Some("async_launched") => Some(agent),
+            _ => None,
+        };
+        self.launching.retain(|id| id != call);
+        if let Some(id) = launched {
+            self.tasks.push(Task {
+                id: id.clone(),
+                at_ms,
+            });
+        }
+    }
+
+    /// Drops the task named by the `<task-id>` tag of a notification. Only the id is read.
+    fn finish_task(&mut self, text: &str) {
+        let Some((_, rest)) = text.split_once("<task-id>") else {
+            return;
+        };
+        let Some((id, _)) = rest.split_once("</task-id>") else {
+            return;
+        };
+        self.tasks.retain(|task| task.id != id);
     }
 
     fn add_assistant(

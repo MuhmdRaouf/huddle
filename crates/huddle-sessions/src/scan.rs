@@ -9,7 +9,7 @@ use serde::Deserialize;
 use crate::log::Summary;
 use crate::model::{Agent, AgentState, Limits, RequestTag, Session};
 use crate::repo::Repos;
-use crate::state::{agent_state, session_state};
+use crate::state::{agent_state, standing};
 use crate::tail::{read_head, read_tail};
 
 const ONE_HOUR_MS: u64 = 3_600_000;
@@ -83,7 +83,8 @@ fn session(log: &Log, now_ms: u64, tail_bytes: u64, repos: &mut Repos) -> Option
     let main = Summary::parse(&read_tail(&log.path, tail_bytes)?);
     let repo = main.cwd.as_deref().and_then(|cwd| repos.of(cwd));
     let started_ms = read_head(&log.path).and_then(|head| Summary::parse(&head).first_ms);
-    let (state, waiting_since_ms) = session_state(main.last_turn, now_ms);
+    let standing = standing(&main, false, now_ms);
+    let state = standing.state;
     let model = main.model.clone();
     let context_tokens = main
         .last_usage
@@ -130,7 +131,9 @@ fn session(log: &Log, now_ms: u64, tail_bytes: u64, repos: &mut Repos) -> Option
         state,
         started_ms,
         last_ms: main.last_ms.or(Some(log.modified_ms)),
-        waiting_since_ms,
+        state_since_ms: standing.since_ms,
+        open_tasks: standing.open_tasks,
+        question_tool: standing.question_tool,
         context_tokens,
         context_limit,
         cache_ttl_ms: if main.one_hour_cache {
@@ -184,7 +187,7 @@ fn subagent(path: &Path, now_ms: u64, tail_bytes: u64) -> Option<(Agent, Vec<Req
         .unwrap_or_default();
     let tail = Summary::parse(&read_tail(path, tail_bytes)?);
     let started_ms = read_head(path).and_then(|head| Summary::parse(&head).first_ms);
-    let (state, _) = session_state(tail.last_turn, now_ms);
+    let state = standing(&tail, true, now_ms).state;
     let (state, ended_ms) = if meta.finished {
         (AgentState::Done, tail.last_ms)
     } else {
