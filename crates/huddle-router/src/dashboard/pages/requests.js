@@ -56,8 +56,9 @@ function hsearch(){clearTimeout(HS.t);hhash();const n=++HS.seq;
  hget(HQ+'search&'+rangeQuery()+HFIL.filter(k=>HS.f[k]&&HS.f[k]!=='any').map(k=>'&'+k+'='+encodeURIComponent(HS.f[k])).join('')+'&limit='+HPAGE+'&offset='+HS.off).then(d=>{if(n!==HS.seq)return;
   HS.data=d;HS.rows=arr(d.rows).map(hrow);HS.err=false;paint()},()=>{if(n!==HS.seq)return;HS.err=true;paint()})}
 const hmodes=()=>seg('hmode',[['live','Live'],['history','History']],HS.mode);
-function hbar(){const o=(l,c)=>l.map(([k,t])=>`<option value="${esc(k)}"${k===c?' selected':''}>${esc(t)}</option>`).join('');
- return `<div class="hbar"><select data-hf="status" aria-label="Status">${o(HSTAT,HS.f.status)}</select>`+
+MENUS.hstatus={label:'Status',opts:()=>HSTAT.map(([k,t])=>({k,t})),cur:()=>HS.f.status||'any',pick:k=>{HS.f.status=k;HS.off=0;clearTimeout(HS.t);hsearch()}};
+function hbar(){
+ return `<div class="hbar">${menuHtml('hstatus')}`+
   HFIL.filter(k=>k!=='status').map(k=>`<input class="hin" data-hf="${k}" placeholder="${k==='lane'?'Provider':k[0].toUpperCase()+k.slice(1)}" value="${esc(HS.f[k]||'')}" aria-label="Filter by ${k==='lane'?'provider':k}">`).join('')+`</div>`}
 function hresults(){const d=HS.data,n=HS.rows.length,tot=d?n0(d.total):0;
  const note=HS.err?`<div class="legendrow badc">Could not load history. Showing the last data.</div>`:d?'':`<div class="legendrow">${checking()}</div>`;

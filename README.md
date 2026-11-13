@@ -187,7 +187,8 @@ works on a narrow screen and loads nothing from outside the router.
 
 The top bar holds one time range (15 min, 1 hour, 24 hours, 7, 30 or 90 days, or
 Custom from-to) that every page follows; Custom cannot start before the kept
-history, and the choice is remembered.
+history, and the choice is remembered. The page draws its own menus and date
+picker, with full keyboard control, and uses no browser select or date input.
 
 It shows:
 - Overview: eight stat cards in a full grid (sessions, requests/s, tokens/s, cost at API price, first token, errors by provider, plan quota), the top five things that need you, traffic stacked by provider, providers and the working sessions.

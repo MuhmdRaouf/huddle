@@ -876,17 +876,18 @@ fn d2_one_range_control_in_the_top_bar() {
 fn d2_custom_picker_stops_at_kept_history() {
     assert!(PAGE.contains("/huddle-router/history?view=meta"));
     assert!(PAGE.contains("HIST.keep"));
-    assert!(PAGE.contains("type=\"datetime-local\""));
-    assert_eq!(
-        PAGE.matches("type=\"datetime-local\"").count(),
-        2,
+    assert!(
+        PAGE.contains("dtField('from'") && PAGE.contains("dtField('to'"),
         "from and to"
     );
-    assert!(PAGE.contains("min=\"${stamp(earliest())}\""));
-    assert!(PAGE.contains("max=\"${stamp(Date.now())}\""));
+    assert!(
+        PAGE.contains("lo=startOfDay(earliest())"),
+        "days before the kept history are off"
+    );
+    assert!(PAGE.contains("hi=Date.now()"), "days after now are off");
     assert!(PAGE.contains("clamped_from_ms"));
     assert!(
-        PAGE.contains("RANGE_MIN[k]/1440>HIST.keep?' disabled'"),
+        PAGE.contains("off:RANGE_MIN[k]/1440>HIST.keep"),
         "presets past the kept history are off"
     );
 }
@@ -1785,4 +1786,73 @@ fn c1_history_reasons_feed_providers_and_errors_in_longer_ranges() {
         PROVIDERS_JS.contains("HP.reason"),
         "history causes come from the loaded reasons"
     );
+}
+
+#[test]
+fn e9_dashboard_has_no_native_select() {
+    assert!(!PAGE.contains("<select"), "no native select");
+    for kind in ["date", "time", "datetime-local"] {
+        assert!(
+            !PAGE.contains(&format!("type=\"{kind}\"")),
+            "no native {kind} input"
+        );
+    }
+}
+
+#[test]
+fn e9_range_menu_keeps_its_values() {
+    let ranges = PAGE.find("const RANGES=[").expect("ranges");
+    let list = &PAGE[ranges..ranges + PAGE[ranges..].find("];").expect("end")];
+    let labels: Vec<&str> = [
+        "15 min", "1 hour", "24 hours", "7 days", "30 days", "90 days",
+    ]
+    .into_iter()
+    .collect();
+    let mut at = 0;
+    for label in &labels {
+        let found = list[at..].find(label).expect(label);
+        at += found + label.len();
+    }
+    assert!(
+        PAGE.contains("{k:'custom',t:'Custom',sep:1}"),
+        "Custom last, after a divider"
+    );
+    assert!(PAGE.contains("MENUS.range="), "the range is a page menu");
+    assert!(
+        PAGE.contains("pick:k=>{if(k==='custom')"),
+        "Custom opens the picker, a preset goes through setRange"
+    );
+    assert!(PAGE.contains("else setRange(k)"));
+    assert!(
+        PAGE.contains("RANGE_MIN[k]/1440>HIST.keep"),
+        "presets past the kept history stay off"
+    );
+}
+
+#[test]
+fn e9_menu_follows_the_listbox_pattern() {
+    for part in [
+        "aria-haspopup=\"listbox\"",
+        "aria-expanded",
+        "role=\"listbox\"",
+        "role=\"option\"",
+        "aria-selected",
+        "aria-activedescendant",
+        "'Home'",
+        "'End'",
+        "'Escape'",
+        "'Tab'",
+        "prefers-reduced-motion",
+    ] {
+        assert!(PAGE.contains(part), "{part}");
+    }
+    assert!(
+        PAGE.contains("MENUS.hstatus="),
+        "the status filter is a page menu"
+    );
+    assert!(
+        PAGE.contains("dtField('from','rfrom'") && PAGE.contains("dtField('to','rto'"),
+        "own from and to fields"
+    );
+    assert!(PAGE.contains("data-day="), "own calendar");
 }

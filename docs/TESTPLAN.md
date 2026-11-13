@@ -123,6 +123,7 @@ the owner's `~/.claude`, `~/.agents` or the network.
 | Polling and repaint pause on a hidden tab | crates/huddle-router/tests/dashboard_page.rs:d13_polling_pauses_on_a_hidden_tab |
 | Harness rows carry the failure reason | crates/huddle-daemon/src/checks/harnesses.rs:d13_harness_failures_say_why |
 | Upstream failures count by phase | crates/huddle-router/src/router_events.rs:d13_failures_count_by_phase |
+| The dashboard draws its own menus and date picker: no native select or date input, the range menu keeps its six presets plus Custom, and the menu follows the listbox pattern | crates/huddle-router/tests/dashboard_page.rs:e9_dashboard_has_no_native_select; crates/huddle-router/tests/dashboard_page.rs:e9_range_menu_keeps_its_values; crates/huddle-router/tests/dashboard_page.rs:e9_menu_follows_the_listbox_pattern |
 | The projects by models matrix follows the range | crates/huddle-router/tests/dashboard_page.rs:d11_matrix_follows_the_range |
 | History totals flag unpriced models and price cache savings | crates/huddle-router/tests/history_endpoint.rs:d11_totals_flag_unpriced_models_and_price_cache_savings |
 | A provider row carries its console link | crates/huddle-router/src/live.rs:d8_a_provider_without_a_quota_api_carries_its_console_link |

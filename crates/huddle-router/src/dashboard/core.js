@@ -270,21 +270,93 @@ function loadHistory(){if(liveRange())return;const get=hget;
  const q=rangeQuery();
  Promise.all([get('/huddle-router/history?view=buckets&'+rangeQuery()),get('/huddle-router/history?view=totals&by=model&'+rangeQuery())]).then(([bk,tot])=>{if(rangeQuery()!==q)return;
   HIST.bk=bk;HIST.tot=tot;HIST.ser=histSeries(bk);HIST.err=false;HIST.ser.mn.forEach((m,i)=>{HCOLOR[m]='var(--c'+(i%6+1)+')'});paint()},()=>{if(rangeQuery()!==q)return;HIST.err=true;paint()})}
+/* ---------- the page's own menu: a button and a listbox popover ---------- */
+const MENUS={};let MENU=null,MTYPE={s:'',t:0};
+const CHEVRON='<svg class="mchev" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+const menuCur=id=>{const m=MENUS[id],o=m.opts(),k=m.cur();return o.find(x=>x.k===k)||o[0]};
+function menuHtml(id,cls){const m=MENUS[id];
+ return `<div class="pmenu${cls?' '+cls:''}" data-menu="${id}"><button type="button" class="mbtn" id="mb-${id}" data-mbtn="${id}" aria-haspopup="listbox" aria-expanded="false" aria-label="${esc(m.label)}"><span class="mval">${esc(menuCur(id).t)}</span>${CHEVRON}</button></div>`}
+function menuLabel(id){const b=$('#mb-'+id);if(b)b.querySelector('.mval').textContent=menuCur(id).t}
+function menuDrop(){if(!MENU)return;const l=MENU.list;MENU=null;l.classList.remove('on');const b=$('#mb-'+l.dataset.for);if(b)b.setAttribute('aria-expanded','false');setTimeout(()=>l.remove(),REDUCED()?0:140)}
+const REDUCED=()=>window.matchMedia&&matchMedia('(prefers-reduced-motion: reduce)').matches;
+function closeMenu(focus){const id=MENU&&MENU.id;menuDrop();if(focus&&id){const b=$('#mb-'+id);if(b)b.focus()}}
+function menuActive(i){if(!MENU)return;const rows=MENU.rows;let n=i;while(rows[n]&&rows[n].dataset.off)n+=i>=MENU.i?1:-1;if(!rows[n])return;
+ rows.forEach((r,j)=>r.classList.toggle('act',j===n));MENU.i=n;MENU.list.setAttribute('aria-activedescendant',rows[n].id);rows[n].scrollIntoView({block:'nearest'})}
+function openMenu(id){if(MENU){const same=MENU.id===id;closeMenu(false);if(same)return}
+ const btn=$('#mb-'+id);if(!btn)return;const m=MENUS[id],cur=m.cur(),box=btn.parentNode;
+ const list=document.createElement('ul');list.className='mlist';list.setAttribute('role','listbox');list.setAttribute('tabindex','-1');list.setAttribute('aria-label',m.label);list.dataset.for=id;
+ setHtml(list,m.opts().map((o,i)=>`<li role="option" id="mo-${id}-${i}" data-mk="${esc(o.k)}" aria-selected="${o.k===cur}"${o.sep?' class="sep"':''}${o.off?' aria-disabled="true" data-off="1"':''}>${esc(o.t)}<svg class="mtick" viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 8.5l3 3 6-7" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></li>`).join(''));
+ box.appendChild(list);btn.setAttribute('aria-expanded','true');
+ const rows=[...list.children];MENU={id,list,rows,i:0};
+ const r=list.getBoundingClientRect();
+ if(r.bottom>innerHeight-8&&btn.getBoundingClientRect().top>r.height+16)list.classList.add('up');
+ if(r.right>innerWidth-8)list.classList.add('left');
+ void list.offsetWidth;list.classList.add('on');
+ menuActive(Math.max(0,m.opts().findIndex(o=>o.k===cur)));list.focus({preventScroll:true})}
+function menuPick(i){const m=MENU;if(!m)return;const row=m.rows[i];if(!row||row.dataset.off)return;const id=m.id,k=row.dataset.mk;closeMenu(true);MENUS[id].pick(k);menuLabel(id)}
+/* typing a letter jumps to the next option starting with it */
+function menuType(ch){const now=Date.now();MTYPE.s=now-MTYPE.t>700?ch:MTYPE.s+ch;MTYPE.t=now;const rows=MENU.rows,n=rows.length;
+ for(let j=1;j<=n;j++){const i=(MENU.i+(MTYPE.s.length>1?0:j))%n;if(!rows[i].dataset.off&&rows[i].textContent.toLowerCase().startsWith(MTYPE.s)){menuActive(i);return}}}
+function menuKeys(e){
+ const b=e.target.closest&&e.target.closest('[data-mbtn]');
+ if(b&&!MENU&&(e.key==='ArrowDown'||e.key==='ArrowUp')){e.preventDefault();e.stopPropagation();openMenu(b.dataset.mbtn);return}
+ if(!MENU)return;const k=e.key,last=MENU.rows.length-1;
+ const eat=()=>{e.preventDefault();e.stopPropagation()};
+ if(k==='ArrowDown'){eat();menuActive(Math.min(last,MENU.i+1))}
+ else if(k==='ArrowUp'){eat();menuActive(Math.max(0,MENU.i-1))}
+ else if(k==='Home'){eat();menuActive(0)}
+ else if(k==='End'){eat();menuActive(last)}
+ else if(k==='Enter'||k===' '){eat();menuPick(MENU.i)}
+ else if(k==='Escape'){eat();closeMenu(true)}
+ else if(k==='Tab'){menuDrop()}
+ else if(k.length===1&&!e.metaKey&&!e.ctrlKey&&!e.altKey){eat();menuType(k.toLowerCase())}}
+document.addEventListener('keydown',menuKeys,true);
+document.addEventListener('mousemove',e=>{const o=MENU&&e.target.closest&&e.target.closest('[data-mk]');if(o&&MENU.list.contains(o)){const i=MENU.rows.indexOf(o);if(i!==MENU.i&&!o.dataset.off)menuActive(i)}});
 /* the one range control: a preset or a custom from-to, kept in the top bar */
-const stamp=t=>{const d=new Date(t);return `${d.getFullYear()}-${p2(d.getMonth()+1)}-${p2(d.getDate())}T${p2(d.getHours())}:${p2(d.getMinutes())}`};
 const earliest=()=>Date.now()-HIST.keep*864e5;
-function rangeBar(){const sel=HIST.picking?'custom':HIST.range;
- const opts=RANGES.map(([k,s])=>`<option value="${k}"${k===sel?' selected':''}${RANGE_MIN[k]/1440>HIST.keep?' disabled':''}>${s}</option>`).join('')+`<option value="custom"${sel==='custom'?' selected':''}>Custom</option>`;
- const f=HIST.range==='custom'?HIST.from:Date.now()-864e5,t=HIST.range==='custom'?HIST.to:Date.now();
- const pop=HIST.picking?`<div class="rangepop" role="group" aria-label="Custom range"><label>From<input type="datetime-local" id="rfrom" min="${stamp(earliest())}" max="${stamp(Date.now())}" value="${stamp(Math.max(f,earliest()))}"></label><label>To<input type="datetime-local" id="rto" min="${stamp(earliest())}" max="${stamp(Date.now())}" value="${stamp(t)}"></label><div class="rerr" id="rerr" role="alert"></div><div class="racts"><button id="rapply">Apply</button><button id="rcancel">Cancel</button></div></div>`:'';
- return `<select id="rangesel" aria-label="Time range">${opts}</select>${pop}`}
-function renderRangeBar(){const el=$('#rangebar');if(el)setHtml(el,rangeBar())}
+MENUS.range={label:'Time range',
+ opts:()=>RANGES.map(([k,s])=>({k,t:s,off:RANGE_MIN[k]/1440>HIST.keep})).concat([{k:'custom',t:'Custom',sep:1}]),
+ cur:()=>HIST.picking?'custom':HIST.range,
+ pick:k=>{if(k==='custom'){HIST.picking=true;initPick();renderRangeBar();const n=$('#rfrom');if(n)n.focus()}else{HIST.picking=false;if(k===HIST.range)renderRangeBar();else setRange(k)}}};
+/* the own date and time picker for the Custom range: two fields, one month grid, hour and minute menus */
+const DT={from:0,to:0,act:'from',y:0,m:0},MONTHS=['January','February','March','April','May','June','July','August','September','October','November','December'];
+const startOfDay=t=>{const d=new Date(t);return new Date(d.getFullYear(),d.getMonth(),d.getDate()).getTime()};
+const dtText=t=>{const d=new Date(t);return `${d.getDate()} ${MON[d.getMonth()]} ${d.getFullYear()}, ${p2(d.getHours())}:${p2(d.getMinutes())}`};
+function dtView(){const d=new Date(DT[DT.act]);DT.y=d.getFullYear();DT.m=d.getMonth()}
+function initPick(){const f=HIST.range==='custom'?HIST.from:Date.now()-864e5,t=HIST.range==='custom'?HIST.to:Date.now();DT.from=Math.max(f,earliest());DT.to=t;DT.act='from';dtView()}
+const dtSet=(f,fn)=>{const d=new Date(DT[f]);fn(d);DT[f]=d.getTime()};
+MENUS.dth={label:'Hour',opts:()=>Array.from({length:24},(_,i)=>({k:String(i),t:p2(i)})),cur:()=>String(new Date(DT[DT.act]).getHours()),pick:k=>{dtSet(DT.act,d=>d.setHours(+k));redrawPick('#mb-dth')}};
+MENUS.dtm={label:'Minute',opts:()=>Array.from({length:60},(_,i)=>({k:String(i),t:p2(i)})),cur:()=>String(new Date(DT[DT.act]).getMinutes()),pick:k=>{dtSet(DT.act,d=>d.setMinutes(+k));redrawPick('#mb-dtm')}};
+function calHtml(){const lead=(new Date(DT.y,DT.m,1).getDay()+6)%7,days=new Date(DT.y,DT.m+1,0).getDate(),cur=startOfDay(DT[DT.act]),lo=startOfDay(earliest()),hi=Date.now();
+ let g='';for(let i=0;i<lead;i++)g+='<span></span>';
+ for(let d=1;d<=days;d++){const s=new Date(DT.y,DT.m,d).getTime(),off=s<lo||s>hi;g+=`<button type="button" class="day${s===cur?' sel':''}" data-day="${d}" aria-pressed="${s===cur}"${off?' disabled':''}>${d}</button>`}
+ return `<div class="calhead"><button type="button" class="calnav" data-cal="-1" aria-label="Previous month">${ic('chev','flip')}</button><b aria-live="polite">${MONTHS[DT.m]} ${DT.y}</b><button type="button" class="calnav" data-cal="1" aria-label="Next month">${ic('chev')}</button></div><div class="calgrid">${['Mo','Tu','We','Th','Fr','Sa','Su'].map(x=>`<i>${x}</i>`).join('')}${g}</div>`}
+const dtField=(f,id,l)=>`<button type="button" class="dtf" id="${id}" data-dtf="${f}" aria-pressed="${DT.act===f}"><span class="dtl">${l}</span><span>${esc(dtText(DT[f]))}</span></button>`;
+function rangeBar(){
+ const pop=HIST.picking?`<div class="rangepop" role="group" aria-label="Custom range"><div class="dtfs">${dtField('from','rfrom','From')}${dtField('to','rto','To')}</div><div class="cal">${calHtml()}</div><div class="dtime"><span>Time</span>${menuHtml('dth','sm')}<span>:</span>${menuHtml('dtm','sm')}</div><div class="rerr" id="rerr" role="alert"></div><div class="racts"><button id="rapply">Apply</button><button id="rcancel">Cancel</button></div></div>`:'';
+ return menuHtml('range')+pop}
+function redrawPick(focus){const err=($('#rerr')||{}).textContent;renderRangeBar();if(err)setHtml($('#rerr'),esc(err));const n=focus&&$(focus);if(n)n.focus()}
+function pickClick(e){
+ const f=e.target.closest('[data-dtf]');if(f){DT.act=f.dataset.dtf;dtView();redrawPick('#'+f.id);return true}
+ const c=e.target.closest('[data-cal]');if(c){const d=new Date(DT.y,DT.m+ +c.dataset.cal,1);DT.y=d.getFullYear();DT.m=d.getMonth();redrawPick('[data-cal="'+c.dataset.cal+'"]');return true}
+ const d=e.target.closest('[data-day]');if(d){dtSet(DT.act,x=>x.setFullYear(DT.y,DT.m,+d.dataset.day));DT[DT.act]=Math.min(DT[DT.act],Date.now());redrawPick('[data-day="'+d.dataset.day+'"]');return true}
+ return false}
+/* arrows move across the month grid; Escape leaves the picker */
+document.addEventListener('keydown',e=>{
+ if(!HIST.picking||MENU)return;const day=e.target.closest&&e.target.closest('[data-day]');
+ if(e.key==='Escape'&&e.target.closest&&e.target.closest('.rangepop')){e.preventDefault();e.stopPropagation();HIST.picking=false;renderRangeBar();const b=$('#mb-range');if(b)b.focus();return}
+ const step={ArrowLeft:-1,ArrowRight:1,ArrowUp:-7,ArrowDown:7}[e.key];
+ if(!day||!step)return;e.preventDefault();e.stopPropagation();
+ const d=new Date(DT.y,DT.m,+day.dataset.day+step);
+ if(d.getFullYear()!==DT.y||d.getMonth()!==DT.m){DT.y=d.getFullYear();DT.m=d.getMonth();redrawPick();const n=$('[data-day="'+d.getDate()+'"]');if(n&&!n.disabled)n.focus();return}
+ const n=$('[data-day="'+d.getDate()+'"]');if(n&&!n.disabled)n.focus()},true);
+function renderRangeBar(){const el=$('#rangebar');if(el){menuDrop();setHtml(el,rangeBar())}}
 function applyRange(){HIST.bk=HIST.tot=HIST.ser=null;HIST.err=false;HIST.picking=false;CH.focus=null;if(liveRange()&&CH.metric==='cost')CH.metric='req';
  HT.ses=HT.prj=HT.meta=null;HT.trend={};
  try{localStorage.setItem('huddle-range',HIST.range);if(HIST.range==='custom')localStorage.setItem('huddle-range-custom',JSON.stringify({from:HIST.from,to:HIST.to}))}catch(e){}
  renderRangeBar();render();loadHistory()}
 function setRange(k){if(!RANGES.some(r=>r[0]===k))return;HIST.range=k;applyRange()}
-function applyCustom(){const f=Date.parse($('#rfrom').value),t=Math.min(Date.parse($('#rto').value),Date.now()),err=m=>{setHtml($('#rerr'),esc(m))};
+function applyCustom(){const f=DT.from,t=Math.min(DT.to,Date.now()),err=m=>{setHtml($('#rerr'),esc(m))};
  if(!(f<t))return err('Pick a start that is before the end.');
  if(f<earliest())return err(`huddle keeps ${HIST.keep} days of history. Pick a start inside it.`);
  HIST.range='custom';HIST.from=f;HIST.to=t;applyRange()}
@@ -358,7 +430,7 @@ function shell(){patch($('#nav'),navHtml());patch($('#rcard'),rcard());$('#clock
 
 /* ---------- routing ---------- */
 let page='overview';
-function render(){REG={};let h=(location.hash||'#overview').slice(1).split('?')[0];h=h==='plugins'?'providers':h;page=PAGES[h]?h:'overview';const p=PAGES[page];
+function render(){menuDrop();REG={};let h=(location.hash||'#overview').slice(1).split('?')[0];h=h==='plugins'?'providers':h;page=PAGES[h]?h:'overview';const p=PAGES[page];
  if(page==='requests')hload(page);else HS.mode='live';
  const grp=NAV.find(([,its])=>its.some(([k])=>k===page))[0];
  patch($('#crumbs'),`<span class="c0">Huddle</span>${ic('chev')}<span>${grp}</span>${ic('chev')}<b>${p.title}</b>`);
@@ -370,6 +442,11 @@ window.addEventListener('hashchange',render);
 function toast(t){const el=$('#toast');setHtml(el,ic('check')+esc(t));el.classList.add('on');clearTimeout(toast.h);toast.h=setTimeout(()=>el.classList.remove('on'),1400)}
 function copy(t){const done=()=>toast('Copied '+(t.length>36?t.slice(0,34)+'…':t));try{navigator.clipboard.writeText(t).then(done,()=>toast('Select and copy: '+t))}catch(e){toast('Select and copy: '+t)}}
 document.addEventListener('click',e=>{
+ const mb=e.target.closest('[data-mbtn]'),mo=e.target.closest('[data-mk]');
+ if(MENU&&!(mb||(mo&&MENU.list.contains(mo))))closeMenu(false);
+ if(mb){openMenu(mb.dataset.mbtn);return}
+ if(mo&&MENU){menuPick(MENU.rows.indexOf(mo));return}
+ if(pickClick(e))return;
  if(e.target.closest('#rapply')){applyCustom();return}
  if(e.target.closest('#rcancel')){HIST.picking=false;renderRangeBar();return}
  const c=e.target.closest('[data-copy]');if(c){e.stopPropagation();copy(c.dataset.copy);return}
@@ -383,7 +460,6 @@ document.addEventListener('click',e=>{
  const op=e.target.closest('[data-open]');if(op){openDrawer(op.dataset.open);return}
  const th=e.target.closest('[data-theme-set]');if(th){setTheme(th.dataset.themeSet);return}
 });
-document.addEventListener('change',e=>{if(e.target.id!=='rangesel')return;const k=e.target.value;if(k==='custom'){HIST.picking=true;renderRangeBar();const n=$('#rfrom');if(n)n.focus()}else{HIST.picking=false;if(k===HIST.range)renderRangeBar();else setRange(k)}});
 document.addEventListener('input',e=>{const q=e.target.closest('[data-q]');if(q){F.q[q.dataset.q]=q.value;refresh()}
  const hf=e.target.closest('[data-hf]');if(hf){const k=hf.dataset.hf;HS.f[k]=hf.value;HS.off=0;clearTimeout(HS.t);HS.t=setTimeout(hsearch,300)}});
 $('#scrim').onclick=()=>{closeDrawer();closeSidebar()};
