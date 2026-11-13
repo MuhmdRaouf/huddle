@@ -193,6 +193,9 @@ fn stop_recorded_router(root: &Path) {
 /// The full environment of a child rooted at `root`: the machine variables named in
 /// `KEPT_FROM_PARENT`, then the private directories. Every other inherited variable is left out,
 /// so owner keys, proxies and Claude Code session variables never reach a child.
+/// A local address nothing listens on: port 9, the discard service, closed on every test machine.
+const CLOSED_PORT_URL: &str = "http://127.0.0.1:9";
+
 pub fn child_env(
     inherited: &[(String, String)],
     root: &Path,
@@ -217,6 +220,12 @@ pub fn child_env(
         // No test opens a real browser: this one does nothing.
         ("HUDDLE_BROWSER", "true".to_string()),
         ("HUDDLE_ROUTER_PORT", router_port.to_string()),
+        // A test that forgets its fake upstream fails here instead of calling a real provider.
+        ("ZAI_BASE_URL", CLOSED_PORT_URL.to_string()),
+        ("KIMI_BASE_URL", CLOSED_PORT_URL.to_string()),
+        ("DEEPSEEK_BASE_URL", CLOSED_PORT_URL.to_string()),
+        ("MINIMAX_BASE_URL", CLOSED_PORT_URL.to_string()),
+        ("QWEN_BASE_URL", CLOSED_PORT_URL.to_string()),
     ] {
         vars.push((name.to_string(), value));
     }

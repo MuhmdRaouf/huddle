@@ -309,3 +309,18 @@ fn b6_settle_router_returns_once_the_record_exists() {
     let quiet = TempHome::new();
     assert!(!quiet.settle_router(std::time::Duration::from_millis(100)));
 }
+
+/// A test that forgets its fake upstream must never reach a real provider: every provider's base
+/// URL points at a closed local port unless the test sets its own.
+#[test]
+fn a_test_home_points_every_provider_at_a_closed_local_port() {
+    let home = TempHome::new();
+    let env = home.env();
+    for prefix in ["ZAI", "KIMI", "DEEPSEEK", "MINIMAX", "QWEN"] {
+        assert_eq!(
+            value(&env, &format!("{prefix}_BASE_URL")),
+            Some("http://127.0.0.1:9"),
+            "{prefix}"
+        );
+    }
+}

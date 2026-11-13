@@ -242,3 +242,13 @@ Each incident, its cause, and the test that now stops it. A guard named here mus
   was ever checked.
 - **Guard:** crates/huddle-router/tests/keycheck.rs:the_check_sends_the_host_it_asks
 - **Rule:** every request huddle builds itself names its `Host`.
+
+## 2026-11-13, a provider test called the real Z.ai
+
+- **What happened:** after the key check started sending `Host`, `provider_remove.rs` failed with "Z.ai GLM
+  refused the stored key": the test's fake key had gone to the real `api.z.ai`.
+- **Cause:** the test ran `huddle provider zai setup` without a fake upstream, and nothing stopped a test
+  from reaching a real provider. Z.ai's 400 to the old check had hidden it.
+- **Guard:** crates/huddle-testkit/tests/temp_home.rs:a_test_home_points_every_provider_at_a_closed_local_port
+- **Rule:** a test home points every provider at a closed local port; a test that needs an answer brings
+  its own fake.
