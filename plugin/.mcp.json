@@ -9,7 +9,7 @@
     },
     "huddle-http": {
       "type": "http",
-      "url": "http://127.0.0.1:4835/mcp"
+      "url": "http://127.0.0.1:${HUDDLE_ROUTER_PORT:-4835}/mcp"
     }
   }
 }

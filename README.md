@@ -153,7 +153,7 @@ the machine as this user.
 
 ## MCP
 
-The plugin gives Claude Code the huddle tools as an MCP server, so it can call them without a slash command. Two servers declare the same tools, `huddle` over stdio and `huddle-http` over the router's `http://127.0.0.1:4835/mcp`, and both are on by default so you can compare them. In Claude Code, open `/mcp` and disable the one you do not want.
+The plugin gives Claude Code the huddle tools as an MCP server, so it can call them without a slash command. Two servers declare the same tools, `huddle` over stdio and `huddle-http` over the router's `http://127.0.0.1:${HUDDLE_ROUTER_PORT:-4835}/mcp` (the port follows `HUDDLE_ROUTER_PORT`), and both are on by default so you can compare them. In Claude Code, open `/mcp` and disable the one you do not want.
 
 | Tool | What it does |
 |---|---|

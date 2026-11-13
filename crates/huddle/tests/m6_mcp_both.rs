@@ -33,7 +33,6 @@ fn m6_the_plugin_declares_both_servers() {
 
     let http = &servers["huddle-http"];
     assert_eq!(http["type"], "http");
-    assert_eq!(http["url"], "http://127.0.0.1:4835/mcp");
 
     let stdio = &servers["huddle"];
     assert_eq!(stdio["command"], "sh");
@@ -344,4 +343,61 @@ fn shape(value: &Value) -> Value {
         Value::String(_) => json!("string"),
         other => other.clone(),
     }
+}
+
+/// The expansion the MCP docs describe for `${VAR:-default}` in a server entry: the value of
+/// `VAR` when it is set, the default when it is unset. Plugin servers get the same environment
+/// access as manually configured servers. One reference per url is all the plugin uses.
+fn expand(url: &str, set: Option<&str>) -> String {
+    let start = url.find("${").expect("a variable reference");
+    let close = url[start..].find('}').expect("a closed reference") + start;
+    let default = match url[start + 2..close].split_once(":-") {
+        Some((_, default)) => default,
+        None => &url[start + 2..close],
+    };
+    format!(
+        "{}{}{}",
+        &url[..start],
+        set.unwrap_or(default),
+        &url[close + 1..]
+    )
+}
+
+/// The host, port and path of an expanded `http://` url.
+fn parts(url: &str) -> (String, u16, String) {
+    let rest = url.strip_prefix("http://").expect("an http url");
+    let (authority, path) = rest.split_once('/').expect("a path");
+    let (host, port) = authority.rsplit_once(':').expect("a port");
+    (
+        host.to_string(),
+        port.parse().expect("a port number"),
+        format!("/{path}"),
+    )
+}
+
+#[test]
+fn t3_mcp_http_url_follows_the_router_port() {
+    let url = mcp_json()["mcpServers"]["huddle-http"]["url"]
+        .as_str()
+        .expect("a url")
+        .to_string();
+    assert_eq!(url, "http://127.0.0.1:${HUDDLE_ROUTER_PORT:-4835}/mcp");
+
+    // Unset, the documented expansion gives the default port. The test never connects to it.
+    assert_eq!(expand(&url, None), "http://127.0.0.1:4835/mcp");
+
+    // Set, the expanded url reaches a router on that port through /mcp.
+    let daemon = Daemon::start(&[], &[]);
+    let expanded = expand(&url, Some(&daemon.port.to_string()));
+    let (host, port, path) = parts(&expanded);
+    assert_eq!(
+        (host.as_str(), port, path.as_str()),
+        ("127.0.0.1", daemon.port, "/mcp")
+    );
+    let mut http = Http::open(port);
+    let list = http.request("tools/list", json!({}));
+    assert!(
+        names(&list).contains(&"huddle_version".to_string()),
+        "{list}"
+    );
 }
