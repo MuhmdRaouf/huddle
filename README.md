@@ -279,7 +279,7 @@ huddle-router          the proxy: lanes, the key swap, the Anthropic default,
 huddle-setup           the install, the settings patch and its undo.
 huddle-jobs            the job model and its records.
 huddle-history         the request history in `huddle.db`.
-huddle-mcp             the MCP tool registry, served over stdio by `huddle mcp`.
+huddle-mcp             the MCP tool registry, served over stdio by `huddle mcp` and over HTTP by the router.
 huddle-harness         the harness table and its runners.
 huddle-sessions        Claude Code's session logs and the projects' worktrees,
                        read only.
@@ -388,7 +388,7 @@ huddle/
 │   ├── huddle-jobs/            # the job model and records
 │   ├── huddle-harness/         # the harness table and runners
 │   ├── huddle-sessions/        # Claude Code session logs and worktrees, read only
-│   ├── huddle-mcp/             # the MCP tool registry and the stdio transport
+│   ├── huddle-mcp/             # the MCP tool registry and its stdio and HTTP transports
 │   ├── huddle-catalog/         # provider data and routing
 │   ├── huddle-pki/             # the local CA
 │   ├── huddle-keystore/        # keys in the OS store
@@ -400,7 +400,7 @@ huddle/
 │                               #   provider ones), agents, skills, hooks and dist/run
 ├── .claude-plugin/             # marketplace.json: the huddle plugin
 ├── docs/                       # USAGE, TESTPLAN, INCIDENTS, DECISIONS, adr/
-├── release/size-limit          # the release binary limit, 10 MB
+├── release/size-limit          # the release binary limit, 12 MB
 ├── assets/                     # banner, logo, mark, app icon, favicons
 ├── .github/workflows/          # ci.yml and release.yml
 ├── Dockerfile                  # the toolchain image
@@ -451,7 +451,7 @@ manual run checks everything.
 2. Tests: `cargo fmt` and `cargo clippy` on Linux, the whole suite on Linux and
    macOS, and the router overhead gate alone on its own runner.
 3. Release builds: the four binaries, each on a runner of its own CPU, with
-   static Linux binaries, and the 10 MB limit on every one.
+   static Linux binaries, and the 12 MB limit on every one.
 4. `All checks passed`: the one check branch protection requires.
 
 Every job is capped at 10 minutes. A new push cancels the run in flight on the

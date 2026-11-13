@@ -115,3 +115,7 @@ apart after fast crashes (a worker that lived 10 s starts the delays over). The 
 lives, so a dial during a restart waits in the kernel queue. A handover gives the socket to the taker, then tells the
 worker (SIGUSR1) to stop accepting and drain; a stop sends it SIGTERM. A worker whose parent died stops itself. No
 OS service is involved; the session hooks stay as the backup.
+
+## D16: MCP over HTTP stays on the loopback
+
+The router serves the MCP tools at `/mcp` on its own port, answering only `127.0.0.1:<port>` and `localhost:<port>` as Host and the `http` origins of those two, never a dashboard host, and no standalone event stream (a GET is refused). The release binary grew from 7,320,720 to 8,578,240 B on macOS with the HTTP service, and Linux builds run about 1.5 MB larger, so the size limit moved from 10 MB to 12 MB.

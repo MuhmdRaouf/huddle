@@ -15,6 +15,7 @@ use crate::dashboard::{Dashboard, DashboardInputs, HISTORY_PATH, LIVE_PATH, STAT
 use crate::keycache::sources_for;
 use crate::lane::{Lane, LaneError, Logger};
 use crate::live::{Finish, HistorySink, LiveState, RequestStart};
+use crate::mcp_http::{self, with_mcp};
 pub use crate::probe::ProbeTiming;
 use crate::probe::{self, ProbeHandle, ProbeTarget};
 use crate::quota::{QuotaFetcher, catalog_urls};
@@ -28,6 +29,7 @@ use crate::upstream::{FailureCode, IDLE_TIMEOUT, UpstreamClient, UpstreamConfig}
 use huddle_catalog::providers::{provider_by_id, provider_ids};
 use huddle_catalog::routing::{ResolvedIds, Route, decide_resolved};
 use huddle_config::{env::Env, paths::Paths};
+use huddle_mcp::Machine;
 use huddle_pki::leaf::LeafCache;
 use hyper::Method;
 use hyper::body::Bytes;
@@ -390,6 +392,18 @@ impl Router {
                 }
             })
         });
+        let forward = with_mcp(
+            forward,
+            mcp_http::service(
+                &self.dashboard.version,
+                Machine {
+                    binary: std::env::current_exe().unwrap_or_else(|_| "huddle".into()),
+                    paths: self.paths.clone(),
+                    env: self.env.clone(),
+                    port: self.port,
+                },
+            ),
+        );
         let providers: Arc<dyn Fn() -> Vec<String> + Send + Sync> = {
             let router = Arc::clone(self);
             Arc::new(move || router.providers())

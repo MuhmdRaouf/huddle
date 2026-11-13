@@ -18,7 +18,7 @@ concurrency:
 #   1. Plan: which parts changed (a manual run checks everything). A part whose marker file is missing is skipped.
 #   2. Repository rules on every push: secrets, AI attribution, the pre-commit hooks (Markdown, YAML, workflows, hygiene), the plugin catalogue.
 #   3. Tests: format and clippy on ubuntu, the suite on ubuntu and macOS, and the router overhead gate alone on its runner.
-#   4. Release: the four release binaries, each built on a runner of its own CPU, and the 10 MB size ceiling on every binary.
+#   4. Release: the four release binaries, each built on a runner of its own CPU, and the 12 MB size ceiling on every binary.
 #   5. All checks passed: the one check branch protection requires; a skipped job counts as passed.
 # Runners are pinned so an image migration never changes the toolchain under a green build. Third-party actions are
 # pinned to commit SHAs; Dependabot proposes the bumps. Every job is capped at 10 minutes.
@@ -268,7 +268,7 @@ jobs:
           path: dist/${{ matrix.asset }}
           if-no-files-found: error
 
-  # The 10 MB ceiling on every release binary (release/size-limit).
+  # The 12 MB ceiling on every release binary (release/size-limit).
   rust-size:
     name: "Rust: release binary size"
     needs: [plan, rust-cross]

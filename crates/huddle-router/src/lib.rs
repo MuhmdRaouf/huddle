@@ -14,6 +14,7 @@ pub mod keycache;
 pub mod keycheck;
 pub mod lane;
 pub mod live;
+pub mod mcp_http;
 pub mod probe;
 pub mod quota;
 pub mod refusal;

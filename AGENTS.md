@@ -48,7 +48,7 @@ cargo run -q -p huddle-testkit --bin huddle-check-attribution  # no AI attributi
 - History: every finished request is one row in `~/.local/state/huddle/huddle.db` (SQLite, no prompt, key or header value), written off the request path and pruned past `[history] keep_days` in `config.toml` (90 by default). `GET /huddle-router/history` answers range buckets, session and project totals and a filtered, paged search to the dashboard; Claude models are priced at API list rates and shown as API-equivalent.
 - `/huddle:<p>:setup` adds a provider's lane, key, `/model` entries and its two agents in `~/.claude/agents/`; `/huddle:<p>:remove` undoes them. Keys live in the OS keystore, entered through a one-time key page on `127.0.0.1` (Claude Code), `huddle provider <p>` (a terminal: masked prompt), `<P>_API_KEY` or `huddle provider <p> key` reading hidden stdin. A key the provider refuses is never stored. Setup links `~/.local/bin/huddle` to the binary.
 - Delegation runs a table-driven harness in the caller's folder or the folder `--dir` names; huddle makes no worktree. Each job's record is `job.toml` under `~/.local/state/huddle/jobs/<repo-slug>/<id>/`. `/huddle:run` waits by default, `--background` returns; `/huddle:status` finds dead drivers; `/huddle:result <id> [--diff] [--accept [--no-commit]] [--return "<feedback>"]` decides; `/huddle:cancel <id>` stops it.
-- `panic=abort`, Rust stable, reproducible flags are not a goal; CI enforces a 10 MB binary limit (`release/size-limit`) that never rises just to pass.
+- `panic=abort`, Rust stable, reproducible flags are not a goal; CI enforces a 12 MB binary limit (`release/size-limit`) that never rises just to pass.
 
 ## Code rules
 
@@ -120,7 +120,7 @@ attribution off; `cargo run -q -p huddle-testkit --bin huddle-check-attribution`
 
 ## CI
 
-`.github/workflows/ci.yml`: repository rules (gitleaks, attribution, actionlint, plugin validation), the Rust gates (fmt, clippy, tests on Linux and macOS, cross builds for four targets, the 10 MB size guard), and the gate `All checks passed`. Every job is capped at 10 minutes. Reproduce failures locally; re-run only the failed jobs.
+`.github/workflows/ci.yml`: repository rules (gitleaks, attribution, actionlint, plugin validation), the Rust gates (fmt, clippy, tests on Linux and macOS, cross builds for four targets, the 12 MB size guard), and the gate `All checks passed`. Every job is capped at 10 minutes. Reproduce failures locally; re-run only the failed jobs.
 
 ## Releases
 

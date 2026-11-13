@@ -44,8 +44,8 @@ fn binary_of(home: &TempDir, name: &str, size: u64) -> PathBuf {
 }
 
 #[test]
-fn the_committed_limit_is_10_mb_at_most() {
-    assert!(limit() <= 10_000_000, "the limit is {}", limit());
+fn the_committed_limit_is_12_mb_at_most() {
+    assert!(limit() <= 12_000_000, "the limit is {}", limit());
 }
 
 #[test]

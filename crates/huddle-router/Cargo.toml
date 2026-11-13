@@ -13,6 +13,7 @@ huddle-keystore.workspace = true
 huddle-pki.workspace = true
 huddle-history.workspace = true
 huddle-sessions.workspace = true
+huddle-mcp.workspace = true
 tokio.workspace = true
 hyper.workspace = true
 hyper-util.workspace = true
