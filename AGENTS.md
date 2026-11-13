@@ -21,7 +21,7 @@ cargo test --workspace                          # the whole suite
 cargo test -p huddle --test e2e_flow            # one e2e file
 cargo fmt --all --check
 cargo clippy --workspace --all-targets --locked -- -D warnings
-cargo build --release -p huddle                 # the release binary (LTO, panic=abort, strip)
+cargo build --release -p huddle                 # the release binary (own crates opt-level="s", dependencies 3, LTO, panic=abort, strip)
 cargo run -q -p huddle-release -- size target/release/huddle  # the binary size limit from release/size-limit
 claude --plugin-dir ./plugin                    # load the plugin from the working tree
 cargo run -q -p huddle-testkit --bin huddle-check-attribution  # no AI attribution in the history

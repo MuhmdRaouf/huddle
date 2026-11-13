@@ -43,6 +43,40 @@ fn binary_of(home: &TempDir, name: &str, size: u64) -> PathBuf {
     path
 }
 
+/// The lines of one `[header]` section of a TOML document, up to the next header.
+fn manifest_section(manifest: &str, header: &str) -> String {
+    let mut body = String::new();
+    let mut inside = false;
+    for line in manifest.lines() {
+        if line.trim() == header {
+            inside = true;
+        } else if inside && line.trim_start().starts_with('[') {
+            break;
+        } else if inside {
+            body.push_str(line);
+            body.push('\n');
+        }
+    }
+    body
+}
+
+#[test]
+fn t5_release_profile_builds_own_crates_for_size() {
+    let manifest = fs::read_to_string(repo_root().join("Cargo.toml")).unwrap();
+    let release = manifest_section(&manifest, "[profile.release]");
+    assert!(
+        release.contains("opt-level = \"s\""),
+        "[profile.release] builds the workspace's own crates for size \
+         (opt-level = \"s\"), found:\n{release}"
+    );
+    let deps = manifest_section(&manifest, "[profile.release.package.\"*\"]");
+    assert!(
+        deps.contains("opt-level = 3"),
+        "[profile.release.package.\"*\"] keeps every dependency at full speed \
+         (opt-level = 3), found:\n{deps}"
+    );
+}
+
 #[test]
 fn the_committed_limit_is_12_mb_at_most() {
     assert!(limit() <= 12_000_000, "the limit is {}", limit());

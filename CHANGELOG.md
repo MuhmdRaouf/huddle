@@ -30,6 +30,7 @@ Provider setup holds across sessions, and the key check gets a real answer.
 - Projects are one row per git repository (active sessions, worktrees with a stale count, requests, tokens, cost and top model in the range, last activity) and its drawer lists branches, worktrees and sessions. Worktrees group by repository with Stale and Uncommitted filters and the command that removes an agent worktree. Jobs keep finished jobs (finished, failed, accepted, cancelled) for the chosen range, with outcome, review state and duration.
 - Cost cells read plain prices under an "API price" header, with "no price" for a model without a list price; page subtitles name the chosen time range; the Providers badge counts what the Providers page shows; the Errors legend shows the range average; Providers and Errors read failure reasons from history in every range (`by=reason`); a quota tool call asks the router to refresh once, within the usual five minute limit.
 - The plugin's `huddle-http` server url follows `HUDDLE_ROUTER_PORT` (`http://127.0.0.1:${HUDDLE_ROUTER_PORT:-4835}/mcp`), so a router on a moved port stays reachable without editing the plugin.
+- The release build compiles the workspace's own crates for size (`opt-level = "s"`) and keeps every dependency at full speed (`opt-level = 3`): the macOS binary drops from 9.02 MB to 7.21 MB.
 
 ### MCP
 
