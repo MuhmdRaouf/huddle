@@ -25,6 +25,7 @@ Provider setup holds across sessions, and the key check gets a real answer.
 
 - Sessions show the six states in plain words (Needs you, Working, Background, Your turn, Done, Idle) with a filter chip each, a Group by repo toggle, errors and cost in the chosen range, and a cold cache says how many tokens the next message re-reads. No column clips at 1440 px and phones stack each row. The session drawer retries a failed history load and lists agents, background tasks and each request's reason. Agents lists main agents, subagents and open background tasks with requests and tokens, and a row quiet for 30 minutes reads Idle.
 - Projects are one row per git repository (active sessions, worktrees with a stale count, requests, tokens, cost and top model in the range, last activity) and its drawer lists branches, worktrees and sessions. Worktrees group by repository with Stale and Uncommitted filters and the command that removes an agent worktree. Jobs keep finished jobs (finished, failed, accepted, cancelled) for the chosen range, with outcome, review state and duration.
+- Cost cells read plain prices under an "API price" header, with "no price" for a model without a list price; page subtitles name the chosen time range; the Providers badge counts what the Providers page shows; the Errors legend shows the range average; Providers and Errors read failure reasons from history in every range (`by=reason`); a quota tool call asks the router to refresh once, within the usual five minute limit.
 
 ### MCP
 

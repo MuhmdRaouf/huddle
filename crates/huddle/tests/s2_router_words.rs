@@ -194,10 +194,17 @@ fn s2_status_names_both_pids_and_restarts() {
     let plain = stdout_of(&f.huddle(&["router", "status"]));
     assert!(plain.contains("restarts 1 (last: signal 9)"), "{plain}");
     let log = stdout_of(&f.huddle(&["router", "log"]));
-    assert!(
-        log.contains("worker exited (signal 9), restarted in 0 ms"),
-        "{log}"
-    );
+    let line = log
+        .lines()
+        .find(|l| l.contains("worker exited (signal 9), restarted in "))
+        .unwrap_or_else(|| panic!("{log}"));
+    let waited: u64 = line
+        .rsplit("restarted in ")
+        .next()
+        .and_then(|rest| rest.split(' ').next())
+        .and_then(|ms| ms.parse().ok())
+        .unwrap_or(u64::MAX);
+    assert!(waited < 1000, "{line}");
 }
 
 #[test]

@@ -9,7 +9,9 @@ use std::collections::BTreeMap;
 use huddle_catalog::prices::{
     CLAUDE_PRICES_RETRIEVED, PRICES_RETRIEVED, TokenCounts, cost_usd, is_api_equivalent, price_of,
 };
-use huddle_history::{Filter, GroupBy, History, HistoryError, Page, Range, Row, StatusClass};
+use huddle_history::{
+    Filter, GroupBy, History, HistoryError, Page, Range, Row, StatusClass, Total,
+};
 use serde_json::{Value, json};
 
 const SECOND: u64 = 1_000;
@@ -220,6 +222,7 @@ pub fn parse(query: &str, now_ms: u64, keep_days: u64) -> Result<Query, Refusal>
                 Some("project") => GroupBy::Project,
                 Some("model") => GroupBy::Model,
                 Some("lane") => GroupBy::Lane,
+                Some("reason") => GroupBy::Reason,
                 Some("day") => GroupBy::Day,
                 Some(_) => return Err(bad("by must be session, project, model, lane or day")),
             };
@@ -352,6 +355,14 @@ pub fn answer(
             out.insert("buckets".into(), Value::Array(rows));
             Ok(Value::Object(out))
         }
+        Query::Totals(window, GroupBy::Reason) => {
+            let totals = history.totals(window.range(), GroupBy::Reason)?;
+            let rows: Vec<Value> = totals.iter().filter_map(reason_row).collect();
+            let mut out = envelope("totals", *window);
+            out.insert("by".into(), json!(group_name(GroupBy::Reason)));
+            out.insert("totals".into(), Value::Array(rows));
+            Ok(Value::Object(out))
+        }
         Query::Totals(window, by) => {
             let totals = history.totals_with_aliases(window.range(), *by, aliases)?;
             let rows: Vec<Value> = totals
@@ -415,6 +426,23 @@ pub fn answer(
     }
 }
 
+/// One failing provider, status and reason from a `lane|status|reason` total; the groups that
+/// hold no error (a good answer, a client that left) have no row.
+fn reason_row(total: &Total) -> Option<Value> {
+    if total.err == 0 {
+        return None;
+    }
+    let mut parts = total.key.splitn(3, '|');
+    let lane = parts.next()?;
+    let status: u64 = parts.next()?.parse().ok()?;
+    let reason = parts.next().filter(|reason| !reason.is_empty());
+    Some(json!({
+        "lane": lane, "status": status, "reason": reason, "n": total.err,
+        "first_ms": total.first_ms, "last_ms": total.last_ms,
+        "models": total.models.iter().map(|m| m.model.as_str()).collect::<Vec<_>>(),
+    }))
+}
+
 fn meta_answer(keep_days: u64) -> Value {
     json!({ "view": "meta", "keep_days": keep_days })
 }
@@ -425,6 +453,7 @@ fn group_name(by: GroupBy) -> &'static str {
         GroupBy::Project => "project",
         GroupBy::Model => "model",
         GroupBy::Lane => "lane",
+        GroupBy::Reason => "reason",
         GroupBy::Day => "day",
     }
 }

@@ -248,7 +248,22 @@ fn k4_a_second_setup_leaves_the_link_alone() {
     let _stop = StopOnDrop(&home, port);
     let path = on_path(&home);
 
-    huddle_on_path(&home, port, &path, &["setup", "--install"]);
+    let first = huddle_on_path(&home, port, &path, &["setup", "--install"]);
+    let first_out = String::from_utf8_lossy(&first.stdout);
+    let first_err = String::from_utf8_lossy(&first.stderr);
+    assert_eq!(
+        first.status.code(),
+        Some(0),
+        "first setup: {first_out}{first_err}"
+    );
+    assert!(
+        first_out.contains("linked ~/.local/bin/huddle"),
+        "first setup did not link: {first_out}{first_err}"
+    );
+    assert!(
+        wait_for_port(port),
+        "the router the first setup started never answered"
+    );
     let second = huddle_on_path(&home, port, &path, &["setup", "--install"]);
     let stdout = String::from_utf8_lossy(&second.stdout);
     assert!(!stdout.contains("linked"), "{stdout}");

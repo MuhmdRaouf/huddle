@@ -10,6 +10,7 @@ pub mod id;
 pub mod liveness;
 pub mod model;
 pub mod overview;
+pub mod preflight;
 pub mod render;
 pub mod report;
 pub mod return_job;

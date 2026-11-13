@@ -199,6 +199,22 @@ impl Dashboard {
         response
     }
 
+    /// The snapshot after one quota refresh that counts as a viewer for that ask. The five
+    /// minute limit per provider still holds, so a caller asking often reads the cached answer.
+    pub async fn state_answer_with_quota(&self) -> Response<RespBody> {
+        if let Some(quota) = &self.quota {
+            quota.refresh(now_ms(), 1, &(self.enabled)()).await;
+        }
+        let mut response = json_answer(
+            StatusCode::OK,
+            serde_json::to_string(&self.snapshot_with(true)).unwrap_or_default(),
+        );
+        response
+            .headers_mut()
+            .insert(CACHE_CONTROL, HeaderValue::from_static("no-store"));
+        response
+    }
+
     /// The history answer for a query string. The database work runs on a blocking thread.
     pub async fn history_answer(&self, query: &str) -> Response<RespBody> {
         let now = now_ms();
@@ -287,6 +303,11 @@ impl Dashboard {
     }
 
     fn snapshot(&self) -> Snapshot {
+        self.snapshot_with(false)
+    }
+
+    /// `with_quota` adds the cached quota answers to a snapshot nobody watches.
+    fn snapshot_with(&self, with_quota: bool) -> Snapshot {
         let enabled = (self.enabled)();
         let mut lanes = vec![LaneMeta {
             id: "anthropic".to_owned(),
@@ -328,13 +349,17 @@ impl Dashboard {
             harnesses: checking(),
             ..SnapshotInputs::default()
         };
-        if watched {
-            // The asks run off the snapshot's path; the answers land in a later snapshot.
-            if let Some(quota) = &self.quota {
+        if let Some(quota) = &self.quota {
+            if watched {
+                // The asks run off the snapshot's path; the answers land in a later snapshot.
                 let (fetcher, viewers, ids) = (Arc::clone(quota), self.live.viewers(), enabled);
                 inputs.quota = quota.view();
                 tokio::spawn(async move { fetcher.refresh(now_ms(), viewers, &ids).await });
+            } else if with_quota {
+                inputs.quota = quota.view();
             }
+        }
+        if watched {
             let machine = (self.inputs.sessions)();
             inputs.process = (self.inputs.process)();
             inputs.sessions = machine.sessions;

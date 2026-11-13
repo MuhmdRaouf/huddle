@@ -377,3 +377,36 @@ async fn d11_totals_flag_unpriced_models_and_price_cache_savings() {
     assert_eq!(glm["cache_saved_usd"], 0.0);
     assert_eq!(day["priced"], true);
 }
+
+#[tokio::test]
+async fn c1_totals_by_reason_count_each_provider_and_cause() {
+    let rig = rig(true).await;
+    let t = now();
+    let mut quota = row(t - MIN, "glm-5.3", "zai", 429);
+    quota.reason = Some("quota".into());
+    let busy = row(t - MIN, "claude-opus-5-5", "anthropic", 529);
+    let left = row(t - MIN, "glm-5.3", "zai", 499);
+    History::open(&rig._home.root().join("huddle.db"))
+        .expect("open")
+        .insert(&[quota.clone(), quota, busy, left])
+        .expect("insert");
+    let v = json(&rig, "view=totals&by=reason&range=1h").await;
+    assert_eq!(v["by"], "reason");
+    let rows = v["totals"].as_array().expect("totals");
+    let find = |lane: &str, status: u64| {
+        rows.iter()
+            .find(|r| r["lane"] == lane && r["status"] == status)
+            .unwrap_or_else(|| panic!("no {lane} {status} in {v}"))
+    };
+    let quota = find("zai", 429);
+    assert_eq!(quota["reason"], "quota");
+    assert_eq!(quota["n"], 2);
+    assert_eq!(find("anthropic", 529)["n"], 1);
+    assert!(find("anthropic", 529)["reason"].is_null());
+    assert_eq!(find("zai", 500)["n"], 1);
+    assert!(
+        rows.iter()
+            .all(|r| r["status"] != 200 && r["status"] != 499),
+        "only errors: {v}"
+    );
+}

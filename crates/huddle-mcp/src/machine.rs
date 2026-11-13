@@ -16,6 +16,8 @@ use serde_json::Value;
 
 const STATE_PATH: &str = "/huddle-router/state";
 const STATE_WITHIN: Duration = Duration::from_secs(2);
+/// A state answer that waits for the providers' quota asks.
+const QUOTA_WITHIN: Duration = Duration::from_secs(10);
 const STATE_MAX_BYTES: usize = 8 * 1024 * 1024;
 
 /// The state a server is started with: where the files are and which port the router uses.
@@ -81,12 +83,21 @@ impl Machine {
 
     /// The router's dashboard state as JSON, or none when the router does not answer in time.
     pub fn router_state(&self) -> Option<Value> {
+        self.state_at(STATE_PATH, STATE_WITHIN)
+    }
+
+    /// The state after the router refreshed its provider quotas: the ask counts as a viewer.
+    pub fn router_state_with_quota(&self) -> Option<Value> {
+        self.state_at(&format!("{STATE_PATH}?quota=refresh"), QUOTA_WITHIN)
+    }
+
+    fn state_at(&self, target: &str, within: Duration) -> Option<Value> {
         let address = SocketAddr::from(([127, 0, 0, 1], self.port));
         let mut stream = TcpStream::connect_timeout(&address, STATE_WITHIN).ok()?;
-        stream.set_read_timeout(Some(STATE_WITHIN)).ok()?;
-        stream.set_write_timeout(Some(STATE_WITHIN)).ok()?;
+        stream.set_read_timeout(Some(within)).ok()?;
+        stream.set_write_timeout(Some(within)).ok()?;
         let request = format!(
-            "GET {STATE_PATH} HTTP/1.1\r\nHost: 127.0.0.1:{}\r\nConnection: close\r\n\r\n",
+            "GET {target} HTTP/1.1\r\nHost: 127.0.0.1:{}\r\nConnection: close\r\n\r\n",
             self.port
         );
         stream.write_all(request.as_bytes()).ok()?;

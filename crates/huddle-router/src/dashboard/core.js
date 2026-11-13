@@ -240,7 +240,8 @@ const rangeShort=()=>HIST.range==='custom'?'custom':RANGES.find(x=>x[0]===HIST.r
 const rangeText=()=>HIST.range==='custom'?when(HIST.from)+' to '+when(HIST.to):RANGES.find(x=>x[0]===HIST.range)[2];
 function rangeQuery(){return HIST.range==='custom'?'from='+HIST.from+'&to='+HIST.to:'range='+HIST.range}
 const usd=v=>num(v)==null?'—':'$'+(v>0&&v<0.01?v.toFixed(4):v.toFixed(2));
-const apiq=()=>`<span class="faint" title="${FLAT}">API-equivalent</span>`;
+const noPrice='<span class="faint">no price</span>';
+const costText=(cost,priced)=>priced===false?noPrice:`<span class="mono">${usd(cost)}</span>`;
 const SER0={b:[0,1].map(i=>Object.assign({byM:{},t:i,w:0},EMPTY)),mn:[],bw:3e4};
 const ser=()=>liveRange()?{b:BK,mn:MN,bw:BW}:(HIST.ser||SER0);
 const rangeMin=()=>HIST.range==='custom'?Math.max(1,(HIST.to-HIST.from)/6e4):RANGE_MIN[HIST.range];
@@ -255,10 +256,10 @@ function histSeries(d){const w=Math.max(1,num(d.width_ms)||3e5),s0=Math.floor(d.
 function histRows(){const lat={};arr(HIST.bk&&HIST.bk.buckets).forEach(x=>{const l=lat[x.model]||(lat[x.model]={w:0,n:0,p95:null});if(num(x.ttft_p50)!=null){l.w+=x.ttft_p50*n0(x.n);l.n+=n0(x.n)}if(num(x.ttft_p95)!=null)l.p95=Math.max(l.p95||0,x.ttft_p95)});
  const ts=arr(HIST.tot&&HIST.tot.totals),all=Math.max(1,sum(ts.map(t=>n0(t.n))));
  return ts.map(t=>{const l=lat[t.key]||{n:0,p95:null};
-  return {id:t.key,n:n0(t.n),err:n0(t.err),...tokSplit(t.tok_in,t.cache_read,t.cache_write),out:n0(t.tok_out),p50:l.n?l.w/l.n:null,p95:l.p95,cost:num(t.cost_usd),apiq:!!t.api_equivalent,share:n0(t.n)/all}})}
+  return {id:t.key,n:n0(t.n),err:n0(t.err),...tokSplit(t.tok_in,t.cache_read,t.cache_write),out:n0(t.tok_out),p50:l.n?l.w/l.n:null,p95:l.p95,cost:num(t.cost_usd),priced:t.priced!==false,share:n0(t.n)/all}})}
 const RM=()=>liveRange()?MODELS:histRows();
 const HIDE_IN_RANGE=['lane','trend','speed','sess','last'];
-const COSTCOL={k:'cost',label:'Est. cost',num:1,v:x=>x.cost||0,h:x=>`<span class="mono">${usd(x.cost)}</span>${x.apiq?' '+apiq():''}`};
+const COSTCOL={k:'cost',label:'API price',num:1,v:x=>x.cost||0,h:x=>costText(x.cost,x.priced)};
 const rangeCols=cols=>liveRange()?cols:cols.filter(c=>!HIDE_IN_RANGE.includes(c.k)).concat([COSTCOL]);
 const rangeRows=()=>liveRange()?modelRows():histRows();
 const rangeEmpty=()=>HIST.bk||HIST.err||liveRange()?`No requests in ${rangeText()}`:'Checking…';
@@ -302,11 +303,11 @@ const wantTotals=()=>page==='sessions'||page==='projects'||!!sheetKey();
 function loadTotals(){if(!wantTotals())return;const q=sheetKey(),key=q&&q.key;
  Promise.all([hget(HQ+'totals&by=session&'+rangeQuery()),hget(HQ+'totals&by=project&'+rangeQuery()),q?hget(HQ+'buckets&'+rangeQuery()+'&'+q.k+'='+encodeURIComponent(q.id)):null]).then(([s,p,t])=>{
   HT.ses=hmap(s);HT.prj=hmap(p);HT.meta=s;if(t)HT.trend[key]=t;HT.err=false;paint()},()=>{HT.err=true;paint()})}
-const costCell=t=>`<span class="mono">${usd(t.cost_usd)}</span>${t.api_equivalent?' '+apiq():''}`;
+const costCell=t=>costText(t.cost_usd,t.priced);
 const histCols=get=>[
  {k:'hreq',get label(){return `Requests (${rangeShort()})`},num:1,sm:1,v:x=>n0((get(x)||HZERO).n),h:x=>hCell(get(x),t=>t.n?fmt(t.n):'<span class="faint">0</span>')},
  {k:'htok',get label(){return `Tokens (${rangeShort()})`},num:1,sm:1,v:x=>n0((get(x)||HZERO).tok_in)+n0((get(x)||HZERO).tok_out),h:x=>hCell(get(x),t=>t.n?`${fmt(t.tok_in)} <span class="faint">/</span> ${fmt(t.tok_out)}`:NA)},
- {k:'hcost',get label(){return `Cost (${rangeShort()})`},num:1,v:x=>n0((get(x)||HZERO).cost_usd),h:x=>hCell(get(x),t=>t.n?costCell(t):NA)}];
+ {k:'hcost',get label(){return `API price (${rangeShort()})`},num:1,v:x=>n0((get(x)||HZERO).cost_usd),h:x=>hCell(get(x),t=>t.n?costCell(t):NA)}];
 /* the History block of a session or project sheet: totals, a daily trend and the models used */
 function histBlock(key,t){const tr=HT.trend[key],head=`<h4>History <span class="faint">${rangeText()}</span></h4>`;
  if(!t)return `<div>${head}<div class="card pad">${HT.err?'<span class="badc">Could not load history. Showing the last data.</span> <button type="button" class="cmd" data-retry>Retry</button>':checking()}</div></div>`;
@@ -318,7 +319,7 @@ function histBlock(key,t){const tr=HT.trend[key],head=`<h4>History <span class="
   {k:'tok',label:'Tokens in / out',num:1,v:m=>n0(m.tok_in),h:m=>`${fmt(m.tok_in)} <span class="faint">/</span> ${fmt(m.tok_out)}`},
   {k:'cost',label:'Cost',num:1,v:m=>n0(m.cost_usd),h:m=>`<span class="mono">${usd(m.cost_usd)}</span>`}];
  return `<div>${head}<div class="facts">${fact('Requests',fmt(t.n)+' · '+fmt(t.err)+' errors')+fact('Tokens in',fmt(tin))+fact('Tokens out',fmt(t.tok_out))
-  +fact('Cache hit rate',tin?Math.round(tokSplit(tin,t.cache_read,t.cache_write).hit*100)+'%':'—')+fact('Estimated cost',costCell(t))+fact('First seen',new Date(t.first_ms).toLocaleDateString()+' · '+ago(t.first_ms))+fact('Last seen',new Date(t.last_ms).toLocaleDateString()+' · '+ago(t.last_ms))}</div>
+  +fact('Cache hit rate',tin?Math.round(tokSplit(tin,t.cache_read,t.cache_write).hit*100)+'%':'—')+fact('API price',costCell(t))+fact('First seen',new Date(t.first_ms).toLocaleDateString()+' · '+ago(t.first_ms))+fact('Last seen',new Date(t.last_ms).toLocaleDateString()+' · '+ago(t.last_ms))}</div>
   <div class="card pad mt12"><div class="legendrow bare">Requests over time</div>${tr?spark(histSeries(tr).b.map(k=>k.n),'var(--c1)'):checking()}</div></div>
   <div><h4>Models used <span class="faint">${arr(t.models).length}</span></h4><div class="card t">${table('d-hm',mcols,arr(t.models),{empty:'No models'})}</div>${pricesLine(HT.meta)}</div>`}
 
@@ -339,7 +340,7 @@ function badge(k){switch(k){
  case 'requests':return bdg(rate(sum(PS.slice(-10))/10)+'/s','requests per second, last 10 seconds');
  case 'errors':{const e=stats().done.filter(r=>r.status!==200).length;return e?bdg(e,'failed and cancelled requests in the last 15 minutes','bad'):''}
  case 'models':return bdg(MODELS.length,'models used in the last 15 minutes');
- case 'providers':{const n=PL.rows.filter(r=>r.set_up===true).length;return PL.rows.length?bdg(`${n?`<span class="good">${n}</span>`:n}/${PL.rows.length}`,'providers set up of all providers'):''}
+ case 'providers':{const n=provSetUp();return PL.rows.length?bdg(`${n?`<span class="good">${n}</span>`:n}/${provTotal()}`,'providers set up of all providers'):''}
  case 'projects':return bdg(projects().length,'projects');
  case 'worktrees':return bdg(WT.length,'worktrees and checkouts');
  case 'jobs':return bdg(JOBS.length,'delegated jobs');

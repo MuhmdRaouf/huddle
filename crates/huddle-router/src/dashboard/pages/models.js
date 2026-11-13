@@ -6,8 +6,8 @@ function loadModels(){const q=rangeQuery();if(HM.q===q&&HM.tot&&Date.now()-HM.at
  hget(HQ+'totals&by=model&'+q).then(d=>{if(HM.q!==q)return;HM.tot=hmap(d);HM.at=Date.now();HM.err=false;paint()},()=>{if(HM.q!==q)return;HM.err=true;paint()})}
 function modelPriced(){const t=HM.tot||{};return rangeRows().map(x=>{const h=t[x.id];return Object.assign({},x,{lane:x.lane||laneOfModel(x.id),cost:h?num(h.cost_usd):null,priced:h?h.priced!==false:true,known:!!h})})}
 const perMillion=x=>x.n&&x.tin+x.out?x.cost/(x.tin+x.out)*1e6:null;
-const modelPrice=x=>!x.known?(HM.err||HM.tot?NA:checking()):!x.priced?'<span class="faint">no price</span>':`<span class="mono">${usd(x.cost)}</span>`;
-const modelPer1M=x=>!x.known?(HM.err||HM.tot?NA:checking()):!x.priced?'<span class="faint">no price</span>':perMillion(x)==null?NA:`<span class="mono">${usd(perMillion(x))}</span>`;
+const modelPrice=x=>!x.known?(HM.err||HM.tot?NA:checking()):costText(x.cost,x.priced);
+const modelPer1M=x=>!x.known?(HM.err||HM.tot?NA:checking()):!x.priced?noPrice:perMillion(x)==null?NA:`<span class="mono">${usd(perMillion(x))}</span>`;
 const modelStat=()=>HM.err?`<div class="legendrow badc">Could not load prices. Showing the last data.</div>`:'';
 const modelCols=()=>[
  {k:'model',label:'Model',v:x=>x.id,h:x=>modelTag(x.id)},

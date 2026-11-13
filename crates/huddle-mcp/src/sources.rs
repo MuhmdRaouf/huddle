@@ -15,6 +15,11 @@ pub trait Sources: Send {
     fn open_history(&self) -> Option<History>;
     /// The router's live state; none while the router is down.
     fn router_state(&self) -> Option<Value>;
+    /// The router's live state after it refreshed the provider quotas; the plain state when
+    /// the sources cannot ask.
+    fn router_quota_state(&self) -> Option<Value> {
+        self.router_state()
+    }
     /// The five providers as setup left them.
     fn provider_setups(&self) -> Vec<ProviderSetup>;
     /// The folder that holds the router's log files.
@@ -72,6 +77,10 @@ impl Sources for RouterSources {
 
     fn router_state(&self) -> Option<Value> {
         self.machine.router_state()
+    }
+
+    fn router_quota_state(&self) -> Option<Value> {
+        self.machine.router_state_with_quota()
     }
 
     fn provider_setups(&self) -> Vec<ProviderSetup> {

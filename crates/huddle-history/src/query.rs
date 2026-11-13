@@ -34,6 +34,8 @@ pub enum GroupBy {
     Project,
     Model,
     Lane,
+    /// Provider, status and failure reason, as `lane|status|reason` (an empty reason when none).
+    Reason,
     /// A UTC calendar day, `YYYY-MM-DD`.
     Day,
 }
@@ -47,6 +49,7 @@ impl GroupBy {
             GroupBy::Project => "COALESCE(project, '')",
             GroupBy::Model => "model",
             GroupBy::Lane => "lane",
+            GroupBy::Reason => "lane || '|' || status || '|' || COALESCE(reason, '')",
             GroupBy::Day => "at_ms / 86400000",
         }
     }

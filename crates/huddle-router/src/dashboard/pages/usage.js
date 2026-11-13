@@ -58,5 +58,5 @@ PAGES.usage={title:'Usage',after:loadUsage,body:()=>head('Usage',`Where the toke
   {k:'out',label:'Output',num:1,v:x=>x.out,h:x=>fmt(x.out)},
   {k:'tot',label:'Total',num:1,v:x=>x.tin+x.out,h:x=>`<b>${fmt(x.tin+x.out)}</b>`},
   {k:'hit',label:'Cache hit',num:1,v:x=>x.hit,h:x=>`<div class="sharebar"><span class="mono">${Math.round(x.hit*100)}%</span>${meter(x.hit*100,'acc')}</div>`,sm:1}
- ]),rangeRows(),{sort:{k:'tot',d:-1},empty:rangeEmpty()}))}</div>${reg('prices',priceNote)}</section>`+
+ ]),rangeRows(),{sort:{k:'tot',d:-1},empty:rangeEmpty()}))}<div class="legendrow"><span>API price: ${FLAT}. A model with no list price reads no price.</span></div></div>${reg('prices',priceNote)}</section>`+
  `<section>${secH('Projects × models',`<span class="note">total tokens in ${rangeText()}, grouped by repository, darker is more</span>`)}<div class="card t">${reg('matrix',matrix)}</div></section>`};

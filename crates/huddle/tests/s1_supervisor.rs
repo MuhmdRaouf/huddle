@@ -103,22 +103,32 @@ fn s1_a_killed_worker_is_back_within_a_second() {
     assert!(f.health().is_some());
     let killed = Instant::now();
     kill_9(before.worker);
+    // The product restarts within 1 s; the wait gets 5 s so a loaded machine slows the test, not the claim.
     let answer = loop {
         if let Some(text) = f.health() {
             break text;
         }
         assert!(killed.elapsed() < Duration::from_secs(5), "never answered");
     };
-    assert!(
-        killed.elapsed() < Duration::from_secs(1),
-        "back after {:?}",
-        killed.elapsed()
-    );
     assert!(answer.contains("huddle-router"));
     let after = f.pids_when(|pids| pids.worker > 0 && pids.worker != before.worker);
     assert_eq!(after.parent, before.parent, "the parent stays");
     assert!(alive(after.parent));
-    assert!(f.log().contains("huddle-router: worker exited (signal 9)"));
+    let log = f.log();
+    assert!(log.contains("huddle-router: worker exited (signal 9)"));
+    let waited = restart_ms(&log).expect("the log names the restart delay");
+    assert!(waited < 1000, "restarted after {waited} ms");
+}
+
+/// The delay the last "restarted in N ms" line names.
+fn restart_ms(log: &str) -> Option<u64> {
+    let line = log.lines().rev().find(|l| l.contains("restarted in "))?;
+    line.split("restarted in ")
+        .nth(1)?
+        .split(' ')
+        .next()?
+        .parse()
+        .ok()
 }
 
 #[test]

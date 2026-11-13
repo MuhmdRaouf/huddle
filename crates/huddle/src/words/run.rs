@@ -8,14 +8,13 @@ use std::time::Duration;
 
 use huddle_config::env::Env;
 use huddle_config::paths::Paths;
-use huddle_harness::check::check_entry;
-use huddle_harness::user_entries::all_entries;
 use huddle_jobs::checks::{self, Checks};
 use huddle_jobs::checks_render;
 use huddle_jobs::driver::{self, DriveError, SubmitInput};
 use huddle_jobs::id::{new_job_id, now_ms};
 use huddle_jobs::liveness;
 use huddle_jobs::model::{Access, JobState};
+use huddle_jobs::preflight::{self, PreflightError};
 use huddle_jobs::render;
 use huddle_jobs::review;
 use huddle_jobs::store::JobStore;
@@ -85,49 +84,13 @@ pub fn run(args: &[String], env: &Env) -> i32 {
             return 1;
         }
     };
-    let entries = match all_entries(&paths.config_dir.join("harnesses.toml")) {
-        Ok(entries) => entries,
-        Err(error) => {
-            let _ = writeln!(std::io::stderr(), "huddle: {error}");
-            return 1;
-        }
-    };
-    let Some(entry) = entries.iter().find(|entry| entry.id == id) else {
-        let _ = writeln!(
-            std::io::stderr(),
-            "huddle: no harness named \"{id}\": /huddle:setup lists them"
-        );
-        return 2;
-    };
-    let supported: Vec<&str> = entry
-        .run
-        .accepted_access()
-        .iter()
-        .map(|level| level.as_str())
-        .collect();
-    if !supported.contains(&access_word(access)) {
-        let _ = writeln!(
-            std::io::stderr(),
-            "huddle: {id} cannot run with {} access: it supports {}",
-            access_word(access),
-            supported.join(", ")
-        );
-        return 2;
-    }
-    let report = check_entry(entry, env, None);
-    // The run gates on the binary alone: a version probe can fail on a harness that still
-    // works a turn, and the attempt then carries the harness's own error.
-    let failed = report
-        .checks
-        .iter()
-        .find(|line| !line.ok && line.name == "binary");
-    if let Some(line) = failed {
-        let _ = writeln!(
-            std::io::stderr(),
-            "huddle: {id} is not ready: {}: /huddle:setup {id} shows what to fix",
-            line.detail
-        );
-        return 6;
+    if let Err(error) = preflight::check_run(&paths, env, &id, access_word(access)) {
+        let _ = writeln!(std::io::stderr(), "huddle: {error}");
+        return match error {
+            PreflightError::Table(_) => 1,
+            PreflightError::Unknown(_) | PreflightError::Access { .. } => 2,
+            PreflightError::NotReady { .. } => 6,
+        };
     }
     let job_id = match new_job_id(now_ms()) {
         Ok(job_id) => job_id,

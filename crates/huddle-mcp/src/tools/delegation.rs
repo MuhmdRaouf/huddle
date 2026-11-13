@@ -8,8 +8,6 @@ use std::time::Duration;
 
 use huddle_config::env::Env;
 use huddle_config::paths::Paths;
-use huddle_harness::check::check_entry;
-use huddle_harness::user_entries::all_entries;
 use huddle_jobs::accept::{self, AcceptError};
 use huddle_jobs::cancel::{self, CancelError};
 use huddle_jobs::checks;
@@ -20,6 +18,7 @@ use huddle_jobs::id::{new_job_id, now_ms};
 use huddle_jobs::liveness;
 use huddle_jobs::model::{Access, Job};
 use huddle_jobs::overview;
+use huddle_jobs::preflight;
 use huddle_jobs::render;
 use huddle_jobs::return_job;
 use huddle_jobs::review::review_view;
@@ -144,37 +143,7 @@ pub fn run(ctx: &Context, input: RunInput) -> Result<RunOutput, ToolError> {
         return Err("run needs a harness id and a task".to_string());
     }
     let paths = paths_of(&ctx.env)?;
-    let entries =
-        all_entries(&paths.config_dir.join("harnesses.toml")).map_err(|e| e.to_string())?;
-    let Some(entry) = entries.iter().find(|entry| entry.id == harness) else {
-        return Err(format!(
-            "no harness named \"{harness}\": /huddle:setup lists them"
-        ));
-    };
-    if !entry
-        .run
-        .accepted_access()
-        .iter()
-        .any(|a| a.as_str() == "write")
-    {
-        let supported: Vec<&str> = entry
-            .run
-            .accepted_access()
-            .iter()
-            .map(|a| a.as_str())
-            .collect();
-        return Err(format!(
-            "{harness} cannot run with write access: it supports {}",
-            supported.join(", ")
-        ));
-    }
-    let report = check_entry(entry, &ctx.env, None);
-    if let Some(line) = report.checks.iter().find(|l| !l.ok && l.name == "binary") {
-        return Err(format!(
-            "{harness} is not ready: {}: /huddle:setup {harness} shows what to fix",
-            line.detail
-        ));
-    }
+    preflight::check_run(&paths, &ctx.env, &harness, "write").map_err(|e| e.to_string())?;
     let folder = match dir {
         Some(dir) => PathBuf::from(dir),
         None => std::env::current_dir().map_err(|e| e.to_string())?,

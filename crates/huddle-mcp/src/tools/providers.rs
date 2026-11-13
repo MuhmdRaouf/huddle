@@ -202,7 +202,7 @@ fn has_quota_api(provider: Option<&Provider>) -> bool {
 
 /// Anthropic and each set-up provider, read from the router's state while it answers.
 pub fn quota(sources: &dyn Sources) -> QuotaAnswer {
-    let state = sources.router_state();
+    let state = sources.router_quota_state();
     let router_up = state.is_some();
     let mut views = state
         .and_then(|value| serde_json::from_value::<StateShape>(value).ok())
@@ -292,6 +292,43 @@ mod tests {
                 })
                 .collect()
         }
+    }
+
+    /// A router whose plain state holds no quota and whose refreshed state holds Z.ai's.
+    struct Refreshing;
+
+    impl Sources for Refreshing {
+        fn router_up(&self) -> bool {
+            true
+        }
+        fn binary_path(&self) -> PathBuf {
+            PathBuf::new()
+        }
+        fn open_history(&self) -> Option<History> {
+            None
+        }
+        fn router_state(&self) -> Option<Value> {
+            Some(json!({"providers": {}}))
+        }
+        fn router_quota_state(&self) -> Option<Value> {
+            Some(json!({"providers": {"zai": {"quota": {
+                "kind": "plan",
+                "windows": [{"name": "5 hours", "used_pct": 7, "resets_ms": 9, "note": null}],
+                "balance": null, "fetched_ms": 5, "error": null, "unverified": false
+            }}}}))
+        }
+        fn state_dir(&self) -> PathBuf {
+            PathBuf::new()
+        }
+        fn provider_setups(&self) -> Vec<ProviderSetup> {
+            Fake { state: None }.provider_setups()
+        }
+    }
+
+    #[test]
+    fn c1_the_quota_tool_asks_the_router_to_refresh() {
+        let answer = quota(&Refreshing);
+        assert_eq!(row(&answer, "zai").windows[0].used_pct, Some(7));
     }
 
     fn row<'a>(answer: &'a QuotaAnswer, id: &str) -> &'a ProviderQuota {

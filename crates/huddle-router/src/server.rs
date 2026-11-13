@@ -320,6 +320,9 @@ async fn dashboard_answer(
     let get = req.method() == Method::GET;
     match req.uri().path() {
         PAGE_PATH if get => Some(dashboard.page_answer()),
+        STATE_PATH if get && req.uri().query() == Some("quota=refresh") => {
+            Some(dashboard.state_answer_with_quota().await)
+        }
         STATE_PATH if get => Some(dashboard.state_answer()),
         LIVE_PATH if get => Some(dashboard.live_answer()),
         HISTORY_PATH if get => Some(

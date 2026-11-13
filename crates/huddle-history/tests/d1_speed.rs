@@ -87,6 +87,7 @@ fn d1_every_view_answers_fast_on_ninety_days() {
             GroupBy::Project,
             GroupBy::Model,
             GroupBy::Lane,
+            GroupBy::Reason,
             GroupBy::Day,
         ] {
             timed(&format!("totals {name} {by:?}"), || {

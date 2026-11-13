@@ -99,7 +99,9 @@ fn reads_every_key_of_the_state_contract() {
     contract_keys(&state, false, &mut keys);
     keys.sort();
     keys.dedup();
-    for key in keys {
+    // Plugin rows carry `set_up` for the CLI; the page derives a provider's status from live facts.
+    let unread = ["set_up"];
+    for key in keys.iter().filter(|key| !unread.contains(&key.as_str())) {
         let read = PAGE.contains(&format!(".{key}")) || PAGE.contains(&format!("'{key}'"));
         assert!(read, "the page never reads {key}");
     }
@@ -177,7 +179,7 @@ fn t8_fetches_history_only_for_a_range_longer_than_the_live_one() {
 
 #[test]
 fn t8_labels_claude_cost_as_api_equivalent_and_dates_the_prices() {
-    assert!(PAGE.contains("API-equivalent"));
+    assert!(PAGE.contains("API price"));
     assert!(
         PAGE.contains(
             "Claude plan usage is flat-rate; this is what the same tokens cost on the API"
@@ -240,7 +242,7 @@ fn t9_tables_carry_the_three_30_day_columns() {
     for label in [
         "Requests (${rangeShort()})",
         "Tokens (${rangeShort()})",
-        "Cost (${rangeShort()})",
+        "API price (${rangeShort()})",
     ] {
         assert_eq!(PAGE.matches(label).count(), 1, "{label} defined once");
     }
@@ -280,7 +282,7 @@ fn t9_shows_loading_and_failed_states_and_reuses_the_cost_label() {
             .count()
             >= 1
     );
-    assert!(PAGE.contains("t.api_equivalent?' '+apiq()"));
+    assert!(PAGE.contains("const costCell=t=>costText(t.cost_usd,t.priced)"));
     assert_eq!(PAGE.matches("const FLAT=").count(), 1);
 }
 
@@ -416,7 +418,7 @@ fn k13_the_providers_badge_reads_set_up_of_five() {
         .lines()
         .find(|l| l.contains("case 'providers':"))
         .expect("providers badge");
-    assert!(line.contains("set_up===true"), "{line}");
+    assert!(line.contains("provSetUp()"), "{line}");
     assert!(line.contains("class=\"good\""), "{line}");
     assert!(line.contains("/${"), "{line}");
 }
@@ -1157,7 +1159,10 @@ fn d11_models_show_api_price_and_unpriced() {
     ] {
         assert!(MODELS_JS.contains(column), "{column}");
     }
-    assert!(MODELS_JS.contains("no price"), "an unpriced model says so");
+    assert!(
+        MODELS_JS.contains("noPrice") && CORE_JS.contains(">no price<"),
+        "an unpriced model says so"
+    );
     assert!(
         MODELS_JS.contains("priced"),
         "reads the router's priced flag"
@@ -1650,5 +1655,81 @@ fn d13_polling_pauses_on_a_hidden_tab() {
     assert!(
         tick.contains("visibilityState") || !PAGE.contains("setInterval(()=>update(SNAP),2000)"),
         "the repaint tick pauses on a hidden tab: {tick}"
+    );
+}
+
+#[test]
+fn c1_cost_cells_say_api_price_once_in_the_header_and_never_per_cell() {
+    assert!(!PAGE.contains("API-equivalent"), "no per-cell label");
+    assert!(!PAGE.contains("apiq("), "no per-cell label helper");
+    assert!(CORE_JS.contains("label:'API price'"), "shared cost column");
+    assert!(
+        CORE_JS.contains("label(){return `API price ("),
+        "the history cost column"
+    );
+    assert!(!CORE_JS.contains("Est. cost"), "{}", "no estimate wording");
+    assert!(CORE_JS.contains("const noPrice="), "one shared 'no price'");
+    assert!(
+        MODELS_JS.contains("noPrice"),
+        "Models reads the shared 'no price'"
+    );
+    assert!(
+        CORE_JS.contains("priced:t.priced!==false"),
+        "history rows carry the priced flag"
+    );
+    assert!(
+        USAGE_JS.contains("FLAT"),
+        "the table note explains the flat plan once"
+    );
+}
+
+#[test]
+fn c1_page_subtitles_name_the_global_range() {
+    for (name, source) in [
+        ("sessions", SESSIONS_JS),
+        ("projects", PROJECTS_JS),
+        ("jobs", JOBS_JS),
+    ] {
+        let head = source
+            .lines()
+            .find(|l| l.contains("head('"))
+            .unwrap_or_else(|| panic!("{name} head"));
+        assert!(head.contains("${rangeText()}"), "{name}: {head}");
+        assert!(!head.contains("last 24 hours"), "{name}: {head}");
+    }
+}
+
+#[test]
+fn c1_the_providers_badge_counts_the_status_the_page_shows() {
+    let line = PAGE
+        .lines()
+        .find(|l| l.contains("case 'providers':"))
+        .expect("providers badge");
+    assert!(line.contains("provSetUp()"), "{line}");
+    assert!(!line.contains("set_up===true"), "{line}");
+    let at = PROVIDERS_JS.find("const provSetUp=").expect("provSetUp");
+    let def = &PROVIDERS_JS[at..PROVIDERS_JS.len().min(at + 300)];
+    for status in ["Working", "Out of quota", "Failing"] {
+        assert!(def.contains(status), "{status}: {def}");
+    }
+}
+
+#[test]
+fn c1_the_errors_legend_shows_the_range_average() {
+    assert!(ERRORS_JS.contains("Range average"), "the legend says so");
+    assert!(
+        ERRORS_JS.contains("S.tot[l]"),
+        "the legend reads the range totals"
+    );
+    assert!(!ERRORS_JS.contains("latest bucket"));
+}
+
+#[test]
+fn c1_history_reasons_feed_providers_and_errors_in_longer_ranges() {
+    assert!(PROVIDERS_JS.contains("by=reason"), "providers load reasons");
+    assert!(ERRORS_JS.contains("by=reason"), "errors load reasons");
+    assert!(
+        PROVIDERS_JS.contains("HP.reason"),
+        "history causes come from the loaded reasons"
     );
 }

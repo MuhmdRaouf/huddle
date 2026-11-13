@@ -22,7 +22,7 @@ const REQ_COLS=[
  {k:'ttft',label:'<span title="Time to first token">1st token</span>',num:1,v:r=>r.ttft||0,h:r=>`<span class="mono">${msf(r.ttft)}</span>`},
  {k:'in',label:'In',num:1,v:r=>n0(r.in),h:r=>`<span class="mono">${fmt(r.in)}</span>`},
  {k:'out',label:'Out',num:1,v:r=>n0(r.out),h:r=>`<span class="mono">${r.status==null?'…':fmt(r.out)}</span>`},
- {k:'cost',label:'API price',num:1,v:r=>n0(reqCost(r)),h:r=>{const c=reqCost(r);return c==null?NA:costCell({cost_usd:c,api_equivalent:r.lane==='anthropic'})}}
+ {k:'cost',label:'API price',num:1,v:r=>n0(reqCost(r)),h:r=>{const c=reqCost(r);return c==null?NA:costCell({cost_usd:c})}}
 ];
 const lanesWithTraffic=()=>[...new Set(REQS.map(r=>r.lane).filter(Boolean).concat(F.lane==='all'?[]:[F.lane]))].sort();
 /* The live list pauses while the page is scrolled down, so a row never moves under the reader. */

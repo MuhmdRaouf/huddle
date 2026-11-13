@@ -3,7 +3,7 @@ const outcomePill=j=>{const o=OUTCOME[j.state]||['off',j.state||'—'];return pi
 const reviewPill=j=>j.state==='awaiting_review'?pill('warn','To review'):j.state==='accepted'?pill('ok','Accepted'):j.state==='completed'?'<span class="faint">Not needed</span>':NA;
 const stwCmd=c=>`<div class="stw">${cmd(c)}</div>`;
 const jobRank=j=>({running:0,awaiting_review:1,queued:2,dead:3,failed:3,completed:4,accepted:4,cancelled:5})[j.state];
-PAGES.jobs={title:'Jobs',body:()=>head('Delegated jobs','Tasks handed to another coding CLI with /huddle:run, kept for the time range above after they finish. Each runs in its own worktree; you accept or return the result.',cmd('/huddle:status'))+
+PAGES.jobs={title:'Jobs',body:()=>head('Delegated jobs',`Tasks handed to another coding CLI with /huddle:run, kept for ${rangeText()} after they finish. Each runs in its own worktree; you accept or return the result.`,cmd('/huddle:status'))+
  `<div class="card t">${reg('jobs',()=>table('jobs',[
   {k:'id',label:'Job',v:j=>j.id,h:j=>cid(j.id)},
   {k:'h',label:'Harness',v:j=>j.h,h:j=>`<span class="mono">${esc(j.h)}</span>`},
