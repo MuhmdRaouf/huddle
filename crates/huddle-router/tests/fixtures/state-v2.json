@@ -1680,6 +1680,7 @@
  ],
  "providers": {
   "anthropic": {
+   "console_url": null,
    "quota": {
     "kind": "plan",
     "windows": [
@@ -1702,6 +1703,7 @@
    }
   },
   "zai": {
+   "console_url": "https://z.ai/manage-apikey/billing",
    "quota": {
     "kind": "plan",
     "windows": [
@@ -1728,6 +1730,7 @@
    }
   },
   "deepseek": {
+   "console_url": "https://platform.deepseek.com/top_up",
    "quota": {
     "kind": "balance",
     "windows": [],
@@ -1741,6 +1744,7 @@
    }
   },
   "kimi": {
+   "console_url": "https://platform.kimi.ai/console",
    "quota": {
     "kind": "balance",
     "windows": [],
@@ -1751,6 +1755,7 @@
    }
   },
   "qwen": {
+   "console_url": "https://usercenter2-intl.aliyun.com/billing",
    "quota": {
     "kind": "none",
     "windows": [],

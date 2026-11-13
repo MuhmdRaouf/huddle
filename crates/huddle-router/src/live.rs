@@ -5,6 +5,7 @@ use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
+use huddle_catalog::providers::provider_by_id;
 use huddle_history::{Credit, Row};
 use huddle_sessions::{RequestTag, Session, Worktree};
 use tokio::sync::watch;
@@ -275,6 +276,8 @@ pub struct Snapshot {
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]
 pub struct ProviderView {
     pub quota: QuotaView,
+    /// The provider's billing page, for a provider with no quota API to read.
+    pub console_url: Option<&'static str>,
 }
 
 struct Active {
@@ -641,6 +644,7 @@ fn provider_views(
                 id.clone(),
                 ProviderView {
                     quota: quota.clone(),
+                    console_url: provider_by_id(id).map(|p| p.billing_url),
                 },
             )
         })
@@ -652,7 +656,13 @@ fn provider_views(
         ),
         None => QuotaView::anthropic((None, None), (None, None)),
     };
-    views.insert("anthropic".to_owned(), ProviderView { quota: anthropic });
+    views.insert(
+        "anthropic".to_owned(),
+        ProviderView {
+            quota: anthropic,
+            console_url: None,
+        },
+    );
     views
 }
 
@@ -1191,6 +1201,22 @@ mod tests {
                 .iter()
                 .all(|w| w.used_pct.is_none() && w.resets_ms.is_none())
         );
+    }
+
+    #[test]
+    fn d8_a_provider_without_a_quota_api_carries_its_console_link() {
+        let live = LiveState::new(T0);
+        let mut with = inputs(&[]);
+        with.quota.insert(
+            "qwen".to_owned(),
+            QuotaView::anthropic((None, None), (None, None)),
+        );
+        let views = live.snapshot(T0, &with).providers;
+        assert_eq!(
+            views["qwen"].console_url,
+            huddle_catalog::providers::provider_by_id("qwen").map(|p| p.billing_url)
+        );
+        assert_eq!(views["anthropic"].console_url, None);
     }
 
     #[test]

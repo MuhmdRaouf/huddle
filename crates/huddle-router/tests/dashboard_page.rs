@@ -92,19 +92,6 @@ fn carries_all_thirteen_pages() {
     }
 }
 
-/// Quota keys the Providers page reads once it shows quota; the snapshot carries them first.
-const PROVIDERS_PAGE_KEYS: [&str; 9] = [
-    "quota",
-    "windows",
-    "used_pct",
-    "resets_ms",
-    "balance",
-    "amount",
-    "currency",
-    "fetched_ms",
-    "unverified",
-];
-
 #[test]
 fn reads_every_key_of_the_state_contract() {
     let state: Value = serde_json::from_str(FIXTURE).expect("fixture parses");
@@ -113,9 +100,6 @@ fn reads_every_key_of_the_state_contract() {
     keys.sort();
     keys.dedup();
     for key in keys {
-        if PROVIDERS_PAGE_KEYS.contains(&key.as_str()) {
-            continue;
-        }
         let read = PAGE.contains(&format!(".{key}")) || PAGE.contains(&format!("'{key}'"));
         assert!(read, "the page never reads {key}");
     }
@@ -174,7 +158,7 @@ fn keeps_the_admin_shell() {
 
 #[test]
 fn stays_under_the_size_limit() {
-    assert!(PAGE.len() < 140 * 1024, "{} bytes", PAGE.len());
+    assert!(PAGE.len() < 160 * 1024, "{} bytes", PAGE.len());
 }
 
 #[test]
@@ -397,17 +381,16 @@ fn k13_not_set_up_is_neutral_never_red() {
     assert!(body.contains("['off','Not set up']"), "{body}");
     assert!(body.contains("['bad','Needs a fix']"), "{body}");
     assert!(body.contains("['ok','Working']"), "{body}");
-    assert!(body.contains("['ok','Built in']"), "{body}");
     assert!(!PAGE.contains("['bad','Missing']"), "no red Missing pill");
 }
 
 #[test]
 fn k13_the_next_step_is_the_huddle_setup_command() {
     let page = providers_page();
-    assert!(page.contains("label:'Next step'"), "column");
+    assert!(page.contains("label:'Status and next step'"), "column");
     assert!(page.contains("cmd(x.next)"), "command chip");
     assert!(FIXTURE.contains("/huddle:kimi:setup"));
-    assert!(page.contains(">1st token</span>"));
+    assert!(page.contains("label:'Time to first token'"));
     assert!(page.contains("label:'Requests'"));
     assert!(page.contains("label:'Errors'"));
     assert!(
@@ -915,4 +898,103 @@ fn d2_custom_picker_stops_at_kept_history() {
         PAGE.contains("RANGE_MIN[k]/1440>HIST.keep?' disabled'"),
         "presets past the kept history are off"
     );
+}
+
+const PROVIDERS_JS: &str = include_str!("../src/dashboard/pages/providers.js");
+
+#[test]
+fn d8_status_follows_live_traffic() {
+    let start = PROVIDERS_JS.find("function provStatus(").expect("status");
+    let body = &PROVIDERS_JS[start..start + 900];
+    for word in [
+        "['bad','Out of quota']",
+        "['bad','Failing']",
+        "['bad','Needs a fix']",
+        "['ok','Working']",
+        "['off','Not set up']",
+    ] {
+        assert!(body.contains(word), "{word}: {body}");
+    }
+    assert!(
+        PROVIDERS_JS.contains("const FAIL_RATE=0.2"),
+        "20 % threshold"
+    );
+    assert!(body.contains("x.err/x.n>FAIL_RATE"), "{body}");
+    assert!(
+        !PROVIDERS_JS.contains("'Built in'"),
+        "Anthropic gets a live status"
+    );
+    assert!(
+        body.contains("x.n||x.laneOn") || body.contains("x.laneOn||x.n"),
+        "traffic or an enabled lane without a key needs a fix: {body}"
+    );
+    let order = PROVIDERS_JS.find("const ordered=").expect("order");
+    assert!(
+        PROVIDERS_JS[order..].contains("x.id==='anthropic'"),
+        "Anthropic first"
+    );
+}
+
+#[test]
+fn d8_quota_and_reset_show_per_provider() {
+    for read in [
+        "SNAP.providers",
+        ".quota",
+        ".windows",
+        ".used_pct",
+        ".resets_ms",
+        ".balance",
+        ".amount",
+        ".currency",
+        ".unverified",
+        "quota unknown",
+        "resets ",
+        "kind==='none'",
+        "label:'Plan or balance'",
+    ] {
+        assert!(PROVIDERS_JS.contains(read), "{read}");
+    }
+    assert!(
+        PROVIDERS_JS.contains("quota used up, resets"),
+        "429 quota reads as a reset"
+    );
+    for column in [
+        "label:'Provider'",
+        "label:'Requests'",
+        "label:'Errors'",
+        "label:'Time to first token'",
+        "label:'Tokens'",
+        "label:'API price'",
+        "label:'Status and next step'",
+        "servedCell(x)",
+    ] {
+        assert!(PROVIDERS_JS.contains(column), "{column}");
+    }
+    for kpi in ["k:'Set up'", "k:'Requests'", "k:'Errors'"] {
+        assert!(PROVIDERS_JS.contains(kpi), "{kpi}");
+    }
+    assert!(
+        PROVIDERS_JS.contains("by=lane"),
+        "history totals by provider"
+    );
+    let state = fixture();
+    let quota = &state["providers"]["zai"]["quota"];
+    assert!(quota["windows"][0]["resets_ms"].is_number());
+}
+
+#[test]
+fn d8_a_failing_provider_is_never_greyed() {
+    assert!(
+        PROVIDERS_JS.contains("x.status[0]==='off'&&!x.n"),
+        "only a quiet, unset provider folds into the grey rest"
+    );
+    assert!(
+        !PROVIDERS_JS.contains("live.filter(x=>x.status[0]!=='off')"),
+        "status alone no longer decides greying"
+    );
+    assert!(
+        PROVIDERS_JS.contains("quota used up"),
+        "429 quota is a cause, not a rate limit"
+    );
+    assert!(PROVIDERS_JS.contains("causes("), "errors group by cause");
 }

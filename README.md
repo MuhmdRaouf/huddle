@@ -165,8 +165,10 @@ It shows:
 - Sessions, Agents, Requests and Errors, with search over the history.
 - Models and Usage, with the Claude plan windows when Anthropic's replies carry
   them.
-- Providers: one table with each provider's status, requests, first-token time,
-  errors and next step. A row opens the key, lane, `/model` entries and
+- Providers: one table with each provider's live status (Working, Out of quota,
+  Failing, Needs a fix, Not set up), plan windows or balance with the reset,
+  requests, errors by cause, first-token time, tokens, API price, models,
+  agents and next step. A row opens the key, lane, `/model` entries and
   commands.
 - Projects, Worktrees and Jobs per repository.
 - Harnesses and Router, with the last router events and a failing Anthropic path
