@@ -162,7 +162,9 @@ history, and the choice is remembered.
 
 It shows:
 - Overview: what needs you first, then stats, the traffic chart and live sessions.
-- Sessions, Agents, Requests and Errors, with search over the history.
+- Sessions (six states, a chip for each, grouped by repository on request), Agents
+  (main agents, subagents and open background tasks), Requests and Errors, with
+  search over the history.
 - Models and Usage, with the Claude plan windows when Anthropic's replies carry
   them.
 - Providers: one table with each provider's live status (Working, Out of quota,

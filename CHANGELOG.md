@@ -19,6 +19,8 @@ Provider setup holds across sessions, and the key check gets a real answer.
 - The Providers page shows each provider's live status (Working, Out of quota, Failing above 20 % errors, Needs a fix, Not set up; a provider with traffic is never grey), its plan windows or balance with the reset time, requests, errors by cause, first-token p50 and p95, tokens, API price, models and agents, and the next step. Each provider row in the state carries its billing page for providers with no quota API.
 - Every history view answers in under 300 ms on a 90-day database of a million rows. A request no longer scans the session logs: a background tick credits missing usage every minute, and the views read the database read-only, one slice of the time range per thread.
 
+- Sessions show the six states in plain words (Needs you, Working, Background, Your turn, Done, Idle) with a filter chip each, a Group by repo toggle, errors and cost in the chosen range, and a cold cache says how many tokens the next message re-reads. No column clips at 1440 px and phones stack each row. The session drawer retries a failed history load and lists agents, background tasks and each request's reason. Agents lists main agents, subagents and open background tasks with requests and tokens, and a row quiet for 30 minutes reads Idle.
+
 ### MCP
 
 - `huddle mcp` serves the huddle tools to Claude Code as an MCP server over stdio. It works with the router down and asks the router when it is up. The first tool, `huddle_version`, reports the version, whether the router answers and the binary's path.

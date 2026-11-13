@@ -998,3 +998,151 @@ fn d8_a_failing_provider_is_never_greyed() {
     );
     assert!(PROVIDERS_JS.contains("causes("), "errors group by cause");
 }
+
+const SESSIONS_JS: &str = include_str!("../src/dashboard/pages/sessions.js");
+const AGENTS_JS: &str = include_str!("../src/dashboard/pages/agents.js");
+const DRAWERS_JS: &str = include_str!("../src/dashboard/drawers.js");
+const CORE_JS: &str = include_str!("../src/dashboard/core.js");
+
+#[test]
+fn d9_sessions_use_the_new_states() {
+    for label in [
+        "Needs you",
+        "Working",
+        "Background",
+        "Your turn",
+        "Done",
+        "Idle",
+    ] {
+        assert!(SESSIONS_JS.contains(label), "Sessions names {label}");
+    }
+    for key in [
+        "needs_you",
+        "working",
+        "background",
+        "your_turn",
+        "done",
+        "idle",
+    ] {
+        assert!(
+            SESSIONS_JS.contains(&format!("['{key}',")),
+            "a filter chip for {key}"
+        );
+    }
+    assert!(!SESSIONS_JS.contains("'Waiting'"), "no Waiting chip");
+    assert!(
+        SESSIONS_JS.contains("re-reads"),
+        "a cold cache says what the next message re-reads"
+    );
+    let state = fixture();
+    let states: Vec<&str> = state["sessions"]
+        .as_array()
+        .expect("sessions")
+        .iter()
+        .filter_map(|s| s["state"].as_str())
+        .collect();
+    for want in [
+        "needs_you",
+        "working",
+        "background",
+        "your_turn",
+        "done",
+        "idle",
+    ] {
+        assert!(states.contains(&want), "the fixture has a {want} session");
+    }
+}
+
+#[test]
+fn d9_sessions_group_by_repo() {
+    assert!(SESSIONS_JS.contains("data-seg=\"sessgrp\"") || SESSIONS_JS.contains("'sessgrp'"));
+    assert!(SESSIONS_JS.contains("Group by repo"));
+    assert!(SESSIONS_JS.contains("s.repo"), "groups on the repo key");
+    assert!(
+        CORE_JS.contains("repo:x.repo"),
+        "the snapshot's repo key is read"
+    );
+    for s in fixture()["sessions"].as_array().expect("sessions") {
+        assert!(s["repo"].is_string(), "every fixture session has a repo");
+    }
+}
+
+#[test]
+fn d9_no_column_clips_at_1440() {
+    let at = SESSIONS_JS.find("const SESS_TBL_COLS=[").expect("columns");
+    let cols = &SESSIONS_JS[at..at + SESSIONS_JS[at..].find("];").expect("end")];
+    let keys: Vec<&str> = cols
+        .split("{k:'")
+        .skip(1)
+        .filter_map(|c| c.split('\'').next())
+        .collect();
+    assert!(keys.len() + 2 <= 9, "at most nine columns: {keys:?}");
+    for k in ["state", "title", "model", "ctx"] {
+        let line = cols
+            .lines()
+            .find(|l| l.contains(&format!("{{k:'{k}'")))
+            .expect(k);
+        assert!(!line.contains(",sm:1"), "{k} stays on a phone");
+    }
+    for k in ["cache", "errors", "last"] {
+        let line = cols
+            .lines()
+            .find(|l| l.contains(&format!("{{k:'{k}'")))
+            .expect(k);
+        assert!(line.contains(",sm:1"), "{k} drops on a phone");
+    }
+    for c in ["hideOnPhone(HC[0])", "hideOnPhone(HC[2]"] {
+        assert!(cols.contains(c), "{c}: requests and cost drop on a phone");
+    }
+    assert!(!cols.contains("Subagents"), "no wide subagent column");
+}
+
+#[test]
+fn d9_agents_list_subagents_and_background() {
+    for label in [
+        "Main",
+        "Subagent",
+        "Background",
+        "Ran for",
+        "Requests",
+        "Tokens",
+    ] {
+        assert!(AGENTS_JS.contains(label), "Agents names {label}");
+    }
+    assert!(
+        AGENTS_JS.contains("30*MIN"),
+        "a row quiet for 30 minutes reads Idle"
+    );
+    assert!(CORE_JS.contains("o.bg="), "background tasks become rows");
+    assert!(
+        CORE_JS.contains("s.agents.concat(s.bg)"),
+        "the page lists them"
+    );
+    let background = fixture()["sessions"]
+        .as_array()
+        .expect("sessions")
+        .iter()
+        .any(|s| s["open_tasks"].as_u64().unwrap_or(0) > 0);
+    assert!(background, "the fixture has a session with open tasks");
+}
+
+#[test]
+fn d9_session_drawer_retries_history_and_shows_reasons() {
+    assert!(
+        CORE_JS.contains("data-retry"),
+        "a failed history load can retry"
+    );
+    assert!(CORE_JS.contains("[data-retry]"));
+    assert!(
+        DRAWERS_JS.contains("histBlock('session:'"),
+        "history in the global range"
+    );
+    assert!(
+        DRAWERS_JS.contains("'reason'"),
+        "recent requests carry the reason"
+    );
+    assert!(
+        DRAWERS_JS.contains("s.agents.concat(s.bg)"),
+        "agents and background tasks with counts"
+    );
+}

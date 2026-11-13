@@ -6,7 +6,7 @@ const DRAWERS={
   const lane=a=>aReq(a).filter(r=>r.t>=t0);
   const unmatched=rs.filter(r=>!r.a&&r.t>=t0);
   const bar=r=>{const x=Math.max(0,(r.t-t0)/(15*MIN)*100),w=Math.max(.5,(r.dur!=null?r.dur:NOW-r.t)/(15*MIN)*100);return `<i class="${r.status==null?'flight':''}" data-css="left:${x.toFixed(2)}%;width:${Math.min(w,100-x).toFixed(2)}%;background:${isErr(r)?'var(--bad)':r.status===499?'var(--faint)':col(r.m)}" title="${esc(r.m)} · ${r.status==null?'streaming':r.status}"></i>`};
-  return `<div class="dh"><div class="grow">${statePill(s)}<h3>${esc(s.name)}</h3><div class="s">${esc([s.project,s.branch].filter(Boolean).join(' · '))} · ${cid(s.sid)}</div></div>${closeBtn()}</div>
+  return `<div class="dh"><div class="grow">${sessPill(s)}<h3>${esc(s.name)}</h3><div class="s">${esc([s.project,s.branch].filter(Boolean).join(' · '))} · ${cid(s.sid)}</div></div>${closeBtn()}</div>
   <div class="db">
    <div class="gauges"><div class="gauge"><div class="top"><span>Context window</span><b>${c==null?'—':c+'%'}</b></div>${meter(c,c>=90?'max':c>=80?'hi':'')}<div class="n">${c!=null&&c>=80?'<span class="warnc">Compaction soon.</span> ':''}${s.ctxTok!=null&&s.ctxLim?fmt(s.ctxTok)+' of '+fmt(s.ctxLim)+' tokens':'—'}</div></div>
    <div class="gauge"><div class="top"><span>Prompt cache</span><b>${cl==null?'—':cl>0?dur(cl):'Cold'}</b></div>${meter(cl>0&&s.ttl?cl/s.ttl*100:0,cl!=null&&cl<60e3?'hi':'acc')}<div class="n">${s.ttl==null?'—':s.ttl>=HR?'1-hour':'5-minute'} cache · last hit ${ago(s.lastReq)}</div></div></div>
@@ -22,9 +22,9 @@ const DRAWERS={
     <div class="fact"><div class="k">Cache read</div><div class="v">${fmt(sum(rs.map(r=>n0(r.cr))))}</div></div>
     <div class="fact"><div class="k">Tokens out</div><div class="v">${fmt(tokOutOf(rs))}</div></div></div></div>
    ${histBlock('session:'+s.id,hOf(HT.ses,s.id))}
-   <div><h4>Agents <span class="faint">${s.agents.length}</span></h4><div class="card t">${table('d-ag',AG_COLS.filter(c=>['agent','model','state','dur','req','wt'].includes(c.k)),s.agents,{})}</div></div>
+   <div><h4>Agents <span class="faint">${s.agents.length+s.bg.length}</span></h4><div class="card t">${table('d-ag',AG_COLS.filter(c=>['agent','model','state','dur','req','tok'].includes(c.k)),s.agents.concat(s.bg),{})}</div></div>
    <div><h4>Timeline <span class="faint">each bar is one request · last 15 min</span></h4><div class="swim">${s.agents.map(a=>`<div class="row"><div class="who">${a.type==='main'?'<b class="fw5">main</b>':esc(a.desc||a.type)}</div><div class="track">${lane(a).map(bar).join('')}</div></div>`).join('')}${unmatched.length?`<div class="row"><div class="who faint">not matched to an agent</div><div class="track">${unmatched.map(bar).join('')}</div></div>`:''}</div><div class="axis"><span>${clock(t0).slice(0,5)}</span><span>${clock(t0+5*MIN).slice(0,5)}</span><span>${clock(t0+10*MIN).slice(0,5)}</span><span>now</span></div></div>
-   <div><h4>Recent requests</h4><div class="card t">${table('d-req',REQ_COLS.filter(c=>['time','status','model','ttft','in','out'].includes(c.k)),rs.slice().reverse(),{row:r=>'request:'+r.id,limit:12,empty:'No requests kept for this session'})}</div></div>
+   <div><h4>Recent requests</h4><div class="card t">${table('d-req',REQ_COLS.filter(c=>['time','status','model','ttft','in','out'].includes(c.k)).concat([{k:'reason',label:'Reason',v:r=>r.reason||'',h:r=>r.reason?`<span class="muted">${esc(r.reason)}</span>`:isErr(r)?`<span class="muted">${esc(errDef(r.status)[0])}</span>`:NA}]),rs.slice().reverse(),{row:r=>'request:'+r.id,limit:12,empty:'No requests kept for this session'})}</div></div>
    <div class="notebox">${ic('info')}<span>Read from Claude Code's session log for ${esc(s.sid)}. Prompt text and tool output are never read into this page.</span></div>
   </div>`},
  request(id){const r=REQS.find(x=>x.id===id)||HS.rows.find(x=>x.id===id);if(!r)return '';

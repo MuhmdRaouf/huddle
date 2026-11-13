@@ -75,14 +75,17 @@ const errDef=(c,reason)=>ERRDEF[c]||['Status '+c,reason||'',reason||'The provide
 function buildSessions(){
  SESS=arr(SNAP.sessions).map(x=>{
   const tok=num(x.context_tokens),lim=num(x.context_limit);
-  const o={id:String(x.id||''),title:x.title||'',project:x.project||'',cwd:x.cwd||'',branch:x.branch||'',model:x.model||'',state:x.state||'idle',started:num(x.started_ms),last:num(x.last_ms),waitingSince:num(x.state_since_ms),openTasks:num(x.open_tasks),questionTool:x.question_tool||'',ctxTok:tok,ctxLim:lim,ctx:tok!=null&&lim?tok/lim*100:null,ttl:num(x.cache_ttl_ms),lastReq:num(x.last_request_ms)};
+  const o={id:String(x.id||''),title:x.title||'',project:x.project||'',repo:x.repo||'',worktree:x.worktree||'',cwd:x.cwd||'',branch:x.branch||'',model:x.model||'',state:x.state||'idle',started:num(x.started_ms),last:num(x.last_ms),waitingSince:num(x.state_since_ms),openTasks:num(x.open_tasks),questionTool:x.question_tool||'',ctxTok:tok,ctxLim:lim,ctx:tok!=null&&lim?tok/lim*100:null,ttl:num(x.cache_ttl_ms),lastReq:num(x.last_request_ms)};
   o.sid=o.id.slice(0,8);o.name=o.title||o.project||o.sid||'Session';
   let ag=arr(x.agents).map(a=>({id:String(a.id||''),type:a.type||'',desc:a.description||'',model:a.model||'',state:a.state||'idle',start:num(a.started_ms),end:num(a.ended_ms),wt:a.worktree||null,s:o}));
   let m=ag.find(a=>a.id==='main');ag=ag.filter(a=>a!==m);
   if(!m)m={id:'main',type:'main',desc:'',model:o.model,state:'idle',start:o.started,end:null,wt:null,s:o};
   m.desc=o.name;if(!m.model)m.model=o.model;
-  o.agents=[m].concat(ag);return o});
- AGENTS=SESS.flatMap(s=>s.agents);
+  o.agents=[m].concat(ag);
+  /* open background tasks are one row each session: the session log carries a count, not the tasks */
+  o.bg=o.openTasks>0?[{id:'tasks',type:'background',desc:o.openTasks+(o.openTasks===1?' background task':' background tasks'),model:o.model,state:'running',start:null,end:null,wt:null,s:o}]:[];
+  return o});
+ AGENTS=SESS.flatMap(s=>s.agents.concat(s.bg));
 }
 function buildRequests(){
  const byId={};SESS.forEach(s=>{byId[s.id]=s});
@@ -294,7 +297,7 @@ const histCols=get=>[
  {k:'hcost',get label(){return `Cost (${rangeShort()})`},num:1,v:x=>n0((get(x)||HZERO).cost_usd),h:x=>hCell(get(x),t=>t.n?costCell(t):NA)}];
 /* the History block of a session or project sheet: totals, a daily trend and the models used */
 function histBlock(key,t){const tr=HT.trend[key],head=`<h4>History <span class="faint">${rangeText()}</span></h4>`;
- if(!t)return `<div>${head}<div class="card pad">${HT.err?'<span class="badc">Could not load history. Showing the last data.</span>':checking()}</div></div>`;
+ if(!t)return `<div>${head}<div class="card pad">${HT.err?'<span class="badc">Could not load history. Showing the last data.</span> <button type="button" class="cmd" data-retry>Retry</button>':checking()}</div></div>`;
  if(!t.n)return `<div>${head}<div class="card"><div class="allclear">${ic('info')} No requests in ${rangeText()}</div></div></div>`;
  const tin=n0(t.tok_in),fact=(k,v)=>`<div class="fact"><div class="k">${k}</div><div class="v">${v}</div></div>`;
  const mcols=[
@@ -359,6 +362,7 @@ document.addEventListener('click',e=>{
  if(e.target.closest('[data-close]')){closeDrawer();return}
  const so=e.target.closest('[data-sort]');if(so){const[id,k]=so.dataset.sort.split(':');const cur=SORT[id];SORT[id]={k,d:cur&&cur.k===k?-cur.d:(so.closest('th').classList.contains('num')?-1:1)};refresh();if(DR)renderDrawer(true);return}
  const sg=e.target.closest('[data-seg]');if(sg){const[id,k]=sg.dataset.seg.split(':');if(id==='hmode'){location.hash='#'+page+(k==='history'?'?mode=history':'');return}F[id]=k;$$('[data-seg]').filter(b=>b.dataset.seg.startsWith(id+':')).forEach(b=>b.setAttribute('aria-pressed',String(b===sg)));refresh();return}
+ const rt=e.target.closest('[data-retry]');if(rt){HT.err=false;paint();loadTotals();return}
  const hp=e.target.closest('[data-hp]');if(hp){HS.off=Math.max(0,HS.off+(hp.dataset.hp==='next'?HPAGE:-HPAGE));hsearch();return}
  const mt=e.target.closest('[data-metric]');if(mt){CH.metric=mt.dataset.metric;refresh();drawChart();return}
  const fo=e.target.closest('[data-focus]');if(fo){CH.focus=CH.focus===fo.dataset.focus?null:fo.dataset.focus;refresh();drawChart();return}
