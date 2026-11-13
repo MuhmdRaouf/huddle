@@ -46,6 +46,7 @@ Provider setup holds across sessions, and the key check gets a real answer.
 - Cost cells read plain prices under an "API price" header, with "no price" for a model without a list price; page subtitles name the chosen time range; the Providers badge counts what the Providers page shows; the Errors legend shows the range average; Providers and Errors read failure reasons from history in every range (`by=reason`); a quota tool call asks the router to refresh once, within the usual five minute limit.
 - The plugin's `huddle-http` server url follows `HUDDLE_ROUTER_PORT` (`http://127.0.0.1:${HUDDLE_ROUTER_PORT:-4835}/mcp`), so a router on a moved port stays reachable without editing the plugin.
 - The release build compiles everything for size (`opt-level = "s"`): the macOS binary drops from 9.02 MB to 5.97 MB.
+- The 60 s usage fill reads only its time window through the time index, instead of scanning the whole upstream-id index on every run; the query plan is pinned, so the fill stays bounded by the window as history grows.
 
 ### MCP
 

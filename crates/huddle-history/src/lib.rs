@@ -11,7 +11,7 @@ mod schema;
 mod writer;
 
 pub use error::HistoryError;
-pub use history::History;
+pub use history::{History, missing_usage_sql};
 pub use query::{Bucket, Filter, GroupBy, ModelUsage, Page, SearchResult, StatusClass, Total};
 pub use row::{Credit, Range, Row};
 pub use schema::{COLUMNS, VERSION};

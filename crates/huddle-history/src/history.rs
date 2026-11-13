@@ -11,6 +11,19 @@ use huddle_config::files::DIR_MODE;
 
 const DAY_MS: u64 = 86_400_000;
 
+/// The statement `missing_usage` runs: distinct upstream ids of rows since ?1 whose tokens are
+/// still unknown. Pinned to the time index: left alone the planner takes the whole upstream_id
+/// index to get the DISTINCT and the ORDER BY for free, so the 60 s fill reads every row of
+/// history instead of only its window. Exposed as SQL so a test can hold the query plan to its
+/// promise.
+pub fn missing_usage_sql() -> String {
+    format!(
+        "SELECT DISTINCT upstream_id FROM requests INDEXED BY requests_at_ms
+         WHERE upstream_id IS NOT NULL AND at_ms >= ?1 AND {UNKNOWN_USAGE}
+         ORDER BY upstream_id"
+    )
+}
+
 /// SQL for "no token count is known"; a row in this state waits for its credit.
 pub(crate) const UNKNOWN_USAGE: &str =
     "tokens_in IS NULL AND cache_read IS NULL AND cache_write IS NULL AND tokens_out IS NULL";
@@ -138,11 +151,7 @@ impl History {
 
     /// Upstream ids of rows since `since_ms` whose tokens are still unknown.
     pub fn missing_usage(&self, since_ms: u64) -> Result<Vec<String>, HistoryError> {
-        let mut stmt = self.conn.prepare(&format!(
-            "SELECT DISTINCT upstream_id FROM requests
-             WHERE upstream_id IS NOT NULL AND at_ms >= ?1 AND {UNKNOWN_USAGE}
-             ORDER BY upstream_id"
-        ))?;
+        let mut stmt = self.conn.prepare(&missing_usage_sql())?;
         let ids = stmt
             .query_map([to_db(since_ms)], |r| r.get(0))?
             .collect::<Result<Vec<String>, _>>()?;
