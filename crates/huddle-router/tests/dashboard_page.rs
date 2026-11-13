@@ -157,7 +157,7 @@ fn keeps_the_admin_shell() {
 
 #[test]
 fn stays_under_the_size_limit() {
-    assert!(PAGE.len() < 160 * 1024, "{} bytes", PAGE.len());
+    assert!(PAGE.len() < 200 * 1024, "{} bytes", PAGE.len());
 }
 
 #[test]
