@@ -10,6 +10,10 @@ Provider setup holds across sessions, and the key check gets a real answer.
 - The key check sends `Host`, so Z.ai answers it: a working key reads as checked and a wrong one is refused.
 - The key page names what the check got (`answered HTTP 400`, or no answer in 20 seconds) instead of always saying it timed out.
 
+### Dashboard
+
+- A project is a git repository: a session in any worktree belongs to its repository, new history rows carry the repository's name, and the project totals roll old folder names into their repository.
+
 ## 0.0.6
 
 The five providers are part of huddle, and a key goes in from a page or a terminal guide.

@@ -5,6 +5,7 @@
 
 mod log;
 mod model;
+mod repo;
 mod scan;
 mod state;
 mod tail;

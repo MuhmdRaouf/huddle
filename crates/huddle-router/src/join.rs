@@ -87,6 +87,8 @@ mod tests {
             id: id.into(),
             title: "Fix the thing".into(),
             project: None,
+            repo: None,
+            worktree: None,
             cwd: Some(cwd.into()),
             branch: None,
             model: None,
@@ -154,6 +156,7 @@ mod tests {
         let tree = |path: &str| Worktree {
             path: path.into(),
             project: "huddle".into(),
+            repo: "/p/huddle".into(),
             branch: None,
             head: None,
             kind: WorktreeKind::Checkout,

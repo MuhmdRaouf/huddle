@@ -8,6 +8,7 @@ use serde::Deserialize;
 
 use crate::log::Summary;
 use crate::model::{Agent, AgentState, Limits, RequestTag, Session};
+use crate::repo::Repos;
 use crate::state::{agent_state, session_state};
 use crate::tail::{read_head, read_tail};
 
@@ -20,6 +21,7 @@ const MAX_AGENTS: usize = 50;
 /// The newest `limits.max_sessions` logs modified within `limits.max_age_ms` of `now_ms`,
 /// newest first. Each log is read from its last `limits.tail_bytes` bytes.
 pub fn scan(claude_dir: &Path, now_ms: u64, limits: Limits) -> Vec<Session> {
+    let mut repos = Repos::default();
     let mut logs = recent_logs(&claude_dir.join("projects"), now_ms, limits.max_age_ms);
     logs.sort_by(|a, b| {
         b.modified_ms
@@ -28,7 +30,7 @@ pub fn scan(claude_dir: &Path, now_ms: u64, limits: Limits) -> Vec<Session> {
     });
     logs.truncate(limits.max_sessions);
     logs.iter()
-        .filter_map(|log| session(log, now_ms, limits.tail_bytes))
+        .filter_map(|log| session(log, now_ms, limits.tail_bytes, &mut repos))
         .collect()
 }
 
@@ -77,8 +79,9 @@ pub(crate) fn modified_ms(path: &Path) -> Option<u64> {
     u64::try_from(since_epoch.as_millis()).ok()
 }
 
-fn session(log: &Log, now_ms: u64, tail_bytes: u64) -> Option<Session> {
+fn session(log: &Log, now_ms: u64, tail_bytes: u64, repos: &mut Repos) -> Option<Session> {
     let main = Summary::parse(&read_tail(&log.path, tail_bytes)?);
+    let repo = main.cwd.as_deref().and_then(|cwd| repos.of(cwd));
     let started_ms = read_head(&log.path).and_then(|head| Summary::parse(&head).first_ms);
     let (state, waiting_since_ms) = session_state(main.last_turn, now_ms);
     let model = main.model.clone();
@@ -118,7 +121,9 @@ fn session(log: &Log, now_ms: u64, tail_bytes: u64) -> Option<Session> {
     Some(Session {
         id: log.id.clone(),
         title: main.custom_title.or(main.ai_title).unwrap_or_default(),
-        project: main.cwd.as_deref().and_then(base_name),
+        project: repo.as_ref().map(|r| r.name.clone()),
+        repo: repo.as_ref().map(|r| r.key.clone()),
+        worktree: repo.map(|r| r.worktree),
         cwd: main.cwd,
         branch: main.branch,
         model,
@@ -137,12 +142,6 @@ fn session(log: &Log, now_ms: u64, tail_bytes: u64) -> Option<Session> {
         agents,
         request_ids,
     })
-}
-
-pub(crate) fn base_name(cwd: &str) -> Option<String> {
-    Path::new(cwd)
-        .file_name()
-        .map(|n| n.to_string_lossy().into_owned())
 }
 
 #[derive(Deserialize, Default)]

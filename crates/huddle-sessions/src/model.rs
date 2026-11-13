@@ -72,7 +72,12 @@ pub struct Agent {
 pub struct Session {
     pub id: String,
     pub title: String,
+    /// The git repository's folder name, or the working folder's name outside git.
     pub project: Option<String>,
+    /// The project's key: the repository folder's path.
+    pub repo: Option<String>,
+    /// The checkout the session works in: a linked worktree's root, or the repository itself.
+    pub worktree: Option<String>,
     pub cwd: Option<String>,
     pub branch: Option<String>,
     pub model: Option<String>,
@@ -101,6 +106,8 @@ pub enum WorktreeKind {
 pub struct Worktree {
     pub path: String,
     pub project: String,
+    /// The repository folder's path, the same key a session's `repo` carries.
+    pub repo: String,
     pub branch: Option<String>,
     pub head: Option<String>,
     pub kind: WorktreeKind,

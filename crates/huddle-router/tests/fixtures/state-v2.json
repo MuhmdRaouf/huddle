@@ -1287,6 +1287,8 @@
    "id": "5d8c6baf-e3f2-45aa-a5d0-6db99ffbed99",
    "title": "Dashboard v2 redesign",
    "project": "huddle",
+   "repo": "/Users/raouf/Playground/huddle",
+   "worktree": "/Users/raouf/Playground/huddle",
    "cwd": "/Users/raouf/Playground/huddle",
    "branch": "main",
    "model": "claude-opus-5-5",
@@ -1335,6 +1337,8 @@
    "id": "a41f02c9-0000-4000-8000-000000000001",
    "title": "Migrate Tofu runners to ARM",
    "project": "infra-tofu",
+   "repo": "/Users/raouf/Work/infra-tofu",
+   "worktree": "/Users/raouf/Work/infra-tofu",
    "cwd": "/Users/raouf/Work/infra-tofu",
    "branch": "feat/arm-runners",
    "model": "glm-5.3",
@@ -1352,6 +1356,8 @@
    "id": "0be771d4-0000-4000-8000-000000000002",
    "title": "",
    "project": "wpml-org",
+   "repo": "/home/dev/wpml-org",
+   "worktree": "/home/dev/wpml-org",
    "cwd": "/home/dev/wpml-org",
    "branch": "fix/retry",
    "model": "claude-sonnet-5-5",
@@ -1370,6 +1376,7 @@
   {
    "path": "/Users/raouf/Playground/huddle",
    "project": "huddle",
+   "repo": "/Users/raouf/Playground/huddle",
    "branch": "main",
    "head": "172ae7b4",
    "kind": "checkout",
@@ -1380,6 +1387,7 @@
   {
    "path": "/Users/raouf/Playground/huddle/.agents/worktrees/dv2-d5",
    "project": "huddle",
+   "repo": "/Users/raouf/Playground/huddle",
    "branch": "dv2/d5",
    "head": "172ae7b4",
    "kind": "agent",
@@ -1390,6 +1398,7 @@
   {
    "path": "/Users/raouf/Work/infra-tofu/.agents/worktrees/old",
    "project": "infra-tofu",
+   "repo": "/Users/raouf/Work/infra-tofu",
    "branch": "feat/old",
    "head": "51c08e9d",
    "kind": "agent",
@@ -1400,6 +1409,7 @@
   {
    "path": "/Users/raouf/.agents/huddle/jobs/huddle/j-91cc",
    "project": "huddle",
+   "repo": "/Users/raouf/Playground/huddle",
    "branch": "huddle/j-91cc",
    "head": "9c1f2e0a",
    "kind": "job",

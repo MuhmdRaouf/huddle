@@ -4,6 +4,7 @@
 //! The page reads the feed only while it is open: a connected client holds one task, and with
 //! no client nothing is scheduled.
 
+use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -16,14 +17,14 @@ use tokio::time::{Instant, sleep_until};
 
 use crate::anthropic::StreamingBody;
 use crate::dispatch::now_ms;
-use crate::history_view::{self, Refusal};
+use crate::history_view::{self, Query, Refusal};
 use crate::join;
 use crate::live::{
     JobRow, LaneMeta, LiveState, ProcessUsage, Snapshot, SnapshotInputs, Wiring, WiringState,
 };
 use crate::server::{RespBody, full_body, json_answer};
 use huddle_catalog::providers::providers;
-use huddle_history::History;
+use huddle_history::{GroupBy, History};
 use huddle_sessions::{Session, Worktree};
 
 pub const PAGE_PATH: &str = "/";
@@ -186,9 +187,17 @@ impl Dashboard {
             Err(Refusal::UnknownView) => return plain(StatusCode::NOT_FOUND, "no such view"),
         };
         let open = Arc::clone(&self.inputs.history);
+        let machine = Arc::clone(&self.inputs.sessions);
         let worked = tokio::task::spawn_blocking(move || match open() {
             None => Ok(history_view::empty_answer(&parsed, now)),
-            Some(history) => history_view::answer(&history, &parsed, now),
+            Some(history) => {
+                let aliases = if matches!(parsed, Query::Totals(_, GroupBy::Project)) {
+                    folder_aliases(&machine().worktrees)
+                } else {
+                    BTreeMap::new()
+                };
+                history_view::answer(&history, &parsed, now, &aliases)
+            }
         })
         .await;
         let mut response = match worked {
@@ -315,6 +324,18 @@ impl Dashboard {
         // The snapshot is plain data; an empty body keeps the answer well-formed.
         serde_json::to_string(&self.snapshot()).unwrap_or_default()
     }
+}
+
+/// Each linked worktree's folder name mapped to its repository's name, so history rows written
+/// under a folder name total under the repository.
+fn folder_aliases(worktrees: &[Worktree]) -> BTreeMap<String, String> {
+    worktrees
+        .iter()
+        .filter_map(|tree| {
+            let folder = std::path::Path::new(&tree.path).file_name()?.to_str()?;
+            (folder != tree.project).then(|| (folder.to_string(), tree.project.clone()))
+        })
+        .collect()
 }
 
 /// A one-line plain-text answer.

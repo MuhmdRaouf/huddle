@@ -7,7 +7,8 @@ use std::path::{Path, PathBuf};
 
 use crate::log::Summary;
 use crate::model::Usage;
-use crate::scan::{base_name, modified_ms};
+use crate::repo::Repos;
+use crate::scan::modified_ms;
 
 /// One request id found in a log, with where it ran.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -16,7 +17,7 @@ pub struct LogUsage {
     pub session: String,
     /// `main`, or the subagent's id.
     pub agent_id: String,
-    /// The last folder name of the log's working directory.
+    /// The name of the git repository around the log's working directory.
     pub project: Option<String>,
     pub usage: Usage,
     pub stop: Option<String>,
@@ -29,12 +30,17 @@ pub fn usage_for(claude_dir: &Path, ids: &[String], since_ms: u64) -> Vec<LogUsa
         return Vec::new();
     }
     let mut found = Vec::new();
+    let mut repos = Repos::default();
     for log in logs_since(&claude_dir.join("projects"), since_ms) {
         let Ok(text) = fs::read_to_string(&log.path) else {
             continue;
         };
         let summary = Summary::parse(&text);
-        let project = summary.cwd.as_deref().and_then(base_name);
+        let project = summary
+            .cwd
+            .as_deref()
+            .and_then(|cwd| repos.of(cwd))
+            .map(|repo| repo.name);
         for tag in summary.tags(&log.agent_id) {
             if ids.contains(&tag.request_id) {
                 found.push(LogUsage {

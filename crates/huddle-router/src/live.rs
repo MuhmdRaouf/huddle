@@ -1313,6 +1313,8 @@ mod tests {
             id: id.into(),
             title: String::new(),
             project: None,
+            repo: None,
+            worktree: None,
             cwd: None,
             branch: None,
             model: None,

@@ -74,6 +74,32 @@ pub struct Total {
     pub models: Vec<ModelUsage>,
 }
 
+impl Total {
+    fn absorb(&mut self, other: Total) {
+        self.n += other.n;
+        self.err += other.err;
+        self.tok_in += other.tok_in;
+        self.cache_read += other.cache_read;
+        self.cache_write += other.cache_write;
+        self.tok_out += other.tok_out;
+        self.first_ms = self.first_ms.min(other.first_ms);
+        self.last_ms = self.last_ms.max(other.last_ms);
+        for usage in other.models {
+            match self.models.iter_mut().find(|m| m.model == usage.model) {
+                Some(m) => {
+                    m.n += usage.n;
+                    m.tok_in += usage.tok_in;
+                    m.cache_read += usage.cache_read;
+                    m.cache_write += usage.cache_write;
+                    m.tok_out += usage.tok_out;
+                }
+                None => self.models.push(usage),
+            }
+        }
+        self.models.sort_by(|a, b| a.model.cmp(&b.model));
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum StatusClass {
     #[default]
@@ -268,6 +294,33 @@ impl History {
             }
         }
         Ok(totals)
+    }
+
+    /// `totals`, with each project key found in `aliases` replaced by its value and the groups
+    /// that now share a key merged. Other groupings are returned as `totals` gives them.
+    pub fn totals_with_aliases(
+        &self,
+        range: Range,
+        by: GroupBy,
+        aliases: &BTreeMap<String, String>,
+    ) -> Result<Vec<Total>, HistoryError> {
+        let totals = self.totals(range, by)?;
+        if by != GroupBy::Project || aliases.is_empty() {
+            return Ok(totals);
+        }
+        let mut merged: BTreeMap<String, Total> = BTreeMap::new();
+        for mut total in totals {
+            if let Some(repo) = aliases.get(&total.key) {
+                total.key.clone_from(repo);
+            }
+            match merged.get_mut(&total.key) {
+                Some(into) => into.absorb(total),
+                None => {
+                    merged.insert(total.key.clone(), total);
+                }
+            }
+        }
+        Ok(merged.into_values().collect())
     }
 
     /// Matching rows newest first, one page of them, and the count across all pages.

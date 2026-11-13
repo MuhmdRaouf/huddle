@@ -4,6 +4,8 @@
 //! database and prices the token sums. Neither touches the async runtime: the caller runs
 //! them on a blocking thread.
 
+use std::collections::BTreeMap;
+
 use huddle_catalog::prices::{
     CLAUDE_PRICES_RETRIEVED, PRICES_RETRIEVED, TokenCounts, cost_usd, is_api_equivalent, price_of,
 };
@@ -255,7 +257,13 @@ fn envelope(view: &str, span: Span, now_ms: u64) -> serde_json::Map<String, Valu
 }
 
 /// The answer to `query` as JSON.
-pub fn answer(history: &History, query: &Query, now_ms: u64) -> Result<Value, HistoryError> {
+/// `aliases` maps an old folder name to the repository it belongs to, for project totals.
+pub fn answer(
+    history: &History,
+    query: &Query,
+    now_ms: u64,
+    aliases: &BTreeMap<String, String>,
+) -> Result<Value, HistoryError> {
     match query {
         Query::Buckets {
             span,
@@ -286,7 +294,7 @@ pub fn answer(history: &History, query: &Query, now_ms: u64) -> Result<Value, Hi
             Ok(Value::Object(out))
         }
         Query::Totals(span, by) => {
-            let totals = history.totals(span.range(now_ms), *by)?;
+            let totals = history.totals_with_aliases(span.range(now_ms), *by, aliases)?;
             let rows: Vec<Value> = totals
                 .iter()
                 .map(|t| {

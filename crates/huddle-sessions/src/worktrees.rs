@@ -20,11 +20,12 @@ pub fn worktrees(cwds: &[PathBuf]) -> Vec<Worktree> {
             continue;
         };
         let project = file_name(&main.path);
+        let repo = main.path.clone();
         for entry in &entries {
             if rows.iter().any(|row| row.path == entry.path) {
                 continue;
             }
-            rows.push(describe(entry, &project));
+            rows.push(describe(entry, &project, &repo));
         }
     }
     rows
@@ -72,7 +73,7 @@ fn parse_listing(text: &str) -> Vec<Entry> {
     entries
 }
 
-fn describe(entry: &Entry, project: &str) -> Worktree {
+fn describe(entry: &Entry, project: &str, repo: &str) -> Worktree {
     let path = Path::new(&entry.path);
     let kind = if entry.path.contains(AGENT_DIR) {
         WorktreeKind::Agent
@@ -87,6 +88,7 @@ fn describe(entry: &Entry, project: &str) -> Worktree {
     Worktree {
         path: entry.path.clone(),
         project: project.to_string(),
+        repo: repo.to_string(),
         branch: entry.branch.clone(),
         head: entry.head.clone(),
         kind,
