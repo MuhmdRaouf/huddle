@@ -494,7 +494,7 @@ part of a release:
 
 | `VERSION` | Git tag | GitHub release |
 |---|---|---|
-| `0.0.6` | `v0.0.6` | `huddle 0.0.6` |
+| `0.0.7` | `v0.0.7` | `huddle 0.0.7` |
 
 - `release.yml` refuses a tag that does not match `VERSION`.
 - `plugin/dist/run` carries the version it downloads, and it equals `VERSION`.
