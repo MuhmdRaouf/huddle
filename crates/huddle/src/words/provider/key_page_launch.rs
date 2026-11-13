@@ -29,6 +29,7 @@ pub fn open(
     env: &Env,
     paths: &Paths,
     executable: &Path,
+    life: Option<Duration>,
 ) -> Option<String> {
     stop_old(paths, provider);
     let token = random_hex(32).ok()?;
@@ -44,11 +45,30 @@ pub fn open(
         log_file: None,
         cwd: paths.state_dir.clone(),
     };
-    start_detached_with_input(&spec, format!("{token}\n").as_bytes()).ok()?;
+    let mut input = format!("{token}\n");
+    if let Some(life) = life {
+        input.push_str(&format!("life_ms={}\n", life.as_millis()));
+    }
+    start_detached_with_input(&spec, input.as_bytes()).ok()?;
     let port = wait_for_port(paths, provider)?;
     let url = format!("http://127.0.0.1:{port}/key/{}/{token}", provider.id);
     browse(env, &url);
     Some(url)
+}
+
+/// Waits up to `limit` for the helper to leave. True when it is gone: it stored a key, or its
+/// life ended.
+pub fn wait_until_gone(paths: &Paths, provider: &Provider, limit: Duration) -> bool {
+    let until = Instant::now() + limit;
+    loop {
+        if read_record(paths, provider).is_none_or(|record| !is_alive(record.pid)) {
+            return true;
+        }
+        if Instant::now() >= until {
+            return false;
+        }
+        sleep(Duration::from_millis(50));
+    }
 }
 
 /// Signals a helper whose record is still live, then clears the record. A crashed helper's pid

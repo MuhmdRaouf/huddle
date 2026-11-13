@@ -21,7 +21,7 @@ How to set huddle up, what every word does, what each file holds, and where to l
    /huddle:zai:setup
    ```
 
-   With no stored key, a one-time key page opens on `127.0.0.1`: paste the key there. In a terminal:
+   With no stored key, a one-time key page opens on `127.0.0.1`: paste the key there. The page finishes the setup itself; the command waits up to 100 s for it, then ends and the next prompt prints the ready report once. In a terminal:
 
    ```sh
    huddle provider zai
@@ -54,7 +54,7 @@ One row per word, with the exit codes it answers. An unknown word or action is n
 | `huddle provider` | Lists the providers. | `0` |
 | `huddle provider <p>` | The guided setup: a terminal gets the menu and the masked key prompt, a pipe or a script gets the next steps printed. Without a key it never waits. | `0` ready, `6` not ready, `1` |
 | `huddle provider <p> key` | Reads the key from hidden stdin into the keystore. | `0`, `2` empty or invalid, `1` |
-| `huddle provider <p> setup` | Checks the key with the provider, enables the lane, writes its agents, starts the router, reports ready or not; with no key it opens the one-time key page. | `0` ready, `6` not ready, `1` |
+| `huddle provider <p> setup` | Checks the key with the provider, enables the lane, writes its agents, starts the router, reports ready or not; with no key it opens the one-time key page and waits up to 100 s for it (the page finishes the setup by itself). | `0` ready or waiting on the page, `6` not ready, `1` |
 | `huddle provider <p> remove` | Takes the lane, the `/model` entries, the agents and the stored key back out; the other providers keep serving. | `0`, `1` |
 | `huddle provider <p> usage` | Requests, tokens and estimated cost per model, today and the last 7 and 30 days. | `0` |
 | `huddle mcp` | The huddle tools as an MCP server on stdin and stdout, started by Claude Code from the plugin's `.mcp.json`. Works with the router down; the router serves the same tools at `http://127.0.0.1:4835/mcp`. Writes nothing but JSON-RPC to stdout. | `0` when the client closes stdin |

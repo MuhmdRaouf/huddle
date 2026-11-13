@@ -38,7 +38,10 @@ impl World {
         )
         .expect("script");
         fs::set_permissions(&script, fs::Permissions::from_mode(0o755)).expect("chmod");
-        let extra = vec![("HUDDLE_BROWSER".to_owned(), script.display().to_string())];
+        let extra = vec![
+            ("HUDDLE_BROWSER".to_owned(), script.display().to_string()),
+            ("HUDDLE_KEY_WAIT_MS".to_owned(), "300".to_owned()),
+        ];
         World {
             home,
             browser_log,
@@ -107,7 +110,7 @@ impl World {
     /// Runs setup and returns the one-time path `/key/zai/<token>`.
     fn start_page(&self) -> String {
         let (code, _, _) = self.setup();
-        assert_eq!(code, Some(6));
+        assert_eq!(code, Some(0));
         let url = self.opened_url();
         url.split_once(&format!("127.0.0.1:{}", self.port()))
             .expect("url")
@@ -234,8 +237,8 @@ fn json(body: &str) -> serde_json::Value {
 fn k8_setup_without_a_key_opens_a_one_time_page() {
     let world = World::new();
     let (code, stdout, took) = world.setup();
-    assert_eq!(code, Some(6), "{stdout}");
-    assert!(took < Duration::from_secs(2), "{took:?}");
+    assert_eq!(code, Some(0), "{stdout}");
+    assert!(took < Duration::from_secs(5), "{took:?}");
     let url = world.opened_url();
     let port = world.port();
     let prefix = format!("http://127.0.0.1:{port}/key/zai/");
@@ -244,9 +247,7 @@ fn k8_setup_without_a_key_opens_a_one_time_page() {
     assert!(token.bytes().all(|b| b.is_ascii_hexdigit()));
     assert_eq!(
         stdout,
-        format!(
-            "zai setup: needs a key.\nOpened the key page in your browser:\n  {url}  works once, closes in 10 min\nOr, in a terminal: huddle provider zai\n"
-        )
+        format!("{url}\nSetup finishes by itself when you save the key. Nothing else to run.\n")
     );
     let record = world.record_path();
     let mode = fs::metadata(&record).expect("meta").permissions().mode() & 0o777;
@@ -502,7 +503,7 @@ fn k8_setup_never_signals_a_process_that_is_not_the_helper() {
     let still_running = stranger.try_wait().expect("wait").is_none();
     let _ = stranger.kill();
     let _ = stranger.wait();
-    assert_eq!(code, Some(6));
+    assert_eq!(code, Some(0));
     assert!(
         still_running,
         "setup signalled a process that is not its helper"
@@ -531,10 +532,11 @@ fn k8_a_test_home_stops_the_helper_it_started() {
     let output = home
         .command(env!("CARGO_BIN_EXE_huddle"))
         .args(["provider", "zai", "setup"])
+        .env("HUDDLE_KEY_WAIT_MS", "300")
         .stdin(Stdio::null())
         .output()
         .expect("run");
-    assert_eq!(output.status.code(), Some(6));
+    assert_eq!(output.status.code(), Some(0));
     let record: toml::Table = fs::read_to_string(home.root().join("r/huddle/key-page-zai.toml"))
         .expect("record")
         .parse()

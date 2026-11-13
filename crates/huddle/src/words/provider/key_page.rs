@@ -36,6 +36,7 @@ use huddle_jobs::id::now_ms;
 use huddle_keystore::port::{SecretString, is_valid_key};
 
 use super::finish::{KeyVerdict, Outcome, StepName, StepState, store_and_finish};
+use super::ready_note;
 
 /// How long a key page link lives.
 pub const LIFE: Duration = Duration::from_secs(600);
@@ -283,6 +284,8 @@ async fn submit(request: Request<Incoming>, state: &Arc<State>) -> Response<Full
         Ok(Ok(outcome)) => {
             let answer = answer(state.provider, &outcome);
             if answer.state != "refused" {
+                let report = ready_note::report(state.provider, &outcome, &state.executable, None);
+                ready_note::write(&state.paths, state.provider, &report);
                 state.stored.store(true, Ordering::SeqCst);
                 state.done.notify_one();
             }

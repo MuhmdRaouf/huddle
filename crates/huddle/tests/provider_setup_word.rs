@@ -54,21 +54,21 @@ fn state_home(home: &TempHome) -> PathBuf {
 }
 
 #[test]
-fn k3_setup_without_a_key_names_the_terminal_flow() {
+fn k3_setup_without_a_key_names_the_link_and_the_promise() {
     let home = TempHome::new();
     let port = free_port();
-    let output = huddle(&home, port, &["provider", "zai", "setup"]);
-    assert_eq!(output.status.code(), Some(6), "{output:?}");
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(
-        stdout.starts_with(
-            "zai setup: needs a key.\nOpened the key page in your browser:\n  http://127.0.0.1:"
-        ),
-        "{stdout}"
+    let output = huddle_with(
+        &home,
+        port,
+        &["provider", "zai", "setup"],
+        &[("HUDDLE_KEY_WAIT_MS", "300")],
     );
+    assert_eq!(output.status.code(), Some(0), "{output:?}");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.starts_with("http://127.0.0.1:"), "{stdout}");
     assert!(
         stdout
-            .ends_with("  works once, closes in 10 min\nOr, in a terminal: huddle provider zai\n"),
+            .ends_with("\nSetup finishes by itself when you save the key. Nothing else to run.\n"),
         "{stdout}"
     );
     assert!(

@@ -37,7 +37,7 @@ huddle is a Claude Code plugin and one Rust binary with two jobs:
 
 2. Run `/huddle:setup`.
 3. Restart Claude Code once, so it reads the proxy settings.
-4. Run `/huddle:zai:setup`. A key page opens in your browser: paste your Z.ai key.
+4. Run `/huddle:zai:setup`. A key page opens in your browser: paste your Z.ai key. Setup finishes on its own when you save it; nothing else to run.
 5. Pick a GLM model in `/model`, or delegate a task:
 
    ```text
@@ -116,7 +116,9 @@ requests, tokens and estimated cost per model, for today and the last 7 and 30 d
 ### How a key gets in
 
 - **From Claude Code:** `/huddle:<p>:setup` opens a one-time key page on
-  `127.0.0.1`. Paste the key there. A key the provider refuses is never stored,
+  `127.0.0.1`. Paste the key there: the page checks it, finishes the setup and
+  closes itself after 10 seconds. The command waits up to 100 seconds and prints the
+  ready report; after that the next prompt in Claude Code prints it once. A key the provider refuses is never stored,
   and never replaces a stored one.
 - **From a terminal:** `huddle provider <p>` walks you through it. It asks for the
   key with the echo off.

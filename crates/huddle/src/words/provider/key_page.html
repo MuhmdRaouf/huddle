@@ -122,7 +122,8 @@ a{color:var(--accent)}
       <h1>{{DISPLAY}} is ready</h1>
     </div>
     <ul class="checks" id="readySteps"></ul>
-    <p class="next">Close this tab. In Claude Code, pick a {{DISPLAY}} model with <code>/model</code>.</p>
+    <p class="next" data-countdown="10" id="readyClose">Key saved, setup done. This tab closes in <b id="readyCount">10</b> s.</p>
+    <p class="next">In Claude Code, pick a {{DISPLAY}} model with <code>/model</code>.</p>
   </div>
 
   <div class="form" id="uncheckedView" hidden>
@@ -132,6 +133,7 @@ a{color:var(--accent)}
     </div>
     <div class="banner warn"><svg viewBox="0 0 24 24"><path d="M12 8v5M12 16.5v.01"/><circle cx="12" cy="12" r="9"/></svg><p><b id="uncheckedWhy"></b> so huddle couldn't check the key. It's stored and {{ID}} is on. If {{DISPLAY}} requests fail, run <code>/huddle:{{ID}}:setup</code> again.</p></div>
     <ul class="checks" id="uncheckedSteps"></ul>
+    <p class="next" data-countdown="10" id="uncheckedClose">Key saved, setup done. This tab closes in <b id="uncheckedCount">10</b> s.</p>
   </div>
 
   <div class="form" id="closedView" hidden>
@@ -165,6 +167,17 @@ a{color:var(--accent)}
   function left(){var s=Math.max(0,Math.floor((expires-Date.now())/1000));return Math.floor(s/60)+':'+('0'+(s%60)).slice(-2)}
   function only(view){[form,ready,unchecked,closed].forEach(function(v){v.hidden=v!==view});clock.hidden=view!==form}
   function close(){over=true;only(closed)}
+  function countdown(note,count){
+    var n=Number(note.getAttribute('data-countdown')||10);
+    count.textContent=String(n);
+    var t=setInterval(function(){
+      n-=1;
+      if(n>0){count.textContent=String(n);return}
+      clearInterval(t);
+      window.close();
+      note.textContent='Key saved, setup done. You can close this tab.';
+    },1000);
+  }
   function tick(){if(over)return;if(Date.now()>=expires){close();return}clockText.textContent='Link closes in '+left()}
 
   eye.addEventListener('click',function(){
@@ -212,8 +225,8 @@ a{color:var(--accent)}
         key.value='';
         var j=a.json;
         if(a.status===403||a.status===404||a.status===410){close();return}
-        if(j.state==='ready'){fill(document.getElementById('readySteps'),j.steps);over=true;only(ready)}
-        else if(j.state==='unchecked'){document.getElementById('uncheckedWhy').textContent=j.why;fill(document.getElementById('uncheckedSteps'),j.steps);over=true;only(unchecked)}
+        if(j.state==='ready'){fill(document.getElementById('readySteps'),j.steps);over=true;only(ready);countdown(document.getElementById('readyClose'),document.getElementById('readyCount'))}
+        else if(j.state==='unchecked'){document.getElementById('uncheckedWhy').textContent=j.why;fill(document.getElementById('uncheckedSteps'),j.steps);over=true;only(unchecked);countdown(document.getElementById('uncheckedClose'),document.getElementById('uncheckedCount'))}
         else if(j.state==='refused'){retry(false)}
         else{retry(true)}
       })

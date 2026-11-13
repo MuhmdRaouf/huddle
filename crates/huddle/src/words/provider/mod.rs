@@ -4,6 +4,7 @@ pub mod key;
 pub mod key_page;
 pub mod key_page_launch;
 pub mod masked;
+pub mod ready_note;
 pub mod remove;
 pub mod setup;
 pub mod usage;
