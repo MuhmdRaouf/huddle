@@ -165,7 +165,7 @@ The plugin gives Claude Code the huddle tools as an MCP server, so it can call t
 | Tool | What it does |
 |---|---|
 | `huddle_run` | Starts a task on a harness in a folder; waits for the report, or returns the job id with `background` |
-| `huddle_status` | Lists this repository's delegated jobs, or every repository's live jobs, with why one is stuck or failed |
+| `huddle_status` | Lists the delegated jobs of the repository in `dir` (the server's folder over stdio), or every repository's live jobs, with why one is stuck or failed |
 | `huddle_result` | Reads a job's report and diff; `accept`, `accept_no_commit` or `return` with feedback decides it |
 | `huddle_cancel` | Stops a job and leaves its folder as it is |
 | `huddle_usage` | Tokens (fresh, cache read, cache write, output), requests, errors and API price from the history, by provider, model, session or project, for 15m to 90d or a from-to window |
@@ -176,6 +176,7 @@ The plugin gives Claude Code the huddle tools as an MCP server, so it can call t
 | `huddle_router_log` | The router's event and request lines, like `huddle router log` |
 | `huddle_version` | The huddle version, whether the router is up and the binary's path |
 
+- **`dir`**: over HTTP the router has no caller folder, so `huddle_run`, `huddle_status` (without `all_repos`), `huddle_result` and `huddle_cancel` need `dir` and answer a tool error naming it when it is missing. Over stdio `dir` defaults to the folder the server runs in.
 - **stdio** (`huddle mcp`) works with the router down: it reads the disk and asks the router for live data when it answers.
 - **HTTP** is served by the router on the loopback only: it answers a Host of `127.0.0.1:<port>` or `localhost:<port>` and an Origin of the same two, never a dashboard host.
 - No tool returns a key, prompt text or a header value.

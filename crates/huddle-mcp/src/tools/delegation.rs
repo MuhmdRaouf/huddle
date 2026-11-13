@@ -30,11 +30,14 @@ use serde::{Deserialize, Serialize};
 const FIRST_POLL_MS: u64 = 1_000;
 const MAX_POLL_MS: u64 = 5_000;
 
-/// What a delegation tool needs besides its input: the environment `main` read, and the huddle
-/// binary the detached driver runs as.
+/// What a delegation tool needs besides its input: the environment `main` read, the huddle
+/// binary the detached driver runs as, and the caller's folder when the transport knows it.
+/// Stdio passes its own current folder; HTTP passes none, so every repo-scoped tool there needs
+/// an explicit `dir`.
 pub struct Context {
     pub env: Env,
     pub exe: PathBuf,
+    pub folder: Option<PathBuf>,
 }
 
 /// Why a tool did not do its work, in the CLI's words. The server turns it into a tool error.
@@ -46,7 +49,8 @@ pub struct RunInput {
     pub harness: String,
     /// The task for the harness.
     pub task: String,
-    /// The folder the harness works in. Defaults to the folder this server runs in.
+    /// The folder the harness works in. Required over HTTP; over stdio it defaults to the folder
+    /// the server runs in.
     pub dir: Option<String>,
     /// Return at once with the job id instead of waiting for the report.
     #[serde(default)]
@@ -66,9 +70,12 @@ pub struct RunOutput {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct StatusInput {
-    /// List the live jobs of every repository instead of the repository this server runs in.
+    /// List the live jobs of every repository instead of one repository.
     #[serde(default)]
     pub all_repos: bool,
+    /// A folder of the repository to list. Required over HTTP unless all_repos is set; over
+    /// stdio it defaults to the folder the server runs in.
+    pub dir: Option<String>,
 }
 
 #[derive(Debug, Serialize, JsonSchema)]
@@ -109,6 +116,9 @@ pub struct ResultInput {
     pub action: Option<ResultAction>,
     /// What the harness should fix. Required for the return action.
     pub feedback: Option<String>,
+    /// A folder of the job's repository. Required over HTTP; over stdio it defaults to the
+    /// folder the server runs in.
+    pub dir: Option<String>,
 }
 
 #[derive(Debug, Serialize, JsonSchema)]
@@ -123,6 +133,9 @@ pub struct ResultOutput {
 pub struct CancelInput {
     /// The job id or a unique prefix of it.
     pub id: String,
+    /// A folder of the job's repository. Required over HTTP; over stdio it defaults to the
+    /// folder the server runs in.
+    pub dir: Option<String>,
 }
 
 #[derive(Debug, Serialize, JsonSchema)]
@@ -142,12 +155,9 @@ pub fn run(ctx: &Context, input: RunInput) -> Result<RunOutput, ToolError> {
     if task.trim().is_empty() {
         return Err("run needs a harness id and a task".to_string());
     }
+    let folder = folder_of(ctx, dir.as_deref())?;
     let paths = paths_of(&ctx.env)?;
     preflight::check_run(&paths, &ctx.env, &harness, "write").map_err(|e| e.to_string())?;
-    let folder = match dir {
-        Some(dir) => PathBuf::from(dir),
-        None => std::env::current_dir().map_err(|e| e.to_string())?,
-    };
     let input = SubmitInput {
         id: new_job_id(now_ms()).map_err(|e| e.to_string())?,
         harness,
@@ -213,7 +223,7 @@ pub fn status(ctx: &Context, input: StatusInput) -> Result<StatusOutput, ToolErr
             .collect();
         return Ok(StatusOutput { jobs });
     }
-    let store = repo_store(&paths)?;
+    let store = repo_store(ctx, &paths, input.dir.as_deref())?;
     liveness::sweep(&store, now_ms()).map_err(|e| e.to_string())?;
     let jobs = store
         .list()
@@ -232,7 +242,7 @@ pub fn status(ctx: &Context, input: StatusInput) -> Result<StatusOutput, ToolErr
 
 pub fn result(ctx: &Context, input: ResultInput) -> Result<ResultOutput, ToolError> {
     let paths = paths_of(&ctx.env)?;
-    let store = repo_store(&paths)?;
+    let store = repo_store(ctx, &paths, input.dir.as_deref())?;
     liveness::sweep(&store, now_ms()).map_err(|e| e.to_string())?;
     let id = input.id.as_str();
     match input.action {
@@ -279,7 +289,7 @@ pub fn result(ctx: &Context, input: ResultInput) -> Result<ResultOutput, ToolErr
 
 pub fn cancel(ctx: &Context, input: CancelInput) -> Result<CancelOutput, ToolError> {
     let paths = paths_of(&ctx.env)?;
-    let store = repo_store(&paths)?;
+    let store = repo_store(ctx, &paths, input.dir.as_deref())?;
     let outcome = cancel::cancel(&store, &input.id, &cancel::CANCEL_OPTIONS)
         .map_err(|error: CancelError| error.to_string())?;
     let message = if outcome.forced_driver {
@@ -304,10 +314,24 @@ fn paths_of(env: &Env) -> Result<Paths, ToolError> {
     Paths::from_env(env).map_err(|e| e.to_string())
 }
 
-/// The job store of the repository this server runs in (its main checkout, whatever worktree).
-fn repo_store(paths: &Paths) -> Result<JobStore, ToolError> {
-    let cwd = std::env::current_dir().map_err(|e| e.to_string())?;
-    let root = git::main_root(&cwd).map_err(|e| e.to_string())?;
+/// The folder a tool works in: the `dir` it was given, else the transport's folder. A transport
+/// with no folder (HTTP) cannot guess one, so it refuses.
+fn folder_of(ctx: &Context, dir: Option<&str>) -> Result<PathBuf, ToolError> {
+    match (dir, &ctx.folder) {
+        (Some(dir), _) => Ok(PathBuf::from(dir)),
+        (None, Some(folder)) => Ok(folder.clone()),
+        (None, None) => Err(
+            "dir is required: this server has no working folder, so name the repository folder in `dir`"
+                .to_string(),
+        ),
+    }
+}
+
+/// The job store of the repository of `dir` or of the transport's folder (its main checkout,
+/// whatever worktree).
+fn repo_store(ctx: &Context, paths: &Paths, dir: Option<&str>) -> Result<JobStore, ToolError> {
+    let folder = folder_of(ctx, dir)?;
+    let root = git::main_root(&folder).map_err(|e| e.to_string())?;
     Ok(JobStore::for_repo(paths, &root))
 }
 

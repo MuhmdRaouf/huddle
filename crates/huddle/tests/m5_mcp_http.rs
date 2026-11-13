@@ -287,3 +287,118 @@ fn m5_the_dashboard_host_never_serves_mcp() {
         assert!(answer.messages.is_empty());
     }
 }
+
+/// The whole tools/call result: `isError` and `content` on a tool error, `structuredContent` on
+/// success.
+fn http_tool(session: &HttpSession, tool: &str, arguments: Value) -> Value {
+    let answer = session.call(&json!({
+        "jsonrpc": "2.0", "id": 9, "method": "tools/call",
+        "params": {"name": tool, "arguments": arguments}
+    }));
+    answer["result"].clone()
+}
+
+fn error_text(result: &Value) -> String {
+    assert_eq!(result["isError"], true, "expected a tool error: {result}");
+    result["content"].to_string()
+}
+
+/// A repository in the daemon's temp home with one job in its store.
+fn repo_with_job(daemon: &Daemon, id: &str) -> std::path::PathBuf {
+    use huddle_config::env::Env;
+    use huddle_config::paths::Paths;
+    use huddle_jobs::model::{Access, Job, JobState};
+    use huddle_jobs::store::JobStore;
+
+    let repo = daemon.home.make_repo().unwrap().canonicalize().unwrap();
+    let sha = daemon.home.git(&repo, &["rev-parse", "HEAD"]).unwrap();
+    let pairs = daemon.home.env();
+    let refs: Vec<(&str, &str)> = pairs
+        .iter()
+        .map(|(k, v)| (k.as_str(), v.as_str()))
+        .collect();
+    let paths = Paths::from_env(&Env::with(&refs)).unwrap();
+    let job = Job {
+        id: id.to_string(),
+        harness: "opencode".to_string(),
+        title: "Do the thing".to_string(),
+        task: "Do the thing".to_string(),
+        access: Access::Write,
+        effort: None,
+        state: JobState::AwaitingReview,
+        repo_root: repo.to_string_lossy().into_owned(),
+        base_sha: sha,
+        base_branch: Some("main".to_string()),
+        dir: repo.to_string_lossy().into_owned(),
+        start_tree: None,
+        dirty_at_start: false,
+        attempts: vec![],
+        failure: None,
+        decision: None,
+        created_at: "2026-11-13T10:00:00.000Z".to_string(),
+        updated_at: "2026-11-13T10:00:00.000Z".to_string(),
+        version: 0,
+    };
+    JobStore::for_repo(&paths, &repo).create(&job).unwrap();
+    repo
+}
+
+fn job_records(home: &std::path::Path) -> usize {
+    let jobs = home.join(".local/state/huddle/jobs");
+    std::fs::read_dir(&jobs)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .flat_map(|slug| {
+            std::fs::read_dir(slug.path())
+                .into_iter()
+                .flatten()
+                .flatten()
+        })
+        .filter(|dir| dir.path().join("job.toml").exists())
+        .count()
+}
+
+#[test]
+fn g1_http_status_without_dir_is_refused_not_guessed() {
+    let daemon = Daemon::start(&[], &[]);
+    let session = HttpSession::open(daemon.port);
+    for tool in ["huddle_status", "huddle_result", "huddle_cancel"] {
+        let arguments = if tool == "huddle_status" {
+            json!({})
+        } else {
+            json!({"id": "abc"})
+        };
+        let text = error_text(&http_tool(&session, tool, arguments));
+        assert!(text.contains("dir"), "{tool}: {text}");
+    }
+}
+
+#[test]
+fn g1_http_run_without_dir_starts_nothing() {
+    let daemon = Daemon::start(&[], &[]);
+    let session = HttpSession::open(daemon.port);
+    let text = error_text(&http_tool(
+        &session,
+        "huddle_run",
+        json!({"harness": "opencode", "task": "Rename foo", "background": true}),
+    ));
+    assert!(text.contains("dir"), "{text}");
+    assert_eq!(job_records(daemon.home.root()), 0);
+}
+
+#[test]
+fn g1_http_status_with_dir_lists_that_repo() {
+    let daemon = Daemon::start(&[], &[]);
+    let repo = repo_with_job(&daemon, "g1job");
+    let session = HttpSession::open(daemon.port);
+    let status = http_tool(
+        &session,
+        "huddle_status",
+        json!({"dir": repo.to_string_lossy()}),
+    );
+    assert_ne!(status["isError"], true, "{status}");
+    let jobs = status["structuredContent"]["jobs"].as_array().unwrap();
+    assert_eq!(jobs.len(), 1, "{status}");
+    assert_eq!(jobs[0]["id"], "g1job");
+}

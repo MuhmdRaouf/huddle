@@ -268,16 +268,18 @@ fn outcome(answer: &Value) -> Value {
     }
 }
 
-fn calls() -> Vec<(&'static str, Value)> {
+/// One call per tool; `dir` is the repository the repo-scoped tools name, since HTTP has no folder
+/// of its own.
+fn calls(dir: &str) -> Vec<(&'static str, Value)> {
     vec![
         ("huddle_version", json!({})),
         (
             "huddle_run",
-            json!({"harness": "no-such-harness", "task": "do nothing"}),
+            json!({"harness": "no-such-harness", "task": "do nothing", "dir": dir}),
         ),
         ("huddle_status", json!({"all_repos": true})),
-        ("huddle_result", json!({"id": "nosuchjob"})),
-        ("huddle_cancel", json!({"id": "nosuchjob"})),
+        ("huddle_result", json!({"id": "nosuchjob", "dir": dir})),
+        ("huddle_cancel", json!({"id": "nosuchjob", "dir": dir})),
         (
             "huddle_usage",
             json!({"range": "24h", "group_by": "provider"}),
@@ -306,16 +308,21 @@ fn m6_both_transports_answer_every_tool_the_same() {
     let daemon = Daemon::start(&[], &[]);
     let mut http = Http::open(daemon.port);
     let mut stdio = Stdio2::start(&daemon);
+    let repo = daemon.home.make_repo().unwrap();
+    let dir = repo.to_string_lossy().into_owned();
 
     let http_list = http.request("tools/list", json!({}));
     let stdio_list = stdio.request("tools/list", json!({}));
     assert_eq!(names(&http_list), names(&stdio_list));
 
-    let mut called: Vec<String> = calls().iter().map(|(tool, _)| tool.to_string()).collect();
+    let mut called: Vec<String> = calls(&dir)
+        .iter()
+        .map(|(tool, _)| tool.to_string())
+        .collect();
     called.sort();
     assert_eq!(called, names(&http_list), "every tool is called");
 
-    for (tool, arguments) in calls() {
+    for (tool, arguments) in calls(&dir) {
         let params = json!({"name": tool, "arguments": arguments});
         let over_http = outcome(&http.request("tools/call", params.clone()));
         let over_stdio = outcome(&stdio.request("tools/call", params));

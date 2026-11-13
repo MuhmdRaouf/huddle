@@ -1,3 +1,4 @@
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use huddle_config::env::Env;
@@ -23,6 +24,7 @@ pub struct HuddleServer {
     version: String,
     sources: SourcesFactory,
     env: Env,
+    folder: Option<PathBuf>,
     tool_router: ToolRouter<Self>,
 }
 
@@ -32,6 +34,7 @@ impl HuddleServer {
             version,
             sources,
             env: Env::with(&[]),
+            folder: None,
             tool_router: Self::tool_router()
                 + Self::usage_router()
                 + Self::providers_router()
@@ -45,6 +48,13 @@ impl HuddleServer {
         self
     }
 
+    /// The caller's folder, for a transport that has one. Stdio passes its own current folder;
+    /// HTTP passes none, so its repo-scoped tools need an explicit `dir`.
+    pub fn with_folder(mut self, folder: Option<PathBuf>) -> HuddleServer {
+        self.folder = folder;
+        self
+    }
+
     /// Runs one blocking delegation tool off the async task, with this server's environment and
     /// binary.
     async fn blocking<T, F>(&self, work: F) -> Result<Json<T>, String>
@@ -54,10 +64,12 @@ impl HuddleServer {
     {
         let factory = Arc::clone(&self.sources);
         let env = self.env.clone();
+        let folder = self.folder.clone();
         tokio::task::spawn_blocking(move || {
             let ctx = Context {
                 exe: factory().binary_path(),
                 env,
+                folder,
             };
             work(&ctx)
         })
@@ -93,7 +105,8 @@ impl HuddleServer {
     }
 
     /// Starts a task on a coding harness in a folder and, unless background is set, waits for
-    /// its report. The harness edits files in that folder, so this changes things.
+    /// its report. The harness edits files in that folder, so this changes things. Over HTTP `dir` is
+    /// required.
     #[tool(name = "huddle_run")]
     async fn huddle_run(
         &self,
@@ -102,7 +115,7 @@ impl HuddleServer {
         self.blocking(move |ctx| delegation::run(ctx, input)).await
     }
 
-    /// Lists the delegated jobs of this repository, or the live jobs of every repository, with
+    /// Lists the delegated jobs of the repository in `dir` (required over HTTP), or the live jobs of every repository, with
     /// their state and why they are stuck or failed. Reads only.
     #[tool(name = "huddle_status")]
     async fn huddle_status(
@@ -115,7 +128,8 @@ impl HuddleServer {
 
     /// Reads a job's report, with its diff on request, or decides it: accept commits the change
     /// on the current branch, accept_no_commit leaves it uncommitted, return sends feedback to
-    /// the harness. Accepting and returning change things; reading does not.
+    /// the harness. Accepting and returning change things; reading does not. Over HTTP `dir` is
+    /// required.
     #[tool(name = "huddle_result")]
     async fn huddle_result(
         &self,
@@ -126,7 +140,7 @@ impl HuddleServer {
     }
 
     /// Stops a job and marks it cancelled. Its folder stays as it is. This stops a running
-    /// harness, so it changes things.
+    /// harness, so it changes things. Over HTTP `dir` is required.
     #[tool(name = "huddle_cancel")]
     async fn huddle_cancel(
         &self,

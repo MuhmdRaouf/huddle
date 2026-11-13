@@ -34,7 +34,9 @@ fn serve(env: &Env) -> Result<(), String> {
         let up = huddle_daemon::start::health(port, HEALTH_WITHIN).is_some();
         pick(up, machine.clone())
     });
-    let server = HuddleServer::new(VERSION.trim().to_string(), sources).with_env(env.clone());
+    let server = HuddleServer::new(VERSION.trim().to_string(), sources)
+        .with_env(env.clone())
+        .with_folder(std::env::current_dir().ok());
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()

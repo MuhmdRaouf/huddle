@@ -13,6 +13,7 @@
 ### Dashboard
 
 - The page draws its own menus and date picker instead of the browser's: the time range and the Requests status filter are menus with keyboard control (arrows, Home, End, type a letter, Enter, Escape), and Custom opens a month grid with hour and minute menus.
+- MCP over HTTP no longer answers for the router's own folder: `huddle_run`, `huddle_status`, `huddle_result` and `huddle_cancel` take a `dir` and refuse with a clear error when it is missing. Over stdio they still default to the folder the server runs in.
 
 ## 0.0.7
 

@@ -327,3 +327,23 @@ fn m2_a_bad_harness_is_a_tool_error_not_a_crash() {
     assert!(version["version"].is_string());
     session.finish();
 }
+
+#[test]
+fn g1_stdio_still_uses_its_folder() {
+    let r = rig();
+    let env = fake_harness_env_writing(&r, REPORT, "b.txt");
+    let mut session = Session::start(&r, &harness_path(&env));
+    let run = session.ok(
+        "huddle_run",
+        json!({"harness": "opencode", "task": "Rename foo", "background": true}),
+    );
+    let id = run["job_id"].as_str().unwrap().to_string();
+    let store = JobStore::for_repo(&r.paths, &r.repo);
+    wait_for_state(&store, &id, JobState::AwaitingReview);
+    let status = session.ok("huddle_status", json!({}));
+    assert_eq!(status["jobs"][0]["id"], id.as_str(), "{status}");
+    let result = session.ok("huddle_result", json!({"id": id}));
+    assert!(result["text"].as_str().unwrap().contains("Renamed foo"));
+    session.finish();
+    wait_drivers_done(r.home.root());
+}
