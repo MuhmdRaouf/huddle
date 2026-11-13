@@ -4,6 +4,7 @@ pub mod cancel;
 pub mod dashboard_host;
 pub mod home;
 pub mod hook;
+pub mod mcp;
 pub mod provider;
 pub mod result;
 pub mod router;
@@ -28,6 +29,7 @@ pub fn dispatch(args: &[String], env: &Env) -> i32 {
         "add-dashboard-host" => dashboard_host::add(rest, env),
         "remove-dashboard-host" => dashboard_host::remove(rest, env),
         "hook" => hook::run(rest, env),
+        "mcp" => mcp::run(rest, env),
         "uninstall" => uninstall::run(rest, env),
         "router" => router::run(rest, env),
         "provider" => provider::run(rest, env),

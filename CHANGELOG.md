@@ -17,6 +17,10 @@ Provider setup holds across sessions, and the key check gets a real answer.
 - The state carries each set-up provider's quota or balance: Claude's 5 hour and 7 day windows, Z.ai's plan windows with their resets, DeepSeek's and Kimi's balance, MiniMax's plan (unverified until a live check). The router asks only while a dashboard is open, at most every 5 minutes per provider, and an answer it cannot read shows as "quota unknown".
 - Every history view answers in under 300 ms on a 90-day database of a million rows. A request no longer scans the session logs: a background tick credits missing usage every minute, and the views read the database read-only, one slice of the time range per thread.
 
+### MCP
+
+- `huddle mcp` serves the huddle tools to Claude Code as an MCP server over stdio. It works with the router down and asks the router when it is up. The first tool, `huddle_version`, reports the version, whether the router answers and the binary's path.
+
 ## 0.0.6
 
 The five providers are part of huddle, and a key goes in from a page or a terminal guide.

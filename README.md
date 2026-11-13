@@ -255,6 +255,7 @@ huddle-router          the proxy: lanes, the key swap, the Anthropic default,
 huddle-setup           the install, the settings patch and its undo.
 huddle-jobs            the job model and its records.
 huddle-history         the request history in `huddle.db`.
+huddle-mcp             the MCP tool registry, served over stdio by `huddle mcp`.
 huddle-harness         the harness table and its runners.
 huddle-sessions        Claude Code's session logs and the projects' worktrees,
                        read only.
@@ -362,6 +363,7 @@ huddle/
 │   ├── huddle-jobs/            # the job model and records
 │   ├── huddle-harness/         # the harness table and runners
 │   ├── huddle-sessions/        # Claude Code session logs and worktrees, read only
+│   ├── huddle-mcp/             # the MCP tool registry and the stdio transport
 │   ├── huddle-catalog/         # provider data and routing
 │   ├── huddle-pki/             # the local CA
 │   ├── huddle-keystore/        # keys in the OS store

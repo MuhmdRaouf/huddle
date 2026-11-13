@@ -18,6 +18,7 @@ huddle-harness.workspace = true
 huddle-history.workspace = true
 huddle-jobs.workspace = true
 huddle-keystore.workspace = true
+huddle-mcp.workspace = true
 huddle-pki.workspace = true
 huddle-procs.workspace = true
 huddle-router.workspace = true

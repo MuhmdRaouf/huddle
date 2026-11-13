@@ -33,6 +33,7 @@ cargo run -q -p huddle-testkit --bin huddle-check-attribution  # no AI attributi
 - `crates/huddle-router`, `crates/huddle-daemon`: the router and its run loop, singleton and handover. The dashboard page is the files in `crates/huddle-router/src/dashboard/` (`index.html`, `style.css`, `core.js`, `pages/<page>.js`, `drawers.js`, `boot.js`), joined at compile time into `dashboard::PAGE`.
 - `crates/huddle-config`, `crates/huddle-catalog`, `crates/huddle-pki`, `crates/huddle-keystore`: state paths, provider data and routing, local CA, keys in the OS store.
 - `crates/huddle-harness`, `crates/huddle-jobs`, `crates/huddle-procs`: harness table and runners, job model and records, processes.
+- `crates/huddle-mcp`: the MCP tool registry (typed tools, the `Sources` trait with disk and router implementations) that every transport serves; `huddle mcp` is the stdio transport.
 - `crates/huddle-history`: the `huddle.db` request history: writer, queries, pruning, prices.
 - `crates/huddle-setup`: the install, the settings patch and its undo.
 - `crates/huddle-testkit`: temp homes, ports, fake upstream, fake harness (dev only).
