@@ -15,7 +15,7 @@ use crate::dashboard::{Dashboard, DashboardInputs, HISTORY_PATH, LIVE_PATH, STAT
 use crate::keycache::sources_for;
 use crate::lane::{Lane, LaneError, Logger};
 use crate::live::{Finish, HistorySink, LiveState, RequestStart};
-use crate::mcp_http::{self, with_mcp};
+use crate::mcp_http::{self, McpGuard, with_mcp};
 pub use crate::probe::ProbeTiming;
 use crate::probe::{self, ProbeHandle, ProbeTarget};
 use crate::quota::{QuotaFetcher, catalog_urls};
@@ -28,6 +28,7 @@ use crate::trace::Trace;
 use crate::upstream::{FailureCode, IDLE_TIMEOUT, UpstreamClient, UpstreamConfig};
 use huddle_catalog::providers::{provider_by_id, provider_ids};
 use huddle_catalog::routing::{ResolvedIds, Route, decide_resolved};
+use huddle_config::mcp_token::{McpToken, token_path};
 use huddle_config::{env::Env, paths::Paths};
 use huddle_mcp::Machine;
 use huddle_pki::leaf::LeafCache;
@@ -395,6 +396,10 @@ impl Router {
                 }
             })
         });
+        let token_path = token_path(&self.paths);
+        if let Err(error) = McpToken::ensure(&token_path) {
+            (self.log)(format!("mcp: token {error}; /mcp refuses every request"));
+        }
         let forward = with_mcp(
             forward,
             mcp_http::service(
@@ -406,6 +411,10 @@ impl Router {
                     port: self.port,
                 },
             ),
+            McpGuard {
+                port: self.port,
+                token_path,
+            },
         );
         let providers: Arc<dyn Fn() -> Vec<String> + Send + Sync> = {
             let router = Arc::clone(self);

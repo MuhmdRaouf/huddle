@@ -164,6 +164,8 @@ the machine as this user.
 
 The plugin gives Claude Code the huddle tools as an MCP server, so it can call them without a slash command. Two servers declare the same tools, `huddle` over stdio and `huddle-http` over the router's `http://127.0.0.1:${HUDDLE_ROUTER_PORT:-4835}/mcp` (the port follows `HUDDLE_ROUTER_PORT`), and both are on by default so you can compare them. In Claude Code, open `/mcp` and disable the one you do not want.
 
+`/mcp` over HTTP answers only a request that carries huddle's token, so another program on this machine cannot call the tools. You never handle it: `/huddle:setup` and the router make it (32 random bytes in `~/.local/state/huddle/mcp-token`, mode 0600), the plugin's `headersHelper` runs `huddle mcp headers` to hand it to Claude Code, and `huddle uninstall` removes it. `huddle router status` shows `mcp: token ok`, or what is wrong and to run `/huddle:setup`. If `huddle-http` shows as needing authentication in `/mcp`, the plugin and the binary are on different versions: run `/huddle:update`, then reconnect. The stdio server needs no token.
+
 | Tool | What it does |
 |---|---|
 | `huddle_run` | Starts a task on a harness in a folder; waits for the report, or returns the job id with `background` |

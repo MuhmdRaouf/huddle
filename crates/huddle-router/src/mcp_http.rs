@@ -2,17 +2,24 @@
 //!
 //! `/mcp` serves the same tools as `huddle mcp`, from the router's own data. The Host guard in
 //! the entry handler has already refused every Host but the loopback and the dashboard hosts, and
-//! a dashboard host reaches nothing but its read-only paths, so it never gets here. The service
-//! then checks Host and Origin again against the exact loopback authorities of this port.
+//! a dashboard host reaches nothing but its read-only paths, so it never gets here. Here Host and
+//! Origin are checked against the exact loopback authorities of this port, then the request must
+//! carry the token from the state folder; the service checks Host and Origin once more.
 
+use std::path::PathBuf;
 use std::sync::Arc;
-
-use hyper::body::Bytes;
 
 use http_body_util::combinators::BoxBody;
 use http_body_util::{BodyExt, Full, Limited};
-use huddle_mcp::{HttpService, HuddleServer, MCP_BODY_LIMIT, Machine, RouterSources, http_service};
-use hyper::header::{ALLOW, CONTENT_TYPE, HeaderValue};
+use huddle_config::mcp_token::McpToken;
+use huddle_mcp::{
+    HttpService, HuddleServer, MCP_BODY_LIMIT, Machine, RouterSources, allowed_hosts,
+    allowed_origins, http_service,
+};
+use hyper::body::{Bytes, Incoming};
+use hyper::header::{
+    ALLOW, AUTHORIZATION, CONTENT_TYPE, HOST, HeaderValue, ORIGIN, WWW_AUTHENTICATE,
+};
 use hyper::{Method, Request, Response, StatusCode};
 
 use crate::server::{Handler, RespBody, anthropic_error, json_answer};
@@ -41,9 +48,7 @@ fn rpc_error(status: StatusCode, code: i64, message: &str) -> Response<RespBody>
 /// the limit. A batch is refused because MCP no longer has batching.
 // The err side is the whole answer; the 128-byte move only happens on a failure path.
 #[allow(clippy::result_large_err)]
-async fn read_post(
-    req: Request<hyper::body::Incoming>,
-) -> Result<Request<Full<Bytes>>, Response<RespBody>> {
+async fn read_post(req: Request<Incoming>) -> Result<Request<Full<Bytes>>, Response<RespBody>> {
     let (parts, body) = req.into_parts();
     if parts.method != Method::POST {
         return Ok(Request::from_parts(parts, Full::new(Bytes::new())));
@@ -126,15 +131,61 @@ pub fn service(version: &str, machine: Machine) -> HttpService {
     http_service(server, port)
 }
 
-/// `forward`, except that `/mcp` goes to `service`. A GET is refused: the tools never push a
-/// message, so no standalone event stream is held open.
-pub fn with_mcp(forward: Handler, service: HttpService) -> Handler {
+/// Who may use `/mcp`: a request to this port's loopback names that carries the token in
+/// `token_path`. The file is read for each request, so the router and `huddle mcp headers`
+/// always agree; a file that cannot be read refuses every request.
+pub struct McpGuard {
+    pub port: u16,
+    pub token_path: PathBuf,
+}
+
+/// The paths an MCP client probes for OAuth metadata after a 401 start here. They are answered
+/// on the loopback names, so the probe never leaves the machine as a forwarded request.
+const OAUTH_DISCOVERY: &str = "/.well-known/";
+
+/// The one message for a missing or wrong token, whichever it was.
+const NO_TOKEN: &str = "huddle-router: /mcp needs huddle's token. Run /huddle:update, then reconnect huddle-http in /mcp.";
+
+/// `forward`, except that `/mcp` goes to `service` once Host, Origin and the token pass. A GET
+/// is refused: the tools never push a message, so no standalone event stream is held open.
+pub fn with_mcp(forward: Handler, service: HttpService, guard: McpGuard) -> Handler {
+    let guard = Arc::new(guard);
     Arc::new(move |req| {
+        if req.uri().path().starts_with(OAUTH_DISCOVERY) && from_loopback(&req, guard.port) {
+            return Box::pin(async {
+                anthropic_error(
+                    StatusCode::NOT_FOUND,
+                    "not_found_error",
+                    "huddle-router: /mcp takes huddle's token, not OAuth",
+                )
+            });
+        }
         if req.uri().path() != MCP_PATH {
             return forward(req);
         }
         let service = service.clone();
+        let guard = Arc::clone(&guard);
         Box::pin(async move {
+            if !from_loopback(&req, guard.port) {
+                return rpc_error(
+                    StatusCode::FORBIDDEN,
+                    INVALID_REQUEST,
+                    "huddle-router: /mcp answers 127.0.0.1 and localhost on this port only",
+                );
+            }
+            let path = guard.token_path.clone();
+            let token = tokio::task::spawn_blocking(move || McpToken::read(&path)).await;
+            let carries_token = match (token, req.headers().get(AUTHORIZATION)) {
+                (Ok(Ok(token)), Some(value)) => token.accepts(value.as_bytes()),
+                _ => false,
+            };
+            if !carries_token {
+                let mut refused = rpc_error(StatusCode::UNAUTHORIZED, INVALID_REQUEST, NO_TOKEN);
+                refused
+                    .headers_mut()
+                    .insert(WWW_AUTHENTICATE, HeaderValue::from_static("Bearer"));
+                return refused;
+            }
             if req.method() == Method::GET {
                 let mut refused = anthropic_error(
                     StatusCode::METHOD_NOT_ALLOWED,
@@ -156,4 +207,22 @@ pub fn with_mcp(forward: Handler, service: HttpService) -> Handler {
             json_errors(Response::from_parts(parts, body)).await
         })
     })
+}
+
+/// True when Host is one of this port's loopback authorities and Origin is absent or the
+/// `http` origin of one of them.
+fn from_loopback(req: &Request<Incoming>, port: u16) -> bool {
+    let host = req
+        .headers()
+        .get(HOST)
+        .and_then(|value| value.to_str().ok())
+        .or_else(|| req.uri().authority().map(|authority| authority.as_str()));
+    let host_ok = host.is_some_and(|host| allowed_hosts(port).iter().any(|ok| ok == host));
+    let origin_ok = match req.headers().get(ORIGIN) {
+        None => true,
+        Some(origin) => origin
+            .to_str()
+            .is_ok_and(|origin| allowed_origins(port).iter().any(|ok| ok == origin)),
+    };
+    host_ok && origin_ok
 }

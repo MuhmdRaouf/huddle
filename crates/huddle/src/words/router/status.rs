@@ -4,6 +4,7 @@ use std::io::Write;
 
 use huddle_config::dashboard_hosts;
 use huddle_config::env::Env;
+use huddle_config::mcp_token::{McpToken, token_path};
 use huddle_config::paths::Paths;
 use huddle_daemon::start::{HEALTH_WAIT, HealthAnswer, RouterRecord, health, read_record};
 use huddle_procs::live::is_alive;
@@ -96,7 +97,16 @@ fn answer_plain(
         answer.providers.join(", ")
     );
     let _ = writeln!(std::io::stdout(), "{}", hosts_line(paths));
+    let _ = writeln!(std::io::stdout(), "{}", mcp_line(paths));
     0
+}
+
+/// Whether the token `/mcp` over HTTP needs is in place, or what is wrong with it.
+fn mcp_line(paths: &Paths) -> String {
+    match McpToken::read(&token_path(paths)) {
+        Ok(_) => "mcp: token ok".to_string(),
+        Err(error) => format!("mcp: token {error}; run /huddle:setup"),
+    }
 }
 
 /// `restarts 2 (last: signal 9)`, or `restarts 0` before the first one.

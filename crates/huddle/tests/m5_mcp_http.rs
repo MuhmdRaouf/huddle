@@ -74,16 +74,24 @@ fn initialize() -> Value {
 struct HttpSession {
     port: u16,
     id: String,
+    auth: String,
 }
 
 impl HttpSession {
-    fn open(port: u16) -> HttpSession {
+    fn open(daemon: &Daemon) -> HttpSession {
+        let port = daemon.port;
+        let auth = daemon.mcp_authorization();
         let host = format!("127.0.0.1:{port}");
-        let first = post(port, &host, &[], &initialize());
+        let first = post(
+            port,
+            &host,
+            &[("Authorization", auth.as_str())],
+            &initialize(),
+        );
         assert_eq!(first.status, 200, "{}", first.raw);
         assert_eq!(first.messages[0]["result"]["serverInfo"]["name"], "huddle");
         let id = first.session.expect("a session id");
-        let session = HttpSession { port, id };
+        let session = HttpSession { port, id, auth };
         let ack = session.post(&json!({"jsonrpc": "2.0", "method": "notifications/initialized"}));
         assert_eq!(ack.status, 202, "{}", ack.raw);
         session
@@ -94,6 +102,7 @@ impl HttpSession {
             self.port,
             &format!("127.0.0.1:{}", self.port),
             &[
+                ("Authorization", self.auth.as_str()),
                 ("Mcp-Session-Id", self.id.as_str()),
                 ("Mcp-Protocol-Version", "2025-06-18"),
             ],
@@ -174,7 +183,7 @@ fn version_call() -> Value {
 #[test]
 fn m5_http_lists_tools_and_answers_like_stdio() {
     let daemon = Daemon::start(&[], &[]);
-    let session = HttpSession::open(daemon.port);
+    let session = HttpSession::open(&daemon);
     let http_tools = session.call(&json!({"jsonrpc": "2.0", "id": 2, "method": "tools/list"}));
     let http_version = session.call(&version_call())["result"]["structuredContent"].clone();
 
@@ -195,13 +204,16 @@ fn m5_http_lists_tools_and_answers_like_stdio() {
 #[test]
 fn m5_each_session_has_its_own_id() {
     let daemon = Daemon::start(&[], &[]);
-    let first = HttpSession::open(daemon.port);
-    let second = HttpSession::open(daemon.port);
+    let first = HttpSession::open(&daemon);
+    let second = HttpSession::open(&daemon);
     assert_ne!(first.id, second.id);
     let answer = post(
         daemon.port,
         &format!("127.0.0.1:{}", daemon.port),
-        &[("Mcp-Session-Id", "no-such-session")],
+        &[
+            ("Authorization", daemon.mcp_authorization().as_str()),
+            ("Mcp-Session-Id", "no-such-session"),
+        ],
         &json!({"jsonrpc": "2.0", "id": 2, "method": "tools/list"}),
     );
     assert_eq!(answer.status, 404, "{}", answer.raw);
@@ -211,6 +223,7 @@ fn m5_each_session_has_its_own_id() {
 fn m5_a_foreign_host_or_origin_is_refused() {
     let daemon = Daemon::start(&[], &[]);
     let port = daemon.port;
+    let auth = daemon.mcp_authorization();
     for host in [
         "evil.example".to_string(),
         format!("evil.example:{port}"),
@@ -244,7 +257,10 @@ fn m5_a_foreign_host_or_origin_is_refused() {
         let answer = post(
             port,
             &format!("localhost:{port}"),
-            &[("Origin", origin.as_str())],
+            &[
+                ("Origin", origin.as_str()),
+                ("Authorization", auth.as_str()),
+            ],
             &initialize(),
         );
         assert_eq!(answer.status, 200, "{origin}: {}", answer.raw);
@@ -362,7 +378,7 @@ fn job_records(home: &std::path::Path) -> usize {
 #[test]
 fn g1_http_status_without_dir_is_refused_not_guessed() {
     let daemon = Daemon::start(&[], &[]);
-    let session = HttpSession::open(daemon.port);
+    let session = HttpSession::open(&daemon);
     for tool in ["huddle_status", "huddle_result", "huddle_cancel"] {
         let arguments = if tool == "huddle_status" {
             json!({})
@@ -377,7 +393,7 @@ fn g1_http_status_without_dir_is_refused_not_guessed() {
 #[test]
 fn g1_http_run_without_dir_starts_nothing() {
     let daemon = Daemon::start(&[], &[]);
-    let session = HttpSession::open(daemon.port);
+    let session = HttpSession::open(&daemon);
     let text = error_text(&http_tool(
         &session,
         "huddle_run",
@@ -391,7 +407,7 @@ fn g1_http_run_without_dir_starts_nothing() {
 fn g1_http_status_with_dir_lists_that_repo() {
     let daemon = Daemon::start(&[], &[]);
     let repo = repo_with_job(&daemon, "g1job");
-    let session = HttpSession::open(daemon.port);
+    let session = HttpSession::open(&daemon);
     let status = http_tool(
         &session,
         "huddle_status",

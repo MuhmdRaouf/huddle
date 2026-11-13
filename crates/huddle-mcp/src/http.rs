@@ -17,14 +17,24 @@ pub const MCP_BODY_LIMIT: usize = 4 * 1024 * 1024;
 pub fn http_service(server: HuddleServer, port: u16) -> HttpService {
     let config = StreamableHttpServerConfig::default()
         .with_max_request_body_bytes(MCP_BODY_LIMIT)
-        .with_allowed_hosts([format!("127.0.0.1:{port}"), format!("localhost:{port}")])
-        .with_allowed_origins([
-            format!("http://127.0.0.1:{port}"),
-            format!("http://localhost:{port}"),
-        ]);
+        .with_allowed_hosts(allowed_hosts(port))
+        .with_allowed_origins(allowed_origins(port));
     StreamableHttpService::new(
         move || Ok(server.clone()),
         Arc::new(LocalSessionManager::default()),
         config,
     )
+}
+
+/// The Host values the service answers on `port`.
+pub fn allowed_hosts(port: u16) -> [String; 2] {
+    [format!("127.0.0.1:{port}"), format!("localhost:{port}")]
+}
+
+/// The Origin values the service answers on `port`; a request may also carry none.
+pub fn allowed_origins(port: u16) -> [String; 2] {
+    [
+        format!("http://127.0.0.1:{port}"),
+        format!("http://localhost:{port}"),
+    ]
 }

@@ -120,6 +120,8 @@ OS service is involved; the session hooks stay as the backup.
 
 The router serves the MCP tools at `/mcp` on its own port, answering only `127.0.0.1:<port>` and `localhost:<port>` as Host and the `http` origins of those two, never a dashboard host, and no standalone event stream (a GET is refused). The release binary grew from 7,320,720 to 8,578,240 B on macOS with the HTTP service, and Linux builds run about 1.5 MB larger, so the size limit moved from 10 MB to 12 MB.
 
+The loopback alone lets any local process call every tool, `huddle_run` included, so `/mcp` also needs a token: 32 random bytes from `/dev/urandom` as hex in `mcp-token` in the state folder, mode 0600. The router checks Host and Origin first, then compares `Authorization: Bearer <token>` in constant time, and answers a missing or wrong token with the same 401 and one JSON-RPC error. It reads the file on each request, so setup, uninstall or a replaced file never leave it holding an old token. Claude Code gets the header from the plugin's `headersHelper` (`huddle mcp headers`), which runs for a plugin's server with no trust prompt; the token never goes in `settings.json`, a URL or a log. OAuth discovery paths (`/.well-known/`) are answered on the loopback with a 404, so the probe a client sends after a 401 is never forwarded upstream.
+
 ## D17: The plugin declares both MCP servers
 
 `plugin/.mcp.json` declares `huddle` (stdio: `huddle mcp` from the installed binary) and `huddle-http` (the router's `http://127.0.0.1:4835/mcp`), both on by default, so the two can be compared in use before one is dropped. They serve the same tools from one library, and an e2e calls every tool on both and requires the same answers.

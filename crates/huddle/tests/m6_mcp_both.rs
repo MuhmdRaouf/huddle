@@ -100,12 +100,12 @@ fn m6_the_stdio_line_runs_the_installed_binary() {
     }
 }
 
-fn raw_post(port: u16, session: Option<&str>, body: &Value) -> (Option<String>, Value) {
+fn raw_post(port: u16, auth: &str, session: Option<&str>, body: &Value) -> (Option<String>, Value) {
     let body = body.to_string();
     let mut head = format!(
         "POST /mcp HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nConnection: close\r\n\
          Content-Type: application/json\r\nAccept: application/json, text/event-stream\r\n\
-         Content-Length: {}\r\n",
+         Authorization: {auth}\r\nContent-Length: {}\r\n",
         body.len()
     );
     if let Some(id) = session {
@@ -148,22 +148,27 @@ trait Transport {
 
 struct Http {
     port: u16,
+    auth: String,
     session: String,
     next_id: u64,
 }
 
 impl Http {
-    fn open(port: u16) -> Http {
-        let (session, answer) = raw_post(port, None, &initialize());
+    fn open(daemon: &Daemon) -> Http {
+        let port = daemon.port;
+        let auth = daemon.mcp_authorization();
+        let (session, answer) = raw_post(port, &auth, None, &initialize());
         assert_eq!(answer["result"]["serverInfo"]["name"], "huddle", "{answer}");
         let session = session.expect("a session id");
         raw_post(
             port,
+            &auth,
             Some(&session),
             &json!({"jsonrpc": "2.0", "method": "notifications/initialized"}),
         );
         Http {
             port,
+            auth,
             session,
             next_id: 2,
         }
@@ -175,7 +180,7 @@ impl Transport for Http {
         let id = self.next_id;
         self.next_id += 1;
         let body = json!({"jsonrpc": "2.0", "id": id, "method": method, "params": params});
-        raw_post(self.port, Some(&self.session), &body).1
+        raw_post(self.port, &self.auth, Some(&self.session), &body).1
     }
 }
 
@@ -306,7 +311,7 @@ fn names(list: &Value) -> Vec<String> {
 #[test]
 fn m6_both_transports_answer_every_tool_the_same() {
     let daemon = Daemon::start(&[], &[]);
-    let mut http = Http::open(daemon.port);
+    let mut http = Http::open(&daemon);
     let mut stdio = Stdio2::start(&daemon);
     let repo = daemon.home.make_repo().unwrap();
     let dir = repo.to_string_lossy().into_owned();
@@ -403,7 +408,7 @@ fn t3_mcp_http_url_follows_the_router_port() {
         (host.as_str(), port, path.as_str()),
         ("127.0.0.1", daemon.port, "/mcp")
     );
-    let mut http = Http::open(port);
+    let mut http = Http::open(&daemon);
     let list = http.request("tools/list", json!({}));
     assert!(
         names(&list).contains(&"huddle_version".to_string()),

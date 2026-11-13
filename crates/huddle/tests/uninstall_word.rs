@@ -152,3 +152,39 @@ fn k4_uninstall_removes_only_its_own_link() {
     assert_eq!(huddle(&moved, port, &["uninstall"]).status.code(), Some(0));
     assert_eq!(fs::read_link(&link).expect("still there"), elsewhere);
 }
+
+#[test]
+fn h3_install_makes_the_mcp_token_and_uninstall_removes_it() {
+    use std::os::unix::fs::PermissionsExt;
+    let home = TempHome::new();
+    let port = free_port();
+    let _stop = StopOnDrop(&home, port);
+    fs::create_dir_all(home.root().join(".claude")).expect("mkdir");
+    let token = home.root().join(".local/state/huddle/mcp-token");
+
+    let install = huddle(&home, port, &["setup", "--install"]);
+    assert_eq!(
+        install.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&install.stderr)
+    );
+    let mode = fs::metadata(&token)
+        .expect("setup made the token")
+        .permissions()
+        .mode();
+    assert_eq!(mode & 0o777, 0o600);
+    let secret = fs::read_to_string(&token).expect("read");
+    let said = String::from_utf8_lossy(&install.stdout).into_owned()
+        + &String::from_utf8_lossy(&install.stderr);
+    assert!(!said.contains(secret.trim()), "setup printed the token");
+
+    let uninstall = huddle(&home, port, &["uninstall"]);
+    assert_eq!(uninstall.status.code(), Some(0));
+    assert!(!token.exists(), "uninstall left the token");
+    assert!(
+        String::from_utf8_lossy(&uninstall.stdout).contains("removed the MCP token"),
+        "{}",
+        String::from_utf8_lossy(&uninstall.stdout)
+    );
+}

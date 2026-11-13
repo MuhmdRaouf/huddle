@@ -79,6 +79,10 @@ pub fn run(env: &Env, paths: &Paths, exe: &Path) -> Result<InstallReport, Instal
             .map_err(|error| InstallError::Config(format!("{}: {error}", path.display())))?;
     }
 
+    let token = huddle_config::mcp_token::token_path(paths);
+    huddle_config::mcp_token::McpToken::ensure(&token)
+        .map_err(|error| InstallError::Config(format!("{}: {error}", token.display())))?;
+
     let up_before = router_answers(port);
     start_router(exe)?;
     if !router_answers(port) {

@@ -42,14 +42,17 @@ impl Answer {
     }
 }
 
-fn send(port: u16, extra: &[(&str, &str)], body: &[u8]) -> Answer {
+/// One POST to the daemon's `/mcp` with its token, as the plugin's `headersHelper` sends it.
+fn send(daemon: &Daemon, extra: &[(&str, &str)], body: &[u8]) -> Answer {
+    let port = daemon.port;
+    let auth = daemon.mcp_authorization();
     let mut head = format!(
         "POST /mcp HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nConnection: close\r\n\
          Content-Type: application/json\r\nAccept: application/json, text/event-stream\r\n\
          Content-Length: {}\r\n",
         body.len()
     );
-    for (name, value) in extra {
+    for (name, value) in [("Authorization", auth.as_str())].iter().chain(extra) {
         head.push_str(&format!("{name}: {value}\r\n"));
     }
     head.push_str("\r\n");
@@ -92,8 +95,8 @@ fn raw_exchange_bytes(port: u16, request: &[u8]) -> String {
     String::from_utf8_lossy(&raw).into_owned()
 }
 
-fn call(port: u16, extra: &[(&str, &str)], body: &Value) -> Answer {
-    send(port, extra, body.to_string().as_bytes())
+fn call(daemon: &Daemon, extra: &[(&str, &str)], body: &Value) -> Answer {
+    send(daemon, extra, body.to_string().as_bytes())
 }
 
 fn initialize() -> Value {
@@ -108,12 +111,12 @@ fn initialize() -> Value {
 }
 
 /// A session id, past the handshake.
-fn open(port: u16) -> String {
-    let first = call(port, &[], &initialize());
+fn open(daemon: &Daemon) -> String {
+    let first = call(daemon, &[], &initialize());
     assert_eq!(first.status, 200, "{}", first.body);
     let id = first.session.expect("a session id");
     let ack = call(
-        port,
+        daemon,
         &[
             ("Mcp-Session-Id", &id),
             ("Mcp-Protocol-Version", "2025-06-18"),
@@ -137,14 +140,14 @@ fn h4_oversized_body_is_a_json_rpc_error() {
     let padding = "x".repeat(5 * 1024 * 1024);
     let body =
         json!({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {"pad": padding}});
-    let answer = call(daemon.port, &[], &body);
+    let answer = call(&daemon, &[], &body);
     assert_eq!(answer.error_code(413), -32600);
 }
 
 #[test]
 fn h4_truncated_json_is_a_json_rpc_error() {
     let daemon = Daemon::start(&[], &[]);
-    let answer = send(daemon.port, &[], br#"{"jsonrpc": "2.0", "id": 1, "me"#);
+    let answer = send(&daemon, &[], br#"{"jsonrpc": "2.0", "id": 1, "me"#);
     assert_eq!(answer.error_code(400), -32700);
 }
 
@@ -152,7 +155,7 @@ fn h4_truncated_json_is_a_json_rpc_error() {
 fn h4_batch_is_refused_as_json_rpc() {
     let daemon = Daemon::start(&[], &[]);
     let batch = json!([{"jsonrpc": "2.0", "id": 1, "method": "tools/list"}]);
-    let answer = call(daemon.port, &[], &batch);
+    let answer = call(&daemon, &[], &batch);
     assert_eq!(answer.error_code(400), -32600);
 }
 
@@ -160,7 +163,7 @@ fn h4_batch_is_refused_as_json_rpc() {
 fn h4_missing_session_is_a_json_rpc_error() {
     let daemon = Daemon::start(&[], &[]);
     let list = json!({"jsonrpc": "2.0", "id": 2, "method": "tools/list"});
-    let answer = call(daemon.port, &[], &list);
+    let answer = call(&daemon, &[], &list);
     assert_eq!(answer.error_code(400), -32600);
 }
 
@@ -168,16 +171,16 @@ fn h4_missing_session_is_a_json_rpc_error() {
 fn h4_unknown_session_is_a_json_rpc_error() {
     let daemon = Daemon::start(&[], &[]);
     let list = json!({"jsonrpc": "2.0", "id": 2, "method": "tools/list"});
-    let answer = call(daemon.port, &[("Mcp-Session-Id", "no-such-session")], &list);
+    let answer = call(&daemon, &[("Mcp-Session-Id", "no-such-session")], &list);
     assert_eq!(answer.error_code(404), -32001);
 }
 
 #[test]
 fn h4_resources_list_is_method_not_found() {
     let daemon = Daemon::start(&[], &[]);
-    let id = open(daemon.port);
+    let id = open(&daemon);
     let answer = call(
-        daemon.port,
+        &daemon,
         &in_session(&id),
         &json!({"jsonrpc": "2.0", "id": 2, "method": "resources/list"}),
     );
@@ -200,9 +203,9 @@ fn h4_router_status_lists_the_same_providers_as_health() {
     );
     let health: Value =
         serde_json::from_str(health.split_once("\r\n\r\n").expect("a body").1).expect("json");
-    let id = open(daemon.port);
+    let id = open(&daemon);
     let answer = call(
-        daemon.port,
+        &daemon,
         &in_session(&id),
         &json!({"jsonrpc": "2.0", "id": 2, "method": "tools/call",
                 "params": {"name": "huddle_router_status", "arguments": {}}}),

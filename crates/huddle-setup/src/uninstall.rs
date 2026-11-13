@@ -1,5 +1,5 @@
-//! The uninstall work: every set-up provider's remove, the router stop, the settings undo, the
-//! managed agent files. Each step reports a line; a step's failure never stops the rest.
+//! The uninstall work: every set-up provider's remove, the router stop, the MCP token, the settings
+//! undo, the managed agent files. Each step reports a line; a step's failure never stops the rest.
 
 use std::path::Path;
 use std::process::Command;
@@ -18,8 +18,8 @@ pub struct UninstallReport {
     pub lines: Vec<String>,
 }
 
-/// Runs the steps in this order: each set-up provider's remove, the router stop, the settings
-/// undo, the agent files. Each step's failure is reported in `lines` and the rest still run.
+/// Runs the steps in this order: each set-up provider's remove, the router stop, the MCP token,
+/// the settings undo, the agent files. Each step's failure is reported in `lines` and the rest still run.
 pub fn run(paths: &Paths, exe: &Path) -> UninstallReport {
     let mut lines = Vec::new();
     // No providers file (or an unreadable one) means nothing was ever set up.
@@ -53,6 +53,13 @@ pub fn run(paths: &Paths, exe: &Path) -> UninstallReport {
             }
         }
         Err(error) => lines.push(format!("could not stop huddle-router: {error}")),
+    }
+
+    let token = huddle_config::mcp_token::token_path(paths);
+    match std::fs::remove_file(&token) {
+        Ok(()) => lines.push("removed the MCP token".to_string()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => lines.push(format!("could not remove the MCP token: {error}")),
     }
 
     // The ledger goes with the settings undo, so the link is read and removed first.

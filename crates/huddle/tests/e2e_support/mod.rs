@@ -27,6 +27,25 @@ impl Drop for Daemon {
 }
 
 impl Daemon {
+    /// The `Authorization` value `huddle mcp headers` gives for this router's `/mcp`, the one
+    /// the plugin's `headersHelper` hands Claude Code.
+    pub fn mcp_authorization(&self) -> String {
+        let out = Command::new(env!("CARGO_BIN_EXE_huddle"))
+            .args(["mcp", "headers"])
+            .env_clear()
+            .envs(self.home.env())
+            .env("HUDDLE_ROUTER_PORT", self.port.to_string())
+            .stdin(Stdio::null())
+            .output()
+            .expect("run huddle mcp headers");
+        let headers: serde_json::Value =
+            serde_json::from_slice(&out.stdout).expect("huddle mcp headers prints JSON");
+        headers["Authorization"]
+            .as_str()
+            .expect("an Authorization header")
+            .to_string()
+    }
+
     /// `huddle router serve` for `providers`, plus any extra environment. Retries on a fresh
     /// port: between the port lease and the child's bind, a foreign process can take the port
     /// and the child then exits naming it.
