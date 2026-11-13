@@ -12,12 +12,13 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use huddle_config::env::Env;
+use huddle_router::clock::{iso_utc_ms, now_ms};
 use tokio::sync::{mpsc, watch};
 
 use crate::handover::serve_handover;
 use crate::serve::{
     DRAIN_BUDGET, RECORD_FILE, Refused, STOP_BUDGET, ServeError, ServeOptions, ServeOutcome,
-    acquire, anthropic_url, make_run_dir, write_record,
+    Workers, acquire, anthropic_url, make_run_dir, write_record,
 };
 
 /// The descriptor number the worker finds the listening socket on.
@@ -157,19 +158,33 @@ pub async fn run(
     ));
 
     let (exit_tx, mut exit_rx) = mpsc::unbounded_channel::<(u32, ExitStatus)>();
-    let spawn = |executable: Option<&Path>| -> Result<u32, String> {
+    let started = iso_utc_ms(now_ms());
+    let spawn = |executable: Option<&Path>, workers: &Workers| -> Result<u32, String> {
         let executable = executable.ok_or("the executable is unknown")?;
         let child = spawn_worker(executable, &held.listener, &held.started_by)
             .map_err(|error| error.to_string())?;
         let pid = child.id();
         wait_in_thread(child, exit_tx.clone());
-        write_record(&record_path, port, &version, Some(executable), pid, &log);
+        let workers = Workers {
+            pid,
+            ..workers.clone()
+        };
+        write_record(
+            &record_path,
+            port,
+            &version,
+            Some(executable),
+            &started,
+            &workers,
+            &log,
+        );
         Ok(pid)
     };
 
     let mut backoff = Backoff::default();
     let mut stop = stop;
-    let mut state = match spawn(executable.as_deref()) {
+    let mut restarts = 0u32;
+    let mut state = match spawn(executable.as_deref(), &Workers::default()) {
         Ok(pid) => State::Running {
             pid,
             since: Instant::now(),
@@ -198,8 +213,14 @@ pub async fn run(
                     _ = stopped(&mut stop) => Event::Stop,
                     Some(taker) = handed_rx.recv() => Event::HandedOver(taker),
                     () = tokio::time::sleep_until(*until) => {
-                        match spawn(executable.as_deref()) {
+                        let next = Workers {
+                            pid: 0,
+                            restarts: restarts + 1,
+                            last_restart: last_exit.clone(),
+                        };
+                        match spawn(executable.as_deref(), &next) {
                             Ok(pid) => {
+                                restarts = next.restarts;
                                 log(format!(
                                     "huddle-router: worker exited ({last_exit}), restarted in {} ms",
                                     delay.as_millis()

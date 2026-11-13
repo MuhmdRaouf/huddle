@@ -49,6 +49,7 @@ pub fn run(_args: &[String], env: &Env) -> i32 {
         return not_running();
     }
     let pid = record.pid;
+    let worker = record.worker;
     // The daemon's own exit line names the signal; this line names who sent it.
     let log = huddle_router::crashlog::router_logs(&paths.state_dir);
     log(format!("huddle-router: the stop word signals pid={pid}"));
@@ -58,7 +59,12 @@ pub fn run(_args: &[String], env: &Env) -> i32 {
     let deadline = Instant::now() + STOP_BUDGET;
     loop {
         if health(port, HEALTH_WAIT).is_none() && read_record(&paths).is_none() {
-            let _ = writeln!(std::io::stdout(), "huddle-router: stopped (pid {pid})");
+            let who = if worker > 0 {
+                format!("parent {pid}, worker {worker}")
+            } else {
+                format!("pid {pid}")
+            };
+            let _ = writeln!(std::io::stdout(), "huddle-router: stopped ({who})");
             return 0;
         }
         if Instant::now() >= deadline {

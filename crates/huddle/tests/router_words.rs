@@ -101,7 +101,9 @@ fn start_serves_status_names_it_a_second_serve_exits_zero_and_stop_stops_it() {
     let plain = huddle(&home, port, &["router", "status"]);
     assert_eq!(plain.status.code(), Some(0));
     assert!(
-        stdout(&plain).starts_with(&format!("huddle-router: http://127.0.0.1:{port}\npid ")),
+        stdout(&plain).starts_with(&format!(
+            "huddle-router: http://127.0.0.1:{port}\nparent pid "
+        )),
         "{}",
         stdout(&plain)
     );
@@ -117,7 +119,7 @@ fn start_serves_status_names_it_a_second_serve_exits_zero_and_stop_stops_it() {
     let stopped = huddle(&home, port, &["router", "stop"]);
     assert_eq!(stopped.status.code(), Some(0), "{stopped:?}");
     assert!(
-        stdout(&stopped).starts_with("huddle-router: stopped (pid "),
+        stdout(&stopped).starts_with("huddle-router: stopped (parent "),
         "{}",
         stdout(&stopped)
     );
@@ -298,7 +300,7 @@ fn stop_waits_out_a_handover_and_signals_the_fresh_record() {
         stdout(&stopped),
         stderr(&stopped)
     );
-    assert!(stdout(&stopped).starts_with("huddle-router: stopped (pid "));
+    assert!(stdout(&stopped).starts_with("huddle-router: stopped (parent "));
     assert_eq!(
         huddle(&home, port, &["router", "status"]).status.code(),
         Some(6)

@@ -93,8 +93,13 @@ fn session_start(env: &Env, paths: &Paths, exe: &Path) {
     let _ = huddle_setup::agent_files::sync(paths);
     if let Ok(port) = huddle_config::paths::router_port(env) {
         let addr = SocketAddr::from(([127, 0, 0, 1], port));
-        if TcpStream::connect_timeout(&addr, Duration::from_millis(200)).is_err() {
-            start_router_detached(exe, SESSION_START);
+        if let Err(error) = TcpStream::connect_timeout(&addr, Duration::from_millis(200)) {
+            // A held router lock means a parent is alive: a second one is refused.
+            if huddle_daemon::singleton::holder(&huddle_daemon::serve::lock_path(paths)).is_some() {
+                log_busy(paths, &probe_reason(paths, &error));
+            } else {
+                start_router_detached(exe, SESSION_START);
+            }
         }
     }
     let lines = session_providers(env, paths);

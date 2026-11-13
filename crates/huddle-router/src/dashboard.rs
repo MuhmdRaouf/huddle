@@ -20,7 +20,8 @@ use crate::dispatch::now_ms;
 use crate::history_view::{self, Query, Refusal};
 use crate::join;
 use crate::live::{
-    JobRow, LaneMeta, LiveState, ProcessUsage, Snapshot, SnapshotInputs, Wiring, WiringState,
+    JobRow, LaneMeta, LiveState, ProcessUsage, Snapshot, SnapshotInputs, Supervision, Wiring,
+    WiringState,
 };
 use crate::quota::QuotaFetcher;
 use crate::server::{RespBody, full_body, json_answer};
@@ -98,6 +99,8 @@ pub struct DashboardInputs {
     pub wiring_state: Arc<dyn Fn() -> WiringState + Send + Sync>,
     /// The router process's CPU and memory. Asked only while a page is open.
     pub process: Arc<dyn Fn() -> ProcessUsage + Send + Sync>,
+    /// The supervising parent and its worker: one small file read.
+    pub supervision: Arc<dyn Fn() -> Option<Supervision> + Send + Sync>,
     /// Claude Code's sessions and the projects' worktrees. Asked only while a page is open.
     pub sessions: Arc<dyn Fn() -> Machine + Send + Sync>,
     /// The plugin page: `{state, rows, checks}`. Asked only while a page is open.
@@ -134,6 +137,7 @@ impl Default for DashboardInputs {
             connections: Arc::new(|| 0),
             wiring_state: Arc::new(WiringState::default),
             process: Arc::new(ProcessUsage::default),
+            supervision: Arc::new(|| None),
             sessions: Arc::new(Machine::default),
             plugins: Arc::new(checking),
             harnesses: Arc::new(checking),
@@ -317,6 +321,7 @@ impl Dashboard {
             lanes,
             jobs: (self.inputs.jobs)(),
             connections: (self.inputs.connections)(),
+            supervision: (self.inputs.supervision)(),
             hosts: (self.inputs.hosts)(),
             plugins: checking(),
             harnesses: checking(),

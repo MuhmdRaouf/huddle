@@ -67,6 +67,12 @@ pub struct RouterRecord {
     /// The worker process serving requests under the pid above; 0 for a daemon with no worker.
     #[serde(default, skip_serializing_if = "is_zero")]
     pub worker: u32,
+    /// How many times the parent restarted the worker.
+    #[serde(default)]
+    pub restarts: u32,
+    /// How the last restarted worker ended, such as `signal 9`; empty before the first restart.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub last_restart: String,
 }
 
 fn is_zero(value: &u32) -> bool {
@@ -507,6 +513,8 @@ mod tests {
             executable: "/x/target/debug/huddle".into(),
             started: "2026-11-09T12:00:00Z".into(),
             worker: 0,
+            restarts: 0,
+            last_restart: String::new(),
         };
         fs::write(
             run.join("router.toml"),

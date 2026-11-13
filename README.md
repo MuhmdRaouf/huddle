@@ -346,6 +346,7 @@ Files huddle writes on your machine:
    byte.
 
 - **The router will not start.** `huddle router status` says what answers on the port, and `~/.local/state/huddle/router.log` names the failure.
+- **The router crashed.** `huddle router status` shows `parent pid`, `worker pid` and `restarts`; a crashed worker comes back on its own within a second and `huddle router log` names how it ended (`worker exited (signal 9), restarted in 0 ms`). `huddle router stop` ends both.
 - **Requests fail with 407 or 502.** Run `/huddle:setup` again, then check `huddle router status`.
 - **A key is refused.** Setup names the status the provider sent. Check the key at the provider's key page, then run `/huddle:<p>:setup` again; the stored key stays as it was.
 - **Reading the router log.** `huddle router log` prints the last 40 event lines; `--since 2h` limits by time, `--requests` prints request lines and `--all` prints both by time. `router.log` holds every line and rolls at 4 MB; `router-events.log` holds only the event lines (start, handover, exit, path failing, probe, recovered) and rolls at 1 MB, so an outage stays readable for days. Each keeps five older files. The line shapes are in [docs/USAGE.md](docs/USAGE.md#reading-routerlog).

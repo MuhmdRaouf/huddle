@@ -423,7 +423,15 @@ async fn engine(
     // router without its record still serves.
     let record_path = run_dir.join(RECORD_FILE);
     if mode == Mode::Standalone {
-        write_record(&record_path, port, &version, executable.as_deref(), 0, &log);
+        write_record(
+            &record_path,
+            port,
+            &version,
+            executable.as_deref(),
+            &iso_utc_ms(now_ms()),
+            &Workers::default(),
+            &log,
+        );
     }
 
     let (serve_stop, serve_stop_rx) = watch::channel(false);
@@ -658,12 +666,24 @@ fn executable_resolved() -> Option<PathBuf> {
 
 /// Writes the record: the pid to signal, the port to talk to, the binary that serves, when it
 /// came up and the worker pid (0 when the daemon serves itself). A failure is logged and the router serves on.
+/// What the record says about the worker under a supervising parent.
+#[derive(Debug, Default, Clone)]
+pub(crate) struct Workers {
+    /// The worker's pid; 0 for a daemon with no worker.
+    pub pid: u32,
+    /// How many times the parent restarted the worker.
+    pub restarts: u32,
+    /// How the last worker ended, such as `signal 9`; empty before the first restart.
+    pub last_restart: String,
+}
+
 pub(crate) fn write_record(
     path: &Path,
     port: u16,
     version: &str,
     executable: Option<&Path>,
-    worker: u32,
+    started: &str,
+    workers: &Workers,
     log: &Logger,
 ) {
     let record = RouterRecord {
@@ -673,8 +693,10 @@ pub(crate) fn write_record(
         executable: executable
             .map(|path| path.to_string_lossy().into_owned())
             .unwrap_or_default(),
-        started: iso_utc_ms(now_ms()),
-        worker,
+        started: started.to_string(),
+        worker: workers.pid,
+        restarts: workers.restarts,
+        last_restart: workers.last_restart.clone(),
     };
     match toml::to_string(&record) {
         Ok(text) => {

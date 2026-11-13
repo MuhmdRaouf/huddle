@@ -120,6 +120,16 @@ pub struct ProcessUsage {
     pub rss_bytes: Option<u64>,
 }
 
+/// The parent and worker the router runs as, as the Router page shows them.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct Supervision {
+    pub parent_pid: u32,
+    pub worker_pid: u32,
+    pub restarts: u32,
+    /// How the last restarted worker ended, such as `signal 9`; empty before the first restart.
+    pub last_restart: String,
+}
+
 /// What the live state cannot know: the process, its wiring, the lane list, the jobs and what
 /// the daemon read from the machine. The plugin and harness pages arrive as built JSON: the
 /// daemon owns their shape and the router only carries them.
@@ -134,6 +144,8 @@ pub struct SnapshotInputs {
     /// Open connections to the router.
     pub connections: usize,
     pub process: ProcessUsage,
+    /// `None` for a router with no supervising parent.
+    pub supervision: Option<Supervision>,
     pub sessions: Vec<Session>,
     pub worktrees: Vec<Worktree>,
     pub plugins: serde_json::Value,
@@ -186,6 +198,8 @@ pub struct RouterStats {
     pub connections: usize,
     pub cpu_pct: Option<f64>,
     pub rss_bytes: Option<u64>,
+    /// The parent and worker pids, restarts and last restart reason.
+    pub supervision: Option<Supervision>,
     /// The last event lines, oldest first.
     pub events: Vec<EventRow>,
     /// The Anthropic path: ok, or failing since when and where.
@@ -587,6 +601,7 @@ impl LiveState {
                 connections: inputs.connections,
                 cpu_pct: inputs.process.cpu_pct,
                 rss_bytes: inputs.process.rss_bytes,
+                supervision: inputs.supervision.clone(),
                 events,
                 path,
             },

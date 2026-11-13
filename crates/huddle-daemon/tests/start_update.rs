@@ -50,6 +50,8 @@ fn write_record(paths: &Paths, pid: u32, port: u16, executable: &str) {
         executable: executable.to_string(),
         started: "t".into(),
         worker: 0,
+        restarts: 0,
+        last_restart: String::new(),
     };
     fs::write(
         dir.join("router.toml"),
@@ -102,6 +104,8 @@ fn a_record_naming_another_binary_is_taken_over() {
         executable: "/new/huddle".into(),
         started: "t".into(),
         worker: 0,
+        restarts: 0,
+        last_restart: String::new(),
     })
     .expect("toml");
     let exe = script(

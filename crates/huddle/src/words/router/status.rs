@@ -51,9 +51,15 @@ fn answer_plain(
     record: Option<&RouterRecord>,
     paths: &Paths,
 ) -> i32 {
-    let pid = match record {
-        Some(record) => record.pid.to_string(),
-        None => "unknown".to_string(),
+    let pids = match record {
+        Some(record) if record.worker > 0 => format!(
+            "parent pid {} · worker pid {} · {}",
+            record.pid,
+            record.worker,
+            restarts_phrase(record)
+        ),
+        Some(record) => format!("pid {}", record.pid),
+        None => "pid unknown".to_string(),
     };
     let version = record
         .map(|record| record.version.as_str())
@@ -61,11 +67,23 @@ fn answer_plain(
         .unwrap_or("unknown");
     let _ = writeln!(
         std::io::stdout(),
-        "huddle-router: http://127.0.0.1:{port}\npid {pid} · version {version} · providers {}",
+        "huddle-router: http://127.0.0.1:{port}\n{pids} · version {version} · providers {}",
         answer.providers.join(", ")
     );
     let _ = writeln!(std::io::stdout(), "{}", hosts_line(paths));
     0
+}
+
+/// `restarts 2 (last: signal 9)`, or `restarts 0` before the first one.
+fn restarts_phrase(record: &RouterRecord) -> String {
+    if record.last_restart.is_empty() {
+        format!("restarts {}", record.restarts)
+    } else {
+        format!(
+            "restarts {} (last: {})",
+            record.restarts, record.last_restart
+        )
+    }
 }
 
 /// The dashboard hosts the next config read yields, or the error that makes the router accept
@@ -87,6 +105,12 @@ struct StatusAnswer<'a> {
     #[serde(skip_serializing_if = "Option::is_none")]
     pid: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    worker: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    restarts: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    last_restart: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     port: Option<u16>,
     #[serde(skip_serializing_if = "Option::is_none")]
     version: Option<&'a str>,
@@ -100,6 +124,15 @@ fn answer_json(answer: &HealthAnswer, record: Option<&RouterRecord>) -> i32 {
         name: &answer.name,
         providers: &answer.providers,
         pid: record.map(|record| record.pid),
+        worker: record
+            .map(|record| record.worker)
+            .filter(|worker| *worker > 0),
+        restarts: record
+            .filter(|record| record.worker > 0)
+            .map(|record| record.restarts),
+        last_restart: record
+            .map(|record| record.last_restart.as_str())
+            .filter(|reason| !reason.is_empty()),
         port: record.map(|record| record.port),
         version: record
             .map(|record| record.version.as_str())

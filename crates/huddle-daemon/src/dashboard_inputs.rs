@@ -16,7 +16,7 @@ use huddle_jobs::id::now_ms;
 use huddle_jobs::overview::overview;
 use huddle_keystore::port::{Keystore, platform_default};
 use huddle_router::dashboard::{DashboardInputs, Machine};
-use huddle_router::live::{JobRow, Wiring, WiringState};
+use huddle_router::live::{JobRow, Supervision, Wiring, WiringState};
 use huddle_sessions::{Limits, scan, worktrees};
 use tokio::runtime::Handle;
 
@@ -25,6 +25,7 @@ use crate::checks::plugins::{self, PluginsReport};
 use crate::history_upkeep;
 use crate::read_cache::{Cache, Read};
 use crate::rss::read_usage;
+use crate::start::read_record;
 
 /// How long the wiring, key and job reading is kept.
 const WINDOW: Duration = Duration::from_secs(10);
@@ -85,6 +86,7 @@ pub fn start(version: String, env: Env, paths: Paths, port: u16) -> DashboardInp
         PLUGINS_WINDOW,
         runtime.clone(),
     );
+    let record_paths = paths.clone();
     let harness_checks = Cache::new(
         Arc::new(move || harnesses::read(&env, &paths)),
         HARNESSES_WINDOW,
@@ -109,6 +111,7 @@ pub fn start(version: String, env: Env, paths: Paths, port: u16) -> DashboardInp
         // The router counts its own connections.
         connections: Arc::new(|| 0),
         process: Arc::new(move || *process.latest()),
+        supervision: Arc::new(move || read_supervision(&record_paths)),
         sessions: Arc::new(move || sessions.latest().as_ref().clone()),
         plugins: Arc::new(move || json_of(&*plugin_checks.latest())),
         harnesses: Arc::new(move || json_of(&*harness_checks.latest())),
@@ -117,6 +120,17 @@ pub fn start(version: String, env: Env, paths: Paths, port: u16) -> DashboardInp
         // The daemon points this at the config file once it knows the config folder.
         keep_days: Arc::new(|| history_upkeep::DEFAULT_KEEP_DAYS),
     }
+}
+
+/// The parent and worker the record names, `None` for a router with no worker.
+fn read_supervision(paths: &Paths) -> Option<Supervision> {
+    let record = read_record(paths).filter(|record| record.worker > 0)?;
+    Some(Supervision {
+        parent_pid: record.pid,
+        worker_pid: record.worker,
+        restarts: record.restarts,
+        last_restart: record.last_restart,
+    })
 }
 
 /// The reports are plain data; a failed encoding leaves the page on `null`, which it reads as
