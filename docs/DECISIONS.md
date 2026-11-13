@@ -105,3 +105,13 @@ Every test runs on the kit's temp home (`crates/huddle-testkit`), which gives `H
 `CLAUDE_CONFIG_DIR` and every `XDG_*` variable a private directory, leases its ports and lets no owner
 variable reach a child. Upstreams and harnesses are in-process fakes. A run that leaves a process or a temp
 entry behind fails, and no test reaches the live router's port or writes the process environment.
+
+## D15: The router supervises itself
+
+`router serve` is a parent that takes the lock, binds (or takes over) the port, and runs `router serve --worker`
+with the listening socket on fd 3. The parent serves nothing: it owns the lock, the record and the handover socket,
+and restarts a worker that exits for any reason but a stop, at once the first time, then 1 s, 2 s, 5 s and 30 s
+apart after fast crashes (a worker that lived 10 s starts the delays over). The socket never closes while the parent
+lives, so a dial during a restart waits in the kernel queue. A handover gives the socket to the taker, then tells the
+worker (SIGUSR1) to stop accepting and drain; a stop sends it SIGTERM. A worker whose parent died stops itself. No
+OS service is involved; the session hooks stay as the backup.

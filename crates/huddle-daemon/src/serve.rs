@@ -45,7 +45,7 @@ pub const DRAIN_BUDGET: Duration = Duration::from_secs(600);
 pub const TAKEOVER_LOCK_WAIT: Duration = Duration::from_secs(660);
 
 /// The record under the run dir, `<run_dir>/router.toml`.
-const RECORD_FILE: &str = "router.toml";
+pub(crate) const RECORD_FILE: &str = "router.toml";
 
 /// The lock under the run dir, `<run_dir>/router.lock`.
 const LOCK_FILE: &str = "router.lock";
@@ -107,6 +107,8 @@ pub enum ServeError {
     Bind { port: u16, message: String },
     /// `$HUDDLE_ROUTER_ANTHROPIC_URL` does not hold up; found before anything is taken.
     BadAnthropicUrl(String),
+    /// A worker started without the socket its parent passes.
+    Worker(String),
 }
 
 impl fmt::Display for ServeError {
@@ -118,49 +120,114 @@ impl fmt::Display for ServeError {
                     "huddle-router: cannot listen on 127.0.0.1:{port} ({message})"
                 )
             }
-            ServeError::BadAnthropicUrl(text) => write!(f, "{text}"),
+            ServeError::BadAnthropicUrl(text) | ServeError::Worker(text) => write!(f, "{text}"),
         }
     }
 }
 
 impl std::error::Error for ServeError {}
 
+/// Who runs [`engine`]: a daemon that serves and owns the lock, the record and the handover
+/// socket, or the worker of a supervising parent that owns them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Mode {
+    Standalone,
+    Worker,
+}
+
+/// What a start holds once it may serve: the listening socket, the router lock, how it came by
+/// them.
+pub struct Acquired {
+    pub listener: TcpListener,
+    pub lock_guard: Option<singleton::LockGuard>,
+    pub lock_release: Option<tokio::sync::oneshot::Sender<()>>,
+    /// `handover` after a takeover, else the reason the caller gave.
+    pub started_by: String,
+    /// The line a takeover logged, for the dashboard's recent events.
+    pub took_over: Option<String>,
+}
+
+/// Why a start holds nothing.
+#[derive(Debug)]
+pub enum Refused {
+    /// Another daemon already serves this home.
+    Served {
+        pid: u32,
+    },
+    Failed(ServeError),
+}
+
 /// Runs until `stop` becomes true, a taker takes the socket, or the listener fails.
 pub async fn run(
     options: ServeOptions,
     stop: watch::Receiver<bool>,
 ) -> Result<ServeOutcome, ServeError> {
-    let ServeOptions {
-        env,
-        paths,
-        mut port,
-        version,
-        takeover,
-        by,
-        signal,
-        log,
-        output,
-    } = options;
-
     // The Anthropic origin is parsed before anything is taken: a bad override ends the run with
     // the lock, the port and the run dir untouched.
-    let anthropic_url = match anthropic_url(&env) {
+    let anthropic_url = match anthropic_url(&options.env) {
         Ok(url) => url,
         Err(text) => return Err(ServeError::BadAnthropicUrl(text)),
     };
+    make_run_dir(&options.paths.run_dir, &options.log);
+    let held = match acquire(&options).await {
+        Ok(held) => held,
+        Err(Refused::Served { pid }) => return Ok(ServeOutcome::AlreadyServed { pid }),
+        Err(Refused::Failed(error)) => return Err(error),
+    };
+    engine(options, held, Mode::Standalone, anthropic_url, stop, None).await
+}
 
-    let config_dir = paths.config_dir.clone();
+/// Serves on the listening socket a supervising parent passed in, until `stop` becomes true or
+/// `drain` names a taker (the parent handed the socket over: the worker stops accepting and
+/// keeps its open tunnels for [`DRAIN_BUDGET`]). The parent owns the lock, the record and the
+/// handover socket.
+pub async fn run_worker(
+    options: ServeOptions,
+    listener: TcpListener,
+    stop: watch::Receiver<bool>,
+    drain: mpsc::UnboundedReceiver<u32>,
+) -> Result<ServeOutcome, ServeError> {
+    let anthropic_url = match anthropic_url(&options.env) {
+        Ok(url) => url,
+        Err(text) => return Err(ServeError::BadAnthropicUrl(text)),
+    };
+    let held = Acquired {
+        listener,
+        lock_guard: None,
+        lock_release: None,
+        started_by: options.by.clone(),
+        took_over: None,
+    };
+    engine(
+        options,
+        held,
+        Mode::Worker,
+        anthropic_url,
+        stop,
+        Some(drain),
+    )
+    .await
+}
+
+/// Takes the router lock and the socket: a takeover asks the running daemon for its socket and
+/// serves it at once, catching up with the lock in the background while the previous daemon
+/// drains; any other start takes the lock, then binds the port. Needs the run dir to exist.
+pub async fn acquire(options: &ServeOptions) -> Result<Acquired, Refused> {
+    let ServeOptions {
+        paths,
+        port,
+        takeover,
+        by,
+        log,
+        ..
+    } = options;
     let run_dir = paths.run_dir.clone();
-    make_run_dir(&run_dir, &log);
-
-    // A takeover serves the taken socket at once and catches up with the lock in the
-    // background: the previous daemon holds it while it drains.
     let mut listener = None;
     let mut lock_release = None;
     let mut started_by = by.clone();
     let mut took_over = None;
-    if takeover {
-        let old_pid = read_record(&paths).map(|record| record.pid);
+    if *takeover {
+        let old_pid = read_record(paths).map(|record| record.pid);
         match tokio::task::spawn_blocking({
             let run_dir = run_dir.clone();
             let by = by.clone();
@@ -188,9 +255,7 @@ pub async fn run(
     let lock_guard = if listener.is_none() {
         match singleton::take_for_start(&run_dir.join(LOCK_FILE), ROUTER_NAME) {
             Ok(guard) => Some(guard),
-            Err(SingletonError::Held(held)) => {
-                return Ok(ServeOutcome::AlreadyServed { pid: held.pid });
-            }
+            Err(SingletonError::Held(held)) => return Err(Refused::Served { pid: held.pid }),
             Err(error) => {
                 log(singleton_line(&error));
                 None
@@ -202,16 +267,51 @@ pub async fn run(
 
     let listener = match listener {
         Some(listener) => listener,
-        None => match bind_with_backlog(port) {
-            Ok(bound) => bound,
-            Err(error) => {
-                return Err(ServeError::Bind {
-                    port,
-                    message: error.to_string(),
-                });
-            }
-        },
+        None => bind_with_backlog(*port).map_err(|error| {
+            Refused::Failed(ServeError::Bind {
+                port: *port,
+                message: error.to_string(),
+            })
+        })?,
     };
+    Ok(Acquired {
+        listener,
+        lock_guard,
+        lock_release,
+        started_by,
+        took_over,
+    })
+}
+
+/// The serving loop shared by a standalone daemon and a worker.
+async fn engine(
+    options: ServeOptions,
+    held: Acquired,
+    mode: Mode,
+    anthropic_url: hyper::Uri,
+    stop: watch::Receiver<bool>,
+    drain: Option<mpsc::UnboundedReceiver<u32>>,
+) -> Result<ServeOutcome, ServeError> {
+    let ServeOptions {
+        env,
+        paths,
+        mut port,
+        version,
+        signal,
+        log,
+        output,
+        ..
+    } = options;
+    let Acquired {
+        listener,
+        lock_guard,
+        lock_release,
+        started_by,
+        took_over,
+    } = held;
+    let config_dir = paths.config_dir.clone();
+    let run_dir = paths.run_dir.clone();
+
     // The taken socket's port comes with the socket; a takeover ignores the asked port.
     if let Ok(addr) = listener.local_addr() {
         port = addr.port();
@@ -309,12 +409,18 @@ pub async fn run(
     // The handover socket gives the listening socket to the next binary without closing the
     // port; a socket that cannot open is logged and skipped, the router still serves.
     let (handed_tx, mut handed_rx) = mpsc::unbounded_channel::<u32>();
-    let handover = serve_handover(&run_dir, port, &listener, handed_tx, Arc::clone(&log));
+    let handover = (mode == Mode::Standalone)
+        .then(|| serve_handover(&run_dir, port, &listener, handed_tx, Arc::clone(&log)));
+    if let Some(drain) = drain {
+        handed_rx = drain;
+    }
 
     // The record lands before the first request is answered; status and start read it. A
     // router without its record still serves.
     let record_path = run_dir.join(RECORD_FILE);
-    write_record(&record_path, port, &version, executable.as_deref(), &log);
+    if mode == Mode::Standalone {
+        write_record(&record_path, port, &version, executable.as_deref(), 0, &log);
+    }
 
     let (serve_stop, serve_stop_rx) = watch::channel(false);
     let tokio_listener = match tokio::net::TcpListener::from_std(listener) {
@@ -355,7 +461,7 @@ pub async fn run(
                 let _ = serve_stop.send(true);
                 let _ = tunnels.drain(STOP_BUDGET).await;
                 // A clean stop takes the record with it; status reads no ghost.
-                let _ = fs::remove_file(&record_path);
+                remove_record(mode, &record_path);
                 outcome = Ok(ServeOutcome::Stopped);
                 break;
             }
@@ -372,7 +478,7 @@ pub async fn run(
                 break;
             }
             served = &mut serve_task => {
-                let _ = fs::remove_file(&record_path);
+                remove_record(mode, &record_path);
                 match served {
                     Ok(Ok(())) => outcome = Ok(ServeOutcome::Stopped),
                     Ok(Err(error)) => {
@@ -403,7 +509,9 @@ pub async fn run(
             _ = rss_timer.tick() => rss_check(&mut rss_watch, &cleaned, &paths, port, executable.as_deref(), &log).await,
         }
     }
-    handover.stop();
+    if let Some(handover) = &handover {
+        handover.stop();
+    }
     // The writer flushes its queue when the last handle drops.
     drop(router);
     drop(history);
@@ -418,6 +526,13 @@ pub async fn run(
         std::process::id()
     ));
     outcome
+}
+
+/// A standalone daemon owns the record; a worker's parent does.
+fn remove_record(mode: Mode, path: &Path) {
+    if mode == Mode::Standalone {
+        let _ = fs::remove_file(path);
+    }
 }
 
 /// Resolves when `stop` becomes true; a dropped sender means nobody can stop this run, so it
@@ -444,6 +559,13 @@ fn bind_with_backlog(port: u16) -> io::Result<TcpListener> {
         let fd = libc::socket(libc::AF_INET, libc::SOCK_STREAM, 0);
         if fd < 0 {
             return Err(io::Error::last_os_error());
+        }
+        // A process this daemon starts must not inherit the socket by accident; the supervisor
+        // hands it to its worker on a descriptor of its own.
+        if libc::fcntl(fd, libc::F_SETFD, libc::FD_CLOEXEC) != 0 {
+            let error = io::Error::last_os_error();
+            let _ = libc::close(fd);
+            return Err(error);
         }
         // The reuse rule std's own bind applies, so a restart inside TIME_WAIT rebinds.
         let one: libc::c_int = 1;
@@ -499,7 +621,7 @@ fn bind_with_backlog(port: u16) -> io::Result<TcpListener> {
 
 /// The Anthropic the Claude models go to: `$HUDDLE_ROUTER_ANTHROPIC_URL`, else Anthropic
 /// itself. The override must name a scheme and a host.
-fn anthropic_url(env: &Env) -> Result<hyper::Uri, String> {
+pub(crate) fn anthropic_url(env: &Env) -> Result<hyper::Uri, String> {
     let raw = env
         .get("HUDDLE_ROUTER_ANTHROPIC_URL")
         .filter(|value| !value.is_empty())
@@ -517,7 +639,7 @@ fn anthropic_url(env: &Env) -> Result<hyper::Uri, String> {
 
 /// Makes the run dir, 0700 when missing, and its parent with it; a failure is logged and the
 /// daemon still serves without record, lock and handover socket.
-fn make_run_dir(run_dir: &Path, log: &Logger) {
+pub(crate) fn make_run_dir(run_dir: &Path, log: &Logger) {
     if let Err(error) = create_dir(run_dir, DIR_MODE) {
         log(format!("huddle-router: {error}"));
     }
@@ -530,9 +652,16 @@ fn executable_resolved() -> Option<PathBuf> {
     Some(path.canonicalize().unwrap_or(path))
 }
 
-/// Writes the record: the pid to signal, the port to talk to, the binary that serves, and when
-/// it came up. A failure is logged and the router serves on.
-fn write_record(path: &Path, port: u16, version: &str, executable: Option<&Path>, log: &Logger) {
+/// Writes the record: the pid to signal, the port to talk to, the binary that serves, when it
+/// came up and the worker pid (0 when the daemon serves itself). A failure is logged and the router serves on.
+pub(crate) fn write_record(
+    path: &Path,
+    port: u16,
+    version: &str,
+    executable: Option<&Path>,
+    worker: u32,
+    log: &Logger,
+) {
     let record = RouterRecord {
         pid: std::process::id(),
         port,
@@ -541,6 +670,7 @@ fn write_record(path: &Path, port: u16, version: &str, executable: Option<&Path>
             .map(|path| path.to_string_lossy().into_owned())
             .unwrap_or_default(),
         started: iso_utc_ms(now_ms()),
+        worker,
     };
     match toml::to_string(&record) {
         Ok(text) => {
@@ -653,7 +783,7 @@ fn hold_lock_behind_the_run(run_dir: PathBuf, log: Logger) -> tokio::sync::onesh
 }
 
 /// One log line for a lock failure.
-fn singleton_line(error: &SingletonError) -> String {
+pub(crate) fn singleton_line(error: &SingletonError) -> String {
     match error {
         SingletonError::Held(held) => format!("huddle-router: {held}"),
         SingletonError::Io { path, source } => {

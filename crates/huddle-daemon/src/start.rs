@@ -64,6 +64,13 @@ pub struct RouterRecord {
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub executable: String,
     pub started: String,
+    /// The worker process serving requests under the pid above; 0 for a daemon with no worker.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub worker: u32,
+}
+
+fn is_zero(value: &u32) -> bool {
+    *value == 0
 }
 
 /// What a start can refuse. `Refused` and `Spawn` carry their whole line; the rest get their
@@ -499,6 +506,7 @@ mod tests {
             version: "0.1.0".into(),
             executable: "/x/target/debug/huddle".into(),
             started: "2026-11-09T12:00:00Z".into(),
+            worker: 0,
         };
         fs::write(
             run.join("router.toml"),

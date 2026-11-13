@@ -10,3 +10,4 @@ pub mod rss;
 pub mod serve;
 pub mod singleton;
 pub mod start;
+pub mod supervisor;

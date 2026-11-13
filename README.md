@@ -248,8 +248,9 @@ crates/huddle          the one binary: one file per word (setup, run, status,
      │                 router/*, provider/*). Builds Env and Paths once in main
      │                 and passes them down.
      ▼
-huddle-daemon          the router's run loop: one process per user, handover,
-                       and the dashboard's readers and checks.
+huddle-daemon          the router's run loop: one parent per user that holds the
+                       port and restarts its worker, handover, and the
+                       dashboard's readers and checks.
 huddle-router          the proxy: lanes, the key swap, the Anthropic default,
                        the dashboard page and its live state.
 huddle-setup           the install, the settings patch and its undo.

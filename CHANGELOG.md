@@ -20,6 +20,9 @@ Provider setup holds across sessions, and the key check gets a real answer.
 ### MCP
 
 - `huddle mcp` serves the huddle tools to Claude Code as an MCP server over stdio. It works with the router down and asks the router when it is up. The first tool, `huddle_version`, reports the version, whether the router answers and the binary's path.
+### Router
+
+- `huddle router serve` is a small parent that holds port 4835 and runs the router as a worker process. A crashed worker is back on the same socket within a second (then 1 s, 2 s, 5 s and 30 s apart after repeated fast crashes), a request sent while it restarts waits instead of being refused, and each restart is one log line. `router.toml` names the parent pid and the worker pid.
 
 ## 0.0.6
 

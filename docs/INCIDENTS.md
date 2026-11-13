@@ -201,7 +201,10 @@ Each incident, its cause, and the test that now stops it. A guard named here mus
 - **Guard:** crates/huddle-router/tests/k16_failure_logs.rs and crates/huddle-daemon/tests/k16_lifecycle.rs
   (the phase and peer on a failed line, the failing and recovered lines, the probe, the start, handover
   and exit lines); crates/huddle/tests/k16_prompt_hook_log.rs (the hook's reason for a restart).
-- **Rule:** a failure line names where it failed, and a router names who started it and why it ended.
+  crates/huddle/tests/s1_supervisor.rs (a killed router worker is back on the same socket within a second,
+  with its exit named in the log).
+- **Rule:** a failure line names where it failed, and a router names who started it and why it ended; a router
+  that dies is restarted by its parent on the same socket.
 
 ## 2026-11-12, test runs left routers and key page helpers running
 
