@@ -23,15 +23,15 @@ function overviewKpis(){if(!liveRange())return histKpis();const b=BK;
  const live=SESS.filter(s=>sstate(s)!=='idle').length,waiting=SESS.filter(s=>sstate(s)==='waiting').length;
  const subs=AGENTS.filter(a=>a.type!=='main'),run=subs.filter(a=>a.state==='running').length,doneN=subs.filter(a=>a.state==='done'&&a.end!=null&&a.end>NOW-15*MIN).length;
  const last5=b.slice(20),prev5=b.slice(10,20);
- const rpm=sum(last5.map(x=>x.n))/5,tpm=sum(last5.map(x=>x.tok))/5;
+ const rps=sum(last5.map(x=>x.n))/(5*MIN/SEC),tps=sum(last5.map(x=>x.tok))/(5*MIN/SEC);
  const reqs=sum(MODELS.map(m=>m.n)),errs=sum(MODELS.map(m=>m.err)),c499=stats().done.filter(r=>r.status===499).length;
  const p50=wavg(MODELS.filter(m=>m.p50!=null),m=>m.p50,m=>m.n),p95=wavg(MODELS.filter(m=>m.p95!=null),m=>m.p95,m=>m.n);
- const tin=sum(MODELS.map(m=>m.tin)),cr=sum(MODELS.map(m=>m.cr));
+ const split=tokSplit(sum(MODELS.map(m=>m.tin)),sum(MODELS.map(m=>m.cr)),sum(MODELS.map(m=>m.cw))),tin=split.tin;
  const items=[
   {k:'Live sessions',v:live,small:`of ${SESS.length}`,d:waiting?`<span class="warnc">${waiting} waiting on you</span>`:'none waiting'},
   {k:'Agents running',v:run,small:`of ${subs.length}`,d:`${doneN} finished in 15 min`},
-  {k:'Requests',v:rpm.toFixed(0),small:'/min',delta:deltaH(sum(last5.map(x=>x.n)),sum(prev5.map(x=>x.n)),null),sp:b.map(x=>x.n)},
-  {k:'Tokens',v:fmt(tpm),small:'/min',delta:deltaH(sum(last5.map(x=>x.tok)),sum(prev5.map(x=>x.tok)),null),sp:b.map(x=>x.tok),color:'var(--teal)',d:tin?`${Math.round(cr/tin*100)}% read from cache`:'—'},
+  {k:'Requests',v:rate(rps),small:'/s',delta:deltaH(sum(last5.map(x=>x.n)),sum(prev5.map(x=>x.n)),null),sp:b.map(x=>x.n)},
+  {k:'Tokens',v:rate(tps),small:'tokens/s',delta:deltaH(sum(last5.map(x=>x.tok)),sum(prev5.map(x=>x.tok)),null),sp:b.map(x=>x.tok),color:'var(--teal)',d:tin?`${Math.round(split.hit*100)}% read from cache`:'—'},
   {k:'Time to first token',v:p50!=null?Math.round(p50):'—',small:'ms p50',sp:b.map(x=>x.p50),color:'var(--mauve)',d:p95!=null?`p95 ${Math.round(p95)} ms`:'—'},
   {k:'Error rate',v:reqs?(errs/reqs*100).toFixed(1):'—',small:reqs?'%':'',sp:b.map(x=>x.err),color:'var(--bad)',d:`${errs} errors · ${c499} cancelled (not errors)`}];
  if(PLAN){

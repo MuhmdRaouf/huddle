@@ -13,6 +13,10 @@ function patch(el,html){if(LASTHTML.get(el)===html)return false;
 const num=v=>typeof v==='number'&&isFinite(v)?v:null;
 const arr=v=>Array.isArray(v)?v:[];
 const n0=v=>num(v)||0;
+/* The router's tokens_in already holds the cache tokens; every page splits it here. */
+const tokSplit=(tin,cr,cw)=>{const t=n0(tin),r=n0(cr),w=n0(cw),fresh=Math.max(0,t-r-w);return {tin:t,fresh,cr:r,cw:w,hit:t?r/t:0}};
+/* Rates read per second, one decimal under 10. */
+const rate=n=>num(n)==null?'—':n<10?n.toFixed(1):fmt(Math.round(n));
 const fmt=n=>num(n)==null?'—':n>=1e6?(n/1e6).toFixed(n>=1e7?0:1)+'M':n>=1e3?(n/1e3).toFixed(n>=1e4?0:1)+'k':String(Math.round(n));
 const SEC=1e3,MIN=6e4,HR=36e5,DAY=24*HR;
 const sum=a=>a.reduce((x,y)=>x+y,0);
@@ -54,7 +58,7 @@ const ICONS={
 const ic=(n,c)=>`<svg class="i${c?' '+c:''}" viewBox="0 0 24 24" aria-hidden="true">${ICONS[n]||''}</svg>`;
 
 /* ---------- the world, read from the snapshot ---------- */
-let SESS=[],AGENTS=[],REQS=[],MODELS=[],MN=[],COLOR={},LANES=[],JOBS=[],WT=[],HARN=[],BK=[],BW=3e4,PLAN=null,PL={state:'checking',rows:[],checks:[]},WIRE={state:'checking'},RT={},ST=null;
+let SESS=[],AGENTS=[],REQS=[],MODELS=[],MN=[],COLOR={},LANES=[],JOBS=[],WT=[],HARN=[],BK=[],PS=[],BW=3e4,PLAN=null,PL={state:'checking',rows:[],checks:[]},WIRE={state:'checking'},RT={},ST=null;
 const col=m=>COLOR[m]||HCOLOR[m]||'var(--faint)';
 const sstate=s=>({needs_you:'waiting',your_turn:'waiting',working:'working',background:'working'})[s.state]||'idle';
 const mainA=s=>s.agents[0];
@@ -83,11 +87,11 @@ function buildSessions(){
 function buildRequests(){
  const byId={};SESS.forEach(s=>{byId[s.id]=s});
  const mk=(id,x,t)=>({id,t,sess:x.session||null,agentId:x.agent||null,m:x.model||'',lane:x.lane||''});
- REQS=arr(SNAP.recent).map(x=>Object.assign(mk('r'+x.id,x,num(x.at_ms)),{status:num(x.status),reason:x.reason||null,ttft:num(x.ttft_ms),dur:num(x.dur_ms),rt:num(x.router_ms),in:num(x.tokens_in),cr:num(x.cache_read),cw:num(x.cache_write),out:num(x.tokens_out),stop:x.stop||null,up:x.upstream_id||null}));
+ REQS=arr(SNAP.recent).map(x=>Object.assign(mk('r'+x.id,x,num(x.at_ms)),{status:num(x.status),reason:x.reason||null,ttft:num(x.ttft_ms),dur:num(x.dur_ms),rt:num(x.router_ms),in:num(x.tokens_in)==null?null:tokSplit(x.tokens_in,x.cache_read,x.cache_write).fresh,cr:num(x.cache_read),cw:num(x.cache_write),out:num(x.tokens_out),stop:x.stop||null,up:x.upstream_id||null}));
  REQS=REQS.filter(r=>r.t!=null);
  arr(SNAP.in_flight).forEach(x=>{const t=num(x.started_ms);if(t!=null)REQS.push(Object.assign(mk('f'+x.id,x,t),{status:null,reason:null,ttft:null,dur:null,rt:null,in:null,cr:null,cw:null,out:null,stop:null,up:null,lastByte:num(x.last_byte_ms)}))});
  REQS.sort((a,b)=>a.t-b.t);
- REQS.forEach(r=>{r.s=byId[r.sess]||null;r.a=r.s&&r.agentId?r.s.agents.find(a=>a.id===r.agentId)||null:null});
+ REQS.forEach(r=>{r.s=byId[r.sess]||null;r.a=r.s&&r.agentId?r.s.agents.find(a=>r.s.id+':'+a.id===r.agentId)||null:null});
 }
 const tokIn=r=>n0(r.in)+n0(r.cw)+n0(r.cr);
 function stats(){
@@ -104,7 +108,7 @@ const lastT=s=>Math.max(s.last||0,s.lastReq||0)||null;
 const cacheLeft=s=>s.ttl!=null&&s.lastReq!=null?s.ttl-(NOW-s.lastReq):null;
 function buildModels(){
  const rows=Array.isArray(SNAP.models)?SNAP.models:null;
- if(rows){MODELS=rows.map(x=>({id:x.model||'',lane:x.lane||'',n:n0(x.requests),err:n0(x.errors),p50:num(x.ttft_p50),p95:num(x.ttft_p95),speed:num(x.out_tps_p50),tin:n0(x.tokens_in)+n0(x.cache_read)+n0(x.cache_write),fresh:n0(x.tokens_in),cw:n0(x.cache_write),cr:n0(x.cache_read),out:n0(x.tokens_out),sess:num(x.sessions),last:num(x.last_ms)}))}
+ if(rows){MODELS=rows.map(x=>({id:x.model||'',lane:x.lane||'',n:n0(x.requests),err:n0(x.errors),p50:num(x.ttft_p50),p95:num(x.ttft_p95),speed:num(x.out_tps_p50),...tokSplit(x.tokens_in,x.cache_read,x.cache_write),out:n0(x.tokens_out),sess:num(x.sessions),last:num(x.last_ms)}))}
  else{const g={};stats().done.forEach(r=>{(g[r.m]=g[r.m]||[]).push(r)});
   MODELS=Object.entries(g).map(([id,rs])=>{const tt=rs.filter(r=>r.ttft!=null).map(r=>r.ttft);return {id,lane:rs[0].lane,n:rs.length,err:rs.filter(isErr).length,p50:pct(tt,.5),p95:pct(tt,.95),speed:null,tin:tokInOf(rs),fresh:sum(rs.map(r=>n0(r.in))),cw:sum(rs.map(r=>n0(r.cw))),cr:sum(rs.map(r=>n0(r.cr))),out:tokOutOf(rs),sess:new Set(rs.map(r=>r.sess).filter(Boolean)).size,last:rs[rs.length-1].t}})}
  const b=SNAP.buckets&&typeof SNAP.buckets==='object'?SNAP.buckets:{};
@@ -126,7 +130,7 @@ function buildLanes(){
 }
 function build(s){
  SNAP=s&&typeof s==='object'?s:{};ST=null;NOW=Date.now()+OFFSET;
- buildSessions();buildRequests();buildModels();buildLanes();
+ PS=arr(SNAP.per_second).map(n0);buildSessions();buildRequests();buildModels();buildLanes();
  const p=SNAP.plan&&typeof SNAP.plan==='object'?SNAP.plan:null;
  PLAN=p&&(num(p.five_hour_pct)!=null||num(p.week_pct)!=null)?{h5:num(p.five_hour_pct),h5r:num(p.five_hour_reset_ms),wk:num(p.week_pct),wkr:num(p.week_reset_ms)}:null;
  JOBS=arr(SNAP.jobs).map(j=>({id:j.id||'',h:j.harness||'',task:j.title||'',repo:j.repo||'',state:j.state||'',started:num(j.started_ms),end:num(j.ended_ms),files:num(j.files),add:num(j.add),del:num(j.del),why:j.why||null}));
@@ -220,8 +224,8 @@ function histSeries(d){const w=Math.max(1,num(d.width_ms)||3e5),s0=Math.floor(d.
 /* per-model rows for a history range: totals carry counts and cost, buckets carry latency */
 function histRows(){const lat={};arr(HIST.bk&&HIST.bk.buckets).forEach(x=>{const l=lat[x.model]||(lat[x.model]={w:0,n:0,p95:null});if(num(x.ttft_p50)!=null){l.w+=x.ttft_p50*n0(x.n);l.n+=n0(x.n)}if(num(x.ttft_p95)!=null)l.p95=Math.max(l.p95||0,x.ttft_p95)});
  const ts=arr(HIST.tot&&HIST.tot.totals),all=Math.max(1,sum(ts.map(t=>n0(t.n))));
- return ts.map(t=>{const l=lat[t.key]||{n:0,p95:null},tin=n0(t.tok_in),cr=n0(t.cache_read),cw=n0(t.cache_write);
-  return {id:t.key,n:n0(t.n),err:n0(t.err),tin,cr,cw,out:n0(t.tok_out),fresh:Math.max(0,tin-cr-cw),p50:l.n?l.w/l.n:null,p95:l.p95,cost:num(t.cost_usd),apiq:!!t.api_equivalent,hit:tin?cr/tin:0,share:n0(t.n)/all}})}
+ return ts.map(t=>{const l=lat[t.key]||{n:0,p95:null};
+  return {id:t.key,n:n0(t.n),err:n0(t.err),...tokSplit(t.tok_in,t.cache_read,t.cache_write),out:n0(t.tok_out),p50:l.n?l.w/l.n:null,p95:l.p95,cost:num(t.cost_usd),apiq:!!t.api_equivalent,share:n0(t.n)/all}})}
 const RM=()=>liveRange()?MODELS:histRows();
 const HIDE_IN_RANGE=['lane','trend','speed','sess','last'];
 const COSTCOL={k:'cost',label:'Est. cost',num:1,v:x=>x.cost||0,h:x=>`<span class="mono">${usd(x.cost)}</span>${x.apiq?' '+apiq():''}`};
@@ -232,13 +236,13 @@ const rangeStatus=()=>liveRange()?'':HIST.err?`<div class="legendrow badc">Could
 function histKpis(){if(!HIST.tot)return `<div class="card pad">${checking()}</div>`;
  const ts=arr(HIST.tot.totals),reqs=sum(ts.map(t=>n0(t.n)));
  if(!reqs)return `<div class="card"><div class="allclear">${ic('info')} No requests in the last ${rangeLabel()}</div></div>`;
- const errs=sum(ts.map(t=>n0(t.err))),tin=sum(ts.map(t=>n0(t.tok_in))),cr=sum(ts.map(t=>n0(t.cache_read))),out=sum(ts.map(t=>n0(t.tok_out))),cost=sum(ts.map(t=>n0(t.cost_usd))),aq=ts.some(t=>t.api_equivalent);
+ const errs=sum(ts.map(t=>n0(t.err))),tin=sum(ts.map(t=>n0(t.tok_in))),cr=sum(ts.map(t=>n0(t.cache_read))),cw=sum(ts.map(t=>n0(t.cache_write))),out=sum(ts.map(t=>n0(t.tok_out))),cost=sum(ts.map(t=>n0(t.cost_usd))),aq=ts.some(t=>t.api_equivalent);
  return kpiCard([
   {k:'Requests',v:fmt(reqs),d:`in the last ${rangeLabel()}`},
   {k:'Errors',v:fmt(errs),d:`${(errs/reqs*100).toFixed(1)}% of requests`,color:'var(--bad)'},
   {k:'Tokens in',v:fmt(tin),d:'cache reads and writes included'},
   {k:'Tokens out',v:fmt(out),d:'generated'},
-  {k:'Cache hit rate',v:tin?Math.round(cr/tin*100):'—',small:tin?'%':'',d:'read from cache / tokens in'},
+  {k:'Cache hit rate',v:tin?Math.round(tokSplit(tin,cr,cw).hit*100):'—',small:tin?'%':'',d:'read from cache / tokens in'},
   {k:'Estimated cost',v:usd(cost),d:aq?`includes Claude cost, ${apiq()}`:'from list prices'}],'k6')}
 const hget=u=>fetch(u,{cache:'no-store'}).then(x=>{if(!x.ok)throw new Error(String(x.status));return x.json()});
 function loadHistory(){if(liveRange())return;const r=HIST.range,get=hget;
@@ -277,7 +281,7 @@ function histBlock(key,t){const tr=HT.trend[key],head='<h4>History <span class="
   {k:'tok',label:'Tokens in / out',num:1,v:m=>n0(m.tok_in),h:m=>`${fmt(m.tok_in)} <span class="faint">/</span> ${fmt(m.tok_out)}`},
   {k:'cost',label:'Cost',num:1,v:m=>n0(m.cost_usd),h:m=>`<span class="mono">${usd(m.cost_usd)}</span>`}];
  return `<div>${head}<div class="facts">${fact('Requests',fmt(t.n)+' · '+fmt(t.err)+' errors')+fact('Tokens in',fmt(tin))+fact('Tokens out',fmt(t.tok_out))
-  +fact('Cache hit rate',tin?Math.round(n0(t.cache_read)/tin*100)+'%':'—')+fact('Estimated cost',costCell(t))+fact('First seen',new Date(t.first_ms).toLocaleDateString()+' · '+ago(t.first_ms))+fact('Last seen',new Date(t.last_ms).toLocaleDateString()+' · '+ago(t.last_ms))}</div>
+  +fact('Cache hit rate',tin?Math.round(tokSplit(tin,t.cache_read,t.cache_write).hit*100)+'%':'—')+fact('Estimated cost',costCell(t))+fact('First seen',new Date(t.first_ms).toLocaleDateString()+' · '+ago(t.first_ms))+fact('Last seen',new Date(t.last_ms).toLocaleDateString()+' · '+ago(t.last_ms))}</div>
   <div class="card pad mt12"><div class="legendrow bare">Requests per day</div>${tr?spark(histSeries(tr).b.map(k=>k.n),'var(--c1)'):checking()}</div></div>
   <div><h4>Models used <span class="faint">${arr(t.models).length}</span></h4><div class="card t">${table('d-hm',mcols,arr(t.models),{empty:'No models'})}</div>${pricesLine(HT.meta)}</div>`}
 
@@ -290,17 +294,18 @@ const NAV=[
  ['Workspace',[['projects','Projects'],['worktrees','Worktrees'],['jobs','Jobs']]],
  ['System',[['harnesses','Harnesses'],['router','Router']]]
 ];
+const bdg=(txt,title,cls)=>`<span class="badge${cls?' '+cls:''}" title="${title}">${txt}</span>`;
 function badge(k){switch(k){
- case 'sessions':{const w=SESS.filter(s=>sstate(s)==='waiting').length;return w?`<span class="badge warn" title="waiting on you">${w}</span>`:`<span class="badge">${SESS.filter(s=>sstate(s)!=='idle').length}</span>`}
- case 'agents':return `<span class="badge acc">${AGENTS.filter(a=>a.type!=='main'&&a.state==='running').length}</span>`;
- case 'requests':return `<span class="badge">${Math.round(sum(BK.slice(20).map(b=>b.n))/5)}/m</span>`;
- case 'errors':{const e=stats().done.filter(isErr).length;return e?`<span class="badge bad">${e}</span>`:''}
- case 'models':return `<span class="badge">${MODELS.length}</span>`;
- case 'providers':{const n=PL.rows.filter(r=>r.set_up===true).length;return PL.rows.length?`<span class="badge">${n?`<span class="good">${n}</span>`:n}/${PL.rows.length}</span>`:''}
- case 'projects':return `<span class="badge">${projects().length}</span>`;
- case 'worktrees':return `<span class="badge">${WT.length}</span>`;
- case 'jobs':return `<span class="badge">${JOBS.filter(j=>j.state==='running'||j.state==='awaiting_review').length}</span>`;
- case 'harnesses':{const n=HARN.filter(h=>h.st==='ready').length;return HARN.length?`<span class="badge">${n?`<span class="good">${n}</span>`:n}/${HARN.length}</span>`:''}
+ case 'sessions':return bdg(SESS.length,'sessions in the last 24 hours');
+ case 'agents':return bdg(AGENTS.length,'main agents and subagents','acc');
+ case 'requests':return bdg(rate(sum(PS.slice(-10))/10)+'/s','requests per second, last 10 seconds');
+ case 'errors':{const e=stats().done.filter(r=>r.status!==200).length;return e?bdg(e,'failed and cancelled requests in the last 15 minutes','bad'):''}
+ case 'models':return bdg(MODELS.length,'models used in the last 15 minutes');
+ case 'providers':{const n=PL.rows.filter(r=>r.set_up===true).length;return PL.rows.length?bdg(`${n?`<span class="good">${n}</span>`:n}/${PL.rows.length}`,'providers set up of all providers'):''}
+ case 'projects':return bdg(projects().length,'projects');
+ case 'worktrees':return bdg(WT.length,'worktrees and checkouts');
+ case 'jobs':return bdg(JOBS.length,'delegated jobs');
+ case 'harnesses':{const n=HARN.filter(h=>h.st==='ready').length;return HARN.length?bdg(`${n?`<span class="good">${n}</span>`:n}/${HARN.length}`,'harnesses ready of all harnesses'):''}
  default:return ''}}
 function navHtml(){return NAV.map(([g,items])=>`<div><div class="gl">${g}</div>${items.map(([k,l])=>`<a href="#${k}"${k===page?' aria-current="page"':''}>${ic(k)}${l}${badge(k)}</a>`).join('')}</div>`).join('')}
 const dashHost=()=>arr(SNAP.hosts)[0]||location.host||'huddle router';

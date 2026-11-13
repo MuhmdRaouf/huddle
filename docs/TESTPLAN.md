@@ -96,6 +96,10 @@ the owner's `~/.claude`, `~/.agents` or the network.
 | A router start waits 200 ms for the lock, so a probe never refuses it while a live holder still does; a test home stops the router recorded under its own root and leaves other pids alone | crates/huddle-daemon/src/singleton.rs:b6_a_probe_never_refuses_a_starting_router; crates/huddle-daemon/src/singleton.rs:b6_a_live_holder_still_refuses_a_start_after_its_wait; crates/huddle-testkit/tests/temp_home.rs:b6_a_test_home_stops_the_router_it_caused |
 | The dashboard source is one file per page, and the router serves them joined once, in order, with no `dashboard.html` left | crates/huddle-router/tests/dashboard_page.rs:d0_the_served_page_is_the_joined_parts |
 | Session states: needs you, working, background, your turn, done, idle | crates/huddle-sessions/src/state.rs:d3_an_unanswered_question_needs_you; crates/huddle-sessions/src/state.rs:d3_an_answered_question_does_not; crates/huddle-sessions/src/state.rs:d3_open_background_tasks_mean_background; crates/huddle-sessions/src/state.rs:d3_background_tasks_older_than_two_hours_are_ignored; crates/huddle-sessions/src/state.rs:d3_a_turn_ended_in_an_interactive_session_is_your_turn; crates/huddle-sessions/src/state.rs:d3_a_driven_session_that_ended_is_done; crates/huddle-sessions/src/state.rs:d3_a_subagent_never_needs_you; crates/huddle-sessions/src/state.rs:d3_the_summary_never_keeps_message_text |
+| Live and history split tokens the same way, so cache hit matches across ranges | crates/huddle-router/tests/dashboard_page.rs:d6_live_and_history_split_tokens_the_same |
+| Rates read per second, and the Requests badge reads the router's `per_second` | crates/huddle-router/tests/dashboard_page.rs:d6_rates_are_per_second |
+| Agent rows match requests by `<session>:<agent id>` | crates/huddle-router/tests/dashboard_page.rs:d6_agent_rows_count_their_requests |
+| Each sidebar badge counts what its page's default view lists, and a title names it | crates/huddle-router/tests/dashboard_page.rs:d6_each_badge_counts_its_page |
 
 ## Needs a human
 

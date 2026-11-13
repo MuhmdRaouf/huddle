@@ -722,3 +722,131 @@ fn d0_the_served_page_is_the_joined_parts() {
     let old = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/dashboard.html");
     assert!(!old.exists(), "no leftover dashboard.html");
 }
+
+fn fixture() -> Value {
+    serde_json::from_str(FIXTURE).expect("fixture parses")
+}
+
+fn badge_line(page: &str) -> &'static str {
+    PAGE.lines()
+        .find(|l| l.contains(&format!("case '{page}':")))
+        .unwrap_or_else(|| panic!("{page} badge"))
+}
+
+#[test]
+fn d6_live_and_history_split_tokens_the_same() {
+    assert!(PAGE.contains("const tokSplit="), "one token helper");
+    for site in [
+        "function buildRequests",
+        "function buildModels",
+        "function histRows",
+        "function histKpis",
+    ] {
+        let start = PAGE.find(site).unwrap_or_else(|| panic!("{site}"));
+        let body = &PAGE[start..PAGE.len().min(start + 2500)];
+        assert!(
+            body.contains("tokSplit("),
+            "{site} must split tokens with tokSplit"
+        );
+    }
+    assert!(
+        !PAGE.contains("tin:n0(x.tokens_in)+n0(x.cache_read)+n0(x.cache_write)"),
+        "tokens_in already holds the cache tokens"
+    );
+    assert!(!PAGE.contains("fresh:n0(x.tokens_in)"));
+    let state = fixture();
+    let rows = state["recent"]
+        .as_array()
+        .expect("recent")
+        .iter()
+        .chain(state["models"].as_array().expect("models"));
+    for row in rows {
+        let total = row["tokens_in"].as_u64().unwrap_or(0);
+        let cached =
+            row["cache_read"].as_u64().unwrap_or(0) + row["cache_write"].as_u64().unwrap_or(0);
+        assert!(
+            total >= cached,
+            "tokens_in holds the cache tokens in the router's real shape: {row}"
+        );
+    }
+}
+
+#[test]
+fn d6_rates_are_per_second() {
+    assert!(PAGE.contains("const rate="), "one rate formatter");
+    assert!(
+        PAGE.contains("SNAP.per_second"),
+        "the page reads the router's per_second"
+    );
+    let requests = badge_line("requests");
+    assert!(
+        requests.contains("per_second") || requests.contains("PS"),
+        "{requests}"
+    );
+    assert!(requests.contains("/s"), "{requests}");
+    assert!(!requests.contains("/m<"), "{requests}");
+    assert!(!PAGE.contains("small:'/min'"));
+    assert!(!PAGE.contains("per minute"));
+    let state = fixture();
+    assert_eq!(
+        state["per_second"].as_array().expect("per_second").len(),
+        60
+    );
+}
+
+#[test]
+fn d6_agent_rows_count_their_requests() {
+    assert!(
+        PAGE.contains("r.s.id+':'+a.id===r.agentId"),
+        "match the router's <session>:<agent> id"
+    );
+    let state = fixture();
+    let sessions = state["sessions"].as_array().expect("sessions");
+    for row in state["recent"].as_array().expect("recent") {
+        let Some(agent) = row["agent"].as_str() else {
+            continue;
+        };
+        let matched = sessions.iter().any(|s| {
+            s["agents"].as_array().is_some_and(|agents| {
+                agents.iter().any(|a| {
+                    format!(
+                        "{}:{}",
+                        s["id"].as_str().unwrap_or(""),
+                        a["id"].as_str().unwrap_or("")
+                    ) == agent
+                })
+            })
+        });
+        assert!(matched, "recent agent {agent} is <session>:<agent id>");
+    }
+}
+
+#[test]
+fn d6_each_badge_counts_its_page() {
+    for page in [
+        "sessions",
+        "agents",
+        "requests",
+        "errors",
+        "models",
+        "providers",
+        "projects",
+        "worktrees",
+        "jobs",
+        "harnesses",
+    ] {
+        assert!(
+            badge_line(page).contains("bdg("),
+            "{page} badge goes through the titled helper"
+        );
+    }
+    assert!(
+        PAGE.contains("title=\"${title}\""),
+        "the helper writes the title"
+    );
+    assert!(badge_line("sessions").contains("SESS.length"));
+    assert!(badge_line("agents").contains("AGENTS.length"));
+    assert!(!badge_line("agents").contains("type!=='main'"));
+    assert!(badge_line("jobs").contains("JOBS.length"));
+    assert!(badge_line("errors").contains("!==200"));
+}

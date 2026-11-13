@@ -13,6 +13,7 @@ Provider setup holds across sessions, and the key check gets a real answer.
 ### Dashboard
 
 - A project is a git repository: a session in any worktree belongs to its repository, new history rows carry the repository's name, and the project totals roll old folder names into their repository.
+- Token numbers split the same way live and in history (fresh input, cache read, cache write, output), cache hit matches between ranges, rates read per second, the Agents page counts each agent's requests and tokens, and each sidebar badge counts what its page lists.
 
 ## 0.0.6
 
