@@ -1698,6 +1698,45 @@
    "add": 9,
    "del": 3,
    "why": "driver exited (signal 9)"
+  },
+  {
+   "id": "j-2b77",
+   "harness": "codex",
+   "repo": "huddle",
+   "title": "Rename the lane table",
+   "state": "accepted",
+   "started_ms": 1799990000000,
+   "ended_ms": 1799990900000,
+   "files": null,
+   "add": null,
+   "del": null,
+   "why": null
+  },
+  {
+   "id": "j-8c01",
+   "harness": "opencode",
+   "repo": "infra-tofu",
+   "title": "Draft the runner module",
+   "state": "cancelled",
+   "started_ms": 1799980000000,
+   "ended_ms": 1799980300000,
+   "files": null,
+   "add": null,
+   "del": null,
+   "why": null
+  },
+  {
+   "id": "j-4d19",
+   "harness": "omp",
+   "repo": "huddle",
+   "title": "List the unused crates",
+   "state": "completed",
+   "started_ms": 1799985000000,
+   "ended_ms": 1799985200000,
+   "files": null,
+   "add": null,
+   "del": null,
+   "why": null
   }
  ],
  "hosts": [

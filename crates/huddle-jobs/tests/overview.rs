@@ -3,7 +3,7 @@ mod support;
 use huddle_jobs::id::iso_ms;
 use huddle_jobs::liveness::{ProcessRecord, driver_record_path, write_record};
 use huddle_jobs::model::{Access, Attempt, AttemptKind, JobState};
-use huddle_jobs::overview::{JobRow, overview};
+use huddle_jobs::overview::{JobRow, finished, overview};
 use huddle_jobs::store::JobStore;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -227,4 +227,37 @@ fn d4_a_running_job_has_no_end_time_and_a_dead_one_says_why() {
         Some(0),
         "an untouched folder is an empty diff"
     );
+}
+
+#[test]
+fn d12_finished_jobs_are_listed_inside_the_window() {
+    let r = rig();
+    add(
+        &r,
+        &r.repo,
+        "j-run",
+        JobState::Running,
+        "run",
+        Some(own_record()),
+    );
+    add(&r, &r.repo, "j-acc", JobState::Accepted, "accepted", None);
+    add(&r, &r.repo, "j-fail", JobState::Failed, "failed", None);
+    add(&r, &r.repo, "j-can", JobState::Cancelled, "cancelled", None);
+    add(&r, &r.repo, "j-ok", JobState::Completed, "completed", None);
+    add(&r, &r.repo, "j-old", JobState::Accepted, "old", None);
+    let old = JobStore::for_repo(&r.paths, &r.repo);
+    let mut job = old.get("j-old").expect("read");
+    job.updated_at = iso_ms(NOW - 40 * 86_400_000);
+    job.attempts[0].started_at = iso_ms(NOW - 40 * 86_400_000);
+    job.attempts[0].ended_at = Some(iso_ms(NOW - 40 * 86_400_000));
+    old.update(&job).expect("update");
+
+    let rows = finished(&r.paths, NOW - 30 * 86_400_000);
+
+    let mut ids: Vec<&str> = rows.iter().map(|r| r.id.as_str()).collect();
+    ids.sort();
+    assert_eq!(ids, ["j-acc", "j-can", "j-fail", "j-ok"]);
+    assert_eq!(row(&rows, "j-acc").state, "accepted");
+    assert_eq!(row(&rows, "j-can").state, "cancelled");
+    assert_eq!(row(&rows, "j-ok").state, "completed");
 }

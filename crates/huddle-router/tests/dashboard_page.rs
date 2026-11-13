@@ -991,6 +991,9 @@ const SESSIONS_JS: &str = include_str!("../src/dashboard/pages/sessions.js");
 const AGENTS_JS: &str = include_str!("../src/dashboard/pages/agents.js");
 const DRAWERS_JS: &str = include_str!("../src/dashboard/drawers.js");
 const CORE_JS: &str = include_str!("../src/dashboard/core.js");
+const PROJECTS_JS: &str = include_str!("../src/dashboard/pages/projects.js");
+const WORKTREES_JS: &str = include_str!("../src/dashboard/pages/worktrees.js");
+const JOBS_JS: &str = include_str!("../src/dashboard/pages/jobs.js");
 
 #[test]
 fn d9_sessions_use_the_new_states() {
@@ -1450,14 +1453,17 @@ fn d7_overview_providers_use_the_providers_page_status() {
 }
 
 /// The page is one script joined from many files: a name defined twice stops the whole page, so
-/// every top-level `const`, `let` and `function` name appears once.
+/// every top-level `const`, `let` and `function` name, and every `PAGES.<page>`, appears once.
 #[test]
 fn the_joined_page_defines_each_name_once() {
     let mut seen = std::collections::HashSet::new();
     for line in PAGE.lines() {
-        let Some(rest) = ["const ", "let ", "function "]
+        let Some((kind, rest)) = ["const ", "let ", "function ", "PAGES."]
             .iter()
-            .find_map(|kw| line.strip_prefix(kw))
+            .find_map(|kw| {
+                line.strip_prefix(kw)
+                    .map(|rest| (kw.starts_with('P'), rest))
+            })
         else {
             continue;
         };
@@ -1466,7 +1472,103 @@ fn the_joined_page_defines_each_name_once() {
             .take_while(|c| c.is_alphanumeric() || *c == '_' || *c == '$')
             .collect();
         if !name.is_empty() {
-            assert!(seen.insert(name.clone()), "{name} is defined twice");
+            assert!(seen.insert((kind, name.clone())), "{name} is defined twice");
         }
+    }
+}
+
+#[test]
+fn d12_projects_are_repos() {
+    assert!(
+        CORE_JS.contains("repo:w.repo"),
+        "a worktree's repo key is read"
+    );
+    assert!(
+        CORE_JS.contains("s.repo||s.project"),
+        "projects group on the repo key"
+    );
+    for label in [
+        "Active sessions",
+        "Worktrees",
+        "Requests",
+        "Tokens",
+        "Cost",
+        "Top model",
+        "Last activity",
+    ] {
+        let found = PROJECTS_JS.contains(label)
+            || PROJECTS_JS.contains("histCols")
+            || CORE_JS.contains(label);
+        assert!(found, "Projects shows {label}");
+    }
+    assert!(PROJECTS_JS.contains("Active sessions"));
+    assert!(
+        PROJECTS_JS.contains("stale"),
+        "the worktree cell counts stale ones"
+    );
+    assert!(
+        PROJECTS_JS.contains("histTop"),
+        "top model comes from the range totals"
+    );
+    assert!(
+        DRAWERS_JS.contains("Branches"),
+        "the project drawer lists branches"
+    );
+    for w in fixture()["worktrees"].as_array().expect("worktrees") {
+        assert!(w["repo"].is_string(), "every fixture worktree has a repo");
+    }
+}
+
+#[test]
+fn d12_worktrees_filter_stale() {
+    for chip in ["['stale',", "['dirty',"] {
+        assert!(WORKTREES_JS.contains(chip), "a filter chip {chip}");
+    }
+    assert!(WORKTREES_JS.contains("Stale"));
+    assert!(WORKTREES_JS.contains("Uncommitted"));
+    assert!(
+        WORKTREES_JS.contains("worktree remove"),
+        "the command that removes a worktree"
+    );
+    assert!(WORKTREES_JS.contains("rgrp"), "grouped by repo");
+    assert!(WORKTREES_JS.contains("w.repo"), "grouped on the repo key");
+    assert!(
+        CORE_JS.contains("5*DAY"),
+        "stale means no session and five days old"
+    );
+    let trees = fixture()["worktrees"].clone();
+    let stale = trees
+        .as_array()
+        .expect("worktrees")
+        .iter()
+        .filter(|w| w["kind"] == "agent" && w["used_by"].is_null())
+        .count();
+    assert!(stale >= 1, "the fixture has a stale worktree");
+}
+
+#[test]
+fn d12_finished_jobs_stay_visible() {
+    assert!(JOBS_JS.contains("Outcome"), "an outcome column");
+    assert!(JOBS_JS.contains("Review"), "a review state column");
+    assert!(JOBS_JS.contains("Ran for"), "a duration column");
+    assert!(JOBS_JS.contains("Harness"));
+    assert!(
+        JOBS_JS.contains("jobsInRange"),
+        "finished jobs are kept for the global range"
+    );
+    for state in ["accepted", "cancelled", "completed", "failed"] {
+        assert!(JOBS_JS.contains(state), "the page names {state}");
+    }
+    let states: Vec<String> = fixture()["jobs"]
+        .as_array()
+        .expect("jobs")
+        .iter()
+        .filter_map(|j| j["state"].as_str().map(str::to_string))
+        .collect();
+    for want in ["accepted", "cancelled"] {
+        assert!(
+            states.iter().any(|s| s == want),
+            "the fixture has a {want} job"
+        );
     }
 }

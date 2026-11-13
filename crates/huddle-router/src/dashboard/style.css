@@ -186,7 +186,7 @@ th{font-size:12px;font-weight:500;color:var(--muted);text-align:left;padding:9px
 th.sortable{user-select:none}
 th .sortbtn{font:inherit;color:inherit;background:none;border:0;padding:0;margin:0;cursor:pointer;text-align:inherit;display:inline-flex;align-items:center;gap:2px}
 th .sortbtn:hover{color:var(--text)}
-.s14{width:14px;height:14px}.sans{font-family:var(--sans)}.mt12{margin-top:12px}.legendrow.bare{border:0;padding:0}.w36{width:36px}.wrap{white-space:normal}
+.s14{width:14px;height:14px}.sans{font-family:var(--sans)}.mt12{margin-top:12px}.mb8{margin-bottom:8px}.legendrow.bare{border:0;padding:0}.w36{width:36px}.wrap{white-space:normal}
 .fw4{font-weight:400}.fw5{font-weight:500}.fs13{font-size:13px}.fs15{font-size:15px}.blk{display:block}.padkv{padding:14px 16px}.pad-s{padding:6px 8px}.kpis.two{grid-template-columns:repeat(2,minmax(0,1fr))}
 .drawer:focus{outline:0}
 .caret{margin-left:4px;color:var(--accent);font-size:11px}

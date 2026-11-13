@@ -180,7 +180,9 @@ It shows:
   requests, errors by cause, first-token time, tokens, API price, models,
   agents and next step. A row opens the key, lane, `/model` entries and
   commands.
-- Projects, Worktrees and Jobs per repository.
+- Projects (one row per git repository), Worktrees (grouped by repository, with
+  Stale and Uncommitted filters and the command that removes one) and Jobs
+  (finished jobs stay for the chosen range, with outcome and review state).
 - Harnesses and Router, with the last router events and a failing Anthropic path
   named on the Overview.
 

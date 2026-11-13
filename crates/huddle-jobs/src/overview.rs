@@ -50,6 +50,57 @@ pub fn overview(paths: &Paths, now_ms: u64) -> Vec<JobRow> {
         .collect()
 }
 
+/// Completed, failed, accepted and cancelled jobs of every repo that ended at or after
+/// `since_ms`, newest first within a repo. Reads only.
+pub fn finished(paths: &Paths, since_ms: u64) -> Vec<JobRow> {
+    let Ok(entries) = std::fs::read_dir(&paths.jobs_root) else {
+        return Vec::new();
+    };
+    let mut repo_dirs: Vec<_> = entries
+        .filter_map(Result::ok)
+        .map(|entry| entry.path())
+        .filter(|path| path.is_dir())
+        .collect();
+    repo_dirs.sort();
+    repo_dirs
+        .iter()
+        .map(|dir| JobStore::at_root(dir.clone()))
+        .filter_map(|store| store.list().ok())
+        .flatten()
+        .filter(|job| {
+            matches!(
+                job.state,
+                JobState::Completed | JobState::Failed | JobState::Accepted | JobState::Cancelled
+            )
+        })
+        .filter_map(|job| {
+            let row = finished_row(&job);
+            (row.ended_ms.unwrap_or(row.started_ms) >= since_ms).then_some(row)
+        })
+        .collect()
+}
+
+fn finished_row(job: &Job) -> JobRow {
+    let attempt = job.attempts.last();
+    let started = attempt.map_or(job.created_at.as_str(), |a| a.started_at.as_str());
+    let ended = attempt
+        .and_then(|a| a.ended_at.as_deref())
+        .unwrap_or(job.updated_at.as_str());
+    JobRow {
+        id: job.id.clone(),
+        harness: job.harness.clone(),
+        repo: repo_name(&job.repo_root),
+        title: job.title.clone(),
+        state: job.state.as_str(),
+        started_ms: parse_iso_ms(started).unwrap_or(0),
+        ended_ms: parse_iso_ms(ended),
+        files: None,
+        add: None,
+        del: None,
+        why: job.failure.clone(),
+    }
+}
+
 fn rows_of(store: &JobStore, now_ms: u64) -> Vec<JobRow> {
     let Ok(jobs) = store.list() else {
         return Vec::new();

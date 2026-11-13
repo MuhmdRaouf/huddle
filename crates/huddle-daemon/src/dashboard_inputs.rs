@@ -13,7 +13,7 @@ use huddle_catalog::providers::providers;
 use huddle_config::env::Env;
 use huddle_config::paths::Paths;
 use huddle_jobs::id::now_ms;
-use huddle_jobs::overview::overview;
+use huddle_jobs::overview::{finished, overview};
 use huddle_keystore::port::{Keystore, platform_default};
 use huddle_router::dashboard::{DashboardInputs, Machine};
 use huddle_router::live::{JobRow, Supervision, Wiring, WiringState};
@@ -145,7 +145,7 @@ fn read_all(env: &Env, paths: &Paths, port: u16) -> Reading {
         wiring_state: wiring_state_of(wiring),
         wiring,
         keys: read_keys(env, paths),
-        jobs: overview(paths, now_ms())
+        jobs: jobs_overview(paths, now_ms())
             .into_iter()
             .map(|row| JobRow {
                 id: row.id,
@@ -162,6 +162,14 @@ fn read_all(env: &Env, paths: &Paths, port: u16) -> Reading {
             })
             .collect(),
     }
+}
+
+/// The live jobs, then the finished ones the history window still covers.
+fn jobs_overview(paths: &Paths, now: u64) -> Vec<huddle_jobs::overview::JobRow> {
+    let window = history_upkeep::DEFAULT_KEEP_DAYS * 86_400_000;
+    let mut rows = overview(paths, now);
+    rows.extend(finished(paths, now.saturating_sub(window)));
+    rows
 }
 
 /// Yes or no per provider: the key itself is never held.

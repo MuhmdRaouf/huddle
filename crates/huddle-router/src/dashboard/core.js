@@ -59,7 +59,7 @@ const ICONS={
 const ic=(n,c)=>`<svg class="i${c?' '+c:''}" viewBox="0 0 24 24" aria-hidden="true">${ICONS[n]||''}</svg>`;
 
 /* ---------- the world, read from the snapshot ---------- */
-let SESS=[],AGENTS=[],REQS=[],MODELS=[],MN=[],COLOR={},LANES=[],JOBS=[],WT=[],HARN=[],BK=[],PS=[],BW=3e4,PLAN=null,PL={state:'checking',rows:[],checks:[]},WIRE={state:'checking'},RT={},ST=null;
+let SESS=[],AGENTS=[],REQS=[],MODELS=[],MN=[],COLOR={},LANES=[],JOBS=[],JOBS_DONE=[],WT=[],HARN=[],BK=[],PS=[],BW=3e4,PLAN=null,PL={state:'checking',rows:[],checks:[]},WIRE={state:'checking'},RT={},ST=null;
 const col=m=>COLOR[m]||HCOLOR[m]||'var(--faint)';
 const sstate=s=>({needs_you:'waiting',your_turn:'waiting',working:'working',background:'working'})[s.state]||'idle';
 const mainA=s=>s.agents[0];
@@ -137,8 +137,9 @@ function build(s){
  PS=arr(SNAP.per_second).map(n0);buildSessions();buildRequests();buildModels();buildLanes();
  const p=SNAP.plan&&typeof SNAP.plan==='object'?SNAP.plan:null;
  PLAN=p&&(num(p.five_hour_pct)!=null||num(p.week_pct)!=null)?{h5:num(p.five_hour_pct),h5r:num(p.five_hour_reset_ms),wk:num(p.week_pct),wkr:num(p.week_reset_ms)}:null;
- JOBS=arr(SNAP.jobs).map(j=>({id:j.id||'',h:j.harness||'',task:j.title||'',repo:j.repo||'',state:j.state||'',started:num(j.started_ms),end:num(j.ended_ms),files:num(j.files),add:num(j.add),del:num(j.del),why:j.why||null}));
- WT=arr(SNAP.worktrees).map(w=>({path:w.path||'',project:w.project||'',branch:w.branch||'',head:w.head||'',kind:w.kind||'checkout',by:w.used_by||null,changes:num(w.changes),commit:num(w.last_commit_ms)}));
+ const jr=arr(SNAP.jobs).map(j=>({id:j.id||'',h:j.harness||'',task:j.title||'',repo:j.repo||'',state:j.state||'',started:num(j.started_ms),end:num(j.ended_ms),files:num(j.files),add:num(j.add),del:num(j.del),why:j.why||null}));
+ JOBS=jr.filter(j=>!JOB_ENDED.includes(j.state));JOBS_DONE=jr.filter(j=>JOB_ENDED.includes(j.state));
+ WT=arr(SNAP.worktrees).map(w=>({path:w.path||'',project:w.project||'',repo:w.repo||'',branch:w.branch||'',head:w.head||'',kind:w.kind||'checkout',by:w.used_by||null,changes:num(w.changes),commit:num(w.last_commit_ms)}));
  WT.forEach(w=>{w.stale=w.kind==='agent'&&!w.by&&w.commit!=null&&NOW-w.commit>=5*DAY});
  const pg=SNAP.plugins&&typeof SNAP.plugins==='object'?SNAP.plugins:{};
  PL={state:pg.state==='ready'?'ready':'checking',rows:arr(pg.rows),checks:arr(pg.checks)};
@@ -149,14 +150,24 @@ function build(s){
  const r=SNAP.router&&typeof SNAP.router==='object'?SNAP.router:{};
  RT={cpu:num(r.cpu_pct),rss:num(r.rss_bytes),viewers:num(r.viewers),conns:num(r.connections),events:arr(r.events),path:r.path&&typeof r.path==='object'?r.path:{}};
 }
+const JOB_ENDED=['completed','failed','accepted','cancelled'],ACTIVE_STATES=['needs_you','working','background'];
+/* live jobs, plus finished ones that ended inside the global time range */
+function jobsInRange(){const to=HIST.range==='custom'?HIST.to:NOW,from=HIST.range==='custom'?HIST.from:NOW-RANGE_MIN[HIST.range]*6e4;
+ return JOBS.concat(JOBS_DONE.filter(j=>{const e=j.end||j.started||0;return e>=from&&e<=to}))}
+/* one project per git repository: its sessions, worktrees and jobs roll up under the repo key */
 function projects(){
- const names=[...new Set([...SESS.map(s=>s.project),...WT.map(w=>w.project),...JOBS.map(j=>j.repo)].filter(Boolean))];
- return names.map(n=>{const ss=SESS.filter(s=>s.project===n),rs=ss.flatMap(sReq),wts=WT.filter(w=>w.project===n),jobs=JOBS.filter(j=>j.repo===n);
+ const P={},get=(k,n)=>P[k]||(P[k]={key:k,name:n,ss:[],wts:[],jobs:[]});
+ SESS.forEach(s=>{if(s.project)get(s.repo||s.project,s.project).ss.push(s)});
+ WT.forEach(w=>{if(w.project)get(w.repo||w.project,w.project).wts.push(w)});
+ const byName={};Object.values(P).forEach(p=>{byName[p.name]=byName[p.name]||p});
+ jobsInRange().forEach(j=>{if(j.repo)(byName[j.repo]||get(j.repo,j.repo)).jobs.push(j)});
+ return Object.values(P).map(({key,name,ss,wts,jobs})=>{const rs=ss.flatMap(sReq);
   const byM={};rs.forEach(r=>{byM[r.m]=(byM[r.m]||0)+1});const top=Object.entries(byM).sort((a,b)=>b[1]-a[1])[0];
   const home=wts.find(w=>w.kind==='checkout')||wts[0];
-  return {name:n,path:home?home.path:ss[0]?ss[0].cwd:'',sessions:ss,live:ss.filter(s=>sstate(s)!=='idle').length,
+  return {key,name,path:key.startsWith('/')?key:home?home.path:ss[0]?ss[0].cwd:'',sessions:ss,live:ss.filter(s=>ACTIVE_STATES.includes(s.state)).length,
    agentsRun:ss.flatMap(s=>s.agents).filter(a=>a.type!=='main'&&a.state==='running').length,wts,jobs,reqs:rs,tin:tokInOf(rs),tout:tokOutOf(rs),top:top?top[0]:null,
-   branches:[...new Set(wts.map(w=>w.branch).filter(Boolean))],last:Math.max(0,...ss.map(lastT),...jobs.map(j=>j.end||j.started||0))||null}});
+   stale:wts.filter(w=>w.stale).length,
+   branches:[...new Set(wts.map(w=>w.branch).filter(Boolean))],last:Math.max(0,...ss.map(lastT),...jobs.map(j=>j.end||j.started||0),...wts.map(w=>w.commit||0))||null}});
 }
 
 const FAIL_RATE=0.2;
