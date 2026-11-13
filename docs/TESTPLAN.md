@@ -105,6 +105,11 @@ the owner's `~/.claude`, `~/.agents` or the network.
 | Provider status follows live traffic, quota and error rate | crates/huddle-router/tests/dashboard_page.rs:d8_status_follows_live_traffic |
 | Quota and reset show per provider, with every column | crates/huddle-router/tests/dashboard_page.rs:d8_quota_and_reset_show_per_provider |
 | A failing provider is never greyed; errors group by cause | crates/huddle-router/tests/dashboard_page.rs:d8_a_failing_provider_is_never_greyed |
+| Models show the API price, "no price" and price per 1M tokens | crates/huddle-router/tests/dashboard_page.rs:d11_models_show_api_price_and_unpriced |
+| Usage lists every provider's plan or balance | crates/huddle-router/tests/dashboard_page.rs:d11_usage_shows_every_providers_plan |
+| Usage charts cost per day stacked by provider, with cache savings | crates/huddle-router/tests/dashboard_page.rs:d11_cost_per_day_by_provider |
+| The projects by models matrix follows the range | crates/huddle-router/tests/dashboard_page.rs:d11_matrix_follows_the_range |
+| History totals flag unpriced models and price cache savings | crates/huddle-router/tests/history_endpoint.rs:d11_totals_flag_unpriced_models_and_price_cache_savings |
 | A provider row carries its console link | crates/huddle-router/src/live.rs:d8_a_provider_without_a_quota_api_carries_its_console_link |
 | Sessions show Needs you, Working, Background, Your turn, Done and Idle with a chip each | crates/huddle-router/tests/dashboard_page.rs:d9_sessions_use_the_new_states |
 | Sessions group by repository | crates/huddle-router/tests/dashboard_page.rs:d9_sessions_group_by_repo |

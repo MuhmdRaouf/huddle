@@ -278,6 +278,13 @@ fn cost_of_sums(model: &str, tok_in: u64, cache_read: u64, cache_write: u64, out
     price(model, fresh, out, cache_read, cache_write)
 }
 
+/// What the cache reads saved: the same tokens at the full input rate minus what they cost.
+fn cache_saved(model: &str, cache_read: u64) -> f64 {
+    price_of(model).map_or(0.0, |p| {
+        (cache_read as f64 / 1_000_000.0) * (p.input - p.cache_read)
+    })
+}
+
 /// A row's cost; unknown when any count is unknown or the model has no price.
 fn row_cost(row: &Row) -> Option<f64> {
     price_of(&row.model)?;
@@ -359,6 +366,8 @@ pub fn answer(
                                 "cache_read": m.cache_read, "cache_write": m.cache_write,
                                 "tok_out": m.tok_out,
                                 "cost_usd": cost_of_sums(&m.model, m.tok_in, m.cache_read, m.cache_write, m.tok_out),
+                                "priced": price_of(&m.model).is_some(),
+                                "cache_saved_usd": cache_saved(&m.model, m.cache_read),
                             })
                         })
                         .collect();
@@ -373,6 +382,12 @@ pub fn answer(
                         "tok_out": t.tok_out, "first_ms": t.first_ms, "last_ms": t.last_ms,
                         "cost_usd": cost,
                         "api_equivalent": t.models.iter().any(|m| is_api_equivalent(&m.model)),
+                        "priced": t.models.iter().all(|m| price_of(&m.model).is_some()),
+                        "cache_saved_usd": t
+                            .models
+                            .iter()
+                            .map(|m| cache_saved(&m.model, m.cache_read))
+                            .sum::<f64>(),
                         "models": models,
                     })
                 })

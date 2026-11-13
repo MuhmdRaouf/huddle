@@ -1,4 +1,3 @@
-const PNAME={zai:'Z.ai GLM',kimi:'Kimi',deepseek:'DeepSeek',minimax:'MiniMax',qwen:'Qwen'};
 const FAIL_RATE=0.2;
 const CAUSE={quota:'quota used up'};
 /* totals by provider for the picked range, and the latency buckets that belong to them */
@@ -14,16 +13,6 @@ function provStatus(x){
  if(!x.built&&x.key&&!x.laneOn)return ['bad','Needs a fix'];
  return x.built||x.laneOn?['ok','Working']:['off','Not set up'];
 }
-const resetAt=t=>new Date(t).toDateString()===new Date(NOW).toDateString()?clock(t).slice(0,5):when(t);
-const provConsole=id=>{const p=SNAP.providers&&typeof SNAP.providers==='object'?SNAP.providers[id]:null;return p&&typeof p.console_url==='string'?p.console_url:null};
-const provQuota=id=>{const p=SNAP.providers&&typeof SNAP.providers==='object'?SNAP.providers[id]:null;return p&&p.quota&&typeof p.quota==='object'?p.quota:null};
-/* a window is used up while its reset is still ahead; a balance at zero is used up */
-function quotaState(q){
- if(!q)return {out:false,reset:null};
- const full=arr(q.windows).filter(w=>num(w.used_pct)!=null&&w.used_pct>=100&&(num(w.resets_ms)==null||w.resets_ms>NOW));
- const dry=!!q.balance&&num(q.balance.amount)!=null&&q.balance.amount<=0;
- const ts=full.map(w=>num(w.resets_ms)).filter(t=>t!=null);
- return {out:full.length>0||dry,reset:ts.length?Math.min(...ts):null}}
 const lastIsQuota=id=>{const rs=stats().byLane[id]||[],l=rs[rs.length-1];return !!l&&l.status===429&&l.reason==='quota'};
 /* the finished requests of a lane that failed, grouped by the router's reason */
 function causes(id){const g={};(stats().byLane[id]||[]).filter(isErr).forEach(r=>{const k=r.reason||String(r.status);g[k]=(g[k]||0)+1});return Object.entries(g).sort((a,b)=>b[1]-a[1])}
@@ -57,18 +46,9 @@ const errPct=x=>x.n?`${(x.err/x.n*100).toFixed(1)}%`:'';
 const causeText=([k,n])=>`${n} ${CAUSE[k]||k}`;
 const errCell=x=>!x.n?NA:x.err?`<span class="badc"><b>${x.err.toLocaleString('en-US')}</b> · ${errPct(x)}</span>${x.causes.length?`<div class="cs cw">${esc(x.causes.map(causeText).join(' · '))}</div>`:''}`:'<span class="faint">0</span>';
 const statusCell=x=>`${pill(x.status[0],x.status[1])}${x.status[1]==='Out of quota'?`<div class="cs cw">${x.reset?`quota used up, resets ${resetAt(x.reset)}`:'quota used up'}</div>`:x.status[1]==='Failing'?`<div class="cs cw">${errPct(x)} of requests failed</div>`:''}`;
-const quotaLine=w=>num(w.used_pct)==null?`<div class="qw"><span>${esc(w.name)}</span> <span class="faint">${esc(w.note||'not reported')}</span></div>`
- :`<div class="qw"><span>${esc(w.name)}</span> <b class="${w.used_pct>=90?'badc':w.used_pct>=80?'warnc':''}">${Math.round(w.used_pct)}%</b>${num(w.resets_ms)!=null?` <span class="faint">resets ${resetAt(w.resets_ms)}</span>`:''}</div>`;
 function quotaCell(x){const q=x.q;
  if(x.status[0]==='off'||!q)return NA;
  return `<div${num(q.fetched_ms)!=null?` title="Checked at ${clock(q.fetched_ms).slice(0,5)}"`:''}>${quotaBody(x,q)}</div>`}
-function quotaBody(x,q){
- if(q.kind==='none')return x.console?`<a class="lnk" href="${esc(x.console)}" target="_blank" rel="noopener">Open its console</a>`:'<span class="faint">no quota API</span>';
- const un=q.unverified?' <span class="faint">(unverified)</span>':'';
- if(q.error&&!arr(q.windows).length&&!q.balance)return `<span class="faint">${esc(q.error)}</span>`;
- if(q.kind==='balance'&&q.balance)return `<span class="mono">${num(q.balance.amount)==null?'—':q.balance.amount.toFixed(2)} ${esc(q.balance.currency||'')}</span>${un}`;
- if(arr(q.windows).length)return arr(q.windows).map(quotaLine).join('')+un;
- return '<span class="faint">quota unknown</span>'}
 const nextHint=x=>x.status[1]==='Out of quota'?'<div class="cs cw sans">Wait for the reset or add credit</div>':x.status[1]==='Failing'?'<a class="lnk" href="#errors">See the errors</a>':'';
 const priceCell=x=>x.cost==null?(x.n&&!HP.lane?checking():NA):x.n&&x.tin&&!x.cost?'<span class="faint">unpriced model</span>':`<span class="mono">${usd(x.cost)}</span>`;
 const servedCell=x=>{const m=x.models.length||x.nModels;return `${m} model${m===1?'':'s'}${x.built?'':` · ${x.nAgents} agent${x.nAgents===1?'':'s'}`}`};

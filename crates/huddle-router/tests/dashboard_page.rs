@@ -130,7 +130,6 @@ fn shows_the_unknown_states_and_never_invents_data() {
 #[test]
 fn hides_the_plan_tiles_without_plan_data() {
     assert!(PAGE.contains("if(PLAN){"));
-    assert!(PAGE.contains("PLAN?`<section>"));
 }
 
 #[test]
@@ -952,7 +951,8 @@ fn d8_quota_and_reset_show_per_provider() {
         "kind==='none'",
         "label:'Plan or balance'",
     ] {
-        assert!(PROVIDERS_JS.contains(read), "{read}");
+        let page_and_shared = format!("{PROVIDERS_JS}{}", include_str!("../src/dashboard/core.js"));
+        assert!(page_and_shared.contains(read), "{read}");
     }
     assert!(
         PROVIDERS_JS.contains("quota used up, resets"),
@@ -1144,5 +1144,114 @@ fn d9_session_drawer_retries_history_and_shows_reasons() {
     assert!(
         DRAWERS_JS.contains("s.agents.concat(s.bg)"),
         "agents and background tasks with counts"
+    );
+}
+
+const MODELS_JS: &str = include_str!("../src/dashboard/pages/models.js");
+const USAGE_JS: &str = include_str!("../src/dashboard/pages/usage.js");
+
+#[test]
+fn d11_models_show_api_price_and_unpriced() {
+    for column in [
+        "label:'Provider'",
+        "label:'Error rate'",
+        "label:'Time to first token'",
+        "label:'Speed'",
+        "label:'Tokens'",
+        "label:'Cache hit'",
+        "label:'API price'",
+        "label:'Price per 1M tokens'",
+        "label:'Sessions'",
+        "label:'Last used'",
+    ] {
+        assert!(MODELS_JS.contains(column), "{column}");
+    }
+    assert!(MODELS_JS.contains("no price"), "an unpriced model says so");
+    assert!(
+        MODELS_JS.contains("priced"),
+        "reads the router's priced flag"
+    );
+    assert!(
+        MODELS_JS.contains("by=model"),
+        "cost comes from history totals"
+    );
+    assert!(
+        !MODELS_JS.contains("Est. cost") && !MODELS_JS.contains("rangeCols("),
+        "no estimated-cost column left over"
+    );
+    assert!(
+        MODELS_JS.contains("tokSplit") || MODELS_JS.contains("x.fresh"),
+        "token split"
+    );
+}
+
+#[test]
+fn d11_usage_shows_every_providers_plan() {
+    let page = USAGE_JS;
+    assert!(page.contains("Plans and quota"), "section title");
+    assert!(page.contains("provQuota("), "reads providers[id].quota");
+    assert!(
+        page.contains("quotaBody("),
+        "same plan and balance text as Providers"
+    );
+    assert!(page.contains("PL.rows"), "every provider the plugin lists");
+    assert!(page.contains("'anthropic'"), "Claude is a row too");
+    assert!(page.contains("Not set up"), "an unset provider says so");
+    assert!(!page.contains("PLAN.h5"), "the Claude-only box is gone");
+    for helper in [
+        "function quotaBody(",
+        "function provQuota",
+        "const provQuota",
+    ] {
+        assert!(
+            !PROVIDERS_JS.contains(helper),
+            "{helper} lives in core.js, shared with Usage"
+        );
+    }
+    let core = include_str!("../src/dashboard/core.js");
+    assert!(core.contains("function quotaBody(") && core.contains("const provQuota="));
+}
+
+#[test]
+fn d11_cost_per_day_by_provider() {
+    assert!(USAGE_JS.contains("by=day"), "history totals by day");
+    assert!(USAGE_JS.contains("Cost per day"), "section title");
+    assert!(
+        USAGE_JS.contains("laneOfModel("),
+        "each model's cost goes to its provider"
+    );
+    assert!(
+        USAGE_JS.contains("class=\"daycol"),
+        "one stacked column per day"
+    );
+    assert!(USAGE_JS.contains("API price"), "labelled as the API price");
+    assert!(
+        USAGE_JS.contains("cache_saved_usd"),
+        "cache savings in dollars"
+    );
+    assert!(
+        USAGE_JS.contains("Saved by the cache"),
+        "cache savings card"
+    );
+}
+
+#[test]
+fn d11_matrix_follows_the_range() {
+    assert!(USAGE_JS.contains("by=project"), "history totals by repo");
+    assert!(
+        USAGE_JS.contains("rangeQuery()"),
+        "the global range drives it"
+    );
+    assert!(
+        !USAGE_JS.contains("last 15 min, total tokens"),
+        "the subtitle names the picked range"
+    );
+    assert!(
+        !include_str!("../src/dashboard/pages/projects.js").contains("function matrix("),
+        "the matrix lives on Usage"
+    );
+    assert!(
+        USAGE_JS.contains("function matrix("),
+        "Usage owns the matrix"
     );
 }

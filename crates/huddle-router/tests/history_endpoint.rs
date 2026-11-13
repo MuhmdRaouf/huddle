@@ -353,3 +353,27 @@ async fn t9_buckets_narrow_to_a_session_or_a_project() {
     assert_eq!((n(&all), n(&s1), n(&proj), n(&none)), (4, 1, 1, 0));
     assert_eq!(s1["buckets"][0]["model"], "claude-opus-5-5");
 }
+
+#[tokio::test]
+async fn d11_totals_flag_unpriced_models_and_price_cache_savings() {
+    let rig = rig(true).await;
+    let v = json(&rig, "view=totals&range=24h&by=day").await;
+    let day = v["totals"][0].as_object().expect("a day");
+    let saved = huddle_catalog::prices::price_of("claude-opus-5-5")
+        .map(|p| p.input - p.cache_read)
+        .unwrap_or(0.0);
+    assert!((day["cache_saved_usd"].as_f64().unwrap_or(-1.0) - saved).abs() < 1e-9);
+    let models = day["models"].as_array().expect("models");
+    let opus = models
+        .iter()
+        .find(|m| m["model"] == "claude-opus-5-5")
+        .expect("opus");
+    assert_eq!(opus["priced"], true);
+    assert!((opus["cache_saved_usd"].as_f64().unwrap_or(-1.0) - saved).abs() < 1e-9);
+    let glm = models
+        .iter()
+        .find(|m| m["model"] == "glm-5.3")
+        .expect("glm");
+    assert_eq!(glm["cache_saved_usd"], 0.0);
+    assert_eq!(day["priced"], true);
+}

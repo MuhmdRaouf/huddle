@@ -417,3 +417,30 @@ let poll=null;
 function getState(){fetch('/huddle-router/state',{cache:'no-store'}).then(r=>r.json()).then(onSnapshot,()=>{LOST=true;update(SNAP)})}
 function startPoll(){if(poll===null){getState();poll=setInterval(getState,2000)}}
 function stopPoll(){if(poll!==null){clearInterval(poll);poll=null}}
+
+/* ---------- provider plan and quota, read by Providers and Usage ---------- */
+const PNAME={zai:'Z.ai GLM',kimi:'Kimi',deepseek:'DeepSeek',minimax:'MiniMax',qwen:'Qwen'};
+const resetAt=t=>new Date(t).toDateString()===new Date(NOW).toDateString()?clock(t).slice(0,5):when(t);
+const provConsole=id=>{const p=SNAP.providers&&typeof SNAP.providers==='object'?SNAP.providers[id]:null;return p&&typeof p.console_url==='string'?p.console_url:null};
+const provQuota=id=>{const p=SNAP.providers&&typeof SNAP.providers==='object'?SNAP.providers[id]:null;return p&&p.quota&&typeof p.quota==='object'?p.quota:null};
+/* a window is used up while its reset is still ahead; a balance at zero is used up */
+function quotaState(q){
+ if(!q)return {out:false,reset:null};
+ const full=arr(q.windows).filter(w=>num(w.used_pct)!=null&&w.used_pct>=100&&(num(w.resets_ms)==null||w.resets_ms>NOW));
+ const dry=!!q.balance&&num(q.balance.amount)!=null&&q.balance.amount<=0;
+ const ts=full.map(w=>num(w.resets_ms)).filter(t=>t!=null);
+ return {out:full.length>0||dry,reset:ts.length?Math.min(...ts):null}}
+const quotaLine=w=>num(w.used_pct)==null?`<div class="qw"><span>${esc(w.name)}</span> <span class="faint">${esc(w.note||'not reported')}</span></div>`
+ :`<div class="qw"><span>${esc(w.name)}</span> <b class="${w.used_pct>=90?'badc':w.used_pct>=80?'warnc':''}">${Math.round(w.used_pct)}%</b>${num(w.resets_ms)!=null?` <span class="faint">resets ${resetAt(w.resets_ms)}</span>`:''}</div>`;
+function quotaBody(x,q){
+ if(q.kind==='none')return x.console?`<a class="lnk" href="${esc(x.console)}" target="_blank" rel="noopener">Open its console</a>`:'<span class="faint">no quota API</span>';
+ const un=q.unverified?' <span class="faint">(unverified)</span>':'';
+ if(q.error&&!arr(q.windows).length&&!q.balance)return `<span class="faint">${esc(q.error)}</span>`;
+ if(q.kind==='balance'&&q.balance)return `<span class="mono">${num(q.balance.amount)==null?'—':q.balance.amount.toFixed(2)} ${esc(q.balance.currency||'')}</span>${un}`;
+ if(arr(q.windows).length)return arr(q.windows).map(quotaLine).join('')+un;
+ return '<span class="faint">quota unknown</span>'}
+/* the provider a model belongs to: the live row's lane, else the lane whose model pattern claims it */
+const laneName=id=>id==='anthropic'?'Claude':(LANES.find(l=>l.id===id)||{}).name||PNAME[id]||(id==='other'?'Other':id);
+function laneOfModel(id){const m=MODELS.find(x=>x.id===id);if(m&&m.lane)return m.lane;
+ const l=LANES.find(l=>typeof l.match==='string'&&(l.match.endsWith('*')?id.startsWith(l.match.slice(0,-1)):l.match===id));
+ return l?l.id:id.startsWith('claude-')?'anthropic':'other'}

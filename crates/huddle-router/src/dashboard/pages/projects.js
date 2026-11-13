@@ -1,7 +1,3 @@
-function matrix(){const ps=projects().filter(p=>p.reqs.length),cells={};let max=1;ps.forEach(p=>{cells[p.name]={};p.reqs.forEach(r=>{cells[p.name][r.m]=(cells[p.name][r.m]||0)+tokIn(r)+n0(r.out)});Object.values(cells[p.name]).forEach(v=>{max=Math.max(max,v)})});
- if(!ps.length)return `<div class="allclear">${ic('info')} No requests matched to a project yet</div>`;
- return `<div class="tbl"><table class="matrix"><thead><tr><th>Project</th>${MN.map(m=>`<th class="num">${sw(m)} <span class="mono">${esc(m)}</span></th>`).join('')}<th class="num">Total</th></tr></thead><tbody>${ps.map(p=>`<tr><td><b class="fw5">${esc(p.name)}</b></td>${MN.map(m=>{const v=cells[p.name][m]||0;return `<td class="cellv" data-css="background:${v?`color-mix(in srgb,var(--accent) ${Math.round(6+v/max*44)}%,transparent)`:'transparent'}">${v?fmt(v):'<span class="faint">·</span>'}</td>`}).join('')}<td class="cellv"><b>${fmt(sum(Object.values(cells[p.name])))}</b></td></tr>`).join('')}</tbody></table></div>`}
-
 PAGES.projects={title:'Projects',body:()=>head('Projects','Grouped by repository: sessions, worktrees and delegated jobs together.',search('proj','Filter by project or path'))+
  `<div class="card t">${reg('proj',()=>table('proj',[
   {k:'name',label:'Project',v:p=>p.name,h:p=>`<div class="ct">${esc(p.name)}</div><div class="cs">${esc(tilde(p.path))}</div>`},

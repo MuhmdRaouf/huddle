@@ -167,6 +167,10 @@ It shows:
   search over the history.
 - Models and Usage, with the Claude plan windows when Anthropic's replies carry
   them.
+- Sessions, Agents, Requests and Errors, with search over the history.
+- Models: provider, error rate, first-token time, token split, cache hit, API
+  price and price per 1M tokens. Usage: every provider's plan or balance, cost per
+  day by provider, what the cache saved, and a projects by models matrix.
 - Providers: one table with each provider's live status (Working, Out of quota,
   Failing, Needs a fix, Not set up), plan windows or balance with the reset,
   requests, errors by cause, first-token time, tokens, API price, models,

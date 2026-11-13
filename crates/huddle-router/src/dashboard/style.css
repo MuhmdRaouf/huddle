@@ -356,7 +356,7 @@ td.empty{text-align:center;color:var(--faint);padding:28px 14px}
   .crumbs .c0,.crumbs .c0+svg{display:none}
   .g3{grid-template-columns:minmax(0,1fr)}
 }
-@media (max-width:760px){.kpis,.kpis.k6,.kpis.k5,.kpis.k3{grid-template-columns:repeat(2,minmax(0,1fr))}.kpis.k3 .kpi:last-child{grid-column:1/-1}.mtabs{grid-template-columns:repeat(2,minmax(0,1fr))}.mtab:nth-child(3){border-left:0}.mtab:nth-child(n+3){border-top:1px solid var(--line-soft)}}
+@media (max-width:760px){.kpis,.kpis.k6,.kpis.k5,.kpis.k3{grid-template-columns:repeat(2,minmax(0,1fr))}.kpis.k3 .kpi:last-child,.kpis.k5 .kpi:last-child{grid-column:1/-1}.mtabs{grid-template-columns:repeat(2,minmax(0,1fr))}.mtab:nth-child(3){border-left:0}.mtab:nth-child(n+3){border-top:1px solid var(--line-soft)}}
 @media (max-width:600px){
   .cmd{white-space:normal;overflow-wrap:normal;max-width:100%}
   .stl{display:none}.stword{display:inline}
@@ -380,6 +380,7 @@ td.empty{text-align:center;color:var(--faint);padding:28px 14px}
   table.fold td:first-child{padding-top:0}
   table.fold td[data-label]::before{content:attr(data-label) ": ";color:var(--muted);font-size:12px;font-family:var(--sans)}
   table.fold td:first-child::before{content:none}
+  table.fold.matrix td.cellv{text-align:left}
   table.fold td.empty{text-align:center}
   table.fold td.empty::before{content:none}
 }
@@ -394,3 +395,8 @@ td.empty{text-align:center;color:var(--faint);padding:28px 14px}
 a.lnk{color:var(--accent);text-decoration:underline;text-underline-offset:2px;white-space:nowrap}
 .cs.cw{white-space:normal;max-width:170px}
 div.stw{max-width:200px;white-space:normal}.stw .cmd{display:flex;width:max-content;max-width:100%;white-space:normal;overflow-wrap:anywhere;margin-top:4px}.stw .pill{margin-bottom:2px}
+.daychart{display:flex;align-items:flex-end;gap:2px;height:180px;border-bottom:1px solid var(--line)}
+.daycol{flex:1 1 0;min-width:0;max-width:56px;height:100%;display:flex;align-items:flex-end}
+.daystack{width:100%;display:flex;flex-direction:column-reverse;border-radius:2px 2px 0 0;overflow:hidden;min-height:1px}
+.daystack i{display:block;min-height:1px}
+.dayax{display:flex;justify-content:space-between;gap:12px;font-size:12px;color:var(--muted);padding:6px 0 12px}
