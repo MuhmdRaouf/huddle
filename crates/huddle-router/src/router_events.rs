@@ -37,6 +37,16 @@ pub struct PathRecovery {
     pub failed: u32,
 }
 
+/// Upstream failures since the router started, by the step they stopped in. `answer` holds the
+/// send, headers and body steps: the connection opened and Anthropic did not answer.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize)]
+pub struct PhaseCounts {
+    pub dns: u32,
+    pub connect: u32,
+    pub tls: u32,
+    pub answer: u32,
+}
+
 /// `router.path` in the snapshot.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct PathView {
@@ -45,6 +55,7 @@ pub struct PathView {
     #[serde(flatten)]
     pub failing: Option<PathFailing>,
     pub last_recovery: Option<PathRecovery>,
+    pub by_phase: PhaseCounts,
 }
 
 #[derive(Default)]
@@ -52,6 +63,7 @@ struct Inner {
     rows: VecDeque<EventRow>,
     failing: Option<PathFailing>,
     recovery: Option<PathRecovery>,
+    phases: PhaseCounts,
 }
 
 /// The ring of recent events and the path state. One mutex, held only inside a call.
@@ -73,6 +85,19 @@ impl RouterEvents {
             kind: kind_of(text),
             text: text.to_owned(),
         });
+    }
+
+    /// Counts one upstream failure that stopped in `phase` (a `Phase::as_str` name).
+    pub fn failed_at(&self, phase: &str) {
+        let mut inner = self.lock();
+        let counts = &mut inner.phases;
+        let slot = match phase {
+            "dns" => &mut counts.dns,
+            "connect" => &mut counts.connect,
+            "tls" => &mut counts.tls,
+            _ => &mut counts.answer,
+        };
+        *slot = slot.saturating_add(1);
     }
 
     /// The path fails; called again with the new count for each further failure.
@@ -98,6 +123,7 @@ impl RouterEvents {
             },
             failing: inner.failing.clone(),
             last_recovery: inner.recovery,
+            by_phase: inner.phases,
         };
         (inner.rows.iter().cloned().collect(), path)
     }
@@ -149,6 +175,21 @@ mod tests {
             [
                 "start", "handover", "handover", "probe", "exit", "event", "output"
             ]
+        );
+    }
+
+    #[test]
+    fn d13_failures_count_by_phase() {
+        let events = RouterEvents::default();
+        for phase in [
+            "dns", "connect", "connect", "tls", "send", "headers", "body",
+        ] {
+            events.failed_at(phase);
+        }
+        let counts = events.view().1.by_phase;
+        assert_eq!(
+            (counts.dns, counts.connect, counts.tls, counts.answer),
+            (1, 2, 1, 3)
         );
     }
 

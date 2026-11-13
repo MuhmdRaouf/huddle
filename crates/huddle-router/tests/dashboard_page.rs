@@ -1572,3 +1572,83 @@ fn d12_finished_jobs_stay_visible() {
         );
     }
 }
+
+#[test]
+fn d13_harness_failures_say_why() {
+    let state = fixture();
+    let rows = state["harnesses"]["rows"].as_array().expect("rows");
+    let failing = rows
+        .iter()
+        .find(|row| row["status"] == "fail")
+        .expect("a failing row");
+    assert!(
+        failing["why"].as_str().is_some_and(|why| !why.is_empty()),
+        "a failing harness carries the first line of its error"
+    );
+    assert!(
+        state["harnesses"]["checked_ms"].is_u64(),
+        "last checked time"
+    );
+    let start = PAGE.find("PAGES.harnesses=").expect("harnesses page");
+    let body = &PAGE[start..PAGE.len().min(start + 4000)];
+    assert!(body.contains("h.why"), "the row shows why it fails");
+    assert!(
+        body.contains("checked_ms") || body.contains("HARN.checked"),
+        "{body}"
+    );
+    assert!(
+        body.contains("Last checked"),
+        "the page names the last check time"
+    );
+    assert!(!body.contains("sm:1"), "no column hides at 1440 px");
+}
+
+#[test]
+fn d13_router_shows_rate_overhead_and_phases() {
+    let state = fixture();
+    let phases = &state["router"]["path"]["by_phase"];
+    for phase in ["dns", "connect", "tls", "answer"] {
+        assert!(phases[phase].is_u64(), "by_phase.{phase}");
+    }
+    let start = PAGE.find("const rateNow=").expect("router page");
+    let body = &PAGE[start..PAGE.len().min(start + 9000)];
+    assert!(body.contains("/s"), "requests per second");
+    assert!(body.contains("PS"), "reads per_second");
+    assert!(body.contains("rt"), "reads router_ms");
+    assert!(body.contains("p95"), "overhead p95");
+    assert!(
+        body.contains("by_phase") || body.contains("RT.phases"),
+        "phases"
+    );
+    for label in ["DNS", "Connect", "TLS", "Answer"] {
+        assert!(body.contains(label), "phase label {label}");
+    }
+    assert!(body.contains("RT.sup"), "supervision shown");
+    assert!(
+        body.contains("dashboard's own"),
+        "note on the dashboard's cost"
+    );
+    assert!(!body.contains("idle cost near zero"));
+}
+
+#[test]
+fn d13_polling_pauses_on_a_hidden_tab() {
+    let start = PAGE.find("function getState").expect("getState");
+    let body = &PAGE[start..PAGE.len().min(start + 400)];
+    assert!(
+        body.contains("visibilityState"),
+        "the poll skips a hidden tab"
+    );
+    assert!(
+        PAGE.contains("addEventListener('visibilitychange'"),
+        "a tab that turns visible refreshes at once"
+    );
+    let tick = PAGE
+        .find("setInterval(()=>update(SNAP),2000)")
+        .map(|at| &PAGE[at.saturating_sub(60)..at + 60])
+        .unwrap_or("");
+    assert!(
+        tick.contains("visibilityState") || !PAGE.contains("setInterval(()=>update(SNAP),2000)"),
+        "the repaint tick pauses on a hidden tab: {tick}"
+    );
+}

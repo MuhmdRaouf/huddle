@@ -26,11 +26,15 @@ pub struct HarnessRow {
     pub flags: &'static str,
     pub report: String,
     pub access: Vec<String>,
+    /// The first line of the error that stops a harness from starting; empty otherwise.
+    pub why: String,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize)]
 pub struct HarnessesReport {
     pub state: Phase,
+    /// When the table was last checked, in ms since the epoch.
+    pub checked_ms: u64,
     pub rows: Vec<HarnessRow>,
 }
 
@@ -53,6 +57,17 @@ pub fn row(report: &Report) -> HarnessRow {
     } else {
         Status::Fail
     };
+    let why = if status == Status::Fail {
+        report
+            .checks
+            .iter()
+            .find(|line| !line.ok)
+            .and_then(|line| line.detail.lines().next())
+            .unwrap_or_default()
+            .to_owned()
+    } else {
+        String::new()
+    };
     HarnessRow {
         id: report.id.clone(),
         name: report.label.clone(),
@@ -66,6 +81,7 @@ pub fn row(report: &Report) -> HarnessRow {
         },
         report: report.report_kind.clone(),
         access: report.access.clone(),
+        why,
     }
 }
 
@@ -77,6 +93,7 @@ pub fn read(env: &Env, paths: &Paths) -> HarnessesReport {
         all_entries(&paths.config_dir.join("harnesses.toml")).unwrap_or_else(|_| builtin());
     HarnessesReport {
         state: Phase::Ready,
+        checked_ms: huddle_jobs::id::now_ms(),
         rows: check_all(&entries, env).iter().map(row).collect(),
     }
 }
@@ -127,6 +144,7 @@ mod tests {
                 flags: "checked",
                 report: "extracted".into(),
                 access: vec!["readonly".into(), "write".into()],
+                why: String::new(),
             }
         );
     }
@@ -146,6 +164,24 @@ mod tests {
         assert_eq!(failing.status, Status::Fail);
         assert_eq!(failing.bin, "/usr/bin/codex");
         assert_eq!(failing.version, "");
+    }
+
+    #[test]
+    fn d13_harness_failures_say_why() {
+        let failing = row(&report(
+            line("binary", true, "/usr/bin/codex"),
+            line(
+                "version",
+                false,
+                "command failed: codex --version\nsecond line",
+            ),
+        ));
+        assert_eq!(failing.why, "command failed: codex --version");
+        let ready = row(&report(
+            line("binary", true, "/usr/bin/codex"),
+            line("version", true, "codex 1"),
+        ));
+        assert_eq!(ready.why, "");
     }
 
     #[test]

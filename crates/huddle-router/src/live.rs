@@ -359,6 +359,12 @@ impl LiveState {
         self.bump();
     }
 
+    /// One upstream attempt failed in `phase`.
+    pub fn upstream_failed(&self, phase: &str) {
+        self.events.failed_at(phase);
+        self.bump();
+    }
+
     /// The Anthropic path fails, or fails further.
     pub fn path_failing(&self, failing: PathFailing) {
         self.events.fail(failing);

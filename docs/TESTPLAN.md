@@ -113,6 +113,11 @@ the owner's `~/.claude`, `~/.agents` or the network.
 | Models show the API price, "no price" and price per 1M tokens | crates/huddle-router/tests/dashboard_page.rs:d11_models_show_api_price_and_unpriced |
 | Usage lists every provider's plan or balance | crates/huddle-router/tests/dashboard_page.rs:d11_usage_shows_every_providers_plan |
 | Usage charts cost per day stacked by provider, with cache savings | crates/huddle-router/tests/dashboard_page.rs:d11_cost_per_day_by_provider |
+| A failing harness shows the first line of its error and the table's last check time | crates/huddle-router/tests/dashboard_page.rs:d13_harness_failures_say_why |
+| Router shows requests per second, overhead p50/p95, failures by phase and supervision | crates/huddle-router/tests/dashboard_page.rs:d13_router_shows_rate_overhead_and_phases |
+| Polling and repaint pause on a hidden tab | crates/huddle-router/tests/dashboard_page.rs:d13_polling_pauses_on_a_hidden_tab |
+| Harness rows carry the failure reason | crates/huddle-daemon/src/checks/harnesses.rs:d13_harness_failures_say_why |
+| Upstream failures count by phase | crates/huddle-router/src/router_events.rs:d13_failures_count_by_phase |
 | The projects by models matrix follows the range | crates/huddle-router/tests/dashboard_page.rs:d11_matrix_follows_the_range |
 | History totals flag unpriced models and price cache savings | crates/huddle-router/tests/history_endpoint.rs:d11_totals_flag_unpriced_models_and_price_cache_savings |
 | A provider row carries its console link | crates/huddle-router/src/live.rs:d8_a_provider_without_a_quota_api_carries_its_console_link |

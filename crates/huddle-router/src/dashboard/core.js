@@ -144,11 +144,11 @@ function build(s){
  const pg=SNAP.plugins&&typeof SNAP.plugins==='object'?SNAP.plugins:{};
  PL={state:pg.state==='ready'?'ready':'checking',rows:arr(pg.rows),checks:arr(pg.checks)};
  const hs=SNAP.harnesses&&typeof SNAP.harnesses==='object'?SNAP.harnesses:{};
- HARN=arr(hs.rows).map(h=>({id:h.id||'',name:h.name||h.id||'',st:h.status||'missing',bin:h.bin||'',ver:h.version||'',flags:h.flags||'',report:h.report||'',access:arr(h.access),jobs:JOBS.filter(j=>j.h===h.id).length,ready:hs.state==='ready'}));
- HARN.state=hs.state==='ready'?'ready':'checking';
+ HARN=arr(hs.rows).map(h=>({id:h.id||'',name:h.name||h.id||'',st:h.status||'missing',bin:h.bin||'',ver:h.version||'',flags:h.flags||'',report:h.report||'',why:h.why||'',access:arr(h.access),jobs:JOBS.filter(j=>j.h===h.id).length,ready:hs.state==='ready'}));
+ HARN.state=hs.state==='ready'?'ready':'checking';HARN.checked=num(hs.checked_ms);
  WIRE=SNAP.wiring&&typeof SNAP.wiring==='object'?SNAP.wiring:{};
  const r=SNAP.router&&typeof SNAP.router==='object'?SNAP.router:{};
- RT={cpu:num(r.cpu_pct),rss:num(r.rss_bytes),viewers:num(r.viewers),conns:num(r.connections),events:arr(r.events),path:r.path&&typeof r.path==='object'?r.path:{}};
+ RT={cpu:num(r.cpu_pct),rss:num(r.rss_bytes),viewers:num(r.viewers),conns:num(r.connections),events:arr(r.events),path:r.path&&typeof r.path==='object'?r.path:{},sup:r.supervision&&typeof r.supervision==='object'?r.supervision:null,phases:r.path&&r.path.by_phase&&typeof r.path.by_phase==='object'?r.path.by_phase:{}};
 }
 const JOB_ENDED=['completed','failed','accepted','cancelled'],ACTIVE_STATES=['needs_you','working','background'];
 /* live jobs, plus finished ones that ended inside the global time range */
@@ -427,8 +427,9 @@ let first=true;
 function update(s){build(s);loadOvCost();if(first){first=false;render()}else paint()}
 function onSnapshot(s){const n=num(s&&s.now_ms);if(n!=null)OFFSET=n-Date.now();LOST=false;update(s)}
 let poll=null;
-function getState(){fetch('/huddle-router/state',{cache:'no-store'}).then(r=>r.json()).then(onSnapshot,()=>{LOST=true;update(SNAP)})}
+function getState(){if(document.visibilityState==='hidden')return;fetch('/huddle-router/state',{cache:'no-store'}).then(r=>r.json()).then(onSnapshot,()=>{LOST=true;update(SNAP)})}
 function startPoll(){if(poll===null){getState();poll=setInterval(getState,2000)}}
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&poll!==null)getState()});
 function stopPoll(){if(poll!==null){clearInterval(poll);poll=null}}
 
 /* ---------- provider plan and quota, read by Providers and Usage ---------- */

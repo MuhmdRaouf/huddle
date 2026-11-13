@@ -185,6 +185,12 @@ It shows:
   (finished jobs stay for the chosen range, with outcome and review state).
 - Harnesses and Router, with the last router events and a failing Anthropic path
   named on the Overview.
+- Projects, Worktrees and Jobs per repository.
+- Harnesses: ready first, with the error line of one that fails to start and the
+  last check time. Router: requests per second, router overhead p50 and p95,
+  upstream failures by phase, the parent and worker with restarts, the last events
+  and a failing Anthropic path named on the Overview. Pages stop polling while
+  their tab is hidden.
 
 The sidebar badges read as ratios, for example providers set up out of five.
 

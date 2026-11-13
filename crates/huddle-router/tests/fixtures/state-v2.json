@@ -37,7 +37,19 @@
     "at_ms": 1799992800000,
     "after_ms": 95000,
     "failed": 4
+   },
+   "by_phase": {
+    "dns": 0,
+    "connect": 7,
+    "tls": 0,
+    "answer": 1
    }
+  },
+  "supervision": {
+   "parent_pid": 48200,
+   "worker_pid": 48211,
+   "restarts": 1,
+   "last_restart": "signal 9"
   }
  },
  "wiring": {
@@ -1617,6 +1629,7 @@
  },
  "harnesses": {
   "state": "ready",
+  "checked_ms": 1799999958000,
   "rows": [
    {
     "id": "codex",
@@ -1636,7 +1649,8 @@
     "name": "Amp Code",
     "status": "fail",
     "bin": "/Users/raouf/.paradev/bin/amp",
-    "version": "command failed: amp --version",
+    "version": "",
+    "why": "command failed: amp --version",
     "flags": "unverified",
     "report": "free text",
     "access": [

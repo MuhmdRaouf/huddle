@@ -12,6 +12,7 @@ Provider setup holds across sessions, and the key check gets a real answer.
 
 ### Dashboard
 
+- The Harnesses page says why a harness fails to start (first line of its error) and when the table was last checked. The Router page shows requests per second, router overhead p50 and p95, upstream failures by phase (DNS, connect, TLS, answer), the parent and worker with restarts, and checks that follow the live lanes. The dashboard stops polling while its tab is hidden.
 - A project is a git repository: a session in any worktree belongs to its repository, new history rows carry the repository's name, and the project totals roll old folder names into their repository.
 - Token numbers split the same way live and in history (fresh input, cache read, cache write, output), cache hit matches between ranges, rates read per second, the Agents page counts each agent's requests and tokens, and each sidebar badge counts what its page lists.
 - The state carries each set-up provider's quota or balance: Claude's 5 hour and 7 day windows, Z.ai's plan windows with their resets, DeepSeek's and Kimi's balance, MiniMax's plan (unverified until a live check). The router asks only while a dashboard is open, at most every 5 minutes per provider, and an answer it cannot read shows as "quota unknown".

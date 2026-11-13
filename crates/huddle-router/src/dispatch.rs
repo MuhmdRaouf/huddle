@@ -841,6 +841,7 @@ fn failure_hook(
             let mut watch = lock(&watch);
             match outcome {
                 AnswerOutcome::Failed { code, trace } => {
+                    live.upstream_failed(trace.phase.as_str());
                     let line = raise(&mut watch, now, code, trace);
                     start_probe_on_raise(&mut watch, &line, &probe_target, timing, &log);
                     show_failing(&watch, &live, code, &trace);
@@ -848,6 +849,7 @@ fn failure_hook(
                 }
                 AnswerOutcome::Cut { code, .. } => {
                     let trace = Trace::body();
+                    live.upstream_failed(trace.phase.as_str());
                     let line = raise(&mut watch, now, code, trace);
                     start_probe_on_raise(&mut watch, &line, &probe_target, timing, &log);
                     show_failing(&watch, &live, code, &trace);

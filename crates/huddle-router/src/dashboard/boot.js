@@ -6,7 +6,7 @@ if(typeof EventSource==='function'){
 
 let saved='system';try{saved=localStorage.getItem('huddle-admin-theme')||'system'}catch(e){}
 setTheme(saved);update({});
-setInterval(()=>update(SNAP),2000);
+setInterval(()=>{if(document.visibilityState==='visible')update(SNAP)},2000);
 setInterval(()=>{if(document.visibilityState==='visible')loadHistory()},60000);
 setInterval(()=>{if(document.visibilityState==='visible')loadTotals()},60000);
 renderRangeBar();loadMeta();
