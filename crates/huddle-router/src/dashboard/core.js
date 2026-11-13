@@ -335,7 +335,7 @@ const NAV=[
 const bdg=(txt,title,cls)=>`<span class="badge${cls?' '+cls:''}" title="${title}">${txt}</span>`;
 function badge(k){switch(k){
  case 'needs-you':{const n=needsCount();return n?bdg(n,'things that need you','bad'):''}
- case 'sessions':return bdg(SESS.length,'sessions in the last 24 hours');
+ case 'sessions':return bdg(sessShown().length,'sessions in '+rangeText());
  case 'agents':return bdg(AGENTS.length,'main agents and subagents','acc');
  case 'requests':return bdg(rate(sum(PS.slice(-10))/10)+'/s','requests per second, last 10 seconds');
  case 'errors':{const e=stats().done.filter(r=>r.status!==200).length;return e?bdg(e,'failed and cancelled requests in the last 15 minutes','bad'):''}

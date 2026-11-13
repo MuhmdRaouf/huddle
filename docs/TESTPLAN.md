@@ -126,6 +126,7 @@ the owner's `~/.claude`, `~/.agents` or the network.
 | The Sessions table has at most nine columns and phones keep state, session, model and context | crates/huddle-router/tests/dashboard_page.rs:d9_no_column_clips_at_1440 |
 | Agents lists subagents and background tasks, and a quiet row reads Idle | crates/huddle-router/tests/dashboard_page.rs:d9_agents_list_subagents_and_background |
 | The session drawer retries history and shows request reasons | crates/huddle-router/tests/dashboard_page.rs:d9_session_drawer_retries_history_and_shows_reasons |
+| The Sessions list follows the range: a request in it or a live state (needs you, working, background) keeps a session listed, and the heading count and the sidebar badge count what the list shows | crates/huddle-router/tests/dashboard_page.rs:t2_sessions_list_follows_the_range |
 | Failed requests show their reason, provider, upstream id and price | crates/huddle-router/tests/dashboard_page.rs:d10_failures_show_their_reason |
 | Errors group by provider and reason with the fix and a rate chart | crates/huddle-router/tests/dashboard_page.rs:d10_errors_group_by_provider_and_reason |
 | The live request list pauses while the page is scrolled | crates/huddle-router/tests/dashboard_page.rs:d10_live_tail_pauses_while_scrolled |

@@ -828,7 +828,7 @@ fn d6_each_badge_counts_its_page() {
         PAGE.contains("title=\"${title}\""),
         "the helper writes the title"
     );
-    assert!(badge_line("sessions").contains("SESS.length"));
+    assert!(badge_line("sessions").contains("sessShown().length"));
     assert!(badge_line("agents").contains("AGENTS.length"));
     assert!(!badge_line("agents").contains("type!=='main'"));
     assert!(badge_line("jobs").contains("JOBS.length"));
@@ -1058,6 +1058,59 @@ fn d9_sessions_group_by_repo() {
     for s in fixture()["sessions"].as_array().expect("sessions") {
         assert!(s["repo"].is_string(), "every fixture session has a repo");
     }
+}
+
+#[test]
+fn t2_sessions_list_follows_the_range() {
+    assert!(
+        SESSIONS_JS.contains("const sessShown="),
+        "one helper decides which sessions the range lists"
+    );
+    assert!(
+        SESSIONS_JS.contains("ACTIVE_STATES.includes(skey(s))"),
+        "a live session (needs you, working, background) stays listed"
+    );
+    assert!(
+        SESSIONS_JS.contains("hOf(HT.ses,s.id).n>0"),
+        "a session with a request inside the range stays listed"
+    );
+    assert!(
+        SESSIONS_JS.contains("!HT.ses||HT.err?SESS:"),
+        "before the totals load, or when they fail, every session is listed"
+    );
+    assert!(
+        SESSIONS_JS.contains("k==='all'?sessShown().length"),
+        "the All chip counts the shown sessions"
+    );
+    assert!(
+        SESSIONS_JS.contains("sessShown().filter(s=>skey(s)===k)"),
+        "each state chip counts the shown sessions"
+    );
+    assert!(
+        SESSIONS_JS.contains("const rows=sessShown().filter"),
+        "the table lists the shown sessions"
+    );
+    assert!(
+        !SESSIONS_JS.contains("const rows=SESS.filter"),
+        "the table does not list every session"
+    );
+    let badge = badge_line("sessions");
+    assert!(
+        badge.contains("sessShown().length"),
+        "the sidebar badge counts what the list shows"
+    );
+    assert!(
+        badge.contains("rangeText()"),
+        "the badge names the selected range"
+    );
+    assert!(
+        !badge.contains("last 24 hours"),
+        "the badge does not hard-code 24 hours"
+    );
+    assert!(
+        SESSIONS_JS.contains("empty:'No sessions match'"),
+        "an empty range shows the page's empty state"
+    );
 }
 
 #[test]

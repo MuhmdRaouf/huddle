@@ -25,6 +25,10 @@ F.sessgrp='flat';
 const sessTable=rows=>table('sess',SESS_TBL_COLS,rows,{row:s=>'session:'+s.id,sort:{k:'state',d:1},stack:1,empty:'No sessions match'});
 function sessByRepo(rows){if(!rows.length)return sessTable(rows);const g={};rows.forEach(s=>{const k=s.repo||s.cwd||s.project;(g[k]=g[k]||[]).push(s)});
  return Object.entries(g).sort((a,b)=>Math.max(...b[1].map(lastT))-Math.max(...a[1].map(lastT))).map(([k,ss])=>`<div class="rgrp"><div class="rgh"><b>${esc(ss[0].project||String(k).split('/').pop())}</b><span class="mono faint">${esc(tilde(k))}</span><span class="n">${ss.length}</span></div>${sessTable(ss)}</div>`).join('')}
-PAGES.sessions={title:'Sessions',body:()=>{const c=k=>k==='all'?SESS.length:SESS.filter(s=>skey(s)===k).length;
+/* the list follows the global range: a session stays listed while it is live (needs you, working,
+ background) or has a request inside the range; before the totals load, or when they fail, every
+ session is listed */
+const sessShown=()=>!HT.ses||HT.err?SESS:SESS.filter(s=>ACTIVE_STATES.includes(skey(s))||hOf(HT.ses,s.id).n>0);
+PAGES.sessions={title:'Sessions',body:()=>{const c=k=>k==='all'?sessShown().length:sessShown().filter(s=>skey(s)===k).length;
  return head('Sessions',`Claude Code sessions, with the requests, tokens and API price of ${rangeText()}. Paths, branches, titles and subagents come from Claude Code\'s own session logs, read only while this page is open.`,reg('sess-f',()=>seg('sess',[['all','All',c('all')]].concat(SESS_STATES.map(([k,l])=>[k,l,c(k)])),F.sess)+seg('sessgrp',[['flat','List'],['repo','Group by repo']],F.sessgrp))+search('sess','Filter by title, repo or branch'))+
- `<div class="card t">${reg('sess',()=>{const rows=SESS.filter(s=>(F.sess==='all'||skey(s)===F.sess)&&qmatch('sess',s.name+' '+s.project+' '+s.branch+' '+s.id+' '+s.repo));return F.sessgrp==='repo'?sessByRepo(rows):sessTable(rows)})}</div>`}};
+ `<div class="card t">${reg('sess',()=>{const rows=sessShown().filter(s=>(F.sess==='all'||skey(s)===F.sess)&&qmatch('sess',s.name+' '+s.project+' '+s.branch+' '+s.id+' '+s.repo));return F.sessgrp==='repo'?sessByRepo(rows):sessTable(rows)})}</div>`}};

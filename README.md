@@ -185,7 +185,8 @@ history, and the choice is remembered.
 It shows:
 - Overview: eight stat cards in a full grid (sessions, requests/s, tokens/s, cost at API price, first token, errors by provider, plan quota), the top five things that need you, traffic stacked by provider, providers and the working sessions.
 - Needs you: every question, out-of-quota or failing provider, router fault, job to review, failing setup check and full context, grouped by kind. A session that only ended its turn is not on it.
-- Sessions (six states, a chip for each, grouped by repository on request), Agents
+- Sessions (the sessions the chosen range lists: a request in it, or a live one;
+  six states, a chip for each, grouped by repository on request), Agents
   (main agents, subagents and open background tasks), Requests and Errors, with
   search over the history.
 - Sessions and Agents, with search over the history.
