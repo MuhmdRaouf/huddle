@@ -1901,3 +1901,146 @@ fn k3_sessions_page_asks_slim_and_sheet_asks_full() {
     assert!(PAGE.contains("totals&by=session&models=0&'+rangeQuery()"));
     assert!(PAGE.contains("totals&by=session&session='+encodeURIComponent(q.id)+'&'+rangeQuery()"));
 }
+
+/// The page's zone helpers: the script between the `tz:start` and `tz:end` markers.
+fn zone_block() -> String {
+    PAGE.split("/* tz:start */")
+        .nth(1)
+        .and_then(|s| s.split("/* tz:end */").next())
+        .expect("the zone helpers sit between tz:start and tz:end")
+        .to_string()
+}
+
+/// Runs the zone helpers in node, in the machine zone UTC+2 (no daylight saving), with the given
+/// storage stubs. `None` when node is not installed.
+fn run_zone_script(body: &str) -> Option<Value> {
+    use std::io::Write;
+    use std::process::{Command, Stdio};
+    let block = serde_json::to_string(&zone_block()).expect("block");
+    let script = format!(
+        "const BLOCK={block};\n\
+         const num=v=>typeof v==='number'&&isFinite(v)?v:null;\n\
+         const make=ls=>new Function('localStorage','num',BLOCK+';return {{TZ,tzSet,tzOff,tzLabel,tzQuery,clock,when,dayText,dtText,shortDay,startOfDay,zmake}}')(ls,num);\n\
+         const store=v=>({{getItem:()=>v,setItem:(k,x)=>{{store.saved=[k,x]}}}});\n\
+         {body}"
+    );
+    let mut child = Command::new("node")
+        .arg("-")
+        .env("TZ", "Etc/GMT-2")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .ok()?;
+    child
+        .stdin
+        .take()?
+        .write_all(script.as_bytes())
+        .expect("write script");
+    let out = child.wait_with_output().expect("node");
+    assert!(
+        out.status.success(),
+        "node failed: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    Some(serde_json::from_slice(&out.stdout).expect("json out"))
+}
+
+#[test]
+fn k1_page_formats_times_by_the_switch() {
+    let Some(v) = run_zone_script(
+        "const t=Date.UTC(2026,10,14,23,30,15);\n\
+         const f=z=>({clock:z.clock(t),when:z.when(t),day:z.dayText(t),dt:z.dtText(t),short:z.shortDay(t),\
+           label:z.tzLabel(),query:z.tzQuery(),dayStart:z.startOfDay(t),made:z.zmake(2026,10,15,0,0),dash:z.clock(null)});\n\
+         console.log(JSON.stringify({local:f(make(store('local'))),utc:f(make(store('utc')))}));",
+    ) else {
+        eprintln!("node is not installed: the zone script was not run");
+        return;
+    };
+    let day14 = 1_794_614_400_000u64; // 2026-11-14T00:00:00Z
+    let local = &v["local"];
+    assert_eq!(local["clock"], "01:30:15");
+    assert_eq!(local["when"], "15 Nov 01:30");
+    assert_eq!(local["day"], "15 Nov 2026");
+    assert_eq!(local["dt"], "15 Nov 2026, 01:30");
+    assert_eq!(local["short"], "Nov 15");
+    assert_eq!(local["label"], "Local (UTC+2)");
+    assert_eq!(local["query"], "tz_offset_min=120");
+    assert_eq!(local["dayStart"], day14 + 86_400_000 - 2 * 3_600_000);
+    assert_eq!(local["made"], local["dayStart"]);
+    assert_eq!(local["dash"], "—");
+    let utc = &v["utc"];
+    assert_eq!(utc["clock"], "23:30:15");
+    assert_eq!(utc["when"], "14 Nov 23:30");
+    assert_eq!(utc["day"], "14 Nov 2026");
+    assert_eq!(utc["short"], "Nov 14");
+    assert_eq!(utc["label"], "UTC");
+    assert_eq!(utc["query"], "tz_offset_min=0");
+    assert_eq!(utc["dayStart"], day14);
+}
+
+#[test]
+fn k1_switch_reaches_every_view_and_refetches() {
+    let query = PAGE
+        .split("function rangeQuery(){")
+        .nth(1)
+        .and_then(|s| s.split('}').next())
+        .expect("rangeQuery");
+    assert!(
+        query.contains("tzQuery()"),
+        "every history fetch carries the offset"
+    );
+    let set = PAGE
+        .split("function setTz(")
+        .nth(1)
+        .and_then(|s| s.split("\nfunction ").next())
+        .expect("setTz");
+    assert!(
+        set.contains("tzSet(") && set.contains("applyRange()") && set.contains("renderTzBar()"),
+        "switching saves, re-renders the open page and re-fetches: {set}"
+    );
+    assert!(
+        PAGE.contains("id=\"tzbar\""),
+        "the control sits in the header"
+    );
+    assert!(
+        PAGE.contains("MENUS.tz="),
+        "the control is the page's own menu"
+    );
+    for native in [
+        "toLocaleDateString",
+        "toTimeString",
+        "toDateString",
+        "getHours(",
+        "getDate(",
+    ] {
+        assert!(
+            !PAGE.contains(native),
+            "{native} reads the machine zone, not the switch"
+        );
+    }
+}
+
+#[test]
+fn k1_switch_is_remembered() {
+    let Some(v) = run_zone_script(
+        "const a=make(store('utc'));\n\
+         const b=make(store('local'));\n\
+         const c=make(store(null));\n\
+         const bad=make({getItem:()=>{throw new Error('blocked')},setItem:()=>{throw new Error('blocked')}});\n\
+         bad.tzSet(true);\n\
+         const d=make(store('local'));d.tzSet(true);\n\
+         console.log(JSON.stringify({stored_utc:a.TZ.utc,stored_local:b.TZ.utc,empty:c.TZ.utc,blocked:bad.TZ.utc,saved:store.saved}));",
+    ) else {
+        eprintln!("node is not installed: the zone script was not run");
+        return;
+    };
+    assert_eq!(v["stored_utc"], true);
+    assert_eq!(v["stored_local"], false);
+    assert_eq!(v["empty"], false);
+    assert_eq!(
+        v["blocked"], true,
+        "the choice holds for this page even when storage throws"
+    );
+    assert_eq!(v["saved"], serde_json::json!(["huddle-tz", "utc"]));
+}

@@ -105,13 +105,16 @@ impl Sums {
     }
 }
 
-/// Cuts `range` into up to `parts` consecutive slices whose inner boundaries are multiples of
-/// `align_ms`, so an aligned bucket never straddles two slices.
-fn cut(range: Range, align_ms: u64, parts: u64) -> Vec<Range> {
+/// Cuts `range` into up to `parts` consecutive slices whose inner boundaries sit on the grid of
+/// `align_ms` shifted by `offset_ms` (a zone east of UTC is positive), so a bucket aligned to
+/// that grid never straddles two slices.
+fn cut(range: Range, align_ms: u64, offset_ms: i64, parts: u64) -> Vec<Range> {
     let step = range.to_ms.saturating_sub(range.from_ms) / parts.max(1);
+    let align = align_ms as i64;
     let mut edges = vec![range.from_ms];
     for i in 1..parts {
-        let edge = (range.from_ms + i * step) / align_ms * align_ms;
+        let at = (range.from_ms + i * step) as i64 + offset_ms;
+        let edge = (at.div_euclid(align) * align - offset_ms).max(0) as u64;
         if edge > edges.last().copied().unwrap_or(0) && edge < range.to_ms {
             edges.push(edge);
         }
@@ -136,6 +139,17 @@ impl History {
         align_ms: u64,
         work: impl Fn(&History, Range) -> Result<T, HistoryError> + Sync,
     ) -> Result<Vec<T>, HistoryError> {
+        self.sliced_in(range, align_ms, 0, work)
+    }
+
+    /// `sliced`, with the slice edges on the grid of `align_ms` shifted by `offset_ms`.
+    pub(crate) fn sliced_in<T: Send>(
+        &self,
+        range: Range,
+        align_ms: u64,
+        offset_ms: i64,
+        work: impl Fn(&History, Range) -> Result<T, HistoryError> + Sync,
+    ) -> Result<Vec<T>, HistoryError> {
         let parts = thread::available_parallelism()
             .map(|n| n.get())
             .unwrap_or(1)
@@ -144,7 +158,7 @@ impl History {
         if !long || parts < 2 {
             return work(self, range).map(|one| vec![one]);
         }
-        let slices = cut(range, align_ms.max(1), parts);
+        let slices = cut(range, align_ms.max(1), offset_ms, parts);
         thread::scope(|scope| {
             let work = &work;
             let path = &self.path;

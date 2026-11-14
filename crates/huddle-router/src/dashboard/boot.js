@@ -9,5 +9,5 @@ setTheme(saved);update({});
 setInterval(()=>{if(document.visibilityState==='visible')update(SNAP)},2000);
 setInterval(()=>{if(document.visibilityState==='visible')loadHistory()},60000);
 setInterval(()=>{if(document.visibilityState==='visible')loadTotals()},60000);
-renderRangeBar();loadMeta();
+renderRangeBar();renderTzBar();loadMeta();
 loadHistory();

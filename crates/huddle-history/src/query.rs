@@ -36,21 +36,22 @@ pub enum GroupBy {
     Lane,
     /// Provider, status and failure reason, as `lane|status|reason` (an empty reason when none).
     Reason,
-    /// A UTC calendar day, `YYYY-MM-DD`.
+    /// A calendar day of the zone the query names (UTC by default), `YYYY-MM-DD`.
     Day,
 }
 
 impl GroupBy {
     /// The key expression; an unknown session, agent or project groups under the empty key.
-    /// A day is its number since the epoch; `totals` names it afterwards.
-    fn key_column(self) -> &'static str {
+    /// A day is its number since the epoch in the zone `offset_ms` east of UTC; `totals` names
+    /// it afterwards.
+    fn key_column(self, offset_ms: i64) -> String {
         match self {
-            GroupBy::Session => "COALESCE(session, '')",
-            GroupBy::Project => "COALESCE(project, '')",
-            GroupBy::Model => "model",
-            GroupBy::Lane => "lane",
-            GroupBy::Reason => "lane || '|' || status || '|' || COALESCE(reason, '')",
-            GroupBy::Day => "at_ms / 86400000",
+            GroupBy::Session => "COALESCE(session, '')".into(),
+            GroupBy::Project => "COALESCE(project, '')".into(),
+            GroupBy::Model => "model".into(),
+            GroupBy::Lane => "lane".into(),
+            GroupBy::Reason => "lane || '|' || status || '|' || COALESCE(reason, '')".into(),
+            GroupBy::Day => format!("(at_ms + ({offset_ms})) / 86400000"),
         }
     }
 }
@@ -170,6 +171,17 @@ pub(crate) fn opt_count(r: &SqlRow<'_>, i: usize) -> rusqlite::Result<Option<u64
     Ok(r.get::<_, Option<i64>>(i)?.map(from_db))
 }
 
+fn offset_ms(tz_offset_min: i32) -> i64 {
+    i64::from(tz_offset_min) * 60_000
+}
+
+/// The start of the `width_ms` bucket holding `at_ms`, on the grid shifted by `offset_ms`.
+fn bucket_start(at_ms: u64, width_ms: u64, offset_ms: i64) -> u64 {
+    let width = width_ms as i64;
+    let shifted = at_ms as i64 + offset_ms;
+    (shifted.div_euclid(width) * width - offset_ms).max(0) as u64
+}
+
 /// Nearest-rank percentile of an ascending slice; `pct` in 1..=100.
 fn nearest_rank(sorted: &[u64], pct: usize) -> Option<u64> {
     if sorted.is_empty() {
@@ -189,11 +201,25 @@ impl History {
         session: Option<&str>,
         project: Option<&str>,
     ) -> Result<Vec<Bucket>, HistoryError> {
+        self.buckets_in(range, width_ms, session, project, 0)
+    }
+
+    /// `buckets` on the grid of the zone `tz_offset_min` minutes east of UTC: a bucket starts
+    /// where `start_ms + offset` is a multiple of `width_ms`.
+    pub fn buckets_in(
+        &self,
+        range: Range,
+        width_ms: u64,
+        session: Option<&str>,
+        project: Option<&str>,
+        tz_offset_min: i32,
+    ) -> Result<Vec<Bucket>, HistoryError> {
         if width_ms == 0 {
             return Err(HistoryError::ZeroWidth);
         }
-        let parts = self.sliced(range, width_ms, |history, slice| {
-            history.buckets_part(slice, width_ms, session, project)
+        let offset_ms = offset_ms(tz_offset_min);
+        let parts = self.sliced_in(range, width_ms, offset_ms, |history, slice| {
+            history.buckets_part(slice, width_ms, offset_ms, session, project)
         })?;
         // The slices are disjoint and aligned to the width, so their buckets are already in order.
         Ok(parts.into_iter().flatten().collect())
@@ -203,6 +229,7 @@ impl History {
         &self,
         range: Range,
         width_ms: u64,
+        offset_ms: i64,
         session: Option<&str>,
         project: Option<&str>,
     ) -> Result<Vec<Bucket>, HistoryError> {
@@ -226,7 +253,7 @@ impl History {
         let mut rows = stmt.query(params_from_iter(&args))?;
         while let Some(r) = rows.next()? {
             let model = models.id(&text_at(r, 0)?);
-            let start = count(r, 1)? / width_ms * width_ms;
+            let start = bucket_start(count(r, 1)?, width_ms, offset_ms);
             let (sums, ttft) = cells.entry((start, model)).or_default();
             sums.add(r, 1)?;
             if let Some(ms) = opt_count(r, 7)? {
@@ -260,7 +287,21 @@ impl History {
     /// Each slice of the range adds its rows into a map in memory (a `GROUP BY` over a million
     /// rows spends most of its time in SQLite's temporary sorter); the slices then merge.
     pub fn totals(&self, range: Range, by: GroupBy) -> Result<Vec<Total>, HistoryError> {
-        let parts = self.sliced(range, 1, |history, slice| history.totals_part(slice, by))?;
+        self.totals_in(range, by, 0)
+    }
+
+    /// `totals`, with `GroupBy::Day` keyed by the days of the zone `tz_offset_min` minutes east
+    /// of UTC.
+    pub fn totals_in(
+        &self,
+        range: Range,
+        by: GroupBy,
+        tz_offset_min: i32,
+    ) -> Result<Vec<Total>, HistoryError> {
+        let offset_ms = offset_ms(tz_offset_min);
+        let parts = self.sliced_in(range, 1, 0, |history, slice| {
+            history.totals_part(slice, by, offset_ms)
+        })?;
         let mut merged: BTreeMap<String, BTreeMap<String, Sums>> = BTreeMap::new();
         let mut ttft: HashMap<String, Vec<u64>> = HashMap::new();
         for (sums, times) in parts {
@@ -318,12 +359,17 @@ impl History {
             .collect())
     }
 
-    fn totals_part(&self, range: Range, by: GroupBy) -> Result<TotalsPart, HistoryError> {
+    fn totals_part(
+        &self,
+        range: Range,
+        by: GroupBy,
+        offset_ms: i64,
+    ) -> Result<TotalsPart, HistoryError> {
         let mut stmt = self.conn.prepare(&format!(
             "SELECT {key}, model, at_ms, {IS_ERROR}, tokens_in, cache_read, cache_write, tokens_out,
                     ttft_ms
              FROM requests WHERE at_ms >= ?1 AND at_ms < ?2",
-            key = by.key_column()
+            key = by.key_column(offset_ms)
         ))?;
         let mut keys = Interner::default();
         let mut models = Interner::default();

@@ -27,8 +27,29 @@ let SNAP={},OFFSET=0,NOW=Date.now(),LOST=false;
 function ago(t){if(num(t)==null)return '—';const d=Math.max(0,NOW-t);if(d<4e3)return 'now';if(d<MIN)return Math.floor(d/1e3)+'s ago';if(d<HR)return Math.floor(d/MIN)+'m ago';if(d<DAY)return Math.floor(d/HR)+'h '+Math.floor(d%HR/MIN)+'m ago';return Math.floor(d/DAY)+'d ago'}
 function dur(d){if(num(d)==null)return '—';d=Math.max(0,d);if(d<MIN)return Math.floor(d/1e3)+'s';if(d<HR)return Math.floor(d/MIN)+'m '+String(Math.floor(d%MIN/1e3)).padStart(2,'0')+'s';if(d<DAY)return Math.floor(d/HR)+'h '+Math.floor(d%HR/MIN)+'m';return Math.floor(d/DAY)+'d '+Math.floor(d%DAY/HR)+'h'}
 const since=t=>num(t)==null?'—':dur(NOW-t);
-const clock=t=>num(t)==null?'—':new Date(t).toTimeString().slice(0,8);
+/* tz:start */
+/* every time on the page is read in the zone the header switch names (Local or UTC) */
+const MON=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'],p2=n=>String(n).padStart(2,'0');
+const TZ={utc:false};
+try{TZ.utc=localStorage.getItem('huddle-tz')==='utc'}catch(e){}
+function tzSet(utc){TZ.utc=utc;try{localStorage.setItem('huddle-tz',utc?'utc':'local')}catch(e){}}
+const tzOff=t=>TZ.utc?0:-new Date(t).getTimezoneOffset();
+const tzSign=m=>`UTC${m<0?'-':'+'}${Math.floor(Math.abs(m)/60)}${Math.abs(m)%60?':'+p2(Math.abs(m)%60):''}`;
+const tzLocal=()=>`Local (${tzSign(-new Date().getTimezoneOffset())})`;
+const tzLabel=()=>TZ.utc?'UTC':tzLocal();
+const tzQuery=()=>'tz_offset_min='+tzOff(Date.now());
+/* a Date moved by the zone's offset, read with the getUTC* accessors */
+const zd=t=>new Date(t+tzOff(t)*6e4);
+/* the instant of a wall-clock time in the zone */
+const zmake=(y,m,d,h,mi)=>{const w=Date.UTC(y,m,d,h||0,mi||0),g=w-tzOff(w)*6e4;return w-tzOff(g)*6e4};
+const clock=t=>{if(num(t)==null)return '—';const d=zd(t);return `${p2(d.getUTCHours())}:${p2(d.getUTCMinutes())}:${p2(d.getUTCSeconds())}`};
 const hm=t=>clock(t).slice(0,5);
+const when=t=>{const d=zd(t);return `${d.getUTCDate()} ${MON[d.getUTCMonth()]} ${p2(d.getUTCHours())}:${p2(d.getUTCMinutes())}`};
+const dayText=t=>{const d=zd(t);return `${d.getUTCDate()} ${MON[d.getUTCMonth()]} ${d.getUTCFullYear()}`};
+const dtText=t=>dayText(t)+', '+hm(t);
+const shortDay=t=>{const d=zd(t);return `${MON[d.getUTCMonth()]} ${d.getUTCDate()}`};
+const startOfDay=t=>{const d=zd(t);return zmake(d.getUTCFullYear(),d.getUTCMonth(),d.getUTCDate())};
+/* tz:end */
 const msf=v=>num(v)==null?'—':v>=1e4?(v/1e3).toFixed(1)+' s':Math.round(v)+' ms';
 const mb=b=>num(b)==null?'—':(b/1e6).toFixed(1)+' MB';
 
@@ -237,11 +258,9 @@ try{const r=localStorage.getItem('huddle-range');if(r==='custom'){const c=JSON.p
 const liveRange=()=>HIST.range==='15m';
 /* Only pages that read the router's live memory say a restart clears them; the rest read disk or settings. */
 const readsMemory=()=>({overview:liveRange(),models:liveRange(),usage:liveRange(),sessions:true,agents:true,requests:HS.mode==='live',errors:liveRange()})[page]===true;
-const MON=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'],p2=n=>String(n).padStart(2,'0');
-const when=t=>{const d=new Date(t);return `${d.getDate()} ${MON[d.getMonth()]} ${p2(d.getHours())}:${p2(d.getMinutes())}`};
 const rangeShort=()=>HIST.range==='custom'?'custom':RANGES.find(x=>x[0]===HIST.range)[1];
 const rangeText=()=>HIST.range==='custom'?when(HIST.from)+' to '+when(HIST.to):RANGES.find(x=>x[0]===HIST.range)[2];
-function rangeQuery(){return HIST.range==='custom'?'from='+HIST.from+'&to='+HIST.to:'range='+HIST.range}
+function rangeQuery(){return (HIST.range==='custom'?'from='+HIST.from+'&to='+HIST.to:'range='+HIST.range)+'&'+tzQuery()}
 const usd=v=>num(v)==null?'—':'$'+(v>0&&v<0.01?v.toFixed(4):v.toFixed(2));
 const noPrice='<span class="faint">no price</span>';
 const costText=(cost,priced)=>priced===false?noPrice:`<span class="mono">${usd(cost)}</span>`;
@@ -249,7 +268,7 @@ const SER0={b:[0,1].map(i=>Object.assign({byM:{},t:i,w:0},EMPTY)),mn:[],bw:3e4};
 const ser=()=>liveRange()?{b:BK,mn:MN,bw:BW}:(HIST.ser||SER0);
 const rangeMin=()=>HIST.range==='custom'?Math.max(1,(HIST.to-HIST.from)/6e4):RANGE_MIN[HIST.range];
 const longBuckets=()=>ser().bw>=72e5;
-const tickLabel=t=>longBuckets()?new Date(t).toLocaleDateString(undefined,{month:'short',day:'numeric'}):clock(t).slice(0,5);
+const tickLabel=t=>longBuckets()?shortDay(t):clock(t).slice(0,5);
 function histSeries(d){const w=Math.max(1,num(d.width_ms)||3e5),s0=Math.floor(d.from_ms/w)*w,N=Math.max(2,Math.floor((d.to_ms-s0)/w)+1);
  const b=Array.from({length:N},(_,i)=>Object.assign({byM:{},t:s0+i*w,w:0},EMPTY)),names=new Set();
  arr(d.buckets).forEach(x=>{const k=b[Math.min(N-1,Math.max(0,Math.floor((x.start_ms-s0)/w)))],o={n:n0(x.n),err:n0(x.err),tok:n0(x.tok_in)+n0(x.tok_out),p50:n0(x.ttft_p50),cost:n0(x.cost_usd)};
@@ -321,16 +340,14 @@ MENUS.range={label:'Time range',
  pick:k=>{if(k==='custom'){HIST.picking=true;initPick();renderRangeBar();const n=$('#rfrom');if(n)n.focus()}else{HIST.picking=false;if(k===HIST.range)renderRangeBar();else setRange(k)}}};
 /* the own date and time picker for the Custom range: two fields, one month grid, hour and minute menus */
 const DT={from:0,to:0,act:'from',y:0,m:0},MONTHS=['January','February','March','April','May','June','July','August','September','October','November','December'];
-const startOfDay=t=>{const d=new Date(t);return new Date(d.getFullYear(),d.getMonth(),d.getDate()).getTime()};
-const dtText=t=>{const d=new Date(t);return `${d.getDate()} ${MON[d.getMonth()]} ${d.getFullYear()}, ${p2(d.getHours())}:${p2(d.getMinutes())}`};
-function dtView(){const d=new Date(DT[DT.act]);DT.y=d.getFullYear();DT.m=d.getMonth()}
+function dtView(){const d=zd(DT[DT.act]);DT.y=d.getUTCFullYear();DT.m=d.getUTCMonth()}
 function initPick(){const f=HIST.range==='custom'?HIST.from:Date.now()-864e5,t=HIST.range==='custom'?HIST.to:Date.now();DT.from=Math.max(f,earliest());DT.to=t;DT.act='from';dtView()}
-const dtSet=(f,fn)=>{const d=new Date(DT[f]);fn(d);DT[f]=d.getTime()};
-MENUS.dth={label:'Hour',opts:()=>Array.from({length:24},(_,i)=>({k:String(i),t:p2(i)})),cur:()=>String(new Date(DT[DT.act]).getHours()),pick:k=>{dtSet(DT.act,d=>d.setHours(+k));redrawPick('#mb-dth')}};
-MENUS.dtm={label:'Minute',opts:()=>Array.from({length:60},(_,i)=>({k:String(i),t:p2(i)})),cur:()=>String(new Date(DT[DT.act]).getMinutes()),pick:k=>{dtSet(DT.act,d=>d.setMinutes(+k));redrawPick('#mb-dtm')}};
-function calHtml(){const lead=(new Date(DT.y,DT.m,1).getDay()+6)%7,days=new Date(DT.y,DT.m+1,0).getDate(),cur=startOfDay(DT[DT.act]),lo=startOfDay(earliest()),hi=Date.now();
+const dtSet=(f,fn)=>{const d=zd(DT[f]);fn(d);DT[f]=zmake(d.getUTCFullYear(),d.getUTCMonth(),d.getUTCDate(),d.getUTCHours(),d.getUTCMinutes())};
+MENUS.dth={label:'Hour',opts:()=>Array.from({length:24},(_,i)=>({k:String(i),t:p2(i)})),cur:()=>String(zd(DT[DT.act]).getUTCHours()),pick:k=>{dtSet(DT.act,d=>d.setUTCHours(+k));redrawPick('#mb-dth')}};
+MENUS.dtm={label:'Minute',opts:()=>Array.from({length:60},(_,i)=>({k:String(i),t:p2(i)})),cur:()=>String(zd(DT[DT.act]).getUTCMinutes()),pick:k=>{dtSet(DT.act,d=>d.setUTCMinutes(+k));redrawPick('#mb-dtm')}};
+function calHtml(){const lead=(new Date(Date.UTC(DT.y,DT.m,1)).getUTCDay()+6)%7,days=new Date(Date.UTC(DT.y,DT.m+1,0)).getUTCDate(),cur=startOfDay(DT[DT.act]),lo=startOfDay(earliest()),hi=Date.now();
  let g='';for(let i=0;i<lead;i++)g+='<span></span>';
- for(let d=1;d<=days;d++){const s=new Date(DT.y,DT.m,d).getTime(),off=s<lo||s>hi;g+=`<button type="button" class="day${s===cur?' sel':''}" data-day="${d}" aria-pressed="${s===cur}"${off?' disabled':''}>${d}</button>`}
+ for(let d=1;d<=days;d++){const s=zmake(DT.y,DT.m,d),off=s<lo||s>hi;g+=`<button type="button" class="day${s===cur?' sel':''}" data-day="${d}" aria-pressed="${s===cur}"${off?' disabled':''}>${d}</button>`}
  return `<div class="calhead"><button type="button" class="calnav" data-cal="-1" aria-label="Previous month">${ic('chev','flip')}</button><b aria-live="polite">${MONTHS[DT.m]} ${DT.y}</b><button type="button" class="calnav" data-cal="1" aria-label="Next month">${ic('chev')}</button></div><div class="calgrid">${['Mo','Tu','We','Th','Fr','Sa','Su'].map(x=>`<i>${x}</i>`).join('')}${g}</div>`}
 const dtField=(f,id,l)=>`<button type="button" class="dtf" id="${id}" data-dtf="${f}" aria-pressed="${DT.act===f}"><span class="dtl">${l}</span><span>${esc(dtText(DT[f]))}</span></button>`;
 function rangeBar(){
@@ -339,8 +356,8 @@ function rangeBar(){
 function redrawPick(focus){const err=($('#rerr')||{}).textContent;renderRangeBar();if(err)setHtml($('#rerr'),esc(err));const n=focus&&$(focus);if(n)n.focus()}
 function pickClick(e){
  const f=e.target.closest('[data-dtf]');if(f){DT.act=f.dataset.dtf;dtView();redrawPick('#'+f.id);return true}
- const c=e.target.closest('[data-cal]');if(c){const d=new Date(DT.y,DT.m+ +c.dataset.cal,1);DT.y=d.getFullYear();DT.m=d.getMonth();redrawPick('[data-cal="'+c.dataset.cal+'"]');return true}
- const d=e.target.closest('[data-day]');if(d){dtSet(DT.act,x=>x.setFullYear(DT.y,DT.m,+d.dataset.day));DT[DT.act]=Math.min(DT[DT.act],Date.now());redrawPick('[data-day="'+d.dataset.day+'"]');return true}
+ const c=e.target.closest('[data-cal]');if(c){const d=new Date(Date.UTC(DT.y,DT.m+ +c.dataset.cal,1));DT.y=d.getUTCFullYear();DT.m=d.getUTCMonth();redrawPick('[data-cal="'+c.dataset.cal+'"]');return true}
+ const d=e.target.closest('[data-day]');if(d){dtSet(DT.act,x=>x.setUTCFullYear(DT.y,DT.m,+d.dataset.day));DT[DT.act]=Math.min(DT[DT.act],Date.now());redrawPick('[data-day="'+d.dataset.day+'"]');return true}
  return false}
 /* arrows move across the month grid; Escape leaves the picker */
 document.addEventListener('keydown',e=>{
@@ -348,10 +365,14 @@ document.addEventListener('keydown',e=>{
  if(e.key==='Escape'&&e.target.closest&&e.target.closest('.rangepop')){e.preventDefault();e.stopPropagation();HIST.picking=false;renderRangeBar();const b=$('#mb-range');if(b)b.focus();return}
  const step={ArrowLeft:-1,ArrowRight:1,ArrowUp:-7,ArrowDown:7}[e.key];
  if(!day||!step)return;e.preventDefault();e.stopPropagation();
- const d=new Date(DT.y,DT.m,+day.dataset.day+step);
- if(d.getFullYear()!==DT.y||d.getMonth()!==DT.m){DT.y=d.getFullYear();DT.m=d.getMonth();redrawPick();const n=$('[data-day="'+d.getDate()+'"]');if(n&&!n.disabled)n.focus();return}
- const n=$('[data-day="'+d.getDate()+'"]');if(n&&!n.disabled)n.focus()},true);
+ const d=new Date(Date.UTC(DT.y,DT.m,+day.dataset.day+step));
+ if(d.getUTCFullYear()!==DT.y||d.getUTCMonth()!==DT.m){DT.y=d.getUTCFullYear();DT.m=d.getUTCMonth();redrawPick();const n=$('[data-day="'+d.getUTCDate()+'"]');if(n&&!n.disabled)n.focus();return}
+ const n=$('[data-day="'+d.getUTCDate()+'"]');if(n&&!n.disabled)n.focus()},true);
 function renderRangeBar(){const el=$('#rangebar');if(el){menuDrop();setHtml(el,rangeBar())}}
+/* the zone switch: Local (the browser's zone) or UTC; the choice reaches every time and every day bucket */
+MENUS.tz={label:'Time zone',opts:()=>[{k:'local',t:tzLocal()},{k:'utc',t:'UTC'}],cur:()=>TZ.utc?'utc':'local',pick:k=>setTz(k==='utc')};
+function renderTzBar(){const el=$('#tzbar');if(el){menuDrop();setHtml(el,menuHtml('tz'))}}
+function setTz(utc){if(utc===TZ.utc)return;tzSet(utc);renderTzBar();applyRange();if(DR)renderDrawer(true)}
 function applyRange(){HIST.bk=HIST.tot=HIST.ser=null;HIST.err=false;HIST.picking=false;CH.focus=null;if(liveRange()&&CH.metric==='cost')CH.metric='req';
  HT.ses=HT.prj=HT.meta=null;HT.trend={};HT.mod={};
  try{localStorage.setItem('huddle-range',HIST.range);if(HIST.range==='custom')localStorage.setItem('huddle-range-custom',JSON.stringify({from:HIST.from,to:HIST.to}))}catch(e){}
@@ -392,7 +413,7 @@ function histBlock(key,t){const tr=HT.trend[key],models=key.startsWith('session:
   {k:'tok',label:'Tokens in / out',num:1,v:m=>n0(m.tok_in),h:m=>`${fmt(m.tok_in)} <span class="faint">/</span> ${fmt(m.tok_out)}`},
   {k:'cost',label:'Cost',num:1,v:m=>n0(m.cost_usd),h:m=>`<span class="mono">${usd(m.cost_usd)}</span>`}];
  return `<div>${head}<div class="facts">${fact('Requests',fmt(t.n)+' · '+fmt(t.err)+' errors')+fact('Tokens in',fmt(tin))+fact('Tokens out',fmt(t.tok_out))
-  +fact('Cache hit rate',tin?Math.round(tokSplit(tin,t.cache_read,t.cache_write).hit*100)+'%':'—')+fact('API price',costCell(t))+fact('First seen',new Date(t.first_ms).toLocaleDateString()+' · '+ago(t.first_ms))+fact('Last seen',new Date(t.last_ms).toLocaleDateString()+' · '+ago(t.last_ms))}</div>
+  +fact('Cache hit rate',tin?Math.round(tokSplit(tin,t.cache_read,t.cache_write).hit*100)+'%':'—')+fact('API price',costCell(t))+fact('First seen',dayText(t.first_ms)+' · '+ago(t.first_ms))+fact('Last seen',dayText(t.last_ms)+' · '+ago(t.last_ms))}</div>
   <div class="card pad mt12"><div class="legendrow bare">Requests over time</div>${tr?spark(histSeries(tr).b.map(k=>k.n),'var(--c1)'):checking()}</div></div>
   <div><h4>Models used <span class="faint">${models?models.length:''}</span></h4><div class="card t">${models?table('d-hm',mcols,models,{empty:'No models'}):'<div class="pad">'+checking()+'</div>'}</div>${pricesLine(HT.meta)}</div>`}
 
@@ -521,7 +542,7 @@ function stopPoll(){if(poll!==null){clearInterval(poll);poll=null}}
 const PNAME={zai:'Z.ai GLM',kimi:'Kimi',deepseek:'DeepSeek',minimax:'MiniMax',qwen:'Qwen'};
 /* a provider's display name: its lane's name, else the catalog's, else its id */
 const provName=id=>{const l=LANES.find(x=>x.id===id);return (l&&l.name)||PNAME[id]||id||'—'};
-const resetAt=t=>new Date(t).toDateString()===new Date(NOW).toDateString()?clock(t).slice(0,5):when(t);
+const resetAt=t=>dayText(t)===dayText(NOW)?clock(t).slice(0,5):when(t);
 const provConsole=id=>{const p=SNAP.providers&&typeof SNAP.providers==='object'?SNAP.providers[id]:null;return p&&typeof p.console_url==='string'?p.console_url:null};
 const provQuota=id=>{const p=SNAP.providers&&typeof SNAP.providers==='object'?SNAP.providers[id]:null;return p&&p.quota&&typeof p.quota==='object'?p.quota:null};
 /* a window is used up while its reset is still ahead; a balance at zero is used up */

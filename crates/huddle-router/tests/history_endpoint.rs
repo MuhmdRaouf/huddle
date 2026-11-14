@@ -72,11 +72,18 @@ fn seed(db: &Path) {
 }
 
 async fn rig(with_db: bool) -> Rig {
+    rig_seeded(|db| {
+        if with_db {
+            seed(db);
+        }
+    })
+    .await
+}
+
+async fn rig_seeded(fill: impl FnOnce(&Path)) -> Rig {
     let home = TempHome::new();
     let db = home.root().join("huddle.db");
-    if with_db {
-        seed(&db);
-    }
+    fill(&db);
     let opened = Arc::new(AtomicUsize::new(0));
     let inputs = DashboardInputs {
         history: {
@@ -472,4 +479,119 @@ async fn k3_one_session_answers_with_its_models() {
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0]["key"], "s1");
     assert_eq!(rows[0]["models"][0]["model"], "claude-opus-5-5");
+}
+
+const DAY: u64 = 86_400_000;
+
+/// A rig whose only row is one request at 23:30 UTC on a day three days back; also the
+/// start of that day.
+async fn late_evening_rig() -> (Rig, u64) {
+    let day0 = (now() / DAY - 3) * DAY;
+    let rig = rig_seeded(|db| {
+        History::open(db)
+            .expect("open")
+            .insert(&[row(day0 + 23 * 60 * MIN + 30 * MIN, "glm-5.3", "zai", 200)])
+            .expect("insert");
+    })
+    .await;
+    (rig, day0)
+}
+
+fn day_keys(v: &Value) -> Vec<String> {
+    v["totals"]
+        .as_array()
+        .expect("totals")
+        .iter()
+        .map(|t| t["key"].as_str().unwrap_or("").to_string())
+        .collect()
+}
+
+/// `YYYY-MM-DD` of a day start, by the civil-from-days rule.
+fn day_name(day_ms: u64) -> String {
+    let z = (day_ms / DAY) as i64 + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z.rem_euclid(146_097);
+    let yoe = (doe - doe / 1_460 + doe / 36_524 - doe / 146_096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = yoe + era * 400 + i64::from(m <= 2);
+    format!("{y:04}-{m:02}-{d:02}")
+}
+
+#[tokio::test]
+async fn k1_day_buckets_follow_the_offset() {
+    let (rig, day0) = late_evening_rig().await;
+    let window = format!("from={}&to={}", day0 - DAY, now());
+    let totals = |offset: &str| {
+        let query = format!("view=totals&by=day&{window}{offset}");
+        let rig = &rig;
+        async move { day_keys(&json(rig, &query).await) }
+    };
+    let utc = totals("&tz_offset_min=0").await;
+    assert_eq!(utc, vec![day_name(day0)]);
+    assert_eq!(totals("").await, utc, "no parameter is UTC");
+    assert_eq!(
+        totals("&tz_offset_min=120").await,
+        vec![day_name(day0 + DAY)]
+    );
+    assert_eq!(totals("&tz_offset_min=-300").await, vec![day_name(day0)]);
+
+    let at = day0 + 23 * 60 * MIN + 30 * MIN;
+    let buckets = json(&rig, &format!("view=buckets&{window}&tz_offset_min=120")).await;
+    let width = buckets["width_ms"].as_u64().expect("width");
+    let start = buckets["buckets"][0]["start_ms"].as_u64().expect("start");
+    assert_eq!(
+        (start + 120 * MIN) % width,
+        0,
+        "starts sit on the zone's grid"
+    );
+    assert!(start <= at && at < start + width);
+}
+
+#[tokio::test]
+async fn k1_offset_out_of_range_is_refused() {
+    let rig = rig(true).await;
+    for query in [
+        "view=totals&by=day&range=7d&tz_offset_min=900",
+        "view=totals&by=day&range=7d&tz_offset_min=-841",
+        "view=totals&by=day&range=7d&tz_offset_min=abc",
+        "view=buckets&range=24h&tz_offset_min=1.5",
+    ] {
+        let (status, body) = get(
+            rig.port,
+            &format!("/huddle-router/history?{query}"),
+            "127.0.0.1",
+        )
+        .await;
+        assert!(status.contains("400"), "{query}: {status}");
+        assert_eq!(body.trim().lines().count(), 1, "{query}: one-line reason");
+        assert!(body.contains("tz_offset_min"), "{query}: {body}");
+    }
+    for query in [
+        "view=totals&by=day&range=7d&tz_offset_min=840",
+        "view=totals&by=day&range=7d&tz_offset_min=-840",
+    ] {
+        let _ = json(&rig, query).await;
+    }
+}
+
+#[tokio::test]
+async fn k1_history_without_offset_is_unchanged() {
+    let rig = rig(true).await;
+    for query in [
+        "view=buckets&range=24h",
+        "view=totals&by=day&range=7d",
+        "view=totals&by=model&range=24h",
+    ] {
+        let plain = json(&rig, query).await;
+        let zero = json(&rig, &format!("{query}&tz_offset_min=0")).await;
+        assert_eq!(plain["buckets"], zero["buckets"], "{query}");
+        assert_eq!(plain["totals"], zero["totals"], "{query}");
+        assert!(
+            plain.get("tz_offset_min").is_none(),
+            "{query}: no new field"
+        );
+    }
 }

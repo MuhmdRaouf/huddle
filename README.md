@@ -194,6 +194,12 @@ The top bar holds one time range (15 min, 1 hour, 24 hours, 7, 30 or 90 days, or
 Custom from-to) that every page follows; Custom cannot start before the kept
 history, and the choice is remembered. The page draws its own menus and date
 picker, with full keyboard control, and uses no browser select or date input.
+Next to it, a zone switch reads `Local (UTC+2)` or `UTC`: every time on the page,
+the date picker and the day bars of the cost-per-day chart follow it, and the
+choice is remembered in the browser. The page sends the browser's offset with a
+history request, so a day is a day of the chosen zone. The offset is the one the
+browser has now: a range that crosses a daylight-saving change keys the days
+before the change one hour off.
 
 It shows:
 - Overview: eight stat cards in a full grid (sessions, requests/s, tokens/s, cost at API price, first token, errors by provider, plan quota), the top five things that need you, traffic stacked by provider, providers and the working sessions.

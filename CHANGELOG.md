@@ -25,6 +25,7 @@
 - `/mcp` answers a body over 4 MiB (413), truncated JSON, a batch, a missing session id (400) and an unknown session (404) with a JSON-RPC error, not plain text. `resources/list` answers method-not-found, since the server has tools only. `huddle_router_status` lists the same providers as `/huddle-router/health`, without the Anthropic passthrough.
 - Column labels say what they count: the Models column reads "Cost per 1M total tokens" and its values carry "Cache reads and writes included", and the Errors column reads "Sessions hit (newest 500)".
 - The Sessions page asks for session totals without each session's per-model split (`totals&by=session&models=0`): over 7 days the answer drops from 301 KB to 121 KB. The session sheet asks for its own session (`&session=<id>`) when it opens. `/huddle-router/history` without `models=0` answers as before.
+- Every time on the dashboard is in the browser's zone, with a `Local (UTC+2)` / `UTC` switch in the top bar that is remembered in the browser. History day buckets and the cost-per-day chart follow the zone: `buckets` and `totals&by=day` take `tz_offset_min` (minutes east of UTC, -840 to 840, anything else is a 400); without it the days are UTC days as before.
 
 ## 0.0.7
 

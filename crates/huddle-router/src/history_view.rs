@@ -51,6 +51,9 @@ const WIDTHS: [u64; 12] = [
 ];
 const MAX_BUCKETS: u64 = 120;
 
+/// The largest zone offset a browser reports: UTC+14 is the farthest east, UTC-12 the farthest west.
+const MAX_TZ_OFFSET_MIN: i32 = 840;
+
 /// One time window the page asks for: a preset or a custom from-to, cut to the kept history.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Window {
@@ -98,6 +101,8 @@ pub struct TotalsShape {
     pub models: bool,
     /// Only the row with this key.
     pub only: Option<String>,
+    /// Minutes east of UTC; only day keys use it.
+    pub tz_offset_min: i32,
 }
 
 /// One parsed history question.
@@ -107,6 +112,8 @@ pub enum Query {
         window: Window,
         session: Option<String>,
         project: Option<String>,
+        /// Minutes east of UTC; bucket starts sit on this zone's grid.
+        tz_offset_min: i32,
     },
     Totals(Window, GroupBy, TotalsShape),
     Search {
@@ -216,6 +223,18 @@ pub fn parse(query: &str, now_ms: u64, keep_days: u64) -> Result<Query, Refusal>
             .filter(|value| !value.is_empty())
     };
     let window = window_of(get("range"), get("from"), get("to"), now_ms, keep_days)?;
+    let tz_offset_min = match get("tz_offset_min") {
+        None => 0,
+        Some(text) => text
+            .parse::<i32>()
+            .ok()
+            .filter(|minutes| (-MAX_TZ_OFFSET_MIN..=MAX_TZ_OFFSET_MIN).contains(minutes))
+            .ok_or_else(|| {
+                bad(format!(
+                    "tz_offset_min must be a whole number of minutes from -{MAX_TZ_OFFSET_MIN} to {MAX_TZ_OFFSET_MIN}"
+                ))
+            })?,
+    };
     match get("view") {
         None => Err(bad("view is required: buckets, totals, search or meta")),
         Some("meta") => Ok(Query::Meta { keep_days }),
@@ -223,6 +242,7 @@ pub fn parse(query: &str, now_ms: u64, keep_days: u64) -> Result<Query, Refusal>
             window,
             session: get("session").map(str::to_owned),
             project: get("project").map(str::to_owned),
+            tz_offset_min,
         }),
         Some("totals") => {
             let by = match get("by") {
@@ -240,6 +260,7 @@ pub fn parse(query: &str, now_ms: u64, keep_days: u64) -> Result<Query, Refusal>
                 only: get("session")
                     .filter(|_| by == GroupBy::Session)
                     .map(str::to_owned),
+                tz_offset_min,
             };
             Ok(Query::Totals(window, by, shape))
         }
@@ -346,12 +367,14 @@ pub fn answer(
             window,
             session,
             project,
+            tz_offset_min,
         } => {
-            let buckets = history.buckets(
+            let buckets = history.buckets_in(
                 window.range(),
                 window.width_ms(),
                 session.as_deref(),
                 project.as_deref(),
+                *tz_offset_min,
             )?;
             let rows: Vec<Value> = buckets
                 .iter()
@@ -379,7 +402,11 @@ pub fn answer(
             Ok(Value::Object(out))
         }
         Query::Totals(window, by, shape) => {
-            let totals = history.totals_with_aliases(window.range(), *by, aliases)?;
+            let totals = if *by == GroupBy::Day {
+                history.totals_in(window.range(), *by, shape.tz_offset_min)?
+            } else {
+                history.totals_with_aliases(window.range(), *by, aliases)?
+            };
             let rows: Vec<Value> = totals
                 .iter()
                 .filter(|t| shape.only.as_ref().is_none_or(|key| *key == t.key))
