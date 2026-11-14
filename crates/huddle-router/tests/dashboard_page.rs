@@ -4,6 +4,7 @@
 use serde_json::Value;
 
 use huddle_router::dashboard::PAGE;
+use huddle_testkit::temp_home::TempHome;
 const FIXTURE: &str = include_str!("fixtures/state-v2.json");
 
 const PAGE_IDS: [&str; 13] = [
@@ -1916,11 +1917,38 @@ fn zone_block() -> String {
         .to_string()
 }
 
-/// Runs the zone helpers in node, in the machine zone UTC+2 (no daylight saving), with the given
-/// storage stubs. `None` when node is not installed.
-fn run_zone_script(body: &str) -> Option<Value> {
+/// What a page test fails with when bun is missing: a page test never passes without running.
+const BUN_MISSING: &str = "bun is not installed: run `mise run setup`";
+
+/// `bun` looked up in the `path` directories (the process `PATH` when `None`).
+fn bun_command(path: Option<&std::ffi::OsStr>) -> Result<std::process::Command, String> {
+    let path = path
+        .map(std::ffi::OsStr::to_os_string)
+        .or_else(|| std::env::var_os("PATH"))
+        .unwrap_or_default();
+    std::env::split_paths(&path)
+        .map(|dir| dir.join("bun"))
+        .find(|candidate| candidate.is_file())
+        .map(std::process::Command::new)
+        .ok_or_else(|| BUN_MISSING.to_string())
+}
+
+fn bun() -> std::process::Command {
+    bun_command(None).unwrap_or_else(|message| panic!("{message}"))
+}
+
+#[test]
+fn n1_page_tests_fail_without_bun() {
+    let empty = TempHome::new();
+    let message = bun_command(Some(empty.root().as_os_str())).expect_err("no bun in an empty PATH");
+    assert!(message.contains("mise run setup"), "{message}");
+}
+
+/// Runs the zone helpers in bun, in the machine zone UTC+2 (no daylight saving), with the given
+/// storage stubs.
+fn run_zone_script(body: &str) -> Value {
     use std::io::Write;
-    use std::process::{Command, Stdio};
+    use std::process::Stdio;
     let block = serde_json::to_string(&zone_block()).expect("block");
     let script = format!(
         "const BLOCK={block};\n\
@@ -1929,39 +1957,37 @@ fn run_zone_script(body: &str) -> Option<Value> {
          const store=v=>({{getItem:()=>v,setItem:(k,x)=>{{store.saved=[k,x]}}}});\n\
          {body}"
     );
-    let mut child = Command::new("node")
-        .arg("-")
+    let mut child = bun()
+        .args(["run", "-"])
         .env("TZ", "Etc/GMT-2")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
-        .ok()?;
+        .expect("start bun");
     child
         .stdin
-        .take()?
+        .take()
+        .expect("bun stdin")
         .write_all(script.as_bytes())
         .expect("write script");
-    let out = child.wait_with_output().expect("node");
+    let out = child.wait_with_output().expect("bun");
     assert!(
         out.status.success(),
-        "node failed: {}",
+        "bun failed: {}",
         String::from_utf8_lossy(&out.stderr)
     );
-    Some(serde_json::from_slice(&out.stdout).expect("json out"))
+    serde_json::from_slice(&out.stdout).expect("json out")
 }
 
 #[test]
 fn k1_page_formats_times_by_the_switch() {
-    let Some(v) = run_zone_script(
+    let v = run_zone_script(
         "const t=Date.UTC(2026,10,14,23,30,15);\n\
          const f=z=>({clock:z.clock(t),when:z.when(t),day:z.dayText(t),dt:z.dtText(t),short:z.shortDay(t),\
            label:z.tzLabel(),query:z.tzQuery(),dayStart:z.startOfDay(t),made:z.zmake(2026,10,15,0,0),dash:z.clock(null)});\n\
          console.log(JSON.stringify({local:f(make(store('local'))),utc:f(make(store('utc')))}));",
-    ) else {
-        eprintln!("node is not installed: the zone script was not run");
-        return;
-    };
+    );
     let day14 = 1_794_614_400_000u64; // 2026-11-14T00:00:00Z
     let local = &v["local"];
     assert_eq!(local["clock"], "01:30:15");
@@ -2028,7 +2054,7 @@ fn k1_switch_reaches_every_view_and_refetches() {
 
 #[test]
 fn k1_switch_is_remembered() {
-    let Some(v) = run_zone_script(
+    let v = run_zone_script(
         "const a=make(store('utc'));\n\
          const b=make(store('local'));\n\
          const c=make(store(null));\n\
@@ -2036,10 +2062,7 @@ fn k1_switch_is_remembered() {
          bad.tzSet(true);\n\
          const d=make(store('local'));d.tzSet(true);\n\
          console.log(JSON.stringify({stored_utc:a.TZ.utc,stored_local:b.TZ.utc,empty:c.TZ.utc,blocked:bad.TZ.utc,saved:store.saved}));",
-    ) else {
-        eprintln!("node is not installed: the zone script was not run");
-        return;
-    };
+    );
     assert_eq!(v["stored_utc"], true);
     assert_eq!(v["stored_local"], false);
     assert_eq!(v["empty"], false);
@@ -2059,11 +2082,11 @@ fn refresh_block() -> String {
         .to_string()
 }
 
-/// Runs the scheduler in node on a fake clock. `body` sees `make(storeValue, opts)` which returns
-/// `{rf, calls, clock, tab}`; `clock.advance(ms)` runs the timers due. `None` without node.
-fn run_refresh_script(body: &str) -> Option<Value> {
+/// Runs the scheduler in bun on a fake clock. `body` sees `make(storeValue, opts)` which returns
+/// `{rf, calls, clock, tab}`; `clock.advance(ms)` runs the timers due.
+fn run_refresh_script(body: &str) -> Value {
     use std::io::Write;
-    use std::process::{Command, Stdio};
+    use std::process::Stdio;
     let block = serde_json::to_string(&refresh_block()).expect("block");
     let script = format!(
         "const BLOCK={block};\n\
@@ -2079,36 +2102,34 @@ fn run_refresh_script(body: &str) -> Option<Value> {
           const m=new Function('env',BLOCK+';return rfMake(env)')(env);return {{rf:m,calls,clock,tab,streams}}}}\n\
          (async()=>{{{body}}})();"
     );
-    let mut child = Command::new("node")
-        .arg("-")
+    let mut child = bun()
+        .args(["run", "-"])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
-        .ok()?;
+        .expect("start bun");
     child
         .stdin
-        .take()?
+        .take()
+        .expect("bun stdin")
         .write_all(script.as_bytes())
         .expect("write script");
-    let out = child.wait_with_output().expect("node");
+    let out = child.wait_with_output().expect("bun");
     assert!(
         out.status.success(),
-        "node failed: {}",
+        "bun failed: {}",
         String::from_utf8_lossy(&out.stderr)
     );
-    Some(serde_json::from_slice(&out.stdout).expect("json out"))
+    serde_json::from_slice(&out.stdout).expect("json out")
 }
 
 #[test]
 fn k4_refresh_picker_lists_the_intervals() {
-    let Some(v) = run_refresh_script(
+    let v = run_refresh_script(
         "const a=make(store(null));\n\
          console.log(JSON.stringify({keys:a.rf.choices().map(c=>c.k),labels:a.rf.choices().map(c=>c.t),def:a.rf.key()}));",
-    ) else {
-        eprintln!("node is not installed: the refresh script was not run");
-        return;
-    };
+    );
     assert_eq!(
         v["keys"],
         serde_json::json!([
@@ -2152,15 +2173,12 @@ fn k4_header_holds_the_range_refresh_now_and_refresh_picker_group() {
 
 #[test]
 fn k4_state_follows_the_interval() {
-    let Some(v) = run_refresh_script(
+    let v = run_refresh_script(
         "const five=make(store('5s'));five.rf.start();five.clock.advance(20000);\n\
          const off=make(store('off'));off.rf.start();off.clock.advance(600000);\n\
          const def=make(store(null));def.rf.start();def.clock.advance(3000);\n\
          console.log(JSON.stringify({five:five.calls.state,off:off.calls.state,def:def.calls.state}));",
-    ) else {
-        eprintln!("node is not installed: the refresh script was not run");
-        return;
-    };
+    );
     assert_eq!(v["five"], 4, "5s: a fetch every 5,000 ms");
     assert_eq!(v["off"], 0, "Off: nothing on the timer");
     assert_eq!(v["def"], 3, "1s is the default");
@@ -2168,13 +2186,10 @@ fn k4_state_follows_the_interval() {
 
 #[test]
 fn k4_history_never_faster_than_five_seconds() {
-    let Some(v) = run_refresh_script(
+    let v = run_refresh_script(
         "const run=(k,ms)=>{const a=make(store(k));a.rf.start();a.clock.advance(ms);return [a.calls.state,a.calls.history]};\n\
          console.log(JSON.stringify({s1:run('1s',60000),s5:run('5s',60000),m1:run('1m',180000),off:run('off',60000)}));",
-    ) else {
-        eprintln!("node is not installed: the refresh script was not run");
-        return;
-    };
+    );
     assert_eq!(
         v["s1"],
         serde_json::json!([60, 12]),
@@ -2187,14 +2202,11 @@ fn k4_history_never_faster_than_five_seconds() {
 
 #[test]
 fn k4_refresh_now_fetches_everything_once() {
-    let Some(v) = run_refresh_script(
+    let v = run_refresh_script(
         "const a=make(store('off'));a.rf.start();a.rf.now();\n\
          const b=make(store('1m'));b.rf.start();b.rf.now();b.rf.now();\n\
          console.log(JSON.stringify({off:[a.calls.state,a.calls.history],twice:[b.calls.state,b.calls.history]}));",
-    ) else {
-        eprintln!("node is not installed: the refresh script was not run");
-        return;
-    };
+    );
     assert_eq!(
         v["off"],
         serde_json::json!([1, 1]),
@@ -2205,15 +2217,12 @@ fn k4_refresh_now_fetches_everything_once() {
 
 #[test]
 fn k4_one_request_per_endpoint_in_flight() {
-    let Some(v) = run_refresh_script(
+    let v = run_refresh_script(
         "let release=null;\n\
          const a=make(store('1s'),{state:()=>new Promise(r=>{release=r})});a.rf.start();a.clock.advance(5000);\n\
          const during=a.calls.state;release();await new Promise(r=>setTimeout(r,0));a.clock.advance(1000);\n\
          console.log(JSON.stringify({during,after:a.calls.state}));",
-    ) else {
-        eprintln!("node is not installed: the refresh script was not run");
-        return;
-    };
+    );
     assert_eq!(v["during"], 1, "no second /state while the first is open");
     assert_eq!(
         v["after"], 2,
@@ -2223,7 +2232,7 @@ fn k4_one_request_per_endpoint_in_flight() {
 
 #[test]
 fn k4_hidden_tab_pauses_and_catches_up() {
-    let Some(v) = run_refresh_script(
+    let v = run_refresh_script(
         "const a=make(store('1s'));a.rf.start();a.clock.advance(5000);\n\
          const before=[a.calls.state,a.calls.history];\n\
          a.tab.visible=false;a.rf.visibility(false);a.clock.advance(120000);\n\
@@ -2233,10 +2242,7 @@ fn k4_hidden_tab_pauses_and_catches_up() {
          a.clock.advance(1000);\n\
          const off=make(store('off'));off.rf.start();off.tab.visible=false;off.rf.visibility(false);off.tab.visible=true;off.rf.visibility(true);\n\
          console.log(JSON.stringify({before,hidden,back,next:a.calls.state,off:[off.calls.state,off.calls.history]}));",
-    ) else {
-        eprintln!("node is not installed: the refresh script was not run");
-        return;
-    };
+    );
     assert_eq!(v["hidden"], v["before"], "a hidden tab fetches nothing");
     assert_eq!(
         v["back"],
@@ -2260,17 +2266,14 @@ fn k4_hidden_tab_pauses_and_catches_up() {
 
 #[test]
 fn k4_choice_is_remembered() {
-    let Some(v) = run_refresh_script(
+    let v = run_refresh_script(
         "const a=make(store('30s'));\n\
          const b=make(store('nonsense'));\n\
          const c=make(store(null));c.rf.set('10s');const saved=store.saved;\n\
          const bad=make({getItem:()=>{throw new Error('blocked')},setItem:()=>{throw new Error('blocked')}});\n\
          const blockedStart=bad.rf.key();bad.rf.set('5m');\n\
          console.log(JSON.stringify({stored:a.rf.key(),junk:b.rf.key(),saved,afterSet:c.rf.key(),blockedStart,blockedSet:bad.rf.key()}));",
-    ) else {
-        eprintln!("node is not installed: the refresh script was not run");
-        return;
-    };
+    );
     assert_eq!(v["stored"], "30s", "survives a reload");
     assert_eq!(v["junk"], "1s");
     assert_eq!(v["saved"], serde_json::json!(["huddle-refresh", "10s"]));
@@ -2281,31 +2284,25 @@ fn k4_choice_is_remembered() {
 
 #[test]
 fn k4_changing_the_choice_restarts_the_timers() {
-    let Some(v) = run_refresh_script(
+    let v = run_refresh_script(
         "const a=make(store('1s'));a.rf.start();a.clock.advance(3000);a.rf.set('off');a.clock.advance(60000);\n\
          const stopped=a.calls.state;a.rf.set('5s');a.clock.advance(10000);\n\
          console.log(JSON.stringify({stopped,after:a.calls.state}));",
-    ) else {
-        eprintln!("node is not installed: the refresh script was not run");
-        return;
-    };
+    );
     assert_eq!(v["stopped"], 3);
     assert_eq!(v["after"], 5, "5s adds two fetches in 10 s");
 }
 
 #[test]
 fn k5_refresh_now_is_disabled_in_realtime() {
-    let Some(v) = run_refresh_script(
+    let v = run_refresh_script(
         "const a=make(store('rt'));a.rf.start();\n\
          const on={disabled:a.rf.nowDisabled(),title:a.rf.nowTitle()};\n\
          const before=[a.calls.state,a.calls.history];a.rf.now();const click=[a.calls.state,a.calls.history];\n\
          a.rf.set('5s');\n\
          const off={disabled:a.rf.nowDisabled(),title:a.rf.nowTitle()};a.rf.now();\n\
          console.log(JSON.stringify({on,before,click,off,after:[a.calls.state,a.calls.history]}));",
-    ) else {
-        eprintln!("node is not installed: the refresh script was not run");
-        return;
-    };
+    );
     assert_eq!(
         v["on"],
         serde_json::json!({"disabled": true, "title": "Realtime is on"})
@@ -2327,7 +2324,7 @@ fn k5_refresh_now_is_disabled_in_realtime() {
 
 #[test]
 fn k5_realtime_opens_one_stream_and_leaving_closes_it() {
-    let Some(v) = run_refresh_script(
+    let v = run_refresh_script(
         "const a=make(store('rt'));a.rf.start();\n\
          const opened=a.streams.length;a.streams[0].cb.ok();\n\
          a.clock.advance(60000);\n\
@@ -2336,10 +2333,7 @@ fn k5_realtime_opens_one_stream_and_leaving_closes_it() {
          a.rf.set('off');const left=a.streams[a.streams.length-1].closed;\n\
          const b=make(store('rt'));b.rf.start();b.streams[0].cb.ok();b.tab.visible=false;b.rf.visibility(false);const hid=b.streams[0].closed;\n\
          console.log(JSON.stringify({opened,polled,hist,restarted,left,hid,label:a.rf.label()}));",
-    ) else {
-        eprintln!("node is not installed: the refresh script was not run");
-        return;
-    };
+    );
     assert_eq!(v["opened"], 1, "one stream per tab");
     assert_eq!(v["polled"], 0, "no /state poll while the stream is live");
     assert_eq!(v["hist"], 12, "history panels follow the 5 s rule");
@@ -2354,7 +2348,7 @@ fn k5_realtime_opens_one_stream_and_leaving_closes_it() {
 
 #[test]
 fn k5_page_falls_back_to_polling_and_returns() {
-    let Some(v) = run_refresh_script(
+    let v = run_refresh_script(
         "const a=make(store('rt'));a.rf.start();\n\
          const label0=a.rf.label();\n\
          a.streams[0].cb.fail();const label1=a.rf.label(),polls1=a.calls.state;\n\
@@ -2366,10 +2360,7 @@ fn k5_page_falls_back_to_polling_and_returns() {
          a.streams[a.streams.length-1].cb.ok();const back=a.rf.label();\n\
          const after0=a.calls.state;a.clock.advance(5000);\n\
          console.log(JSON.stringify({label0,label1,polls1,polling,tries,delays,back,stopped:a.calls.state-after0,changed:a.calls.changed>0}));",
-    ) else {
-        eprintln!("node is not installed: the refresh script was not run");
-        return;
-    };
+    );
     assert_eq!(v["label0"], "Realtime");
     assert_eq!(v["label1"], "Realtime (reconnecting)");
     assert_eq!(v["polls1"], 0, "one failure does not poll yet");
@@ -2395,15 +2386,12 @@ fn k5_page_falls_back_to_polling_and_returns() {
 
 #[test]
 fn k5_retry_delay_grows_up_to_ten_seconds() {
-    let Some(v) = run_refresh_script(
+    let v = run_refresh_script(
         "const a=make(store('rt'));a.rf.start();const seen=[];\n\
          for(let i=0;i<7;i++){const n=a.streams.length;a.streams[n-1].cb.fail();\n\
           let waited=0;while(a.streams.length===n&&waited<20000){a.clock.advance(250);waited+=250}seen.push(waited)}\n\
          console.log(JSON.stringify({seen}));",
-    ) else {
-        eprintln!("node is not installed: the refresh script was not run");
-        return;
-    };
+    );
     let seen: Vec<i64> = v["seen"]
         .as_array()
         .unwrap()

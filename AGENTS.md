@@ -13,7 +13,8 @@ The five providers (zai, kimi, deepseek, minimax, qwen) are commands of the `hud
 Commands:
 
 ```sh
-mise run setup                                  # pinned tools and the pre-commit hook, once per clone
+mise run setup                                  # pinned tools, the dev dependencies (bun install) and the pre-commit hook, once per clone
+mise run dashboard:check                        # parse the joined dashboard script; fails on a syntax error or a duplicate top-level name
 mise run check                                  # every gate: lint, fmt, clippy, tests
 mise run docker:check                           # every gate inside the docker toolchain image
 mise run docker:build                           # both static linux binaries, size-checked, in docker
@@ -30,7 +31,7 @@ cargo run -q -p huddle-testkit --bin huddle-check-attribution  # no AI attributi
 ## Layout
 
 - `crates/huddle`: the one binary. `src/words/` holds one file per word: `setup`, `run`, `status`, `result`, `cancel`, `hook`, `uninstall`, `router/*`, `provider/*`. `tests/` holds one e2e file per area.
-- `crates/huddle-router`, `crates/huddle-daemon`: the router and its run loop, singleton and handover. The dashboard page is the files in `crates/huddle-router/src/dashboard/` (`index.html`, `style.css`, `core.js`, `pages/<page>.js`, `drawers.js`, `boot.js`), joined, minified when esbuild is present and gzipped by `crates/huddle-router/build.rs` (`flate2`, a build-dependency only; esbuild 0.25.10 from `ESBUILD` or `PATH`; a plain build without it embeds the unminified page and warns, and `HUDDLE_REQUIRE_MINIFY=1`, set in CI release builds and the docker image, turns that into a build failure) into `page.html` (always unminified) and `page.html.gz` (the served page) under `OUT_DIR`; the binary holds only the gzipped bytes, and `dashboard::PAGE` (the joined text) is read by tests only. The joined script for `node --check` is the `<script>` body of `target/<profile>/build/huddle-router-*/out/page.html`; the served script is checked by the `e8_minified_page_parses_and_boots` test.
+- `crates/huddle-router`, `crates/huddle-daemon`: the router and its run loop, singleton and handover. The dashboard page is the files in `crates/huddle-router/src/dashboard/` (`index.html`, `style.css`, `core.js`, `pages/<page>.js`, `drawers.js`, `boot.js`), joined, minified when esbuild is present and gzipped by `crates/huddle-router/build.rs` (`flate2`, a build-dependency only; the esbuild version `package.json` pins, from `ESBUILD`, the repo's `node_modules/.bin/esbuild` or `PATH`, never another version; a plain build without it embeds the unminified page and warns, and `HUDDLE_REQUIRE_MINIFY=1`, set in CI release builds and the docker image, turns that into a build failure) into `page.html` (always unminified) and `page.html.gz` (the served page) under `OUT_DIR`; the binary holds only the gzipped bytes, and `dashboard::PAGE` (the joined text) is read by tests only. `mise run dashboard:check` parses the joined script, the `<script>` body of `target/<profile>/build/huddle-router-*/out/page.html`, and rejects a duplicate top-level name; the served script is checked by the `e8_minified_page_parses_and_boots` test.
 - `crates/huddle-config`, `crates/huddle-catalog`, `crates/huddle-pki`, `crates/huddle-keystore`: state paths, provider data and routing, local CA, keys in the OS store.
 - `crates/huddle-harness`, `crates/huddle-jobs`, `crates/huddle-procs`: harness table and runners, job model and records, processes.
 - `crates/huddle-mcp`: the MCP tool registry (typed tools, the `Sources` trait with disk and router implementations) that every transport serves; `huddle mcp` is the stdio transport.

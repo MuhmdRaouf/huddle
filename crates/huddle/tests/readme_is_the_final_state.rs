@@ -18,7 +18,6 @@ const RETIRED: &[&str] = &[
     "Kanban",
     "gateway",
     "the hub",
-    "bun ",
     "Playwright",
 ];
 
@@ -150,7 +149,7 @@ fn the_readme_names_no_earlier_stack() {
             "README still says {word:?}"
         );
     }
-    for word in ["go", "hub", "bun"] {
+    for word in ["go", "hub"] {
         assert!(!has_word(&lower, word), "README still says {word:?}");
     }
     assert!(!names_a_card(&text), "README names a card");

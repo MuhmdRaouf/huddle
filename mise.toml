@@ -19,8 +19,10 @@ mr-boxington = "1.30.0"
 python       = "3.14.7"
 pre-commit   = "4.6.2"
 gitleaks     = "8.30.1"
-# esbuild 0.25.10 is not in mise's registry: install it with `npm install --global esbuild@0.25.10`
-# to build the minified dashboard page. Without it a plain cargo build embeds the page unminified.
+# bun runs the dev tooling. The tools themselves (esbuild, which minifies the dashboard page) are
+# the devDependencies of package.json, pinned exactly in bun.lock and installed by `mise run setup`.
+# Without them a plain cargo build embeds the page unminified.
+bun          = "1.4.4"
 
 # =============================================================================
 
@@ -29,6 +31,7 @@ description = "Install the pinned tools and the pre-commit hook (once per clone)
 dir = "{{config_root}}"
 run = [
   "mise install",
+  "bun install --frozen-lockfile",
   "pre-commit install --install-hooks",
 ]
 
@@ -52,6 +55,50 @@ run = [
   "cargo fmt --all --check",
   "cargo clippy --workspace --all-targets --locked -- -D warnings",
   "cargo run -q -p huddle-testkit --bin huddle-test-guard -- --workspace --locked",
+]
+
+[tasks."dashboard:check"]
+description = "Parse the joined dashboard script and fail on a syntax error or a duplicate top-level name (DASHBOARD_PAGE=<file> checks another page)"
+dir = "{{config_root}}"
+run = [
+  "cargo build -q -p huddle-router",
+  '''bun -e '
+const fs = require("fs");
+const path = require("path");
+const explicit = process.env.DASHBOARD_PAGE;
+const pages = () => {
+  const found = [];
+  for (const profile of fs.readdirSync("target")) {
+    const builds = path.join("target", profile, "build");
+    if (!fs.existsSync(builds)) continue;
+    for (const dir of fs.readdirSync(builds))
+      if (dir.startsWith("huddle-router-")) {
+        const page = path.join(builds, dir, "out", "page.html");
+        if (fs.existsSync(page)) found.push([fs.statSync(page).mtimeMs, page]);
+      }
+  }
+  return found.sort((a, b) => b[0] - a[0]).map((x) => x[1]);
+};
+const file = explicit || pages()[0];
+if (!file) { console.error("no page.html found: run cargo build -p huddle-router"); process.exit(1); }
+const html = fs.readFileSync(file, "utf8");
+const open = html.indexOf("<script>\n") + "<script>\n".length;
+const script = html.slice(open, html.lastIndexOf("</script>"));
+const out = path.join("target", `dashboard-check-${process.pid}.js`);
+fs.writeFileSync(out, script);
+const built = Bun.spawnSync(["bun", "build", "--no-bundle", out], { stdout: "ignore", stderr: "pipe" });
+fs.unlinkSync(out);
+if (built.exitCode !== 0) { console.error(`syntax error in ${file}:\n${built.stderr}`); process.exit(1); }
+const seen = new Map();
+for (const line of script.split("\n")) {
+  const m = /^(?:async\s+)?function\s*\*?\s*([\w$]+)|^(?:const|let|var|class)\s+([\w$]+)/.exec(line);
+  if (m) seen.set(m[1] || m[2], (seen.get(m[1] || m[2]) || 0) + 1);
+}
+const dup = [...seen].filter(([, n]) => n > 1).map(([name]) => name);
+if (dup.length) { console.error(`duplicate top-level name in ${file}: ${dup.join(", ")}`); process.exit(1); }
+console.log(`dashboard script ok: ${file}`);
+'
+''',
 ]
 
 [tasks."check:history"]

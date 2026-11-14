@@ -554,6 +554,10 @@ mod gzip_tests {
 mod minify_plan;
 
 #[cfg(test)]
+#[path = "../build_support/esbuild_locate.rs"]
+mod esbuild_locate;
+
+#[cfg(test)]
 mod served_page_tests {
     use std::io::Read;
     use std::process::Command;
@@ -589,17 +593,19 @@ mod served_page_tests {
         // Minifying never grows the page.
         assert!(served.len() <= PAGE.len());
 
-        // The same parse check the Merger runs: `node --check` on the joined script.
+        // The same parse check `mise run dashboard:check` runs: bun builds the served script.
         let home = TempHome::new();
         let file = home.root().join("page-script.js");
         std::fs::write(&file, script_of(&served)).expect("write the script");
-        match Command::new("node").arg("--check").arg(&file).output() {
-            Ok(out) => assert!(
-                out.status.success(),
-                "node --check failed: {}",
-                String::from_utf8_lossy(&out.stderr)
-            ),
-            Err(_) => eprintln!("node is not installed: parse check skipped"),
-        }
+        let out = Command::new("bun")
+            .args(["build", "--no-bundle"])
+            .arg(&file)
+            .output()
+            .expect("bun is not installed: run `mise run setup`");
+        assert!(
+            out.status.success(),
+            "bun build failed: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
     }
 }

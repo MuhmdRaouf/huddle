@@ -1,6 +1,7 @@
 # =============================================================================
 # huddle — toolchain image for every gate and the Linux builds.
-# Hand-kept. No source COPY — docker-compose.yml bind-mounts the live checkout.
+# Hand-kept. No source COPY, only the tool pins (package.json, bun.lock) — docker-compose.yml
+# bind-mounts the live checkout.
 # =============================================================================
 
 # ┌ Tag-pinned only; the tag mirrors mise.toml's rust = "1.100.0"
@@ -67,13 +68,30 @@ RUN set -eux; \
     mv shellcheck-v0.11.0/shellcheck /usr/local/bin/shellcheck; \
     rm -r sc.tar.xz shellcheck-v0.11.0
 
-# ┌ esbuild minifies the dashboard page at build time. 0.25.10 is the version the
-# │ CI release builds pin; HUDDLE_REQUIRE_MINIFY makes a build without it fail.
-# └ nodejs and npm only install it.
-RUN apt-get update -qq \
-    && apt-get install -y -qq --no-install-recommends nodejs npm \
-    && rm -rf /var/lib/apt/lists/* \
-    && npm install --global esbuild@0.25.10
+# ┌ bun runs the dev tooling and installs the tools package.json pins. The release zip is
+# │ checked against its sha256 per architecture, as zig is, and unpacked into /usr/local/bin.
+# │ esbuild (the dashboard page minifier) lands in /opt/tools, outside the bind-mounted checkout,
+# │ so the host's node_modules is never touched; ESBUILD points the build at it. The image is
+# │ rebuilt when package.json or bun.lock changes. HUDDLE_REQUIRE_MINIFY makes a build without
+# └ esbuild fail. The bun version matches mise.toml.
+ARG BUN_VERSION=1.4.4
+RUN set -eux; \
+    case "$(dpkg --print-architecture)" in \
+        amd64) arch=x64; sha=bf8ccbfb2b0b80159e0f9a6d15c55317add8077534dbc6130a3edb52fccb395c ;; \
+        arm64) arch=aarch64; sha=baa6bb36f51d6e58561e02bbea825038a9df454f673d6d776e8bbf86f8c7850e ;; \
+        *) echo "unsupported architecture" >&2; exit 1 ;; \
+    esac; \
+    apt-get update -qq; \
+    apt-get install -y -qq --no-install-recommends unzip; \
+    rm -rf /var/lib/apt/lists/*; \
+    curl -fsSLo bun.zip "https://github.com/oven-sh/bun/releases/download/bun-v${BUN_VERSION}/bun-linux-${arch}.zip"; \
+    echo "${sha}  bun.zip" | sha256sum --check -; \
+    unzip -j bun.zip "bun-linux-${arch}/bun" -d /usr/local/bin; \
+    rm bun.zip; \
+    bun --version
+COPY package.json bun.lock /opt/tools/
+RUN cd /opt/tools && bun install --frozen-lockfile
+ENV ESBUILD=/opt/tools/node_modules/.bin/esbuild
 ENV HUDDLE_REQUIRE_MINIFY=1
 
 WORKDIR /work

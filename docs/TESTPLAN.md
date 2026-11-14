@@ -190,6 +190,7 @@ the owner's `~/.claude`, `~/.agents` or the network.
 | Session totals answer without the per-model arrays when asked (`models=0`), with every other number equal, and unchanged without it | crates/huddle-router/tests/history_endpoint.rs:k3_session_totals_slim_has_no_models; crates/huddle-router/tests/history_endpoint.rs:k3_session_totals_default_is_unchanged |
 | One session's totals, with its models, answer to `session=<id>` | crates/huddle-router/tests/history_endpoint.rs:k3_one_session_answers_with_its_models |
 | The Sessions list asks the slim totals and the session sheet asks its own session | crates/huddle-router/tests/dashboard_page.rs:k3_sessions_page_asks_slim_and_sheet_asks_full |
+| The build finds the esbuild `bun install` writes into the repo (before `PATH`), accepts only the version `package.json` pins and names each refused candidate, and the page tests fail with a `mise run setup` message when bun is missing | crates/huddle-router/build_support/esbuild_locate.rs:n1_build_finds_the_repo_esbuild; crates/huddle-router/build_support/esbuild_locate.rs:n1_build_refuses_another_esbuild_version; crates/huddle-router/build_support/esbuild_locate.rs:n1_pinned_version_reads_the_dev_dependency; crates/huddle-router/tests/dashboard_page.rs:n1_page_tests_fail_without_bun |
 
 ## Needs a human
 

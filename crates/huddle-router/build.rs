@@ -2,9 +2,10 @@
 //!
 //! Writes `page.html` (the joined, unminified page the tests read) and `page.html.gz` (the bytes
 //! the router serves) into `OUT_DIR`. The served page is the joined page with its CSS and JS run
-//! through esbuild `--minify`. Without esbuild a plain build serves the unminified page and warns;
-//! with `HUDDLE_REQUIRE_MINIFY` set (CI release builds) a missing esbuild stops the build.
-//! `ESBUILD` names the binary, else `esbuild` is looked up on `PATH`.
+//! through esbuild `--minify`. The esbuild is the version `package.json` pins, found through
+//! `ESBUILD`, then the repo's `node_modules/.bin/esbuild` (`bun install`), then `PATH`; another
+//! version is never used. Without one a plain build serves the unminified page and warns; with
+//! `HUDDLE_REQUIRE_MINIFY` set (CI release builds) the build stops.
 
 use std::fs;
 use std::io::Write;
@@ -17,6 +18,10 @@ use flate2::write::GzEncoder;
 #[path = "build_support/minify_plan.rs"]
 mod minify_plan;
 use minify_plan::{MinifyPlan, plan};
+
+#[path = "build_support/esbuild_locate.rs"]
+mod esbuild_locate;
+use esbuild_locate::{Search, locate, pinned_version, rerun_lines};
 
 const HEAD: &str = concat!(
     "<!doctype html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n",
@@ -61,10 +66,6 @@ fn join(css: &str, markup: &str, script: &str) -> String {
     [HEAD, css, AFTER_STYLE, markup, SCRIPT_OPEN, script, TAIL].concat()
 }
 
-fn esbuild_binary() -> String {
-    std::env::var("ESBUILD").unwrap_or_else(|_| "esbuild".to_string())
-}
-
 /// Runs `source` through `esbuild --minify` as the given loader (`css` or `js`).
 fn minify(esbuild: &str, loader: &str, source: &str) -> Result<String, String> {
     let mut child = Command::new(esbuild)
@@ -93,13 +94,12 @@ fn minify(esbuild: &str, loader: &str, source: &str) -> Result<String, String> {
     String::from_utf8(output.stdout).map_err(|e| format!("{esbuild} output: {e}"))
 }
 
-fn esbuild_answers(esbuild: &str) -> bool {
-    Command::new(esbuild)
-        .arg("--version")
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()
-        .is_ok_and(|s| s.success())
+/// The refused candidates, as a suffix for a warning or a failure.
+fn refusals(found: &Result<PathBuf, Vec<String>>) -> String {
+    match found {
+        Err(refused) if !refused.is_empty() => format!(" ({})", refused.join("; ")),
+        _ => String::new(),
+    }
 }
 
 fn main() {
@@ -110,6 +110,9 @@ fn main() {
     println!("cargo:rerun-if-env-changed=ESBUILD");
     println!("cargo:rerun-if-env-changed=HUDDLE_REQUIRE_MINIFY");
     println!("cargo:rerun-if-env-changed=PATH");
+    for line in rerun_lines(Path::new("../..")) {
+        println!("{line}");
+    }
 
     let css = read(dir, "style.css");
     let markup = read(dir, "index.html");
@@ -117,19 +120,37 @@ fn main() {
     let script = [WRAP_OPEN, &body, WRAP_CLOSE].concat();
     let page = join(&css, &markup, &script);
 
-    let esbuild = esbuild_binary();
+    let repo_root = Path::new("../..");
+    let package_json = fs::read_to_string(repo_root.join("package.json")).unwrap_or_default();
+    let wanted = pinned_version(&package_json).unwrap_or_default();
+    let env_esbuild = std::env::var_os("ESBUILD");
+    let path = std::env::var_os("PATH");
+    let found = locate(&Search {
+        env_esbuild: env_esbuild.as_deref(),
+        repo_root,
+        path: path.as_deref(),
+        wanted: &wanted,
+    });
     let required = std::env::var_os("HUDDLE_REQUIRE_MINIFY").is_some();
-    let served = match plan(esbuild_answers(&esbuild), required) {
+    let served = match plan(found.is_ok(), required) {
         MinifyPlan::Minify => {
+            let esbuild = found.expect("plan() minifies only when esbuild was found");
+            let esbuild = esbuild.to_string_lossy().into_owned();
             let css = minify(&esbuild, "css", &css).unwrap_or_else(|e| panic!("{e}"));
             let script = minify(&esbuild, "js", &script).unwrap_or_else(|e| panic!("{e}"));
             join(&css, &markup, &script)
         }
         MinifyPlan::PlainWithWarning => {
-            println!("cargo:warning=esbuild not found: the dashboard page is embedded unminified");
+            println!(
+                "cargo:warning=esbuild {wanted} not found (run `mise run setup`): the dashboard page is embedded unminified{}",
+                refusals(&found)
+            );
             page.clone()
         }
-        MinifyPlan::Fail => panic!("HUDDLE_REQUIRE_MINIFY is set but esbuild is not available"),
+        MinifyPlan::Fail => panic!(
+            "HUDDLE_REQUIRE_MINIFY is set but esbuild {wanted} is not available{}",
+            refusals(&found)
+        ),
     };
 
     let mut gz = GzEncoder::new(Vec::new(), Compression::best());

@@ -466,21 +466,25 @@ huddle/
 ├── Dockerfile                  # the toolchain image
 ├── docker-compose.yml          # mounts the checkout into the image
 ├── mise.toml                   # pinned tools and the tasks
+├── package.json, bun.lock      # the dev dependencies (esbuild), pinned exactly
 ├── VERSION                     # the release version
 └── CHANGELOG.md                # one section per version
 ```
 
 ### Tools and tests
 
-`mise.toml` pins the tools (Rust 1.100.0 with mr-boxington, Python, pre-commit, gitleaks) and holds
-the tasks:
+`mise.toml` pins the tools (Rust 1.100.0 with mr-boxington, bun, Python, pre-commit, gitleaks) and holds
+the tasks. bun runs the dev tooling: the tools it runs (esbuild, which minifies the dashboard page) are the
+`devDependencies` of `package.json`, pinned exactly in `bun.lock`, and `mise run setup` installs them. Nothing
+in the dev tooling calls `node` or `npm`.
 
 ```sh
-mise run setup          # the pinned tools and the pre-commit hook, once per clone
+mise run setup          # the pinned tools, `bun install` and the pre-commit hook, once per clone
 mise run lint           # every pre-commit hook on every file
 mise run check          # every gate CI runs: lint, fmt, clippy and the tests
 mise run rust:check     # the Rust gates alone
 mise run check:history  # secrets and AI attribution in every commit, as CI scans
+mise run dashboard:check # parse the joined dashboard script: syntax errors and duplicate top-level names
 ```
 
 A machine without the mise tools runs the same gates in the toolchain image.

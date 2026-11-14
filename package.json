@@ -1,0 +1,8 @@
+{
+  "name": "huddle-dev-tools",
+  "private": true,
+  "description": "Dev tooling for the huddle repository. Nothing here ships.",
+  "devDependencies": {
+    "esbuild": "0.28.2"
+  }
+}

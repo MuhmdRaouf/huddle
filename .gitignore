@@ -485,3 +485,6 @@ $RECYCLE.BIN/
 # Committed build outputs: the plugins' launchers.
 !plugin/dist/
 !plugins/*/dist/
+
+### Dev tools (bun) ###
+node_modules/

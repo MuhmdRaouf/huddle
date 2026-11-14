@@ -12,15 +12,16 @@ concurrency:
   group: release
   cancel-in-progress: false
 
+# Read only by default; the job that publishes and attests asks for the write scopes itself.
 permissions:
-  contents: write # the release
-  id-token: write # the build-provenance attestation
-  attestations: write
+  contents: read
 
 jobs:
   build:
     name: "Release build: ${{ matrix.asset }}"
     runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
     # The linux builds run in the Rust image the Dockerfile builds from; an empty image runs on the host.
     container:
       image: ${{ matrix.image }}
@@ -56,12 +57,12 @@ jobs:
           apt-get update
           apt-get install -y --no-install-recommends musl-tools
           echo "CC_$(echo "$TARGET" | tr - _)=musl-gcc" >> "$GITHUB_ENV"
-      - name: Pinned esbuild minifies the dashboard page
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.4.4
+      - name: The pinned esbuild minifies the dashboard page
         run: |
-          if [ "$RUNNER_OS" = Linux ]; then
-            apt-get install -y --no-install-recommends nodejs npm
-          fi
-          npm install --global esbuild@0.25.10
+          bun install --frozen-lockfile
           echo "HUDDLE_REQUIRE_MINIFY=1" >> "$GITHUB_ENV"
       - run: cargo build --release --locked -p huddle --bin huddle --target "$TARGET"
       - run: |
@@ -77,6 +78,10 @@ jobs:
     name: "Release: huddle"
     needs: build
     runs-on: ubuntu-26.04
+    permissions:
+      contents: write # the release
+      id-token: write # the build-provenance attestation
+      attestations: write
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
