@@ -123,6 +123,8 @@ mod tests {
             last: last.map(|status| LaneLast { status, at_ms: 1 }),
             tokens_in: 0,
             tokens_out: 0,
+            quota_out: false,
+            causes: Vec::new(),
         }
     }
 

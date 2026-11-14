@@ -12,6 +12,7 @@ use tokio::sync::watch;
 
 use crate::answer_facts::PlanUsage;
 use crate::quota::QuotaView;
+use crate::recent_counts::{self, CauseCount, RecentCounts};
 use crate::router_events::{EventRow, PathFailing, PathRecovery, PathView, RouterEvents};
 use crate::sse::Usage;
 use crate::stats::{self, Buckets, MAX_MODELS, ModelRow, ModelSeries, Sample, percentile};
@@ -182,6 +183,10 @@ pub struct LaneRow {
     pub last: Option<LaneLast>,
     pub tokens_in: u64,
     pub tokens_out: u64,
+    /// The lane's latest answer in the last 15 minutes was a 429 for quota.
+    pub quota_out: bool,
+    /// Why the lane's requests failed in the last 15 minutes, most common first.
+    pub causes: Vec<CauseCount>,
 }
 
 /// The status of a lane's latest answer and when it ended.
@@ -261,6 +266,8 @@ pub struct Snapshot {
     pub last_error: Option<LastError>,
     pub lanes: Vec<LaneRow>,
     pub recent: Vec<RecentRow>,
+    /// What pages derive from `recent`, present with or without the rows.
+    pub recent_counts: RecentCounts,
     pub in_flight: Vec<InFlightRow>,
     pub jobs: Vec<JobRow>,
     pub sessions: Vec<Session>,
@@ -604,11 +611,14 @@ impl LiveState {
             })
             .collect();
         in_flight.sort_by_key(|row| row.id);
-        let lanes = inputs
+        let recent: Vec<RecentRow> = inner.recent.iter().cloned().collect();
+        let mut lanes: Vec<LaneRow> = inputs
             .lanes
             .iter()
             .map(|meta| lane_row(meta, inner.lanes.get(&meta.id)))
             .collect();
+        recent_counts::mark_lanes(&mut lanes, &recent, now_ms);
+        let recent_counts = recent_counts::count(&recent, now_ms);
         for series in inner.models.values_mut() {
             series.prune(now_ms);
         }
@@ -640,7 +650,8 @@ impl LiveState {
             errors_5m: inner.error_times.len() as u32,
             last_error: inner.last_error.clone(),
             lanes,
-            recent: inner.recent.iter().cloned().collect(),
+            recent,
+            recent_counts,
             in_flight,
             jobs: inputs.jobs.clone(),
             sessions: inputs.sessions.clone(),
@@ -907,6 +918,8 @@ fn lane_row(meta: &LaneMeta, stats: Option<&LaneStats>) -> LaneRow {
         last: stats.last,
         tokens_in: stats.tokens_in,
         tokens_out: stats.tokens_out,
+        quota_out: false,
+        causes: Vec::new(),
     }
 }
 
@@ -1366,6 +1379,7 @@ mod tests {
                 "last_error",
                 "lanes",
                 "recent",
+                "recent_counts",
                 "in_flight",
                 "jobs",
                 "router",
@@ -1409,7 +1423,9 @@ mod tests {
                 "ttft_p50",
                 "last",
                 "tokens_in",
-                "tokens_out"
+                "tokens_out",
+                "quota_out",
+                "causes"
             ])
         );
         assert!(json["lanes"][0]["key"].is_null());

@@ -17,6 +17,7 @@ pub mod live;
 pub mod mcp_http;
 pub mod probe;
 pub mod quota;
+pub mod recent_counts;
 pub mod refusal;
 pub mod reload;
 pub mod router_events;

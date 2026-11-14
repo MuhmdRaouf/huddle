@@ -14,6 +14,7 @@
 - The bundled SQLite is built without full-text search, R-tree, JSON, load-extension and other features huddle does not use (`.cargo/config.toml`): the macOS binary drops from 5.97 MB to 5.59 MB.
 ### Dashboard
 
+- The page's 2 second poll asks for `/huddle-router/state?recent=0` on every page except Requests, Errors, Agents and Router, and while a sheet is open: the answer drops the 200 recent rows. Their counts (cancelled and failed in 15 minutes, each session's requests and tokens, each provider's failure causes) come from the server in both forms.
 - The page draws its own menus and date picker instead of the browser's: the time range and the Requests status filter are menus with keyboard control (arrows, Home, End, type a letter, Enter, Escape), and Custom opens a month grid with hour and minute menus.
 - MCP over HTTP no longer answers for the router's own folder: `huddle_run`, `huddle_status`, `huddle_result` and `huddle_cancel` take a `dir` and refuse with a clear error when it is missing. Over stdio they still default to the folder the server runs in.
 - A request that ended in an error answer is recorded with zero tokens instead of unknown, so it no longer waits for a session log that will never credit it; a client that left stays unknown.

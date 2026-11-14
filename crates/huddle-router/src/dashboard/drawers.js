@@ -2,7 +2,7 @@
 let DR=null;
 const closeBtn=()=>`<button class="x" data-close aria-label="Close">${ic('x')}</button>`;
 const DRAWERS={
- session(id){const s=SESS.find(x=>x.id===id);if(!s)return '';const rs=sReq(s),cl=cacheLeft(s),c=s.ctx==null?null:Math.round(s.ctx);const t0=NOW-15*MIN;
+ session(id){const s=SESS.find(x=>x.id===id);if(!s)return '';const rs=sReq(s),sc=sCount(s),cl=cacheLeft(s),c=s.ctx==null?null:Math.round(s.ctx);const t0=NOW-15*MIN;
   const lane=a=>aReq(a).filter(r=>r.t>=t0);
   const unmatched=rs.filter(r=>!r.a&&r.t>=t0);
   const bar=r=>{const x=Math.max(0,(r.t-t0)/(15*MIN)*100),w=Math.max(.5,(r.dur!=null?r.dur:NOW-r.t)/(15*MIN)*100);return `<i class="${r.status==null?'flight':''}" data-css="left:${x.toFixed(2)}%;width:${Math.min(w,100-x).toFixed(2)}%;background:${isErr(r)?'var(--bad)':r.status===499?'var(--faint)':col(r.m)}" title="${esc(r.m)} · ${r.status==null?'streaming':r.status}"></i>`};
@@ -17,10 +17,10 @@ const DRAWERS={
     <div class="fact"><div class="k">Main model</div><div class="v">${modelTag(mainA(s).model)}</div></div>
     <div class="fact"><div class="k">Started</div><div class="v">${s.started==null?'—':clock(s.started).slice(0,5)+' · '+ago(s.started)}</div></div>
     <div class="fact"><div class="k">Last activity</div><div class="v">${ago(lastT(s))}</div></div>
-    <div class="fact"><div class="k">Requests</div><div class="v">${rs.length} · ${rs.filter(isErr).length} errors</div></div>
-    <div class="fact"><div class="k">Tokens in</div><div class="v">${fmt(tokInOf(rs))}</div></div>
-    <div class="fact"><div class="k">Cache read</div><div class="v">${fmt(sum(rs.map(r=>n0(r.cr))))}</div></div>
-    <div class="fact"><div class="k">Tokens out</div><div class="v">${fmt(tokOutOf(rs))}</div></div></div></div>
+    <div class="fact"><div class="k">Requests</div><div class="v">${sc.n} · ${sc.err} errors</div></div>
+    <div class="fact"><div class="k">Tokens in</div><div class="v">${fmt(sc.tin)}</div></div>
+    <div class="fact"><div class="k">Cache read</div><div class="v">${fmt(sc.cr)}</div></div>
+    <div class="fact"><div class="k">Tokens out</div><div class="v">${fmt(sc.tout)}</div></div></div></div>
    ${histBlock('session:'+s.id,hOf(HT.ses,s.id))}
    <div><h4>Agents <span class="faint">${s.agents.length+s.bg.length}</span></h4><div class="card t">${table('d-ag',AG_COLS.filter(c=>['agent','model','state','dur','req','tok'].includes(c.k)),s.agents.concat(s.bg),{})}</div></div>
    <div><h4>Timeline <span class="faint">each bar is one request · last 15 min</span></h4><div class="swim">${s.agents.map(a=>`<div class="row"><div class="who">${a.type==='main'?'<b class="fw5">main</b>':esc(a.desc||a.type)}</div><div class="track">${lane(a).map(bar).join('')}</div></div>`).join('')}${unmatched.length?`<div class="row"><div class="who faint">not matched to an agent</div><div class="track">${unmatched.map(bar).join('')}</div></div>`:''}</div><div class="axis"><span>${clock(t0).slice(0,5)}</span><span>${clock(t0+5*MIN).slice(0,5)}</span><span>${clock(t0+10*MIN).slice(0,5)}</span><span>now</span></div></div>
@@ -62,7 +62,7 @@ const DRAWERS={
  project(name){const p=projects().find(x=>x.name===name);if(!p)return '';
   return `<div class="dh"><div class="grow"><span class="pill off">${ic('projects')}Project</span><h3>${esc(p.name)}</h3><div class="s">${cid(tilde(p.path))}</div></div>${closeBtn()}</div>
   <div class="db">
-   <div class="facts"><div class="fact"><div class="k">Active sessions</div><div class="v">${p.live} of ${p.sessions.length}</div></div><div class="fact"><div class="k">Agents running</div><div class="v">${p.agentsRun}</div></div><div class="fact"><div class="k">Requests</div><div class="v">${p.reqs.length}</div></div><div class="fact"><div class="k">Tokens in / out</div><div class="v">${fmt(p.tin)} / ${fmt(p.tout)}</div></div></div>
+   <div class="facts"><div class="fact"><div class="k">Active sessions</div><div class="v">${p.live} of ${p.sessions.length}</div></div><div class="fact"><div class="k">Agents running</div><div class="v">${p.agentsRun}</div></div><div class="fact"><div class="k">Requests</div><div class="v">${p.reqs}</div></div><div class="fact"><div class="k">Tokens in / out</div><div class="v">${fmt(p.tin)} / ${fmt(p.tout)}</div></div></div>
    ${histBlock('project:'+p.name,hOf(HT.prj,p.name))}
    <div><h4>Branches <span class="faint">${p.branches.length}</span></h4><div class="card list">${p.branches.map(b=>`<div class="li"><div class="grow mono">${esc(b)}</div><span class="muted">${p.wts.filter(w=>w.branch===b).length} worktree${p.wts.filter(w=>w.branch===b).length===1?'':'s'}</span></div>`).join('')||`<div class="allclear">${ic('info')} No branches</div>`}</div></div>
    <div><h4>Sessions</h4><div class="card t">${table('d-ps',SESS_COLS.filter(c=>['state','title','model','ctx','last'].includes(c.k)),p.sessions,{row:s=>'session:'+s.id,empty:'No sessions'})}</div></div>
@@ -71,7 +71,7 @@ const DRAWERS={
   </div>`}
 };
 let DRBACK=null;
-function openDrawer(key){const[k,id]=key.split(/:(.*)/s);if(!DRAWERS[k])return;if(!DR)DRBACK=document.activeElement;DR={k,id,key};renderDrawer(false);$('#drawer').classList.add('on');$('#scrim').classList.add('on');refresh();$('#drawer').focus({preventScroll:true});loadTotals()}
+function openDrawer(key){const[k,id]=key.split(/:(.*)/s);if(!DRAWERS[k])return;if(!DR)DRBACK=document.activeElement;DR={k,id,key};renderDrawer(false);$('#drawer').classList.add('on');$('#scrim').classList.add('on');refresh();$('#drawer').focus({preventScroll:true});loadTotals();needRecent()}
 function closeDrawer(){const key=DR&&DR.key;DR=null;$('#drawer').classList.remove('on');if(!$('#sb').classList.contains('on'))$('#scrim').classList.remove('on');refresh();
  const row=key&&document.querySelector(`[data-open="${CSS.escape(key)}"]`),back=row||(DRBACK&&DRBACK.isConnected?DRBACK:null);DRBACK=null;if(back)back.focus({preventScroll:true})}
 function renderDrawer(keep){if(!DR)return;const d=$('#drawer'),body=$('#drawer .db'),top=keep&&body?body.scrollTop:0;patch(d,DRAWERS[DR.k](DR.id));const nb=$('#drawer .db');if(nb)nb.scrollTop=top}

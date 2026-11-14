@@ -6,11 +6,12 @@ function loadProviders(){const q=rangeQuery();if(HP.q===q&&HP.lane&&Date.now()-H
  if(HP.q!==q){HP.lane=HP.bk=null;HP.reason=[];HP.err=false}HP.q=q;
  Promise.all([hget(HQ+'totals&by=lane&'+q),liveRange()?null:hget(HQ+'buckets&'+q),liveRange()?null:hget(HQ+'totals&by=reason&'+q)]).then(([t,b,r])=>{if(HP.q!==q)return;HP.lane=hmap(t);HP.bk=b;HP.reason=arr(r&&r.totals);HP.at=Date.now();HP.err=false;paint()},()=>{if(HP.q!==q)return;HP.err=true;paint()})}
 
-const lastIsQuota=id=>{const rs=stats().byLane[id]||[],l=rs[rs.length-1];return !!l&&l.status===429&&l.reason==='quota'};
+const snapLane=id=>arr(SNAP.lanes).find(x=>x.id===id)||null;
+const lastIsQuota=id=>{const l=snapLane(id);return !!l&&l.quota_out===true};
 /* the finished requests of a lane that failed, grouped by the router's reason */
 /* the failures of a provider in a longer range, from the history's reason totals */
 function histCauses(id){const g={};HP.reason.filter(r=>r.lane===id).forEach(r=>{const k=r.reason||String(r.status);g[k]=(g[k]||0)+n0(r.n)});return Object.entries(g).sort((a,b)=>b[1]-a[1])}
-function causes(id){if(!liveRange())return histCauses(id);const g={};(stats().byLane[id]||[]).filter(isErr).forEach(r=>{const k=r.reason||String(r.status);g[k]=(g[k]||0)+1});return Object.entries(g).sort((a,b)=>b[1]-a[1])}
+function causes(id){if(!liveRange())return histCauses(id);const l=snapLane(id);return arr(l&&l.causes).map(c=>[String(c.cause),n0(c.count)])}
 function histLatency(t){const m={};arr(t.models).forEach(x=>{m[x.model]=1});let w=0,c=0,p95=null;
  arr(HP.bk&&HP.bk.buckets).forEach(b=>{if(!m[b.model]||num(b.ttft_p50)==null)return;w+=b.ttft_p50*n0(b.n);c+=n0(b.n);if(num(b.ttft_p95)!=null)p95=Math.max(p95||0,b.ttft_p95)});
  return {p50:c?w/c:null,p95}}

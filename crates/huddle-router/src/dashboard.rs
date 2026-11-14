@@ -221,6 +221,32 @@ impl Dashboard {
         response
     }
 
+    /// The snapshot without its recent rows, for a page that does not show them. Every other field,
+    /// the counts derived from the rows included, is the full answer's.
+    pub fn state_slim_answer(&self) -> Response<RespBody> {
+        let mut snapshot = self.snapshot();
+        snapshot.recent.clear();
+        let json = serde_json::to_string(&snapshot).unwrap_or_default();
+        // The emptied rows serialize as `"recent":[]` between two fields; a quote inside a value is
+        // escaped, so the raw text appears once.
+        let json = match json.matches(",\"recent\":[]").count() {
+            1 => json.replacen(",\"recent\":[]", "", 1),
+            _ => serde_json::to_value(&snapshot)
+                .map(|mut value| {
+                    if let Some(object) = value.as_object_mut() {
+                        object.remove("recent");
+                    }
+                    value.to_string()
+                })
+                .unwrap_or_default(),
+        };
+        let mut response = json_answer(StatusCode::OK, json);
+        response
+            .headers_mut()
+            .insert(CACHE_CONTROL, HeaderValue::from_static("no-store"));
+        response
+    }
+
     /// The snapshot after one quota refresh that counts as a viewer for that ask. The five
     /// minute limit per provider still holds, so a caller asking often reads the cached answer.
     pub async fn state_answer_with_quota(&self) -> Response<RespBody> {

@@ -106,6 +106,10 @@ function stats(){
  return ST;
 }
 const sReq=s=>stats().bySess[s.id]||[];
+/* what the server counted over the recent rows, present with or without the rows */
+const RCNT=()=>SNAP.recent_counts&&typeof SNAP.recent_counts==='object'?SNAP.recent_counts:{};
+/* a session's requests (finished and streaming), errors and tokens */
+const sCount=s=>{const c=(RCNT().by_session||{})[s.id]||{};return {n:n0(c.requests)+sReq(s).filter(r=>r.status==null).length,err:n0(c.errors),tin:n0(c.tokens_in),cr:n0(c.cache_read),tout:n0(c.tokens_out)}};
 const aReq=a=>stats().byAgent[a.s.id+':'+a.id]||[];
 const tokInOf=rs=>sum(rs.map(tokIn)), tokOutOf=rs=>sum(rs.map(r=>n0(r.out)));
 const lastT=s=>Math.max(s.last||0,s.lastReq||0)||null;
@@ -161,11 +165,10 @@ function projects(){
  WT.forEach(w=>{if(w.project)get(w.repo||w.project,w.project).wts.push(w)});
  const byName={};Object.values(P).forEach(p=>{byName[p.name]=byName[p.name]||p});
  jobsInRange().forEach(j=>{if(j.repo)(byName[j.repo]||get(j.repo,j.repo)).jobs.push(j)});
- return Object.values(P).map(({key,name,ss,wts,jobs})=>{const rs=ss.flatMap(sReq);
-  const byM={};rs.forEach(r=>{byM[r.m]=(byM[r.m]||0)+1});const top=Object.entries(byM).sort((a,b)=>b[1]-a[1])[0];
+ return Object.values(P).map(({key,name,ss,wts,jobs})=>{const cs=ss.map(sCount);
   const home=wts.find(w=>w.kind==='checkout')||wts[0];
   return {key,name,path:key.startsWith('/')?key:home?home.path:ss[0]?ss[0].cwd:'',sessions:ss,live:ss.filter(s=>ACTIVE_STATES.includes(s.state)).length,
-   agentsRun:ss.flatMap(s=>s.agents).filter(a=>a.type!=='main'&&a.state==='running').length,wts,jobs,reqs:rs,tin:tokInOf(rs),tout:tokOutOf(rs),top:top?top[0]:null,
+   agentsRun:ss.flatMap(s=>s.agents).filter(a=>a.type!=='main'&&a.state==='running').length,wts,jobs,reqs:sum(cs.map(c=>c.n)),tin:sum(cs.map(c=>c.tin)),tout:sum(cs.map(c=>c.tout)),
    stale:wts.filter(w=>w.stale).length,
    branches:[...new Set(wts.map(w=>w.branch).filter(Boolean))],last:Math.max(0,...ss.map(lastT),...jobs.map(j=>j.end||j.started||0),...wts.map(w=>w.commit||0))||null}});
 }
@@ -408,7 +411,7 @@ function badge(k){switch(k){
  case 'sessions':return bdg(sessShown().length,'sessions in '+rangeText());
  case 'agents':return bdg(AGENTS.length,'main agents and subagents','acc');
  case 'requests':return bdg(rate(sum(PS.slice(-10))/10)+'/s','requests per second, last 10 seconds');
- case 'errors':{const e=stats().done.filter(r=>r.status!==200).length;return e?bdg(e,'failed and cancelled requests in the last 15 minutes','bad'):''}
+ case 'errors':{const e=n0(RCNT().failed_15m);return e?bdg(e,'failed and cancelled requests in the last 15 minutes','bad'):''}
  case 'models':return bdg(MODELS.length,'models used in the last 15 minutes');
  case 'providers':{const n=provSetUp();return PL.rows.length?bdg(`${n?`<span class="good">${n}</span>`:n}/${provTotal()}`,'providers set up of all providers'):''}
  case 'projects':return bdg(projects().length,'projects');
@@ -433,7 +436,7 @@ function render(){menuDrop();REG={};let h=(location.hash||'#overview').slice(1).
  const grp=NAV.find(([,its])=>its.some(([k])=>k===page))[0];
  patch($('#crumbs'),`<span class="c0">Huddle</span>${ic('chev')}<span>${grp}</span>${ic('chev')}<b>${p.title}</b>`);
  setHtml($('#content'),p.body()+(readsMemory()?`<div class="foot">${dot('ok',true)} Memory only. Restarting the router clears this page.</div>`:''));
- if(p.after)p.after();shell();closeSidebar();window.scrollTo(0,0);loadTotals()}
+ if(p.after)p.after();shell();closeSidebar();window.scrollTo(0,0);loadTotals();needRecent()}
 window.addEventListener('hashchange',render);
 
 /* ---------- interactions ---------- */
@@ -500,9 +503,16 @@ window.addEventListener('resize',()=>{if(page==='overview')drawChart()});
 function paint(){refresh();shell();if(page==='overview')drawChart();if(DR)renderDrawer(true)}
 let first=true;
 function update(s){build(s);loadOvCost();if(first){first=false;render()}else paint()}
-function onSnapshot(s){const n=num(s&&s.now_ms);if(n!=null)OFFSET=n-Date.now();LOST=false;update(s)}
+function onSnapshot(s){HAVE_RECENT=Array.isArray(s&&s.recent);const n=num(s&&s.now_ms);if(n!=null)OFFSET=n-Date.now();LOST=false;update(s)}
+/* a page that shows the rows asks for them at once when the last answer had none */
+function needRecent(){if(poll!==null&&wantRecent()&&!HAVE_RECENT)getState()}
 let poll=null;
-function getState(){if(document.visibilityState==='hidden')return;fetch('/huddle-router/state',{cache:'no-store'}).then(r=>r.json()).then(onSnapshot,()=>{LOST=true;update(SNAP)})}
+/* the pages that list the recent rows, and the pages that count them per agent or per request, poll the full snapshot; an open sheet needs them too */
+const RECENT_PAGES=['requests','errors','agents','router'];
+const wantRecent=()=>RECENT_PAGES.includes(page)||!!DR;
+function stateUrl(){return '/huddle-router/state'+(wantRecent()?'':'?recent=0')}
+let HAVE_RECENT=false;
+function getState(){if(document.visibilityState==='hidden')return;fetch(stateUrl(),{cache:'no-store'}).then(r=>r.json()).then(onSnapshot,()=>{LOST=true;update(SNAP)})}
 function startPoll(){if(poll===null){getState();poll=setInterval(getState,2000)}}
 document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&poll!==null)getState()});
 function stopPoll(){if(poll!==null){clearInterval(poll);poll=null}}

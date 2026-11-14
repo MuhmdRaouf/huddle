@@ -804,3 +804,21 @@ fn with_no_page_open_no_session_log_or_check_is_read() {
         assert!(shown["router"]["rss_bytes"].is_null());
     }
 }
+
+#[test]
+fn k2_state_recent_zero_over_http() {
+    let (anthropic, zai) = (usage_upstream(), usage_upstream());
+    let daemon = fixture_with(&anthropic, &zai);
+    let slim = request(
+        daemon.port,
+        "GET",
+        "/huddle-router/state?recent=0",
+        &[],
+        b"",
+    );
+    assert_eq!(slim.status, 200, "{}", slim.body);
+    let slim: Value = serde_json::from_str(&slim.body).expect("slim json");
+    assert!(slim.get("recent").is_none());
+    assert!(slim["recent_counts"].is_object());
+    assert!(state(daemon.port)["recent"].is_array());
+}

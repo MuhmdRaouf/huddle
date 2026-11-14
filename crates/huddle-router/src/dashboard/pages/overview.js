@@ -27,7 +27,7 @@ function overviewKpis(){const live=liveRange();if(!live&&!HIST.tot)return `<div 
  if(live){rows=MODELS;reqs=sum(rows.map(m=>m.n));const l5=BK.slice(20),p5=BK.slice(10,20);span=5*MIN/SEC;
   tin=sum(rows.map(m=>m.tin));cr=sum(rows.map(m=>m.cr));cw=sum(rows.map(m=>m.cw));tok=sum(l5.map(x=>x.tok));
   deltaR=deltaH(sum(l5.map(x=>x.n)),sum(p5.map(x=>x.n)),null);deltaT=deltaH(sum(l5.map(x=>x.tok)),sum(p5.map(x=>x.tok)),null);
-  reqs=sum(l5.map(x=>x.n));c499=stats().done.filter(r=>r.status===499).length}
+  reqs=sum(l5.map(x=>x.n));c499=n0(RCNT().cancelled_15m)}
  else{rows=histRows();reqs=sum(rows.map(r=>r.n));tin=sum(rows.map(r=>r.tin));cr=sum(rows.map(r=>r.cr));cw=sum(rows.map(r=>r.cw));tok=tin+sum(rows.map(r=>r.out));
   span=Math.max(1,((num(HIST.bk&&HIST.bk.to_ms)||NOW)-(num(HIST.bk&&HIST.bk.from_ms)||NOW-rangeMin()*MIN))/SEC);deltaR=deltaT=''}
  const total=sum(rows.map(r=>r.n)),errs=sum(rows.map(r=>r.err)),split=tokSplit(tin,cr,cw);
@@ -96,7 +96,7 @@ const SESS_COLS=[
  {k:'agents',label:'Subagents',v:s=>s.agents.length-1,h:agentsCell,sm:1},
  {k:'ctx',label:'Context',num:1,v:s=>s.ctx==null?-1:s.ctx,h:ctxCell},
  {k:'cache',label:'Prompt cache',v:s=>{const l=cacheLeft(s);return l==null?-1e12:l},h:cacheCell,sm:1},
- {k:'req',label:'Requests',num:1,v:s=>sReq(s).length,h:s=>`<div>${sReq(s).length}</div><div class="cs">${fmt(tokInOf(sReq(s)))} in · ${fmt(tokOutOf(sReq(s)))} out</div>`,sm:1},
+ {k:'req',label:'Requests',num:1,v:s=>sCount(s).n,h:s=>{const c=sCount(s);return `<div>${c.n}</div><div class="cs">${fmt(c.tin)} in · ${fmt(c.tout)} out</div>`},sm:1},
  {k:'last',label:'Last activity',num:1,v:s=>-(lastT(s)||0),h:s=>`<span class="muted">${ago(lastT(s))}</span>`},
  ...histCols(s=>hOf(HT.ses,s.id))
 ];

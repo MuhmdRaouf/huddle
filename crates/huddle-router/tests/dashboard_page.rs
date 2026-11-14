@@ -111,7 +111,8 @@ fn reads_every_key_of_the_state_contract() {
 fn follows_the_live_feed_and_falls_back_to_polling() {
     assert!(PAGE.contains("EventSource('/huddle-router/live')"));
     assert!(PAGE.contains("'snapshot'"));
-    assert!(PAGE.contains("fetch('/huddle-router/state'"));
+    assert!(PAGE.contains("fetch(stateUrl()"));
+    assert!(PAGE.contains("'/huddle-router/state'"));
     assert!(PAGE.contains("setInterval(getState,2000)"));
 }
 
@@ -832,7 +833,7 @@ fn d6_each_badge_counts_its_page() {
     assert!(badge_line("agents").contains("AGENTS.length"));
     assert!(!badge_line("agents").contains("type!=='main'"));
     assert!(badge_line("jobs").contains("JOBS.length"));
-    assert!(badge_line("errors").contains("!==200"));
+    assert!(badge_line("errors").contains("failed_15m"));
 }
 
 #[test]
