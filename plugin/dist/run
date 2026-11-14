@@ -10,7 +10,7 @@
 # /huddle:setup has installed a binary.
 # HUDDLE_DOWNLOAD_BASE and HUDDLE_LATEST_URL move the release URLs for tests.
 
-version=0.0.7
+version=0.0.8
 base=${HUDDLE_DOWNLOAD_BASE:-https://github.com/MuhmdRaouf/huddle/releases/download}
 latest_url=${HUDDLE_LATEST_URL:-https://api.github.com/repos/MuhmdRaouf/huddle/releases/latest}
 # A relative XDG or HUDDLE value is invalid and ignored, as the XDG Base Directory spec says.
