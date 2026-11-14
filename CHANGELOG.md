@@ -37,6 +37,7 @@
 ### Build
 
 - Rust 1.100.0 in `mise.toml`, `rust-version`, the Docker toolchain image and CI.
+- Every Rust dependency at its latest release, with rusqlite 0.42.0 and a fully updated `Cargo.lock`.
 
 ## 0.0.7
 
