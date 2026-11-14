@@ -118,3 +118,19 @@ fn a_dead_runs_folder_is_swept_and_a_live_one_is_left_alone() {
     assert!(!dead.exists());
     assert!(live.exists());
 }
+
+#[test]
+fn e4_every_run_leases_ports_from_one_shared_folder() {
+    let home = TempHome::new();
+    let seen = home.root().join("seen");
+    let (code, out) = run(
+        &home,
+        &format!("printf %s \"$HUDDLE_PORT_LEASES\" > '{}'", seen.display()),
+    );
+    assert_eq!(code, 0, "{out}");
+    assert_eq!(
+        fs::read_to_string(seen).unwrap(),
+        home.root().join("huddle-port-leases").display().to_string(),
+        "the folder sits beside the run directories, so the next run sees the same leases"
+    );
+}

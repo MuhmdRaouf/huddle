@@ -353,3 +353,22 @@ fn t1_a_late_writer_cannot_recreate_a_dropped_home() {
     let _ = fs::remove_dir_all(&root);
     assert!(!left, "the dropped home is gone and stays gone");
 }
+
+#[test]
+fn e4_the_lease_folder_follows_the_variable_and_falls_back_to_the_temp_directory() {
+    use std::ffi::OsString;
+    let temp = Path::new("/t");
+    assert_eq!(
+        ports::lease_dir(Some(OsString::from("/shared/leases")), temp),
+        Path::new("/shared/leases")
+    );
+    assert_eq!(
+        ports::lease_dir(None, temp),
+        Path::new("/t").join(ports::LEASE_DIR)
+    );
+    assert_eq!(
+        ports::lease_dir(Some(OsString::from("relative")), temp),
+        Path::new("/t").join(ports::LEASE_DIR),
+        "a relative value is ignored"
+    );
+}

@@ -1,11 +1,12 @@
 //! Loopback ports for tests.
 
 use std::collections::hash_map::RandomState;
+use std::ffi::OsString;
 use std::fs::{self, OpenOptions};
 use std::hash::{BuildHasher, Hasher};
 use std::io;
 use std::net::TcpListener;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
 const FIRST_PORT: u16 = 20000;
@@ -13,6 +14,9 @@ const LAST_PORT: u16 = 29999;
 const STALE_AFTER: Duration = Duration::from_secs(3600);
 /// Directory of the port leases, under the temp directory. The guard does not count it as a leak.
 pub const LEASE_DIR: &str = "huddle-port-leases";
+/// The variable that names the lease folder. The suite guard sets it to a folder outside its
+/// private `TMPDIR`, so two guarded runs at once lease from the same place.
+pub const LEASE_DIR_VAR: &str = "HUDDLE_PORT_LEASES";
 
 /// A listener on a port the kernel picks: the port is held from the moment the test learns it.
 pub fn listen() -> TcpListener {
@@ -24,12 +28,21 @@ pub fn listen() -> TcpListener {
 
 /// A port for a child process to bind, outside the kernel's ephemeral ranges (macOS 49152-65535,
 /// Linux 32768-60999), so no `127.0.0.1:0` listener of a parallel test can take it. The answer is a
-/// lease file under the temp directory that every test binary respects; it expires after an hour.
+/// lease file in the lease folder that every test binary and every guarded run respects; it expires
+/// after an hour.
 pub fn free_port() -> u16 {
-    let dir = std::env::temp_dir().join(LEASE_DIR);
+    let dir = lease_dir(std::env::var_os(LEASE_DIR_VAR), &std::env::temp_dir());
     match free_in(&dir, FIRST_PORT, LAST_PORT) {
         Ok(port) => port,
         Err(err) => panic!("free port: {err}"),
+    }
+}
+
+/// The lease folder: the variable's value when it is an absolute path, else `LEASE_DIR` under `temp`.
+pub fn lease_dir(var: Option<OsString>, temp: &Path) -> PathBuf {
+    match var.map(PathBuf::from) {
+        Some(dir) if dir.is_absolute() => dir,
+        _ => temp.join(LEASE_DIR),
     }
 }
 

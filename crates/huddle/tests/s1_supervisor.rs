@@ -84,6 +84,20 @@ impl Fixture {
         fs::read_to_string(self.home.root().join(".local/state/huddle/router.log"))
             .unwrap_or_default()
     }
+
+    /// The log once `ready` accepts it. The supervisor writes the worker record first and the
+    /// restart line right after, so a test that saw the record may be a moment ahead of the log.
+    fn log_when(&self, ready: impl Fn(&str) -> bool) -> String {
+        let deadline = Instant::now() + Duration::from_secs(15);
+        loop {
+            let log = self.log();
+            if ready(&log) {
+                return log;
+            }
+            assert!(Instant::now() < deadline, "the log never said it: {log}");
+            thread::sleep(Duration::from_millis(10));
+        }
+    }
 }
 
 fn alive(pid: i32) -> bool {
@@ -114,8 +128,9 @@ fn s1_a_killed_worker_is_back_within_a_second() {
     let after = f.pids_when(|pids| pids.worker > 0 && pids.worker != before.worker);
     assert_eq!(after.parent, before.parent, "the parent stays");
     assert!(alive(after.parent));
-    let log = f.log();
-    assert!(log.contains("huddle-router: worker exited (signal 9)"));
+    let log = f.log_when(|log| {
+        log.contains("huddle-router: worker exited (signal 9)") && restart_ms(log).is_some()
+    });
     let waited = restart_ms(&log).expect("the log names the restart delay");
     assert!(waited < 1000, "restarted after {waited} ms");
 }

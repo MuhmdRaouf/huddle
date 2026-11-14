@@ -1,4 +1,5 @@
 //! The suite guard: runs a test command under a private TMPDIR and fails on what it leaves.
+//! The port leases stay outside that directory, so runs that overlap never share a port.
 
 use std::collections::hash_map::RandomState;
 use std::fs;
@@ -7,7 +8,7 @@ use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use crate::ports::LEASE_DIR;
+use crate::ports::{LEASE_DIR, LEASE_DIR_VAR};
 use crate::temp_home::inside_git_tree;
 
 const RUN_PREFIX: &str = "g";
@@ -45,6 +46,7 @@ fn guarded(temp_root: &Path, command: &[String], out: &mut dyn Write) -> io::Res
     let status = Command::new(program)
         .args(args)
         .env("TMPDIR", &run_dir)
+        .env(LEASE_DIR_VAR, temp_root.join(LEASE_DIR))
         .status()?;
     let code = status.code().unwrap_or(1);
     let left = entries_left(&run_dir)?;

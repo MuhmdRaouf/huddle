@@ -298,3 +298,21 @@ Each incident, its cause, and the test that now stops it. A guard named here mus
 - **Guard:** crates/huddle-daemon/tests/e1_handover_exit.rs:e1_old_router_exits_after_handover_with_an_idle_connection
 - **Rule:** a handover releases the listening socket at once, closes idle connections and open feeds,
   lets a request in flight finish, and ends at the drain limit with one log line.
+## 2026-11-14, a port lease test failed in a full run while other runs shared the machine
+
+- **What happened:** `a_stale_lease_is_taken_over_and_a_live_one_is_skipped` failed once in a full guarded
+  run with "no free port in 22437-22437" and passed alone. Other workers' suites were running at the time.
+- **Cause:** the suite guard gives each run a private `TMPDIR`, and the port leases lived inside it. Two
+  guarded runs at once leased from different folders, so both could hold the same port.
+- **Guard:** crates/huddle-testkit/tests/guard.rs:e4_every_run_leases_ports_from_one_shared_folder
+- **Rule:** port leases live in one folder outside every run's `TMPDIR`; the guard names it in
+  `HUDDLE_PORT_LEASES`.
+
+## 2026-11-14, the restart test read the log a moment before the supervisor wrote it
+
+- **What happened:** `s1_a_killed_worker_is_back_within_a_second` failed 5 of 7 rounds beside a full run:
+  the log did not yet hold "worker exited (signal 9)".
+- **Cause:** the supervisor writes the worker record, then the restart line; the test waited for the
+  record and read the log at once.
+- **Guard:** crates/huddle/tests/s1_supervisor.rs:s1_a_killed_worker_is_back_within_a_second
+- **Rule:** a test that asserts on a log line waits for that line, with a bound.
