@@ -50,6 +50,10 @@ fn guarded(temp_root: &Path, command: &[String], out: &mut dyn Write) -> io::Res
         .status()?;
     let code = status.code().unwrap_or(1);
     let left = entries_left(&run_dir)?;
+    let held: Vec<Vec<String>> = left
+        .iter()
+        .map(|name| names_inside(&run_dir.join(name)))
+        .collect();
     let escaped = stop_processes_under(&run_dir, out)?;
     fs::remove_dir_all(&run_dir)?;
     if !left.is_empty() {
@@ -59,8 +63,11 @@ fn guarded(temp_root: &Path, command: &[String], out: &mut dyn Write) -> io::Res
             left.len(),
             run_dir.display()
         )?;
-        for name in &left {
+        for (name, inside) in left.iter().zip(&held) {
             writeln!(out, "  {name}")?;
+            for path in inside {
+                writeln!(out, "    {path}")?;
+            }
         }
     }
     if !left.is_empty() || escaped {
@@ -92,6 +99,34 @@ fn entries_left(run_dir: &Path) -> io::Result<Vec<String>> {
     }
     names.sort();
     Ok(names)
+}
+
+// The names two levels down inside a leftover, never what a file holds: a temp home's folders and
+// files name the test that made it.
+fn names_inside(entry: &Path) -> Vec<String> {
+    let mut paths = Vec::new();
+    for child in sorted_names(entry) {
+        let grandchildren = sorted_names(&entry.join(&child));
+        paths.push(child.clone());
+        paths.extend(
+            grandchildren
+                .into_iter()
+                .map(|name| format!("{child}/{name}")),
+        );
+    }
+    paths
+}
+
+fn sorted_names(dir: &Path) -> Vec<String> {
+    let Ok(entries) = fs::read_dir(dir) else {
+        return Vec::new();
+    };
+    let mut names: Vec<String> = entries
+        .flatten()
+        .map(|entry| entry.file_name().to_string_lossy().into_owned())
+        .collect();
+    names.sort();
+    names
 }
 
 // A process whose ps line (command or environment) names the run directory can only come from

@@ -134,3 +134,24 @@ fn e4_every_run_leases_ports_from_one_shared_folder() {
         "the folder sits beside the run directories, so the next run sees the same leases"
     );
 }
+
+#[test]
+fn t7_guard_names_what_a_leftover_holds() {
+    let home = TempHome::new();
+    let script = "mkdir -p \"$TMPDIR/hleft/.local/state/huddle\"\n\
+                  echo secret > \"$TMPDIR/hleft/.local/state/huddle/huddle.db\"\n\
+                  mkdir -p \"$TMPDIR/hleft/repo/deep/deeper\"";
+    let (code, out) = run(&home, script);
+    assert_eq!(code, 1, "{out}");
+    assert!(out.contains("hleft"), "{out}");
+    assert!(out.contains(".local"), "{out}");
+    assert!(out.contains(".local/state"), "{out}");
+    assert!(out.contains("repo/deep"), "{out}");
+    assert!(
+        !out.contains("repo/deep/deeper"),
+        "three levels shown: {out}"
+    );
+    assert!(!out.contains("huddle.db"), "deeper than two levels: {out}");
+    assert!(!out.contains("secret"), "file contents shown: {out}");
+    assert!(guard_dirs(&home).is_empty());
+}
