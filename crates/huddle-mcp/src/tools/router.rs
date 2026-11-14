@@ -52,7 +52,7 @@ pub struct RouterStatus {
     pub pid: Option<u64>,
     pub version: Option<String>,
     pub uptime_ms: Option<u64>,
-    /// The lanes the router serves, Anthropic included.
+    /// The enabled provider lanes, as `/huddle-router/health` lists them: Anthropic's passthrough is not one.
     pub providers: Vec<String>,
     /// Absent while the router is down.
     pub anthropic_path: Option<AnthropicPath>,
@@ -138,7 +138,7 @@ pub fn router_status(sources: &dyn Sources) -> RouterStatus {
         providers: state
             .lanes
             .into_iter()
-            .filter(|lane| lane.enabled)
+            .filter(|lane| lane.enabled && lane.id != "anthropic")
             .map(|lane| lane.id)
             .collect(),
         anthropic_path: state.router.path.map(|path| AnthropicPath {

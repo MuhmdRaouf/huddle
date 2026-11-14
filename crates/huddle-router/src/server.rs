@@ -101,7 +101,7 @@ pub fn json_answer(status: StatusCode, json: String) -> Response<RespBody> {
     response
 }
 
-/// The request body limit: 64 MiB.
+/// The request body limit of a proxied request: 64 MiB. `/mcp` has its own, `MCP_BODY_LIMIT`.
 pub const BODY_LIMIT: u64 = 67_108_864;
 
 /// A request path the router may forward: exactly one leading slash. `//host/x` would make the

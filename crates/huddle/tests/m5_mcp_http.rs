@@ -49,7 +49,7 @@ fn send(port: u16, method: &str, host: &str, extra: &[(&str, &str)], body: &str)
             let line = line.trim();
             serde_json::from_str::<Value>(line.strip_prefix("data:").unwrap_or(line).trim()).ok()
         })
-        .filter(|value| value.get("jsonrpc").is_some())
+        .filter(|value| value.get("jsonrpc").is_some() && value.get("error").is_none())
         .collect();
     Answer {
         status,

@@ -7,7 +7,7 @@ mod server;
 mod sources;
 mod tools;
 
-pub use http::{HttpService, http_service};
+pub use http::{HttpService, MCP_BODY_LIMIT, http_service};
 pub use machine::{Machine, ProviderSetup};
 pub use server::{HuddleServer, SourcesFactory, serve_stdio};
 pub use sources::{DiskSources, RouterSources, Sources, pick};

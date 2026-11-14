@@ -19,6 +19,7 @@
 - Time to first token p95 for a history range is the p95 of the range's own requests, not the largest of the buckets' p95s: over 7 days the Models page and the Overview card no longer read up to 3 times too high. `totals&by=model` and `by=lane` carry `ttft_p50` and `ttft_p95` per key and for all rows.
 - Usage a session log reports after its request left the 15 minute window still reaches the live lane total once, so live and history agree on a lane's tokens.
 - `/huddle:<p>:setup` with no key opens the key page and finishes the setup when you save the key: no second run. The page says `Key saved, setup done`, closes itself after 10 seconds and says `You can close this tab.` when the browser refuses. The command waits 100 seconds; after that the next prompt prints the ready report once.
+- `/mcp` answers a body over 4 MiB (413), truncated JSON, a batch, a missing session id (400) and an unknown session (404) with a JSON-RPC error, not plain text. `resources/list` answers method-not-found, since the server has tools only. `huddle_router_status` lists the same providers as `/huddle-router/health`, without the Anthropic passthrough.
 
 ## 0.0.7
 

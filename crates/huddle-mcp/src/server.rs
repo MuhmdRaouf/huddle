@@ -2,9 +2,14 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use huddle_config::env::Env;
+use rmcp::RoleServer;
 use rmcp::handler::server::router::tool::ToolRouter;
 use rmcp::handler::server::wrapper::Parameters;
-use rmcp::model::{Implementation, ServerCapabilities, ServerConfig};
+use rmcp::model::{
+    ErrorCode, Implementation, ListResourcesResult, PaginatedRequestParams, ServerCapabilities,
+    ServerConfig,
+};
+use rmcp::service::RequestContext;
 use rmcp::transport::stdio;
 use rmcp::{ErrorData, Json, ServerHandler, ServiceExt, tool, tool_handler, tool_router};
 
@@ -156,6 +161,19 @@ impl ServerHandler for HuddleServer {
     fn get_info(&self) -> ServerConfig {
         ServerConfig::new(ServerCapabilities::builder().enable_tools().build())
             .with_server_info(Implementation::new("huddle", self.version.clone()))
+    }
+
+    /// The server declares tools only, so a resources probe is method-not-found.
+    async fn list_resources(
+        &self,
+        _request: Option<PaginatedRequestParams>,
+        _context: RequestContext<RoleServer>,
+    ) -> Result<ListResourcesResult, ErrorData> {
+        Err(ErrorData::new(
+            ErrorCode::METHOD_NOT_FOUND,
+            "this server has tools only, no resources",
+            None,
+        ))
     }
 }
 
