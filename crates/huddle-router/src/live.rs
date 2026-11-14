@@ -299,12 +299,22 @@ struct LaneStats {
     last: Option<LaneLast>,
 }
 
+/// Requests waiting for a log's usage that the live state remembers; the oldest are forgotten
+/// first, and the history fill still settles them.
+const MAX_UNREAD: usize = 4096;
+
 struct Inner {
     next_id: u64,
     active: HashMap<u64, Active>,
     recent: VecDeque<RecentRow>,
     lanes: HashMap<String, LaneStats>,
     models: HashMap<String, ModelSeries>,
+    /// Finished requests that still wait for a session log's usage, by upstream id; the value is
+    /// the lane that served them. A credit adds its tokens to that lane once, whether or not the
+    /// request's sample is still in the window.
+    unread: HashMap<String, String>,
+    /// `unread` keys, oldest first; at most `MAX_UNREAD` ids are kept.
+    unread_order: VecDeque<String>,
     plan: Option<PlanUsage>,
     /// `(second, count)` slots indexed by `second % 60`; a slot counts only while its second matches.
     buckets: [(u64, u32); SECONDS],
@@ -341,6 +351,8 @@ impl LiveState {
                 recent: VecDeque::new(),
                 lanes: HashMap::new(),
                 models: HashMap::new(),
+                unread: HashMap::new(),
+                unread_order: VecDeque::new(),
                 plan: None,
                 buckets: [(0, 0); SECONDS],
                 error_times: VecDeque::new(),
@@ -500,8 +512,18 @@ impl LiveState {
             recent,
             models,
             lanes,
+            unread,
             ..
         } = &mut *inner;
+        for tag in tags.values().map(|(_, tag)| tag) {
+            let Some(lane) = unread.remove(tag.request_id.as_str()) else {
+                continue;
+            };
+            let usage = tag.usage;
+            let lane = lanes.entry(lane).or_default();
+            lane.tokens_in += usage.input + usage.cache_read + usage.cache_write;
+            lane.tokens_out += usage.output;
+        }
         for row in recent.iter_mut() {
             let Some((session, tag)) = row.upstream_id.as_deref().and_then(|id| tags.get(id))
             else {
@@ -547,9 +569,6 @@ impl LiveState {
                 sample.cache_write = usage.cache_write;
                 sample.tokens_out = usage.output;
                 sample.usage_known = true;
-                let lane = lanes.entry(series.lane.clone()).or_default();
-                lane.tokens_in += sample.tokens_in;
-                lane.tokens_out += sample.tokens_out;
             }
         }
         credits
@@ -734,6 +753,12 @@ fn record(inner: &mut Inner, id: u64, active: Active, finish: Finish) -> RecentR
         );
         series.prune(finish.now_ms);
     }
+    if finish.usage.is_none()
+        && !none_spent
+        && let Some(id) = &finish.upstream_id
+    {
+        remember_unread(inner, id, &active.lane);
+    }
     let stats = inner.lanes.entry(active.lane.clone()).or_default();
     stats.last = Some(LaneLast {
         status: finish.status,
@@ -775,6 +800,23 @@ fn record(inner: &mut Inner, id: u64, active: Active, finish: Finish) -> RecentR
     inner.recent.push_front(row.clone());
     inner.recent.truncate(RING_CAPACITY);
     row
+}
+
+/// Notes a finished request that waits for a log's usage, forgetting the oldest past the cap.
+fn remember_unread(inner: &mut Inner, id: &str, lane: &str) {
+    if inner
+        .unread
+        .insert(id.to_owned(), lane.to_owned())
+        .is_some()
+    {
+        return;
+    }
+    inner.unread_order.push_back(id.to_owned());
+    if inner.unread_order.len() > MAX_UNREAD
+        && let Some(oldest) = inner.unread_order.pop_front()
+    {
+        inner.unread.remove(&oldest);
+    }
 }
 
 /// The history row of a finished request; its project is unknown until a log names it.
@@ -1396,7 +1438,7 @@ mod tests {
                 "upstream_id"
             ])
         );
-        assert!(json["recent"][0]["tokens_in"].is_null());
+        assert_eq!(json["recent"][0]["tokens_in"], 0);
         assert_eq!(
             keys(&json["in_flight"][0]),
             sorted(&[
@@ -1552,6 +1594,70 @@ mod tests {
         let snapshot = live.snapshot(T0 + 5_000, &inputs(&["anthropic"]));
         assert_eq!(snapshot.lanes[0].tokens_in, 240);
         assert_eq!(snapshot.models[0].tokens_in, 240);
+    }
+
+    const WINDOW_PAST: u64 = 16 * 60_000;
+
+    /// Finishes one more request on the model so the window prunes the earlier samples.
+    fn age_past_the_window(live: &LiveState, at: u64) {
+        let id = begin(live, "anthropic", "claude-opus-5-5", at);
+        live.finish(id, end(200, None, at + 10));
+    }
+
+    #[test]
+    fn j2_credit_after_the_window_reaches_the_lane_total() {
+        let live = LiveState::new(T0);
+        unread(&live, "req_A", T0);
+        age_past_the_window(&live, T0 + WINDOW_PAST);
+        live.credit(&[logged("s1", "agent-x", "req_A")]);
+        let snapshot = live.snapshot(T0 + WINDOW_PAST + 1_000, &inputs(&["anthropic"]));
+        assert_eq!(
+            (snapshot.lanes[0].tokens_in, snapshot.lanes[0].tokens_out),
+            (240, 70)
+        );
+    }
+
+    #[test]
+    fn j2_credit_is_counted_once() {
+        let live = LiveState::new(T0);
+        unread(&live, "req_A", T0);
+        unread(&live, "req_B", T0 + 100);
+        age_past_the_window(&live, T0 + WINDOW_PAST);
+        let late = [logged("s1", "agent-x", "req_A")];
+        live.credit(&late);
+        live.credit(&late);
+        let in_window = [logged("s1", "agent-x", "req_C")];
+        unread(&live, "req_C", T0 + WINDOW_PAST + 500);
+        live.credit(&in_window);
+        live.credit(&in_window);
+        let snapshot = live.snapshot(T0 + WINDOW_PAST + 1_000, &inputs(&["anthropic"]));
+        assert_eq!(
+            (snapshot.lanes[0].tokens_in, snapshot.lanes[0].tokens_out),
+            (480, 140)
+        );
+    }
+
+    #[test]
+    fn j2_live_lane_total_equals_history() {
+        let live = LiveState::new(T0);
+        let mut expected = (0, 0);
+        for n in 0..30 {
+            let at = T0 + n * 90_000;
+            unread(&live, &format!("req_{n}"), at);
+            if n % 3 != 2 {
+                live.credit(&[logged("s1", "agent-x", &format!("req_{n}"))]);
+                expected = (expected.0 + 240, expected.1 + 70);
+            }
+        }
+        for n in (2..30).step_by(3) {
+            live.credit(&[logged("s1", "agent-x", &format!("req_{n}"))]);
+            expected = (expected.0 + 240, expected.1 + 70);
+        }
+        let snapshot = live.snapshot(T0 + 31 * 90_000, &inputs(&["anthropic"]));
+        assert_eq!(
+            (snapshot.lanes[0].tokens_in, snapshot.lanes[0].tokens_out),
+            expected
+        );
     }
 
     #[test]
@@ -1783,7 +1889,7 @@ mod tests {
         let rows = lock(&taken.rows);
         assert_eq!(rows[0].status, 500);
         assert!(rows[0].reason.is_some());
-        assert_eq!(rows[0].tokens_in, None);
+        assert_eq!(rows[0].tokens_in, Some(0));
     }
 
     #[test]
