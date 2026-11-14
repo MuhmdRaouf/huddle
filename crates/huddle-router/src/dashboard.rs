@@ -328,7 +328,7 @@ impl Dashboard {
         let mut last_sent = Instant::now();
         let snapshot = self.snapshot();
         let mut idle = snapshot.in_flight.is_empty();
-        if !send(&tx, event_of(snapshot, slim)).await {
+        if !send(&tx, event_of(snapshot, slim), &mut evicted).await {
             return;
         }
         // After a push for a change, one more follows once the second it landed in has ended: the
@@ -359,7 +359,7 @@ impl Dashboard {
                 sleep_until(last_sent + MIN_GAP).await;
                 changes.borrow_and_update();
             } else if idle && !settling {
-                if !send(&tx, ": ping\n\n".to_owned()).await {
+                if !send(&tx, ": ping\n\n".to_owned(), &mut evicted).await {
                     return;
                 }
                 last_sent = Instant::now();
@@ -367,7 +367,7 @@ impl Dashboard {
             }
             let snapshot = self.snapshot();
             idle = snapshot.in_flight.is_empty();
-            if !send(&tx, event_of(snapshot, slim)).await {
+            if !send(&tx, event_of(snapshot, slim), &mut evicted).await {
                 return;
             }
             last_sent = Instant::now();
@@ -512,8 +512,12 @@ fn event_of(snapshot: Snapshot, slim: bool) -> String {
 async fn send(
     tx: &mpsc::Sender<Result<Frame<Bytes>, crate::server::BodyCut>>,
     text: String,
+    evicted: &mut oneshot::Receiver<()>,
 ) -> bool {
-    tx.send(Ok(Frame::data(Bytes::from(text)))).await.is_ok()
+    tokio::select! {
+        sent = tx.send(Ok(Frame::data(Bytes::from(text)))) => sent.is_ok(),
+        _ = evicted => false,
+    }
 }
 
 /// Resolves once `drain` has left Serving; never when there is no drain to watch.

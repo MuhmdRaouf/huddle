@@ -330,7 +330,12 @@ pub fn entry_handler(ctx: Arc<EntryCtx>) -> Handler {
                 // The live feed is the one dashboard path a page opens cross-origin, so its
                 // Origin is checked too.
                 if req.uri().path() == LIVE_PATH {
-                    let origin = req.headers().get(ORIGIN).and_then(|v| v.to_str().ok());
+                    // An Origin that is not visible ASCII is refused like a wrong one.
+                    let origin = match req.headers().get(ORIGIN).map(HeaderValue::to_str) {
+                        None => None,
+                        Some(Ok(origin)) => Some(origin),
+                        Some(Err(_)) => return wrong_origin(),
+                    };
                     if !origin_allowed(origin, port, &(ctx.dashboard_hosts)()) {
                         return wrong_origin();
                     }

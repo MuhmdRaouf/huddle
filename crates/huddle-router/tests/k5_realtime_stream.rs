@@ -322,6 +322,39 @@ async fn k5_stream_refuses_a_foreign_origin() {
     let _ = r.stop.send(true);
 }
 
+/// A `GET` of the live path whose `Origin` bytes are sent as given; returns the head's first bytes.
+async fn open_with_raw_origin(port: u16, origin: &[u8]) -> String {
+    let mut stream = TcpStream::connect(("127.0.0.1", port))
+        .await
+        .expect("connect");
+    let mut head =
+        format!("GET /huddle-router/live HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nOrigin: ")
+            .into_bytes();
+    head.extend_from_slice(origin);
+    head.extend_from_slice(b"\r\n\r\n");
+    stream.write_all(&head).await.expect("write");
+    let mut chunk = [0u8; 4096];
+    let n = tokio::time::timeout(Duration::from_secs(3), stream.read(&mut chunk))
+        .await
+        .expect("an answer")
+        .expect("read");
+    String::from_utf8_lossy(&chunk[..n]).into_owned()
+}
+
+#[tokio::test]
+async fn c2_unreadable_origin_is_refused() {
+    let anthropic = FakeUpstream::start(|_, _| Step::answer(200, "{}")).await;
+    let r = rig(anthropic).await;
+    let wrong = Feed::open(r.port, "", "Origin: http://evil.example\r\n").await;
+    assert!(wrong.head.starts_with("HTTP/1.1 403"), "{}", wrong.head);
+    let unreadable = open_with_raw_origin(r.port, b"http://caf\xc3\xa9.example").await;
+    assert!(
+        unreadable.starts_with("HTTP/1.1 403"),
+        "a non-ASCII Origin is refused like a wrong one: {unreadable}"
+    );
+    let _ = r.stop.send(true);
+}
+
 async fn viewers(port: u16) -> u64 {
     state(port).await["router"]["viewers"]
         .as_u64()
@@ -373,6 +406,15 @@ async fn k5_finished_feeds_do_not_count_against_the_cap() {
 
     for _ in 0..MAX_LIVE_STREAMS + 2 {
         let gone = Feed::open(r.port, "?recent=0", "").await;
+        // The head can arrive before the feed's task counts its viewer; the task is running once
+        // the count reaches two, so the drop below ends a task that exists.
+        for _ in 0..100 {
+            if viewers(r.port).await == 2 {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(30)).await;
+        }
+        assert_eq!(viewers(r.port).await, 2, "the new feed's task is running");
         drop(gone);
         for _ in 0..100 {
             if viewers(r.port).await == 1 {
@@ -391,5 +433,55 @@ async fn k5_finished_feeds_do_not_count_against_the_cap() {
         matches!(next, Some(Some(_))),
         "the kept feed was not cut by closed ones"
     );
+    let _ = r.stop.send(true);
+}
+
+#[tokio::test]
+async fn c2_evicted_feed_ends_while_its_reader_is_stalled() {
+    let anthropic = FakeUpstream::start(|_, _| Step::answer(200, "{}")).await;
+    let r = rig(anthropic).await;
+    // A client that sends its request and never reads: its socket buffers fill and the feed's
+    // sends block.
+    let mut stalled = TcpStream::connect(("127.0.0.1", r.port))
+        .await
+        .expect("connect");
+    let head = format!(
+        "GET /huddle-router/live HTTP/1.1\r\nHost: 127.0.0.1:{}\r\n\r\n",
+        r.port
+    );
+    stalled.write_all(head.as_bytes()).await.expect("write");
+    for _ in 0..100 {
+        if viewers(r.port).await == 1 {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(30)).await;
+    }
+    assert_eq!(viewers(r.port).await, 1, "the stalled feed is open");
+    // Distinct long model names make every snapshot large, and each change makes the stalled
+    // feed push one, until its socket is full and its send blocks.
+    let started = Instant::now();
+    let mut n = 0;
+    while started.elapsed() < Duration::from_secs(6) {
+        let model = format!("claude-{n}-{}", "m".repeat(150));
+        ask(r.port, "", &format!(r#"{{"model":"{model}"}}"#)).await;
+        n += 1;
+    }
+    let mut others = Vec::new();
+    for _ in 0..MAX_LIVE_STREAMS {
+        others.push(Feed::open(r.port, "?recent=0", "").await);
+    }
+    let mut seen = u64::MAX;
+    for _ in 0..100 {
+        seen = viewers(r.port).await;
+        if seen as usize <= MAX_LIVE_STREAMS {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    assert!(
+        seen as usize <= MAX_LIVE_STREAMS,
+        "{seen} open streams, the stalled one outlived its eviction"
+    );
+    drop(stalled);
     let _ = r.stop.send(true);
 }

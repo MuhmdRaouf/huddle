@@ -8,6 +8,7 @@
 - `huddle uninstall` leaves nothing of huddle on the machine: after the undo it deletes the CA and its key, the binaries, the config, the state (the request history too), the cache and the runtime folder, and names each one. A folder not named `huddle`, or a link, is left in place and named; a failed settings restore keeps the ledger, a failed router stop keeps the state, runtime and data folders, and a provider that did not remove keeps `providers.toml`.
 - A process the router starts no longer inherits its listening socket after an update handover, so a leftover `git` cannot hold port 4835.
 - MCP over HTTP needs a token: the router refuses `/mcp` without it, and the plugin's `headersHelper` runs `huddle mcp headers` so Claude Code sends it with no step from you. `huddle router status` says `mcp: token ok` or what is wrong.
+- The live dashboard feed refuses an `Origin` header that is not readable text, like a wrong origin, instead of treating it as absent.
 
 ### Router
 

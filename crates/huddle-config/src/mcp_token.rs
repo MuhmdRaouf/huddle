@@ -99,6 +99,8 @@ impl McpToken {
         // A whole file under a temp name, then a hard link: the link fails when another caller
         // got there first, and nobody ever reads a half-written token.
         let temp = path.with_extension(format!("{}.tmp", std::process::id()));
+        // A crash can leave this name behind, and a recycled pid reuses it.
+        let _ = fs::remove_file(&temp);
         let written = (|| {
             let mut file = fs::OpenOptions::new()
                 .write(true)
@@ -162,6 +164,17 @@ mod tests {
         assert_eq!(McpToken::read(&path).unwrap(), first);
         let other = home.root().join("other/mcp-token");
         assert_ne!(McpToken::ensure(&other).unwrap(), first);
+    }
+
+    #[test]
+    fn c2_stale_token_temp_does_not_block_ensure() {
+        let home = TempHome::new();
+        let path = home.root().join("state/mcp-token");
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        let stale = path.with_extension(format!("{}.tmp", std::process::id()));
+        fs::write(&stale, "left behind by a crash").unwrap();
+        let token = McpToken::ensure(&path).unwrap();
+        assert_eq!(McpToken::read(&path).unwrap(), token);
     }
 
     #[test]

@@ -1,6 +1,7 @@
 //! `huddle hook <event>`. Runs at Claude Code's session start. Exits 0 on any failure and never
 //! blocks a session.
 
+use std::io::Write as _;
 use std::net::{SocketAddr, TcpStream};
 use std::os::unix::process::CommandExt;
 use std::path::Path;
@@ -34,7 +35,11 @@ pub fn run(args: &[String], env: &Env) -> i32 {
 /// The ready report of a setup a key page finished after its command had left, printed once;
 /// then the router probe: this runs on every prompt.
 fn prompt_submit(env: &Env, paths: &Paths, exe: &Path) {
-    print!("{}", super::provider::ready_note::take_all(paths));
+    let _ = write!(
+        std::io::stdout(),
+        "{}",
+        super::provider::ready_note::take_all(paths)
+    );
     if !ledger_path(paths).exists() {
         return; // setup has not run: change nothing
     }
@@ -108,7 +113,7 @@ fn session_start(env: &Env, paths: &Paths, exe: &Path) {
     if !lines.is_empty() {
         let message = lines.join("\n");
         if let Ok(json) = serde_json::to_string(&serde_json::json!({ "systemMessage": message })) {
-            println!("{json}");
+            let _ = writeln!(std::io::stdout(), "{json}");
         }
     }
 }
