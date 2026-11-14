@@ -23,6 +23,7 @@
 - `/huddle:<p>:setup` with no key opens the key page and finishes the setup when you save the key: no second run. The page says `Key saved, setup done`, closes itself after 10 seconds and says `You can close this tab.` when the browser refuses. The command waits 100 seconds; after that the next prompt prints the ready report once.
 - `/mcp` answers a body over 4 MiB (413), truncated JSON, a batch, a missing session id (400) and an unknown session (404) with a JSON-RPC error, not plain text. `resources/list` answers method-not-found, since the server has tools only. `huddle_router_status` lists the same providers as `/huddle-router/health`, without the Anthropic passthrough.
 - Column labels say what they count: the Models column reads "Cost per 1M total tokens" and its values carry "Cache reads and writes included", and the Errors column reads "Sessions hit (newest 500)".
+- The Sessions page asks for session totals without each session's per-model split (`totals&by=session&models=0`): over 7 days the answer drops from 301 KB to 121 KB. The session sheet asks for its own session (`&session=<id>`) when it opens. `/huddle-router/history` without `models=0` answers as before.
 
 ## 0.0.7
 

@@ -250,7 +250,7 @@ impl Dashboard {
         let worked = tokio::task::spawn_blocking(move || match open() {
             None => Ok(history_view::empty_answer(&parsed)),
             Some(history) => {
-                let aliases = if matches!(parsed, Query::Totals(_, GroupBy::Project)) {
+                let aliases = if matches!(parsed, Query::Totals(_, GroupBy::Project, _)) {
                     folder_aliases(&machine().worktrees)
                 } else {
                     BTreeMap::new()

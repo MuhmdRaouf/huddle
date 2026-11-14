@@ -350,7 +350,7 @@ document.addEventListener('keydown',e=>{
  const n=$('[data-day="'+d.getDate()+'"]');if(n&&!n.disabled)n.focus()},true);
 function renderRangeBar(){const el=$('#rangebar');if(el){menuDrop();setHtml(el,rangeBar())}}
 function applyRange(){HIST.bk=HIST.tot=HIST.ser=null;HIST.err=false;HIST.picking=false;CH.focus=null;if(liveRange()&&CH.metric==='cost')CH.metric='req';
- HT.ses=HT.prj=HT.meta=null;HT.trend={};
+ HT.ses=HT.prj=HT.meta=null;HT.trend={};HT.mod={};
  try{localStorage.setItem('huddle-range',HIST.range);if(HIST.range==='custom')localStorage.setItem('huddle-range-custom',JSON.stringify({from:HIST.from,to:HIST.to}))}catch(e){}
  renderRangeBar();render();loadHistory()}
 function setRange(k){if(!RANGES.some(r=>r[0]===k))return;HIST.range=k;applyRange()}
@@ -363,7 +363,7 @@ const pricesLine=d=>d?`<div class="legendrow">Estimated from list prices. Prices
 const priceNote=()=>liveRange()?'':pricesLine(HIST.bk);
 
 /* ---------- 30-day history of sessions and projects ---------- */
-const HT={ses:null,prj:null,meta:null,trend:{},err:false},HZERO={n:0,err:0,tok_in:0,cache_read:0,cache_write:0,tok_out:0,cost_usd:0,models:[]};
+const HT={ses:null,prj:null,meta:null,trend:{},mod:{},err:false},HZERO={n:0,err:0,tok_in:0,cache_read:0,cache_write:0,tok_out:0,cost_usd:0,models:[]};
 const HQ='/huddle-router/history?view=';
 const hmap=d=>{const m={};arr(d&&d.totals).forEach(t=>{m[t.key]=t});return m};
 const hOf=(m,k)=>m?m[k]||HZERO:null;
@@ -371,15 +371,15 @@ const hCell=(t,f)=>t?f(t):HT.err?NA:checking();
 const sheetKey=()=>DR&&(DR.k==='session'||DR.k==='project')?DR:null;
 const wantTotals=()=>page==='sessions'||page==='projects'||!!sheetKey();
 function loadTotals(){if(!wantTotals())return;const q=sheetKey(),key=q&&q.key;
- Promise.all([hget(HQ+'totals&by=session&'+rangeQuery()),hget(HQ+'totals&by=project&'+rangeQuery()),q?hget(HQ+'buckets&'+rangeQuery()+'&'+q.k+'='+encodeURIComponent(q.id)):null]).then(([s,p,t])=>{
-  HT.ses=hmap(s);HT.prj=hmap(p);HT.meta=s;if(t)HT.trend[key]=t;HT.err=false;paint()},()=>{HT.err=true;paint()})}
+ Promise.all([hget(HQ+'totals&by=session&models=0&'+rangeQuery()),hget(HQ+'totals&by=project&'+rangeQuery()),q?hget(HQ+'buckets&'+rangeQuery()+'&'+q.k+'='+encodeURIComponent(q.id)):null,q&&q.k==='session'?hget(HQ+'totals&by=session&session='+encodeURIComponent(q.id)+'&'+rangeQuery()):null]).then(([s,p,t,m])=>{
+  HT.ses=hmap(s);HT.prj=hmap(p);HT.meta=s;if(t)HT.trend[key]=t;if(m)HT.mod[key]=arr(arr(m.totals)[0]&&m.totals[0].models);HT.err=false;paint()},()=>{HT.err=true;paint()})}
 const costCell=t=>costText(t.cost_usd,t.priced);
 const histCols=get=>[
  {k:'hreq',get label(){return `Requests (${rangeShort()})`},num:1,sm:1,v:x=>n0((get(x)||HZERO).n),h:x=>hCell(get(x),t=>t.n?fmt(t.n):'<span class="faint">0</span>')},
  {k:'htok',get label(){return `Tokens (${rangeShort()})`},num:1,sm:1,v:x=>n0((get(x)||HZERO).tok_in)+n0((get(x)||HZERO).tok_out),h:x=>hCell(get(x),t=>t.n?`${fmt(t.tok_in)} <span class="faint">/</span> ${fmt(t.tok_out)}`:NA)},
  {k:'hcost',get label(){return `API price (${rangeShort()})`},num:1,v:x=>n0((get(x)||HZERO).cost_usd),h:x=>hCell(get(x),t=>t.n?costCell(t):NA)}];
 /* the History block of a session or project sheet: totals, a daily trend and the models used */
-function histBlock(key,t){const tr=HT.trend[key],head=`<h4>History <span class="faint">${rangeText()}</span></h4>`;
+function histBlock(key,t){const tr=HT.trend[key],models=key.startsWith('session:')?HT.mod[key]:t&&t.models,head=`<h4>History <span class="faint">${rangeText()}</span></h4>`;
  if(!t)return `<div>${head}<div class="card pad">${HT.err?'<span class="badc">Could not load history. Showing the last data.</span> <button type="button" class="cmd" data-retry>Retry</button>':checking()}</div></div>`;
  if(!t.n)return `<div>${head}<div class="card"><div class="allclear">${ic('info')} No requests in ${rangeText()}</div></div></div>`;
  const tin=n0(t.tok_in),fact=(k,v)=>`<div class="fact"><div class="k">${k}</div><div class="v">${v}</div></div>`;
@@ -391,7 +391,7 @@ function histBlock(key,t){const tr=HT.trend[key],head=`<h4>History <span class="
  return `<div>${head}<div class="facts">${fact('Requests',fmt(t.n)+' · '+fmt(t.err)+' errors')+fact('Tokens in',fmt(tin))+fact('Tokens out',fmt(t.tok_out))
   +fact('Cache hit rate',tin?Math.round(tokSplit(tin,t.cache_read,t.cache_write).hit*100)+'%':'—')+fact('API price',costCell(t))+fact('First seen',new Date(t.first_ms).toLocaleDateString()+' · '+ago(t.first_ms))+fact('Last seen',new Date(t.last_ms).toLocaleDateString()+' · '+ago(t.last_ms))}</div>
   <div class="card pad mt12"><div class="legendrow bare">Requests over time</div>${tr?spark(histSeries(tr).b.map(k=>k.n),'var(--c1)'):checking()}</div></div>
-  <div><h4>Models used <span class="faint">${arr(t.models).length}</span></h4><div class="card t">${table('d-hm',mcols,arr(t.models),{empty:'No models'})}</div>${pricesLine(HT.meta)}</div>`}
+  <div><h4>Models used <span class="faint">${models?models.length:''}</span></h4><div class="card t">${models?table('d-hm',mcols,models,{empty:'No models'}):'<div class="pad">'+checking()+'</div>'}</div>${pricesLine(HT.meta)}</div>`}
 
 
 const PAGES={};

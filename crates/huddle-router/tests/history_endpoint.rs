@@ -433,3 +433,43 @@ async fn c1_totals_by_reason_count_each_provider_and_cause() {
         "only errors: {v}"
     );
 }
+
+#[tokio::test]
+async fn k3_session_totals_slim_has_no_models() {
+    let rig = rig(true).await;
+    let full = json(&rig, "view=totals&by=session&range=30d").await;
+    let slim = json(&rig, "view=totals&by=session&range=30d&models=0").await;
+    let (full, slim) = (
+        full["totals"].as_array().expect("full"),
+        slim["totals"].as_array().expect("slim"),
+    );
+    assert_eq!(full.len(), slim.len());
+    for (f, s) in full.iter().zip(slim) {
+        let mut f = f.as_object().expect("row").clone();
+        assert!(f.remove("models").is_some(), "the full row has models");
+        assert_eq!(&serde_json::Value::Object(f), s, "same numbers, no models");
+    }
+}
+
+#[tokio::test]
+async fn k3_session_totals_default_is_unchanged() {
+    let rig = rig(true).await;
+    let v = json(&rig, "view=totals&by=session&range=30d").await;
+    let row = v["totals"]
+        .as_array()
+        .and_then(|rows| rows.iter().find(|r| r["key"] == "s1"))
+        .expect("s1");
+    assert_eq!(row["models"][0]["model"], "claude-opus-5-5");
+    let explicit = json(&rig, "view=totals&by=session&range=30d&models=1").await;
+    assert_eq!(explicit["totals"], v["totals"]);
+}
+
+#[tokio::test]
+async fn k3_one_session_answers_with_its_models() {
+    let rig = rig(true).await;
+    let v = json(&rig, "view=totals&by=session&range=30d&session=s1").await;
+    let rows = v["totals"].as_array().expect("totals");
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0]["key"], "s1");
+    assert_eq!(rows[0]["models"][0]["model"], "claude-opus-5-5");
+}

@@ -221,7 +221,7 @@ fn t8_remembers_the_range_and_shows_a_failed_fetch_without_dropping_data() {
 #[test]
 fn t9_fetches_30_day_totals_by_session_and_project_and_a_trend_per_sheet() {
     assert!(PAGE.contains("/huddle-router/history?view="));
-    assert!(PAGE.contains("totals&by=session&'+rangeQuery()"));
+    assert!(PAGE.contains("totals&by=session&models=0&'+rangeQuery()"));
     assert!(PAGE.contains("totals&by=project&'+rangeQuery()"));
     assert!(PAGE.contains("buckets&'+rangeQuery()+'&'+q.k+'='+encodeURIComponent(q.id)"));
     assert!(PAGE.contains("function loadTotals(){if(!wantTotals())return"));
@@ -1893,4 +1893,10 @@ fn j3_errors_label_says_newest_500() {
         ERRORS_JS.contains("g.sessions==null?NA:g.sessions"),
         "the session arithmetic is untouched"
     );
+}
+
+#[test]
+fn k3_sessions_page_asks_slim_and_sheet_asks_full() {
+    assert!(PAGE.contains("totals&by=session&models=0&'+rangeQuery()"));
+    assert!(PAGE.contains("totals&by=session&session='+encodeURIComponent(q.id)+'&'+rangeQuery()"));
 }

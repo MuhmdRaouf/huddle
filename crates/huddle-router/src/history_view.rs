@@ -91,6 +91,15 @@ impl Window {
     }
 }
 
+/// What a totals answer carries beyond the sums.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TotalsShape {
+    /// Each row's per-model split; `models=0` leaves it out.
+    pub models: bool,
+    /// Only the row with this key.
+    pub only: Option<String>,
+}
+
 /// One parsed history question.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Query {
@@ -99,7 +108,7 @@ pub enum Query {
         session: Option<String>,
         project: Option<String>,
     },
-    Totals(Window, GroupBy),
+    Totals(Window, GroupBy, TotalsShape),
     Search {
         window: Window,
         filter: Filter,
@@ -226,7 +235,13 @@ pub fn parse(query: &str, now_ms: u64, keep_days: u64) -> Result<Query, Refusal>
                 Some("day") => GroupBy::Day,
                 Some(_) => return Err(bad("by must be session, project, model, lane or day")),
             };
-            Ok(Query::Totals(window, by))
+            let shape = TotalsShape {
+                models: get("models") != Some("0"),
+                only: get("session")
+                    .filter(|_| by == GroupBy::Session)
+                    .map(str::to_owned),
+            };
+            Ok(Query::Totals(window, by, shape))
         }
         Some("search") => {
             let mut filter = Filter::new(window.range());
@@ -355,7 +370,7 @@ pub fn answer(
             out.insert("buckets".into(), Value::Array(rows));
             Ok(Value::Object(out))
         }
-        Query::Totals(window, GroupBy::Reason) => {
+        Query::Totals(window, GroupBy::Reason, _) => {
             let totals = history.totals(window.range(), GroupBy::Reason)?;
             let rows: Vec<Value> = totals.iter().filter_map(reason_row).collect();
             let mut out = envelope("totals", *window);
@@ -363,31 +378,18 @@ pub fn answer(
             out.insert("totals".into(), Value::Array(rows));
             Ok(Value::Object(out))
         }
-        Query::Totals(window, by) => {
+        Query::Totals(window, by, shape) => {
             let totals = history.totals_with_aliases(window.range(), *by, aliases)?;
             let rows: Vec<Value> = totals
                 .iter()
+                .filter(|t| shape.only.as_ref().is_none_or(|key| *key == t.key))
                 .map(|t| {
-                    let models: Vec<Value> = t
-                        .models
-                        .iter()
-                        .map(|m| {
-                            json!({
-                                "model": m.model, "n": m.n, "tok_in": m.tok_in,
-                                "cache_read": m.cache_read, "cache_write": m.cache_write,
-                                "tok_out": m.tok_out,
-                                "cost_usd": cost_of_sums(&m.model, m.tok_in, m.cache_read, m.cache_write, m.tok_out),
-                                "priced": price_of(&m.model).is_some(),
-                                "cache_saved_usd": cache_saved(&m.model, m.cache_read),
-                            })
-                        })
-                        .collect();
                     let cost: f64 = t
                         .models
                         .iter()
                         .map(|m| cost_of_sums(&m.model, m.tok_in, m.cache_read, m.cache_write, m.tok_out))
                         .sum();
-                    json!({
+                    let mut row = json!({
                         "key": t.key, "n": t.n, "err": t.err, "tok_in": t.tok_in,
                         "cache_read": t.cache_read, "cache_write": t.cache_write,
                         "tok_out": t.tok_out, "first_ms": t.first_ms, "last_ms": t.last_ms,
@@ -400,8 +402,25 @@ pub fn answer(
                             .iter()
                             .map(|m| cache_saved(&m.model, m.cache_read))
                             .sum::<f64>(),
-                        "models": models,
-                    })
+                    });
+                    if shape.models {
+                        let models: Vec<Value> = t
+                            .models
+                            .iter()
+                            .map(|m| {
+                                json!({
+                                    "model": m.model, "n": m.n, "tok_in": m.tok_in,
+                                    "cache_read": m.cache_read, "cache_write": m.cache_write,
+                                    "tok_out": m.tok_out,
+                                    "cost_usd": cost_of_sums(&m.model, m.tok_in, m.cache_read, m.cache_write, m.tok_out),
+                                    "priced": price_of(&m.model).is_some(),
+                                    "cache_saved_usd": cache_saved(&m.model, m.cache_read),
+                                })
+                            })
+                            .collect();
+                        row["models"] = Value::Array(models);
+                    }
+                    row
                 })
                 .collect();
             let mut out = envelope("totals", *window);
@@ -480,7 +499,7 @@ fn row_json(row: &Row) -> Value {
 pub fn empty_answer(query: &Query) -> Value {
     let (view, window) = match query {
         Query::Buckets { window, .. } => ("buckets", *window),
-        Query::Totals(window, _) => ("totals", *window),
+        Query::Totals(window, ..) => ("totals", *window),
         Query::Search { window, .. } => ("search", *window),
         Query::Meta { keep_days } => return meta_answer(*keep_days),
     };
@@ -490,7 +509,7 @@ pub fn empty_answer(query: &Query) -> Value {
             out.insert("width_ms".into(), json!(window.width_ms()));
             out.insert("buckets".into(), json!([]));
         }
-        Query::Totals(_, by) => {
+        Query::Totals(_, by, _) => {
             out.insert("by".into(), json!(group_name(*by)));
             out.insert("totals".into(), json!([]));
         }
