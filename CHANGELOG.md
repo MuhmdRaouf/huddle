@@ -16,6 +16,7 @@
 - MCP over HTTP no longer answers for the router's own folder: `huddle_run`, `huddle_status`, `huddle_result` and `huddle_cancel` take a `dir` and refuse with a clear error when it is missing. Over stdio they still default to the folder the server runs in.
 - A request that ended in an error answer is recorded with zero tokens instead of unknown, so it no longer waits for a session log that will never credit it; a client that left stays unknown.
 - `huddle provider <unknown>` names the typo before the table: the first line is `huddle: no provider named "nosuch"`, instead of the provider table alone.
+- Time to first token p95 for a history range is the p95 of the range's own requests, not the largest of the buckets' p95s: over 7 days the Models page and the Overview card no longer read up to 3 times too high. `totals&by=model` and `by=lane` carry `ttft_p50` and `ttft_p95` per key and for all rows.
 
 ## 0.0.7
 

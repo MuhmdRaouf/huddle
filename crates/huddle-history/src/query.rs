@@ -66,6 +66,9 @@ pub struct ModelUsage {
     pub tok_out: u64,
 }
 
+/// One slice's sums per key and model, and its first-token times per key.
+type TotalsPart = (HashMap<(String, String), Sums>, HashMap<String, Vec<u64>>);
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Total {
     pub key: String,
@@ -77,6 +80,9 @@ pub struct Total {
     pub tok_out: u64,
     pub first_ms: u64,
     pub last_ms: u64,
+    /// Time to first token over this key's rows that have one (nearest rank).
+    pub ttft_p50: Option<u64>,
+    pub ttft_p95: Option<u64>,
     pub models: Vec<ModelUsage>,
 }
 
@@ -90,6 +96,9 @@ impl Total {
         self.tok_out += other.tok_out;
         self.first_ms = self.first_ms.min(other.first_ms);
         self.last_ms = self.last_ms.max(other.last_ms);
+        // Percentiles of two groups cannot be combined from their own percentiles.
+        self.ttft_p50 = None;
+        self.ttft_p95 = None;
         for usage in other.models {
             match self.models.iter_mut().find(|m| m.model == usage.model) {
                 Some(m) => {
@@ -253,18 +262,28 @@ impl History {
     pub fn totals(&self, range: Range, by: GroupBy) -> Result<Vec<Total>, HistoryError> {
         let parts = self.sliced(range, 1, |history, slice| history.totals_part(slice, by))?;
         let mut merged: BTreeMap<String, BTreeMap<String, Sums>> = BTreeMap::new();
-        for ((key, model), sums) in parts.into_iter().flatten() {
-            merged
-                .entry(key)
-                .or_default()
-                .entry(model)
-                .or_default()
-                .merge(&sums);
+        let mut ttft: HashMap<String, Vec<u64>> = HashMap::new();
+        for (sums, times) in parts {
+            for ((key, model), sums) in sums {
+                merged
+                    .entry(key)
+                    .or_default()
+                    .entry(model)
+                    .or_default()
+                    .merge(&sums);
+            }
+            for (key, mut times) in times {
+                ttft.entry(key).or_default().append(&mut times);
+            }
         }
         Ok(merged
             .into_iter()
             .map(|(key, per_model)| {
+                let mut times = ttft.remove(&key).unwrap_or_default();
+                times.sort_unstable();
                 let mut total = Total {
+                    ttft_p50: nearest_rank(&times, 50),
+                    ttft_p95: nearest_rank(&times, 95),
                     key,
                     n: 0,
                     err: 0,
@@ -299,38 +318,66 @@ impl History {
             .collect())
     }
 
-    fn totals_part(
-        &self,
-        range: Range,
-        by: GroupBy,
-    ) -> Result<HashMap<(String, String), Sums>, HistoryError> {
+    fn totals_part(&self, range: Range, by: GroupBy) -> Result<TotalsPart, HistoryError> {
         let mut stmt = self.conn.prepare(&format!(
-            "SELECT {key}, model, at_ms, {IS_ERROR}, tokens_in, cache_read, cache_write, tokens_out
+            "SELECT {key}, model, at_ms, {IS_ERROR}, tokens_in, cache_read, cache_write, tokens_out,
+                    ttft_ms
              FROM requests WHERE at_ms >= ?1 AND at_ms < ?2",
             key = by.key_column()
         ))?;
         let mut keys = Interner::default();
         let mut models = Interner::default();
         let mut sums: HashMap<(usize, usize), Sums> = HashMap::new();
+        let mut times: HashMap<usize, Vec<u64>> = HashMap::new();
         let mut rows = stmt.query([to_db(range.from_ms), to_db(range.to_ms)])?;
         while let Some(r) = rows.next()? {
             let key = keys.id(&text_at(r, 0)?);
             let model = models.id(&text_at(r, 1)?);
             sums.entry((key, model)).or_default().add(r, 2)?;
+            if let Some(ms) = opt_count(r, 8)? {
+                times.entry(key).or_default().push(ms);
+            }
         }
         let names = if by == GroupBy::Day {
             self.day_names(&keys.names)?
         } else {
             keys.names
         };
-        Ok(sums
+        let sums = sums
             .into_iter()
             .map(|((key, model), sums)| {
                 let key = names.get(key).cloned().unwrap_or_default();
                 let model = models.names.get(model).cloned().unwrap_or_default();
                 ((key, model), sums)
             })
-            .collect())
+            .collect();
+        let times = times
+            .into_iter()
+            .map(|(key, times)| (names.get(key).cloned().unwrap_or_default(), times))
+            .collect();
+        Ok((sums, times))
+    }
+
+    /// Time to first token p50 and p95 over every row of `range` that has one (nearest rank).
+    pub fn ttft_percentiles(
+        &self,
+        range: Range,
+    ) -> Result<(Option<u64>, Option<u64>), HistoryError> {
+        let parts = self.sliced(range, 1, |history, slice| {
+            let mut stmt = history.conn.prepare(
+                "SELECT ttft_ms FROM requests
+                 WHERE at_ms >= ?1 AND at_ms < ?2 AND ttft_ms IS NOT NULL",
+            )?;
+            let mut rows = stmt.query([to_db(slice.from_ms), to_db(slice.to_ms)])?;
+            let mut times = Vec::new();
+            while let Some(r) = rows.next()? {
+                times.push(count(r, 0)?);
+            }
+            Ok(times)
+        })?;
+        let mut times: Vec<u64> = parts.into_iter().flatten().collect();
+        times.sort_unstable();
+        Ok((nearest_rank(&times, 50), nearest_rank(&times, 95)))
     }
 
     /// The `YYYY-MM-DD` name of each day number in `numbers` (decimal text), in the same order.

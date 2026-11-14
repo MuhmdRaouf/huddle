@@ -180,6 +180,29 @@ async fn t6_buckets_carry_cost_and_the_price_dates() {
 }
 
 #[tokio::test]
+async fn j1_totals_carry_row_level_ttft_per_key_and_for_all_rows() {
+    let rig = rig(true).await;
+    let v = json(&rig, "view=totals&by=model&range=15m").await;
+    let totals = v["totals"].as_array().expect("totals");
+    let claude = totals
+        .iter()
+        .find(|t| t["key"] == "claude-opus-5-5")
+        .expect("claude");
+    assert_eq!(
+        (&claude["ttft_p50"], &claude["ttft_p95"]),
+        (&Value::from(300), &Value::from(300))
+    );
+    let glm = totals.iter().find(|t| t["key"] == "glm-5.3").expect("glm");
+    assert!(glm["ttft_p50"].is_null() && glm["ttft_p95"].is_null());
+    assert_eq!(
+        (&v["ttft_p50"], &v["ttft_p95"]),
+        (&Value::from(300), &Value::from(300))
+    );
+    let lanes = json(&rig, "view=totals&by=lane&range=15m").await;
+    assert_eq!(lanes["ttft_p95"], 300);
+}
+
+#[tokio::test]
 async fn t6_range_widths_follow_the_range() {
     let rig = rig(true).await;
     for (range, width) in [

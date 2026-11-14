@@ -252,11 +252,9 @@ function histSeries(d){const w=Math.max(1,num(d.width_ms)||3e5),s0=Math.floor(d.
  arr(d.buckets).forEach(x=>{const k=b[Math.min(N-1,Math.max(0,Math.floor((x.start_ms-s0)/w)))],o={n:n0(x.n),err:n0(x.err),tok:n0(x.tok_in)+n0(x.tok_out),p50:n0(x.ttft_p50),cost:n0(x.cost_usd)};
   k.byM[x.model]=o;k.n+=o.n;k.err+=o.err;k.tok+=o.tok;k.cost+=o.cost;k.w+=o.p50*o.n;names.add(x.model)});
  b.forEach(k=>{k.p50=k.n?k.w/k.n:0});return {b,mn:[...names].filter(Boolean).sort(),bw:w}}
-/* per-model rows for a history range: totals carry counts and cost, buckets carry latency */
-function histRows(){const lat={};arr(HIST.bk&&HIST.bk.buckets).forEach(x=>{const l=lat[x.model]||(lat[x.model]={w:0,n:0,p95:null});if(num(x.ttft_p50)!=null){l.w+=x.ttft_p50*n0(x.n);l.n+=n0(x.n)}if(num(x.ttft_p95)!=null)l.p95=Math.max(l.p95||0,x.ttft_p95)});
- const ts=arr(HIST.tot&&HIST.tot.totals),all=Math.max(1,sum(ts.map(t=>n0(t.n))));
- return ts.map(t=>{const l=lat[t.key]||{n:0,p95:null};
-  return {id:t.key,n:n0(t.n),err:n0(t.err),...tokSplit(t.tok_in,t.cache_read,t.cache_write),out:n0(t.tok_out),p50:l.n?l.w/l.n:null,p95:l.p95,cost:num(t.cost_usd),priced:t.priced!==false,share:n0(t.n)/all}})}
+/* per-model rows for a history range: totals carry counts, cost and the latency of their own rows */
+function histRows(){const ts=arr(HIST.tot&&HIST.tot.totals),all=Math.max(1,sum(ts.map(t=>n0(t.n))));
+ return ts.map(t=>({id:t.key,n:n0(t.n),err:n0(t.err),...tokSplit(t.tok_in,t.cache_read,t.cache_write),out:n0(t.tok_out),p50:num(t.ttft_p50),p95:num(t.ttft_p95),cost:num(t.cost_usd),priced:t.priced!==false,share:n0(t.n)/all}))}
 const RM=()=>liveRange()?MODELS:histRows();
 const HIDE_IN_RANGE=['lane','trend','speed','sess','last'];
 const COSTCOL={k:'cost',label:'API price',num:1,v:x=>x.cost||0,h:x=>costText(x.cost,x.priced)};

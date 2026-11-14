@@ -31,7 +31,7 @@ function overviewKpis(){const live=liveRange();if(!live&&!HIST.tot)return `<div 
  else{rows=histRows();reqs=sum(rows.map(r=>r.n));tin=sum(rows.map(r=>r.tin));cr=sum(rows.map(r=>r.cr));cw=sum(rows.map(r=>r.cw));tok=tin+sum(rows.map(r=>r.out));
   span=Math.max(1,((num(HIST.bk&&HIST.bk.to_ms)||NOW)-(num(HIST.bk&&HIST.bk.from_ms)||NOW-rangeMin()*MIN))/SEC);deltaR=deltaT=''}
  const total=sum(rows.map(r=>r.n)),errs=sum(rows.map(r=>r.err)),split=tokSplit(tin,cr,cw);
- const wp=f=>wavg(rows.filter(r=>f(r)!=null),f,r=>r.n),p50=wp(r=>r.p50),p95=wp(r=>r.p95);
+ const wp=f=>wavg(rows.filter(r=>f(r)!=null),f,r=>r.n),p50=live?wp(r=>r.p50):num(HIST.tot&&HIST.tot.ttft_p50),p95=live?wp(r=>r.p95):num(HIST.tot&&HIST.tot.ttft_p95);
  const ct=live?OV.cost:HIST.tot,cRows=arr(ct&&ct.totals),cost=sum(cRows.map(t=>n0(t.cost_usd))),unpriced=cRows.filter(t=>num(t.cost_usd)==null&&n0(t.n)>0).length;
  const subs=AGENTS.filter(a=>a.type!=='main'),run=subs.filter(a=>a.state==='running').length;
  const needs=SESS.filter(s=>s.state==='needs_you').length,work=SESS.filter(s=>sstate(s)!=='idle').length;

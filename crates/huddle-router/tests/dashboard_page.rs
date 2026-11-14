@@ -1856,3 +1856,18 @@ fn e9_menu_follows_the_listbox_pattern() {
     );
     assert!(PAGE.contains("data-day="), "own calendar");
 }
+
+#[test]
+fn j1_models_page_reads_ttft_from_totals() {
+    let rows = PAGE
+        .split("function histRows(){")
+        .nth(1)
+        .and_then(|s| s.split("const RM=").next())
+        .expect("histRows");
+    assert!(rows.contains("t.ttft_p95") && rows.contains("t.ttft_p50"));
+    assert!(
+        !rows.contains("Math.max(l.p95"),
+        "a range p95 is never the max of bucket p95s"
+    );
+    assert!(PAGE.contains("p95=live?wp(r=>r.p95):num(HIST.tot&&HIST.tot.ttft_p95)"));
+}

@@ -391,6 +391,7 @@ pub fn answer(
                         "key": t.key, "n": t.n, "err": t.err, "tok_in": t.tok_in,
                         "cache_read": t.cache_read, "cache_write": t.cache_write,
                         "tok_out": t.tok_out, "first_ms": t.first_ms, "last_ms": t.last_ms,
+                        "ttft_p50": t.ttft_p50, "ttft_p95": t.ttft_p95,
                         "cost_usd": cost,
                         "api_equivalent": t.models.iter().any(|m| is_api_equivalent(&m.model)),
                         "priced": t.models.iter().all(|m| price_of(&m.model).is_some()),
@@ -405,6 +406,11 @@ pub fn answer(
                 .collect();
             let mut out = envelope("totals", *window);
             out.insert("by".into(), json!(group_name(*by)));
+            if matches!(by, GroupBy::Model | GroupBy::Lane) {
+                let (p50, p95) = history.ttft_percentiles(window.range())?;
+                out.insert("ttft_p50".into(), json!(p50));
+                out.insert("ttft_p95".into(), json!(p95));
+            }
             out.insert("totals".into(), Value::Array(rows));
             Ok(Value::Object(out))
         }
