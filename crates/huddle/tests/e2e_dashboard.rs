@@ -319,9 +319,16 @@ fn a_plain_claude_request_shows_with_session_and_tokens() {
     );
     assert_eq!(status, 200);
 
+    // The per-second series counts whole seconds, so the snapshot that follows the request's
+    // second carries it.
     let snapshot = loop {
         let next = live.next_snapshot();
-        if !next["recent"].as_array().expect("recent").is_empty() {
+        let counted = next["per_second"]
+            .as_array()
+            .expect("ps")
+            .iter()
+            .any(|n| n.as_u64() > Some(0));
+        if !next["recent"].as_array().expect("recent").is_empty() && counted {
             break next;
         }
     };
@@ -335,13 +342,6 @@ fn a_plain_claude_request_shows_with_session_and_tokens() {
     let anthropic_lane = &snapshot["lanes"][0];
     assert_eq!(anthropic_lane["requests"], 1);
     assert_eq!(anthropic_lane["tokens_in"], 120);
-    assert!(
-        snapshot["per_second"]
-            .as_array()
-            .expect("ps")
-            .iter()
-            .any(|n| n.as_u64() > Some(0))
-    );
 }
 
 #[test]

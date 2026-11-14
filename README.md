@@ -203,13 +203,20 @@ history request, so a day is a day of the chosen zone. The offset is the one the
 browser has now: a range that crosses a daylight-saving change keys the days
 before the change one hour off.
 
-Beside the range picker sit a refresh-now button and a refresh picker (`Off`, `1s`,
-`5s`, `10s`, `30s`, `1m`, `5m`, `15m`, `30m`, `1h`; `1s` by default), drawn as one
+Beside the range picker sit a refresh-now button and a refresh picker (`Off`, `Realtime`,
+`1s`, `5s`, `10s`, `30s`, `1m`, `5m`, `15m`, `30m`, `1h`; `1s` by default), drawn as one
 control. The live snapshot is fetched at the chosen interval; history panels are
 fetched at the same interval but never more often than every 5 seconds. `Off`
 fetches nothing on a timer; refresh-now and a range change still fetch. A hidden
 tab fetches nothing and fetches once when it shows again. The choice is remembered
 in the browser and shared by every page.
+
+`Realtime` opens one event stream instead of a timer: the router pushes the snapshot
+when it changes (at most four times a second, a keep-alive every 15 seconds) and
+refresh-now is greyed out while it is on. If the stream drops, the picker reads
+`Realtime (reconnecting)`; the page retries, and after three failed tries it polls
+every second until the stream is back. The stream carries what `/huddle-router/state`
+carries and refuses a request from a foreign Origin; at most 8 streams stay open.
 
 It shows:
 - Overview: eight stat cards in a full grid (sessions, requests/s, tokens/s, cost at API price, first token, errors by provider, plan quota), the top five things that need you, traffic stacked by provider, providers and the working sessions.

@@ -5,14 +5,15 @@
 //! no client nothing is scheduled.
 
 use std::collections::BTreeMap;
-use std::sync::Arc;
+use std::collections::VecDeque;
+use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use http_body_util::BodyExt;
 use hyper::body::{Bytes, Frame};
 use hyper::header::{CACHE_CONTROL, CONTENT_ENCODING, CONTENT_TYPE, HeaderValue, VARY};
 use hyper::{Response, StatusCode};
-use tokio::sync::{mpsc, watch};
+use tokio::sync::{mpsc, oneshot, watch};
 use tokio::time::{Instant, sleep_until};
 
 use crate::anthropic::StreamingBody;
@@ -64,8 +65,12 @@ fn accepts_gzip(accept_encoding: Option<&str>) -> bool {
 /// The kept history when nothing says otherwise.
 const DEFAULT_KEEP_DAYS: u64 = 90;
 
-/// The fewest milliseconds between two snapshots on one feed.
-const MIN_GAP: Duration = Duration::from_secs(1);
+/// The shortest gap between two snapshots on one feed: at most four a second.
+const MIN_GAP: Duration = Duration::from_millis(250);
+/// Open dashboard feeds at once; a newer feed closes the oldest past this many.
+pub const MAX_LIVE_STREAMS: usize = 8;
+/// Milliseconds past a second's end before the follow-up snapshot, so the second counts as whole.
+const SETTLE_SLACK_MS: u64 = 20;
 /// How often an open feed with no request in flight sends a comment so the connection stays up.
 const PING_EVERY: Duration = Duration::from_secs(15);
 /// How often an open feed refreshes while a request is in flight, so its last-byte time moves.
@@ -157,6 +162,8 @@ pub struct Dashboard {
     /// The server's drain: the live feed ends once it starts, and the page reconnects to the
     /// router that took over.
     drain: Option<watch::Receiver<Phase>>,
+    /// The open feeds, oldest first, each with the sender that closes it.
+    feeds: Mutex<VecDeque<oneshot::Sender<()>>>,
 }
 
 impl Dashboard {
@@ -171,6 +178,7 @@ impl Dashboard {
             enabled,
             quota: None,
             drain: None,
+            feeds: Mutex::new(VecDeque::new()),
         }
     }
 
@@ -224,23 +232,7 @@ impl Dashboard {
     /// The snapshot without its recent rows, for a page that does not show them. Every other field,
     /// the counts derived from the rows included, is the full answer's.
     pub fn state_slim_answer(&self) -> Response<RespBody> {
-        let mut snapshot = self.snapshot();
-        snapshot.recent.clear();
-        let json = serde_json::to_string(&snapshot).unwrap_or_default();
-        // The emptied rows serialize as `"recent":[]` between two fields; a quote inside a value is
-        // escaped, so the raw text appears once.
-        let json = match json.matches(",\"recent\":[]").count() {
-            1 => json.replacen(",\"recent\":[]", "", 1),
-            _ => serde_json::to_value(&snapshot)
-                .map(|mut value| {
-                    if let Some(object) = value.as_object_mut() {
-                        object.remove("recent");
-                    }
-                    value.to_string()
-                })
-                .unwrap_or_default(),
-        };
-        let mut response = json_answer(StatusCode::OK, json);
+        let mut response = json_answer(StatusCode::OK, slim_json(self.snapshot()));
         response
             .headers_mut()
             .insert(CACHE_CONTROL, HeaderValue::from_static("no-store"));
@@ -295,11 +287,13 @@ impl Dashboard {
         response
     }
 
-    /// The snapshot as a server-sent event stream: one at once, then at most one a second while
-    /// the live state changes. The task ends when the client leaves.
-    pub fn live_answer(self: &Arc<Self>) -> Response<RespBody> {
+    /// The snapshot as a server-sent event stream: one at once, then at most four a second while
+    /// the live state changes. `slim` leaves the recent rows out, as `/state?recent=0` does. Past
+    /// `MAX_LIVE_STREAMS` open feeds the oldest closes. The task ends when the client leaves.
+    pub fn live_answer(self: &Arc<Self>, slim: bool) -> Response<RespBody> {
         let (tx, rx) = mpsc::channel(2);
-        tokio::spawn(Arc::clone(self).feed(tx));
+        let evicted = self.register_feed();
+        tokio::spawn(Arc::clone(self).feed(tx, slim, evicted));
         let mut response = Response::new(StreamingBody { rx }.boxed());
         let headers = response.headers_mut();
         headers.insert(CONTENT_TYPE, HeaderValue::from_static("text/event-stream"));
@@ -307,19 +301,46 @@ impl Dashboard {
         response
     }
 
-    async fn feed(self: Arc<Self>, tx: mpsc::Sender<Result<Frame<Bytes>, crate::server::BodyCut>>) {
+    /// Adds a feed to the open set and closes the oldest ones past the cap. The receiver
+    /// resolves when this feed is closed that way.
+    fn register_feed(&self) -> oneshot::Receiver<()> {
+        let (close, evicted) = oneshot::channel();
+        let mut feeds = self.feeds.lock().unwrap_or_else(PoisonError::into_inner);
+        // A finished feed has dropped its receiver; only open feeds count against the cap.
+        feeds.retain(|feed| !feed.is_closed());
+        feeds.push_back(close);
+        while feeds.len() > MAX_LIVE_STREAMS {
+            if let Some(oldest) = feeds.pop_front() {
+                let _ = oldest.send(());
+            }
+        }
+        evicted
+    }
+
+    async fn feed(
+        self: Arc<Self>,
+        tx: mpsc::Sender<Result<Frame<Bytes>, crate::server::BodyCut>>,
+        slim: bool,
+        mut evicted: oneshot::Receiver<()>,
+    ) {
         let _viewer = self.live.viewer();
         let mut changes = self.live.subscribe();
         let mut last_sent = Instant::now();
-        let mut snapshot = self.snapshot();
-        if !send(&tx, event_of(&snapshot)).await {
+        let snapshot = self.snapshot();
+        let mut idle = snapshot.in_flight.is_empty();
+        if !send(&tx, event_of(snapshot, slim)).await {
             return;
         }
+        // After a push for a change, one more follows once the second it landed in has ended: the
+        // per-second series counts whole seconds only.
+        let mut settle: Option<Instant> = None;
         loop {
-            let wait = if snapshot.in_flight.is_empty() {
-                PING_EVERY
-            } else {
-                BUSY_EVERY
+            let (wake, settling) = match settle {
+                Some(at) => (at, true),
+                None => (
+                    last_sent + if idle { PING_EVERY } else { BUSY_EVERY },
+                    false,
+                ),
             };
             let moved = tokio::select! {
                 changed = changes.changed() => {
@@ -328,26 +349,32 @@ impl Dashboard {
                     }
                     true
                 }
-                _ = sleep_until(last_sent + wait) => false,
+                _ = sleep_until(wake) => false,
                 _ = tx.closed() => return,
+                _ = &mut evicted => return,
                 () = drained(self.drain.clone()) => return,
             };
             if moved {
                 // Changes that land during the gap fold into the one snapshot that follows it.
                 sleep_until(last_sent + MIN_GAP).await;
                 changes.borrow_and_update();
-            } else if snapshot.in_flight.is_empty() {
+            } else if idle && !settling {
                 if !send(&tx, ": ping\n\n".to_owned()).await {
                     return;
                 }
                 last_sent = Instant::now();
                 continue;
             }
-            snapshot = self.snapshot();
-            if !send(&tx, event_of(&snapshot)).await {
+            let snapshot = self.snapshot();
+            idle = snapshot.in_flight.is_empty();
+            if !send(&tx, event_of(snapshot, slim)).await {
                 return;
             }
             last_sent = Instant::now();
+            settle = moved.then(|| {
+                let to_next_second = 1000 - now_ms() % 1000 + SETTLE_SLACK_MS;
+                last_sent + MIN_GAP.max(Duration::from_millis(to_next_second))
+            });
         }
     }
 
@@ -451,9 +478,33 @@ fn plain(status: StatusCode, reason: &str) -> Response<RespBody> {
     response
 }
 
+/// The snapshot without its recent rows, as JSON. Every other field, the counts derived from the
+/// rows included, is the full snapshot's.
+fn slim_json(mut snapshot: Snapshot) -> String {
+    snapshot.recent.clear();
+    let json = serde_json::to_string(&snapshot).unwrap_or_default();
+    // The emptied rows serialize as `"recent":[]` between two fields; a quote inside a value is
+    // escaped, so the raw text appears once.
+    match json.matches(",\"recent\":[]").count() {
+        1 => json.replacen(",\"recent\":[]", "", 1),
+        _ => serde_json::to_value(&snapshot)
+            .map(|mut value| {
+                if let Some(object) = value.as_object_mut() {
+                    object.remove("recent");
+                }
+                value.to_string()
+            })
+            .unwrap_or_default(),
+    }
+}
+
 /// One snapshot as a server-sent event.
-fn event_of(snapshot: &Snapshot) -> String {
-    let json = serde_json::to_string(snapshot).unwrap_or_default();
+fn event_of(snapshot: Snapshot, slim: bool) -> String {
+    let json = if slim {
+        slim_json(snapshot)
+    } else {
+        serde_json::to_string(&snapshot).unwrap_or_default()
+    };
     format!("event: snapshot\ndata: {json}\n\n")
 }
 

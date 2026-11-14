@@ -20,7 +20,7 @@ async fn e1_the_live_feed_ends_when_the_drain_starts() {
         )
         .ending_with(tracker.phase_signal()),
     );
-    let mut body = dashboard.live_answer().into_body();
+    let mut body = dashboard.live_answer(false).into_body();
     let first = tokio::time::timeout(Duration::from_secs(5), body.frame())
         .await
         .expect("timely");

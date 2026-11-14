@@ -468,7 +468,7 @@ function copy(t){const done=()=>toast('Copied '+(t.length>36?t.slice(0,34)+'…'
 document.addEventListener('click',e=>{
  const mb=e.target.closest('[data-mbtn]'),mo=e.target.closest('[data-mk]');
  if(MENU&&!(mb||(mo&&MENU.list.contains(mo))))closeMenu(false);
- if(e.target.closest('#refnow')){const b=$('#refnow');b.classList.remove('spin');void b.offsetWidth;b.classList.add('spin');RF.now();return}
+ if(e.target.closest('#refnow')){if(RF.nowDisabled())return;const b=$('#refnow');b.classList.remove('spin');void b.offsetWidth;b.classList.add('spin');RF.now();return}
  if(mb){openMenu(mb.dataset.mbtn);return}
  if(mo&&MENU){menuPick(MENU.rows.indexOf(mo));return}
  if(pickClick(e))return;
@@ -529,31 +529,50 @@ let first=true;
 function update(s){build(s);loadOvCost();if(first){first=false;render()}else paint()}
 function onSnapshot(s){HAVE_RECENT=Array.isArray(s&&s.recent);const n=num(s&&s.now_ms);if(n!=null)OFFSET=n-Date.now();LOST=false;update(s)}
 /* a page that shows the rows asks for them at once when the last answer had none */
-function needRecent(){if(wantRecent()&&!HAVE_RECENT)getState()}
+function needRecent(){if(RF.refit(wantRecent()!==STREAM_FULL))return;if(wantRecent()&&!HAVE_RECENT)getState()}
 /* the pages that list the recent rows, and the pages that count them per agent or per request, poll the full snapshot; an open sheet needs them too */
 const RECENT_PAGES=['requests','errors','agents','router'];
 const wantRecent=()=>RECENT_PAGES.includes(page)||!!DR;
 function stateUrl(){return '/huddle-router/state'+(wantRecent()?'':'?recent=0')}
-let HAVE_RECENT=false;
+let HAVE_RECENT=false,STREAM_FULL=false;
 function getState(){if(document.visibilityState==='hidden')return;return fetch(stateUrl(),{cache:'no-store'}).then(r=>r.json()).then(onSnapshot,()=>{LOST=true;update(SNAP)})}
 /* ---------- refresh: one clock for the live snapshot and the history panels ---------- */
 /* rf:start */
-const RF_CHOICES=[['off','Off',0],['1s','1s',1e3],['5s','5s',5e3],['10s','10s',1e4],['30s','30s',3e4],['1m','1m',6e4],['5m','5m',3e5],['15m','15m',9e5],['30m','30m',18e5],['1h','1h',36e5]].map(([k,t,ms])=>({k,t,ms}));
-const RF_FLOOR=5000,RF_STORE='huddle-refresh',RF_DEFAULT='1s';
+const RF_CHOICES=[['off','Off',0],['rt','Realtime',1e3],['1s','1s',1e3],['5s','5s',5e3],['10s','10s',1e4],['30s','30s',3e4],['1m','1m',6e4],['5m','5m',3e5],['15m','15m',9e5],['30m','30m',18e5],['1h','1h',36e5]].map(([k,t,ms])=>({k,t,ms}));
+const RF_FLOOR=5000,RF_STORE='huddle-refresh',RF_DEFAULT='1s',RF_TRIES=3,RF_RETRY_MAX=1e4;
 /* The live snapshot is fetched at the chosen interval, history panels at the same interval but never faster than RF_FLOOR.
-   Off sets no timer. A hidden tab clears the timers and fetches once when it shows again. */
+   Off sets no timer. A hidden tab clears the timers and fetches once when it shows again.
+   Realtime holds one event stream instead of the state timer; history panels run every RF_FLOOR. A dropped stream is retried
+   with a delay that grows to RF_RETRY_MAX, and after RF_TRIES failed tries the 1 s poll runs until a try succeeds. */
 function rfMake(env){
- let key=RF_DEFAULT,timers=[],busy=false,hidden=false;
+ let key=RF_DEFAULT,timers=[],busy=false,hidden=false,stream=null,retry=null,poll=null,fails=0,down=false;
  try{const v=env.store.getItem(RF_STORE);if(RF_CHOICES.some(c=>c.k===v))key=v}catch(e){}
  const choice=()=>RF_CHOICES.find(c=>c.k===key);
+ const live=()=>key==='rt';
+ const told=()=>{if(env.changed)env.changed()};
  const fetchState=()=>{if(busy)return;const p=env.state();if(p&&p.then){busy=true;const done=()=>{busy=false};p.then(done,done)}};
  const all=manual=>{fetchState();env.history(manual)};
- const disarm=()=>{timers.forEach(env.cancel);timers=[]};
- const arm=()=>{disarm();const ms=choice().ms;if(ms&&!hidden)timers=[env.every(fetchState,ms),env.every(()=>env.history(false),Math.max(ms,RF_FLOOR))]};
- return {choices:()=>RF_CHOICES,key:()=>key,start:arm,now:()=>all(true),
+ const closeStream=()=>{if(stream){const s=stream;stream=null;s.close()}};
+ const stopLive=()=>{closeStream();if(retry){env.cancel(retry);retry=null}if(poll){env.cancel(poll);poll=null}fails=0;down=false};
+ const connect=()=>{retry=null;closeStream();
+  const h=env.open({
+   ok(){if(stream!==h)return;fails=0;if(poll){env.cancel(poll);poll=null}if(down){down=false;told()}},
+   fail(){if(stream!==h)return;stream=null;h.close();fails++;if(!down){down=true;told()}
+    if(fails>=RF_TRIES&&!poll)poll=env.every(fetchState,1e3);
+    retry=env.later(connect,Math.min(RF_RETRY_MAX,1e3*2**(fails-1)))}});
+  stream=h};
+ const disarm=()=>{timers.forEach(env.cancel);timers=[];stopLive()};
+ const arm=()=>{disarm();if(hidden||key==='off')return;const ms=choice().ms;
+  if(live()){connect();timers=[env.every(()=>env.history(false),RF_FLOOR)]}
+  else timers=[env.every(fetchState,ms),env.every(()=>env.history(false),Math.max(ms,RF_FLOOR))]};
+ return {choices:()=>RF_CHOICES,key:()=>key,start:arm,now(){if(!live())all(true)},
+  nowDisabled:live,nowTitle:()=>live()?'Realtime is on':'Refresh now',
+  label:()=>choice().t+(live()&&down?' (reconnecting)':''),
   histMs:()=>choice().ms?Math.max(choice().ms,RF_FLOOR):Infinity,
-  set(k){if(!RF_CHOICES.some(c=>c.k===k))return;key=k;try{env.store.setItem(RF_STORE,k)}catch(e){}arm()},
-  visibility(visible){if(!visible){hidden=true;disarm();return}if(!hidden)return;hidden=false;if(choice().ms)all(false);arm()}}}
+  /* reopens the stream when the form it carries (slim or full) is not the one the open page needs */
+  refit(differs){if(!differs||!live()||hidden||!stream)return false;connect();return true},
+  set(k){if(!RF_CHOICES.some(c=>c.k===k))return;key=k;try{env.store.setItem(RF_STORE,k)}catch(e){}arm();told()},
+  visibility(visible){if(!visible){hidden=true;disarm();return}if(!hidden)return;hidden=false;if(key!=='off')all(false);arm()}}}
 /* rf:end */
 /* HMODE: 0 a page opens or repaints, 1 the history timer, 2 refresh now. A panel loaded less than its own age ago is not loaded again. */
 let HMODE=0;
@@ -561,8 +580,12 @@ const RF_SLACK=50;
 const rfFresh=at=>{const age=Date.now()-at;return HMODE===2?false:HMODE===1?age<RF_FLOOR-RF_SLACK:age<RF.histMs()};
 const pageLoaders=()=>({models:[loadModels],usage:[loadUsage],providers:[loadProviders],errors:[loadProviders,loadErrors],overview:[loadOvCost],requests:[loadReqCost,()=>{if(HS.mode==='history')hsearch()}]}[page]||[]);
 function refreshHistory(manual){HMODE=manual?2:1;try{loadHistory();loadTotals();pageLoaders().forEach(f=>f())}finally{HMODE=0}}
-const RF=rfMake({store:{getItem:k=>localStorage.getItem(k),setItem:(k,v)=>localStorage.setItem(k,v)},visible:()=>document.visibilityState!=='hidden',every:(f,ms)=>setInterval(f,ms),cancel:clearInterval,state:getState,history:refreshHistory});
-MENUS.refresh={label:'Refresh interval',opts:()=>RF.choices().map(c=>({k:c.k,t:c.t})),cur:()=>RF.key(),pick:k=>RF.set(k)};
+/* the event stream carries the same form as /state: the slim one unless the open page shows the rows */
+function openStream(cb){STREAM_FULL=wantRecent();const es=new EventSource('/huddle-router/live'+(STREAM_FULL?'':'?recent=0'));
+ es.onopen=cb.ok;es.onerror=cb.fail;es.addEventListener('snapshot',e=>{try{onSnapshot(JSON.parse(e.data))}catch(x){}});return es}
+const RF=rfMake({open:openStream,later:(f,ms)=>setTimeout(f,ms),changed:()=>{menuLabel('refresh');renderRefNow()},store:{getItem:k=>localStorage.getItem(k),setItem:(k,v)=>localStorage.setItem(k,v)},visible:()=>document.visibilityState!=='hidden',every:(f,ms)=>setInterval(f,ms),cancel:clearInterval,state:getState,history:refreshHistory});
+MENUS.refresh={label:'Refresh interval',opts:()=>RF.choices().map(c=>({k:c.k,t:c.k===RF.key()?RF.label():c.t})),cur:()=>RF.key(),pick:k=>RF.set(k)};
+function renderRefNow(){const b=$('#refnow');if(!b)return;const off=RF.nowDisabled();b.classList.toggle('off',off);if(off)b.setAttribute('aria-disabled','true');else b.removeAttribute('aria-disabled');b.title=RF.nowTitle()}
 function renderRefBar(){const el=$('#refbar');if(el){menuDrop();setHtml(el,menuHtml('refresh'))}}
 document.addEventListener('visibilitychange',()=>RF.visibility(document.visibilityState==='visible'));
 

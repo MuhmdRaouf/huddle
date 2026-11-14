@@ -2071,10 +2071,12 @@ fn run_refresh_script(body: &str) -> Option<Value> {
          function make(ls,opts){{opts=opts||{{}};\n\
           const clock={{t:0,timers:[],advance(ms){{const end=this.t+ms;for(;;){{let next=null;for(const x of this.timers)if(x.on&&(next===null||x.at<next.at))next=x;\n\
             if(!next||next.at>end)break;this.t=next.at;next.at+=next.ms;next.fn()}}this.t=end}}}};\n\
-          const calls={{state:0,history:0}};const tab={{visible:true}};\n\
+          const calls={{state:0,history:0,changed:0}};const tab={{visible:true}};const streams=[];\n\
           const env={{store:ls,visible:()=>tab.visible,every:(fn,ms)=>{{const x={{fn,ms,at:clock.t+ms,on:true}};clock.timers.push(x);return x}},cancel:h=>{{h.on=false}},\n\
-           state:()=>{{calls.state++;return opts.state?opts.state():undefined}},history:()=>{{calls.history++}}}};\n\
-          const m=new Function('env',BLOCK+';return rfMake(env)')(env);return {{rf:m,calls,clock,tab}}}}\n\
+           state:()=>{{calls.state++;return opts.state?opts.state():undefined}},history:()=>{{calls.history++}},\n\
+           open:cb=>{{const h={{cb,closed:false,close(){{h.closed=true}}}};streams.push(h);return h}},\n\
+           later:(fn,ms)=>{{const x={{fn:()=>{{x.on=false;fn()}},ms,at:clock.t+ms,on:true}};clock.timers.push(x);x.ms=1e12;return x}},changed:()=>{{calls.changed++}}}};\n\
+          const m=new Function('env',BLOCK+';return rfMake(env)')(env);return {{rf:m,calls,clock,tab,streams}}}}\n\
          (async()=>{{{body}}})();"
     );
     let mut child = Command::new("node")
@@ -2110,13 +2112,13 @@ fn k4_refresh_picker_lists_the_intervals() {
     assert_eq!(
         v["keys"],
         serde_json::json!([
-            "off", "1s", "5s", "10s", "30s", "1m", "5m", "15m", "30m", "1h"
+            "off", "rt", "1s", "5s", "10s", "30s", "1m", "5m", "15m", "30m", "1h"
         ])
     );
     assert_eq!(
         v["labels"],
         serde_json::json!([
-            "Off", "1s", "5s", "10s", "30s", "1m", "5m", "15m", "30m", "1h"
+            "Off", "Realtime", "1s", "5s", "10s", "30s", "1m", "5m", "15m", "30m", "1h"
         ])
     );
     assert_eq!(v["def"], "1s");
@@ -2138,10 +2140,6 @@ fn k4_header_holds_the_range_refresh_now_and_refresh_picker_group() {
     assert!(
         !PAGE.contains("setInterval(getState,2000)"),
         "the interval is the picker's"
-    );
-    assert!(
-        !PAGE.contains("EventSource("),
-        "the live snapshot is fetched at the chosen interval"
     );
     for fixed in ["loadHistory()},60000", "loadTotals()},60000"] {
         assert!(
@@ -2293,4 +2291,147 @@ fn k4_changing_the_choice_restarts_the_timers() {
     };
     assert_eq!(v["stopped"], 3);
     assert_eq!(v["after"], 5, "5s adds two fetches in 10 s");
+}
+
+#[test]
+fn k5_refresh_now_is_disabled_in_realtime() {
+    let Some(v) = run_refresh_script(
+        "const a=make(store('rt'));a.rf.start();\n\
+         const on={disabled:a.rf.nowDisabled(),title:a.rf.nowTitle()};\n\
+         const before=[a.calls.state,a.calls.history];a.rf.now();const click=[a.calls.state,a.calls.history];\n\
+         a.rf.set('5s');\n\
+         const off={disabled:a.rf.nowDisabled(),title:a.rf.nowTitle()};a.rf.now();\n\
+         console.log(JSON.stringify({on,before,click,off,after:[a.calls.state,a.calls.history]}));",
+    ) else {
+        eprintln!("node is not installed: the refresh script was not run");
+        return;
+    };
+    assert_eq!(
+        v["on"],
+        serde_json::json!({"disabled": true, "title": "Realtime is on"})
+    );
+    assert_eq!(v["click"], v["before"], "a click fetches nothing");
+    assert_eq!(
+        v["off"],
+        serde_json::json!({"disabled": false, "title": "Refresh now"})
+    );
+    assert_eq!(
+        v["after"],
+        serde_json::json!([
+            v["before"][0].as_i64().unwrap() + 1,
+            v["before"][1].as_i64().unwrap() + 1
+        ]),
+        "refresh-now works again after choosing 5s"
+    );
+}
+
+#[test]
+fn k5_realtime_opens_one_stream_and_leaving_closes_it() {
+    let Some(v) = run_refresh_script(
+        "const a=make(store('rt'));a.rf.start();\n\
+         const opened=a.streams.length;a.streams[0].cb.ok();\n\
+         a.clock.advance(60000);\n\
+         const polled=a.calls.state,hist=a.calls.history;\n\
+         a.rf.start();const restarted=[a.streams.length,a.streams[0].closed];\n\
+         a.rf.set('off');const left=a.streams[a.streams.length-1].closed;\n\
+         const b=make(store('rt'));b.rf.start();b.streams[0].cb.ok();b.tab.visible=false;b.rf.visibility(false);const hid=b.streams[0].closed;\n\
+         console.log(JSON.stringify({opened,polled,hist,restarted,left,hid,label:a.rf.label()}));",
+    ) else {
+        eprintln!("node is not installed: the refresh script was not run");
+        return;
+    };
+    assert_eq!(v["opened"], 1, "one stream per tab");
+    assert_eq!(v["polled"], 0, "no /state poll while the stream is live");
+    assert_eq!(v["hist"], 12, "history panels follow the 5 s rule");
+    assert_eq!(
+        v["restarted"],
+        serde_json::json!([2, true]),
+        "a restart closes the old stream first"
+    );
+    assert_eq!(v["left"], true, "leaving Realtime closes the stream");
+    assert_eq!(v["hid"], true, "a hidden tab closes the stream");
+}
+
+#[test]
+fn k5_page_falls_back_to_polling_and_returns() {
+    let Some(v) = run_refresh_script(
+        "const a=make(store('rt'));a.rf.start();\n\
+         const label0=a.rf.label();\n\
+         a.streams[0].cb.fail();const label1=a.rf.label(),polls1=a.calls.state;\n\
+         a.clock.advance(1000);a.streams[1].cb.fail();\n\
+         a.clock.advance(2000);a.streams[2].cb.fail();\n\
+         const polling0=a.calls.state;a.clock.advance(3000);const polling=a.calls.state-polling0;\n\
+         const tries=a.streams.length;\n\
+         a.clock.advance(4000);a.clock.advance(8000);a.clock.advance(10000);const delays=a.streams.length;\n\
+         a.streams[a.streams.length-1].cb.ok();const back=a.rf.label();\n\
+         const after0=a.calls.state;a.clock.advance(5000);\n\
+         console.log(JSON.stringify({label0,label1,polls1,polling,tries,delays,back,stopped:a.calls.state-after0,changed:a.calls.changed>0}));",
+    ) else {
+        eprintln!("node is not installed: the refresh script was not run");
+        return;
+    };
+    assert_eq!(v["label0"], "Realtime");
+    assert_eq!(v["label1"], "Realtime (reconnecting)");
+    assert_eq!(v["polls1"], 0, "one failure does not poll yet");
+    assert_eq!(
+        v["polling"], 3,
+        "after three failed tries the 1 s poll runs"
+    );
+    assert!(
+        v["tries"].as_i64().unwrap() >= 3,
+        "each failure schedules another try"
+    );
+    assert!(
+        v["delays"].as_i64().unwrap() > v["tries"].as_i64().unwrap(),
+        "tries go on while it is down"
+    );
+    assert_eq!(
+        v["back"], "Realtime",
+        "a success drops the reconnecting label"
+    );
+    assert_eq!(v["stopped"], 0, "a success stops the poll");
+    assert_eq!(v["changed"], true, "the picker is told to repaint");
+}
+
+#[test]
+fn k5_retry_delay_grows_up_to_ten_seconds() {
+    let Some(v) = run_refresh_script(
+        "const a=make(store('rt'));a.rf.start();const seen=[];\n\
+         for(let i=0;i<7;i++){const n=a.streams.length;a.streams[n-1].cb.fail();\n\
+          let waited=0;while(a.streams.length===n&&waited<20000){a.clock.advance(250);waited+=250}seen.push(waited)}\n\
+         console.log(JSON.stringify({seen}));",
+    ) else {
+        eprintln!("node is not installed: the refresh script was not run");
+        return;
+    };
+    let seen: Vec<i64> = v["seen"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|x| x.as_i64().unwrap())
+        .collect();
+    assert!(
+        seen.windows(2).all(|w| w[1] >= w[0]),
+        "delays only grow: {seen:?}"
+    );
+    assert!(
+        seen.iter().all(|d| *d <= 10_000),
+        "no delay past 10 s: {seen:?}"
+    );
+    assert_eq!(
+        *seen.last().unwrap(),
+        10_000,
+        "the delay settles at 10 s: {seen:?}"
+    );
+}
+
+#[test]
+fn k5_page_wires_the_stream_to_the_picker() {
+    assert!(
+        PAGE.contains("EventSource("),
+        "the page opens the event stream"
+    );
+    assert!(PAGE.contains("/huddle-router/live"));
+    assert!(PAGE.contains("Realtime is on"));
+    assert!(PAGE.contains("aria-disabled"));
 }

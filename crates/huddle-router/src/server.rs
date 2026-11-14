@@ -12,7 +12,9 @@ use std::task::{Context, Poll};
 use http_body_util::combinators::BoxBody;
 use http_body_util::{BodyExt, Full};
 use hyper::body::{Bytes, Frame, Incoming};
-use hyper::header::{ACCEPT_ENCODING, CONNECTION, CONTENT_LENGTH, CONTENT_TYPE, HOST, HeaderValue};
+use hyper::header::{
+    ACCEPT_ENCODING, CONNECTION, CONTENT_LENGTH, CONTENT_TYPE, HOST, HeaderValue, ORIGIN,
+};
 use hyper::{Method, Request, Response, StatusCode};
 use tokio::net::TcpListener;
 use tokio::sync::watch;
@@ -253,6 +255,41 @@ pub fn classify_host(host: Option<&str>, port: u16, dashboard_hosts: &[String]) 
     }
 }
 
+/// True when `origin` is absent (a same-origin read sends none) or names this router: an http
+/// loopback authority on this port, or a configured dashboard host over http or https.
+fn origin_allowed(origin: Option<&str>, port: u16, dashboard_hosts: &[String]) -> bool {
+    let Some(origin) = origin else {
+        return true;
+    };
+    let origin = origin.to_ascii_lowercase();
+    let own = [
+        format!("http://127.0.0.1:{port}"),
+        format!("http://localhost:{port}"),
+        format!("http://[::1]:{port}"),
+    ];
+    if own.contains(&origin) {
+        return true;
+    }
+    let Some(authority) = origin
+        .strip_prefix("https://")
+        .or_else(|| origin.strip_prefix("http://"))
+    else {
+        return false;
+    };
+    let bare = authority
+        .strip_suffix(&format!(":{port}"))
+        .unwrap_or(authority);
+    dashboard_hosts.iter().any(|listed| listed == bare)
+}
+
+fn wrong_origin() -> Response<RespBody> {
+    anthropic_error(
+        StatusCode::FORBIDDEN,
+        "permission_error",
+        "huddle-router router: wrong Origin",
+    )
+}
+
 fn wrong_host() -> Response<RespBody> {
     anthropic_error(
         StatusCode::MISDIRECTED_REQUEST,
@@ -289,6 +326,14 @@ pub fn entry_handler(ctx: Arc<EntryCtx>) -> Handler {
                     HostKind::Local => {}
                     HostKind::Dashboard if is_dashboard_read(&req) => {}
                     HostKind::Dashboard | HostKind::Refused => return wrong_host(),
+                }
+                // The live feed is the one dashboard path a page opens cross-origin, so its
+                // Origin is checked too.
+                if req.uri().path() == LIVE_PATH {
+                    let origin = req.headers().get(ORIGIN).and_then(|v| v.to_str().ok());
+                    if !origin_allowed(origin, port, &(ctx.dashboard_hosts)()) {
+                        return wrong_origin();
+                    }
                 }
             }
             // The health path is answered here, whatever the method: nothing is forwarded from it.
@@ -334,7 +379,7 @@ async fn dashboard_answer(
             Some(dashboard.state_slim_answer())
         }
         STATE_PATH if get => Some(dashboard.state_answer()),
-        LIVE_PATH if get => Some(dashboard.live_answer()),
+        LIVE_PATH if get => Some(dashboard.live_answer(req.uri().query() == Some("recent=0"))),
         HISTORY_PATH if get => Some(
             dashboard
                 .history_answer(req.uri().query().unwrap_or(""))

@@ -398,16 +398,19 @@ td.empty{text-align:center;color:var(--faint);padding:28px 14px}
 .refbar .mlist{max-height:none}
 .ctlgroup .mbtn{border-radius:0}
 .ctlgroup .rangebar .mbtn{border-radius:8px 0 0 8px}
-.ctlgroup .refbar .mbtn{min-width:62px;margin-left:-1px;border-radius:0 8px 8px 0}
+.ctlgroup .refbar .mbtn{min-width:62px;white-space:nowrap;margin-left:-1px;border-radius:0 8px 8px 0}
 .rfnow{display:inline-flex;align-items:center;justify-content:center;width:32px;height:30px;margin-left:-1px;padding:0;border:1px solid var(--line);border-radius:0;background:var(--surface);color:var(--muted);cursor:pointer}
 .rfnow:hover{color:var(--text);border-color:var(--faint);position:relative;z-index:1}
 .rfnow:focus-visible{position:relative;z-index:1}
+.rfnow.off,.rfnow.off:hover{color:var(--faint);border-color:var(--line);background:var(--page);cursor:not-allowed}
 .rfnow svg.i{width:15px;height:15px}
 .rfnow.spin svg{animation:rfspin .5s ease-out}
 @keyframes rfspin{to{transform:rotate(360deg)}}
 .ctlgroup .mbtn:hover,.ctlgroup .mbtn[aria-expanded="true"]{position:relative;z-index:1}
 .ctlgroup .mval,.tzbar .mval{white-space:nowrap}
 @media (max-width:700px){.ctlgroup .rangebar .mbtn{min-width:0}.ctlgroup .refbar .mbtn{min-width:0;padding-left:8px}}
+/* on a phone the time zone label shrinks first, then the refresh label, each with an ellipsis; the buttons stay whole */
+@media (max-width:600px){.tzbar,.tzbar .pmenu{min-width:0;max-width:100%}.tzbar .pmenu{display:block}.tzbar .mbtn{max-width:100%}.tzbar .mval,.refbar .mval{min-width:0;overflow:hidden;text-overflow:ellipsis}.refbar .mval{max-width:12ch}.refbar,.rfnow,.rangebar,.mchev{flex:none}}
 @media (prefers-reduced-motion:reduce){.rfnow.spin svg{animation:none}}
 .rangepop{position:absolute;right:0;top:38px;z-index:30;display:grid;gap:10px;min-width:240px;padding:14px;border:1px solid var(--line);border-radius:10px;background:var(--surface);box-shadow:0 8px 30px rgb(0 0 0/.18)}
 
