@@ -1207,7 +1207,7 @@ fn d11_models_show_api_price_and_unpriced() {
         "label:'Tokens'",
         "label:'Cache hit'",
         "label:'API price'",
-        "label:'Price per 1M tokens'",
+        "label:'Cost per 1M total tokens'",
         "label:'Sessions'",
         "label:'Last used'",
     ] {
@@ -1352,7 +1352,7 @@ fn d10_errors_group_by_provider_and_reason() {
         "label:'Count'",
         "label:'First seen'",
         "label:'Last seen'",
-        "label:'Sessions hit'",
+        "label:'Sessions hit (newest 500)'",
         "label:'Fix'",
         "quota used up, resets",
         "resetAt(",
@@ -1870,4 +1870,27 @@ fn j1_models_page_reads_ttft_from_totals() {
         "a range p95 is never the max of bucket p95s"
     );
     assert!(PAGE.contains("p95=live?wp(r=>r.p95):num(HIST.tot&&HIST.tot.ttft_p95)"));
+}
+
+#[test]
+fn j3_models_label_says_total_tokens() {
+    assert!(PAGE.contains("label:'Cost per 1M total tokens'"), "column");
+    assert!(!PAGE.contains("Price per 1M tokens"), "old label is gone");
+    assert!(
+        PAGE.contains("title=\"Cache reads and writes included\""),
+        "the cost per 1M value explains itself"
+    );
+    assert!(
+        MODELS_JS.contains("x.cost/(x.tin+x.out)*1e6"),
+        "the cost arithmetic is untouched"
+    );
+}
+
+#[test]
+fn j3_errors_label_says_newest_500() {
+    assert!(PAGE.contains("label:'Sessions hit (newest 500)'"), "column");
+    assert!(
+        ERRORS_JS.contains("g.sessions==null?NA:g.sessions"),
+        "the session arithmetic is untouched"
+    );
 }

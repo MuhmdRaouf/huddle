@@ -119,7 +119,7 @@ the owner's `~/.claude`, `~/.agents` or the network.
 | Provider status follows live traffic, quota and error rate | crates/huddle-router/tests/dashboard_page.rs:d8_status_follows_live_traffic |
 | Quota and reset show per provider, with every column | crates/huddle-router/tests/dashboard_page.rs:d8_quota_and_reset_show_per_provider |
 | A failing provider is never greyed; errors group by cause | crates/huddle-router/tests/dashboard_page.rs:d8_a_failing_provider_is_never_greyed |
-| Models show the API price, "no price" and price per 1M tokens | crates/huddle-router/tests/dashboard_page.rs:d11_models_show_api_price_and_unpriced |
+| Models show the API price, "no price" and cost per 1M total tokens | crates/huddle-router/tests/dashboard_page.rs:d11_models_show_api_price_and_unpriced |
 | Usage lists every provider's plan or balance | crates/huddle-router/tests/dashboard_page.rs:d11_usage_shows_every_providers_plan |
 | Usage charts cost per day stacked by provider, with cache savings | crates/huddle-router/tests/dashboard_page.rs:d11_cost_per_day_by_provider |
 | A failing harness shows the first line of its error and the table's last check time | crates/huddle-router/tests/dashboard_page.rs:d13_harness_failures_say_why |
@@ -152,6 +152,7 @@ the owner's `~/.claude`, `~/.agents` or the network.
 | Providers and Errors read history reasons in longer ranges | crates/huddle-router/tests/dashboard_page.rs:c1_history_reasons_feed_providers_and_errors_in_longer_ranges |
 | History totals by reason count each provider and cause | crates/huddle-router/tests/history_endpoint.rs:c1_totals_by_reason_count_each_provider_and_cause |
 | A history range's time to first token p50 and p95 come from its own rows (nearest rank), per model, per provider and for all rows, and the page shows them instead of bucket maxes | crates/huddle-history/tests/j1_row_level_ttft.rs:j1_totals_by_model_carry_row_level_ttft; crates/huddle-history/tests/j1_row_level_ttft.rs:j1_totals_by_lane_carry_row_level_ttft; crates/huddle-history/tests/j1_row_level_ttft.rs:j1_a_key_with_no_first_token_times_has_no_percentile; crates/huddle-history/tests/j1_row_level_ttft.rs:j1_all_rows_carry_one_percentile_pair; crates/huddle-router/tests/history_endpoint.rs:j1_totals_carry_row_level_ttft_per_key_and_for_all_rows; crates/huddle-router/tests/dashboard_page.rs:j1_models_page_reads_ttft_from_totals |
+| Column labels say what they count: "Cost per 1M total tokens" with "Cache reads and writes included" on Models, "Sessions hit (newest 500)" on Errors | crates/huddle-router/tests/dashboard_page.rs:j3_models_label_says_total_tokens, j3_errors_label_says_newest_500 |
 | A state ask with quota=refresh fetches quota without a dashboard open | crates/huddle-router/tests/c1_quota_refresh.rs:c1_a_state_ask_with_quota_refresh_fetches_without_a_dashboard_open |
 | The quota tool asks the router to refresh | crates/huddle-mcp/src/tools/providers.rs:c1_the_quota_tool_asks_the_router_to_refresh |
 | The run word and the MCP run share the harness checks | crates/huddle-jobs/tests/c1_preflight.rs:c1_an_unknown_harness_is_named |

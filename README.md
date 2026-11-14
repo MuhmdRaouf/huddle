@@ -209,7 +209,7 @@ It shows:
   them.
 - Sessions, Agents, Requests and Errors, with search over the history.
 - Models: provider, error rate, first-token time, token split, cache hit, API
-  price and price per 1M tokens. Usage: every provider's plan or balance, cost per
+  price and cost per 1M total tokens. Usage: every provider's plan or balance, cost per
   day by provider, what the cache saved, and a projects by models matrix.
 - Providers: one table with each provider's live status (Working, Out of quota,
   Failing, Needs a fix, Not set up), plan windows or balance with the reset,

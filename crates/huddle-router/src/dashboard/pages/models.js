@@ -7,7 +7,7 @@ function loadModels(){const q=rangeQuery();if(HM.q===q&&HM.tot&&Date.now()-HM.at
 function modelPriced(){const t=HM.tot||{};return rangeRows().map(x=>{const h=t[x.id];return Object.assign({},x,{lane:x.lane||laneOfModel(x.id),cost:h?num(h.cost_usd):null,priced:h?h.priced!==false:true,known:!!h})})}
 const perMillion=x=>x.n&&x.tin+x.out?x.cost/(x.tin+x.out)*1e6:null;
 const modelPrice=x=>!x.known?(HM.err||HM.tot?NA:checking()):costText(x.cost,x.priced);
-const modelPer1M=x=>!x.known?(HM.err||HM.tot?NA:checking()):!x.priced?noPrice:perMillion(x)==null?NA:`<span class="mono">${usd(perMillion(x))}</span>`;
+const modelPer1M=x=>!x.known?(HM.err||HM.tot?NA:checking()):!x.priced?noPrice:perMillion(x)==null?NA:`<span class="mono" title="Cache reads and writes included">${usd(perMillion(x))}</span>`;
 const modelStat=()=>HM.err?`<div class="legendrow badc">Could not load prices. Showing the last data.</div>`:'';
 const modelCols=()=>[
  {k:'model',label:'Model',v:x=>x.id,h:x=>modelTag(x.id)},
@@ -19,7 +19,7 @@ const modelCols=()=>[
  {k:'tok',label:'Tokens',num:1,v:x=>x.tin+x.out,h:x=>`<span class="mono">${fmt(x.tin)} <span class="faint">/</span> ${fmt(x.out)}</span><div class="cs sans">${fmt(x.fresh)} fresh · ${fmt(x.cr)} cached</div>`},
  {k:'hit',label:'Cache hit',num:1,v:x=>x.hit,h:x=>`<span class="mono">${Math.round(x.hit*100)}%</span>`},
  {k:'cost',label:'API price',num:1,v:x=>x.cost||0,h:modelPrice},
- {k:'per1m',label:'Price per 1M tokens',num:1,v:x=>perMillion(x)||0,h:modelPer1M},
+ {k:'per1m',label:'Cost per 1M total tokens',num:1,v:x=>perMillion(x)||0,h:modelPer1M},
  ...(liveRange()?[{k:'sess',label:'Sessions',num:1,v:x=>x.sess||0,h:x=>x.sess==null?'—':x.sess},
   {k:'last',label:'Last used',num:1,v:x=>-(x.last||0),h:x=>`<span class="muted">${x.last?ago(x.last):'—'}</span>`}]:[])];
 PAGES.models={title:'Models',after:loadModels,body:()=>head('Models',`Every model seen in ${rangeText()}, with latency, cache use, errors and API price.`)+reg('rstat',rangeStatus)+reg('mstat',modelStat)+

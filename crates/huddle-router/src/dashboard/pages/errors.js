@@ -50,7 +50,7 @@ const errCols=[
  {k:'n',label:'Count',num:1,v:g=>g.n,h:g=>`<b>${g.n.toLocaleString('en-US')}</b>`},
  {k:'first',label:'First seen',num:1,v:g=>-g.first,h:g=>`<span class="muted">${liveRange()?ago(g.first):when(g.first)}</span>`,sm:1},
  {k:'last',label:'Last seen',num:1,v:g=>-g.last,h:g=>`<span class="muted">${liveRange()?ago(g.last):when(g.last)}</span>`},
- {k:'sess',label:'Sessions hit',num:1,v:g=>g.sessions||0,h:g=>g.sessions==null?NA:g.sessions,sm:1},
+ {k:'sess',label:'Sessions hit (newest 500)',num:1,v:g=>g.sessions||0,h:g=>g.sessions==null?NA:g.sessions,sm:1},
  {k:'fix',label:'Fix',h:g=>{const f=fixText(g);return `${f.head?`<div class="warnc">${esc(f.head)}</div>`:''}<div class="cs cw fixt">${esc(f.tail)}</div>`}}
 ];
 const errNote=()=>liveRange()?'':EG.err?`<div class="legendrow badc">Could not load history. Showing the last data.</div>`:EG.q&&EG.at?(EG.total>EG.rows.length?`<div class="legendrow">The counts cover all ${EG.total.toLocaleString('en-US')} errors in ${rangeText()}; sessions hit and the Recent list come from the latest ${EG.rows.length.toLocaleString('en-US')}.</div>`:''):`<div class="legendrow">${checking()}</div>`;
