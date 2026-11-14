@@ -250,9 +250,6 @@ if [ "$word" = update ]; then
       exit 0
     fi
     printf 'huddle %s is the latest published version. Nothing to update.\n' "$version"
-    if newer "$plugin_version" "$version"; then
-      printf '%s is not published yet. Try again in a few minutes.\n' "$plugin_version"
-    fi
     exit 0
   fi
   [ -n "$from" ] || from=none

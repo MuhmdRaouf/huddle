@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.0.9
+
+### Fixes
+
+- When nothing newer is published, `/huddle:update` prints only `huddle <installed> is the
+  latest published version. Nothing to update.` and exits 0, whether or not the plugin's own
+  version is above it. It no longer says the plugin's version is not published yet.
+
 ## 0.0.8
 
 ### Fixes

@@ -70,8 +70,8 @@ build; on Windows, run Claude Code and huddle inside WSL.
 3. It prints one of:
    - `huddle 0.0.6 → 0.0.7`, plus `Plugin is 0.0.7: run /plugin to update it too.` when the
      installed binary is newer than the plugin;
-   - `huddle 0.0.6 is the latest published version. Nothing to update.`, plus
-     `0.0.7 is not published yet. Try again in a few minutes.` when the plugin is ahead;
+   - `huddle 0.0.6 is the latest published version. Nothing to update.`, whether or not the
+     plugin is ahead;
    - `huddle: could not check for updates (GitHub unreachable). You stay on 0.0.6.`
 
    A failed checksum installs nothing and leaves the old binary in place. It does not touch

@@ -178,10 +178,9 @@ fn e3_update_nothing_newer_says_so_and_does_nothing() {
 }
 
 #[test]
-fn e3_update_plugin_ahead_says_the_plugin_version_is_not_published_yet() {
+fn u1_update_says_only_the_latest_published_version() {
     let home = TempHome::new();
     let root = home.root().to_path_buf();
-    let plugin = pinned_version();
     install(&root, OLD);
     let base = fake_release(&root, OLD, false);
 
@@ -190,10 +189,7 @@ fn e3_update_plugin_ahead_says_the_plugin_version_is_not_published_yet() {
     assert_eq!(out.status.code(), Some(0), "{out:?}");
     assert_eq!(
         stdout_of(&out),
-        format!(
-            "huddle {OLD} is the latest published version. Nothing to update.\n\
-             {plugin} is not published yet. Try again in a few minutes.\n"
-        )
+        format!("huddle {OLD} is the latest published version. Nothing to update.\n")
     );
     assert_eq!(link_of(&root), PathBuf::from(format!("huddle-{OLD}")));
 }
