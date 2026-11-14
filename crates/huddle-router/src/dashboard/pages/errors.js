@@ -1,8 +1,8 @@
 /* The rows behind the page: the live memory in the 15 minute range, the kept history in every other range. */
 const EG={q:null,at:0,rows:[],total:0,red:[],err:false};
-function loadErrors(){if(liveRange())return;const q=rangeQuery();if(EG.q===q&&Date.now()-EG.at<6e4)return;
- if(EG.q!==q){EG.rows=[];EG.red=[];EG.total=0;EG.err=false}EG.q=q;
- Promise.all([hget(HQ+'search&'+q+'&status=error&limit=500'),hget(HQ+'totals&by=reason&'+q)]).then(([d,r])=>{if(EG.q!==q)return;EG.rows=arr(d.rows).map(hrow);EG.red=arr(r&&r.totals);EG.total=n0(d.total);EG.at=Date.now();EG.err=false;paint()},()=>{if(EG.q!==q)return;EG.err=true;paint()})}
+function loadErrors(){if(liveRange())return;const q=rangeQuery();if(EG.q===q&&rfFresh(EG.at))return;
+ if(EG.q!==q){EG.rows=[];EG.red=[];EG.total=0;EG.err=false}EG.q=q;EG.at=Date.now();
+ Promise.all([hget(HQ+'search&'+q+'&status=error&limit=500'),hget(HQ+'totals&by=reason&'+q)]).then(([d,r])=>{if(EG.q!==q)return;EG.rows=arr(d.rows).map(hrow);EG.red=arr(r&&r.totals);EG.total=n0(d.total);EG.err=false;paint()},()=>{if(EG.q!==q)return;EG.err=true;paint()})}
 const errRows=()=>liveRange()?stats().done.filter(r=>r.status!==200):EG.rows;
 const errSess=r=>r.sess||(r.s&&r.s.id)||null;
 const causeName=(code,reason)=>reason==='quota'?'Quota used up':code===529?'Overloaded':code===429?'Throttled':code===502?'Upstream failed':code===499?'Cancelled':code===401||code===403?'Key refused':errDef(code,reason)[0];

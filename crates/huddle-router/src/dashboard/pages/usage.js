@@ -1,8 +1,8 @@
 /* history totals for the picked range, read for every range (the 15 min one included) */
 const HU={q:null,at:0,day:null,model:null,proj:null,err:false};
-function loadUsage(){const q=rangeQuery();if(HU.q===q&&HU.day&&Date.now()-HU.at<6e4)return;
- if(HU.q!==q){HU.day=HU.model=HU.proj=null;HU.err=false}HU.q=q;
- Promise.all([hget(HQ+'totals&by=day&'+q),hget(HQ+'totals&by=model&'+q),hget(HQ+'totals&by=project&'+q)]).then(([d,m,p])=>{if(HU.q!==q)return;HU.day=arr(d.totals);HU.model=arr(m.totals);HU.proj=arr(p.totals);HU.at=Date.now();HU.err=false;paint()},()=>{if(HU.q!==q)return;HU.err=true;paint()})}
+function loadUsage(){const q=rangeQuery();if(HU.q===q&&HU.day&&rfFresh(HU.at))return;
+ if(HU.q!==q){HU.day=HU.model=HU.proj=null;HU.err=false}HU.q=q;HU.at=Date.now();
+ Promise.all([hget(HQ+'totals&by=day&'+q),hget(HQ+'totals&by=model&'+q),hget(HQ+'totals&by=project&'+q)]).then(([d,m,p])=>{if(HU.q!==q)return;HU.day=arr(d.totals);HU.model=arr(m.totals);HU.proj=arr(p.totals);HU.err=false;paint()},()=>{if(HU.q!==q)return;HU.err=true;paint()})}
 const usageStat=()=>HU.err?`<div class="legendrow badc">Could not load history. Showing the last data.</div>`:HU.day?'':`<div class="legendrow">${checking()}</div>`;
 
 /* Plans and quota: one row per provider the plugin lists, and Claude */

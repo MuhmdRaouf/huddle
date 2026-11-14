@@ -285,7 +285,9 @@ const rangeRows=()=>liveRange()?modelRows():histRows();
 const rangeEmpty=()=>HIST.bk||HIST.err||liveRange()?`No requests in ${rangeText()}`:'Checking…';
 const clampNote=d=>d&&d.clamped_from_ms?`<div class="legendrow">Showing from ${when(d.clamped_from_ms)}: huddle keeps ${HIST.keep} days of history.</div>`:'';
 const rangeStatus=()=>liveRange()?'':HIST.err?`<div class="legendrow badc">Could not load history. Showing the last data.</div>`:HIST.bk?clampNote(HIST.bk):`<div class="legendrow">${checking()}</div>`;
-const hget=u=>fetch(u,{cache:'no-store'}).then(x=>{if(!x.ok)throw new Error(String(x.status));return x.json()});
+/* one request per endpoint in flight: a second ask for the same URL shares the first answer */
+const HFLY=new Map();
+const hget=u=>{if(HFLY.has(u))return HFLY.get(u);const p=fetch(u,{cache:'no-store'}).then(x=>{if(!x.ok)throw new Error(String(x.status));return x.json()}).finally(()=>HFLY.delete(u));HFLY.set(u,p);return p};
 function loadHistory(){if(liveRange())return;const get=hget;
  const q=rangeQuery();
  Promise.all([get('/huddle-router/history?view=buckets&'+rangeQuery()),get('/huddle-router/history?view=totals&by=model&'+rangeQuery())]).then(([bk,tot])=>{if(rangeQuery()!==q)return;
@@ -466,6 +468,7 @@ function copy(t){const done=()=>toast('Copied '+(t.length>36?t.slice(0,34)+'…'
 document.addEventListener('click',e=>{
  const mb=e.target.closest('[data-mbtn]'),mo=e.target.closest('[data-mk]');
  if(MENU&&!(mb||(mo&&MENU.list.contains(mo))))closeMenu(false);
+ if(e.target.closest('#refnow')){const b=$('#refnow');b.classList.remove('spin');void b.offsetWidth;b.classList.add('spin');RF.now();return}
  if(mb){openMenu(mb.dataset.mbtn);return}
  if(mo&&MENU){menuPick(MENU.rows.indexOf(mo));return}
  if(pickClick(e))return;
@@ -520,23 +523,48 @@ document.addEventListener('keydown',e=>{
 });
 window.addEventListener('resize',()=>{if(page==='overview')drawChart()});
 
-/* ---------- live: a feed while it holds, polling while it does not ---------- */
+/* ---------- live: the snapshot is fetched on the refresh clock ---------- */
 function paint(){refresh();shell();if(page==='overview')drawChart();if(DR)renderDrawer(true)}
 let first=true;
 function update(s){build(s);loadOvCost();if(first){first=false;render()}else paint()}
 function onSnapshot(s){HAVE_RECENT=Array.isArray(s&&s.recent);const n=num(s&&s.now_ms);if(n!=null)OFFSET=n-Date.now();LOST=false;update(s)}
 /* a page that shows the rows asks for them at once when the last answer had none */
-function needRecent(){if(poll!==null&&wantRecent()&&!HAVE_RECENT)getState()}
-let poll=null;
+function needRecent(){if(wantRecent()&&!HAVE_RECENT)getState()}
 /* the pages that list the recent rows, and the pages that count them per agent or per request, poll the full snapshot; an open sheet needs them too */
 const RECENT_PAGES=['requests','errors','agents','router'];
 const wantRecent=()=>RECENT_PAGES.includes(page)||!!DR;
 function stateUrl(){return '/huddle-router/state'+(wantRecent()?'':'?recent=0')}
 let HAVE_RECENT=false;
-function getState(){if(document.visibilityState==='hidden')return;fetch(stateUrl(),{cache:'no-store'}).then(r=>r.json()).then(onSnapshot,()=>{LOST=true;update(SNAP)})}
-function startPoll(){if(poll===null){getState();poll=setInterval(getState,2000)}}
-document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&poll!==null)getState()});
-function stopPoll(){if(poll!==null){clearInterval(poll);poll=null}}
+function getState(){if(document.visibilityState==='hidden')return;return fetch(stateUrl(),{cache:'no-store'}).then(r=>r.json()).then(onSnapshot,()=>{LOST=true;update(SNAP)})}
+/* ---------- refresh: one clock for the live snapshot and the history panels ---------- */
+/* rf:start */
+const RF_CHOICES=[['off','Off',0],['1s','1s',1e3],['5s','5s',5e3],['10s','10s',1e4],['30s','30s',3e4],['1m','1m',6e4],['5m','5m',3e5],['15m','15m',9e5],['30m','30m',18e5],['1h','1h',36e5]].map(([k,t,ms])=>({k,t,ms}));
+const RF_FLOOR=5000,RF_STORE='huddle-refresh',RF_DEFAULT='1s';
+/* The live snapshot is fetched at the chosen interval, history panels at the same interval but never faster than RF_FLOOR.
+   Off sets no timer. A hidden tab clears the timers and fetches once when it shows again. */
+function rfMake(env){
+ let key=RF_DEFAULT,timers=[],busy=false,hidden=false;
+ try{const v=env.store.getItem(RF_STORE);if(RF_CHOICES.some(c=>c.k===v))key=v}catch(e){}
+ const choice=()=>RF_CHOICES.find(c=>c.k===key);
+ const fetchState=()=>{if(busy)return;const p=env.state();if(p&&p.then){busy=true;const done=()=>{busy=false};p.then(done,done)}};
+ const all=manual=>{fetchState();env.history(manual)};
+ const disarm=()=>{timers.forEach(env.cancel);timers=[]};
+ const arm=()=>{disarm();const ms=choice().ms;if(ms&&!hidden)timers=[env.every(fetchState,ms),env.every(()=>env.history(false),Math.max(ms,RF_FLOOR))]};
+ return {choices:()=>RF_CHOICES,key:()=>key,start:arm,now:()=>all(true),
+  histMs:()=>choice().ms?Math.max(choice().ms,RF_FLOOR):Infinity,
+  set(k){if(!RF_CHOICES.some(c=>c.k===k))return;key=k;try{env.store.setItem(RF_STORE,k)}catch(e){}arm()},
+  visibility(visible){if(!visible){hidden=true;disarm();return}if(!hidden)return;hidden=false;if(choice().ms)all(false);arm()}}}
+/* rf:end */
+/* HMODE: 0 a page opens or repaints, 1 the history timer, 2 refresh now. A panel loaded less than its own age ago is not loaded again. */
+let HMODE=0;
+const RF_SLACK=50;
+const rfFresh=at=>{const age=Date.now()-at;return HMODE===2?false:HMODE===1?age<RF_FLOOR-RF_SLACK:age<RF.histMs()};
+const pageLoaders=()=>({models:[loadModels],usage:[loadUsage],providers:[loadProviders],errors:[loadProviders,loadErrors],overview:[loadOvCost],requests:[loadReqCost,()=>{if(HS.mode==='history')hsearch()}]}[page]||[]);
+function refreshHistory(manual){HMODE=manual?2:1;try{loadHistory();loadTotals();pageLoaders().forEach(f=>f())}finally{HMODE=0}}
+const RF=rfMake({store:{getItem:k=>localStorage.getItem(k),setItem:(k,v)=>localStorage.setItem(k,v)},visible:()=>document.visibilityState!=='hidden',every:(f,ms)=>setInterval(f,ms),cancel:clearInterval,state:getState,history:refreshHistory});
+MENUS.refresh={label:'Refresh interval',opts:()=>RF.choices().map(c=>({k:c.k,t:c.t})),cur:()=>RF.key(),pick:k=>RF.set(k)};
+function renderRefBar(){const el=$('#refbar');if(el){menuDrop();setHtml(el,menuHtml('refresh'))}}
+document.addEventListener('visibilitychange',()=>RF.visibility(document.visibilityState==='visible'));
 
 /* ---------- provider plan and quota, read by Providers and Usage ---------- */
 const PNAME={zai:'Z.ai GLM',kimi:'Kimi',deepseek:'DeepSeek',minimax:'MiniMax',qwen:'Qwen'};

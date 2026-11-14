@@ -1,9 +1,9 @@
 function modelRows(){const t=Math.max(1,sum(MODELS.map(m=>m.n)));return MODELS.map(m=>Object.assign({share:m.n/t,hit:m.tin?m.cr/m.tin:0,trend:BK.map(x=>(x.byM[m.id]||EMPTY).n)},m))}
 /* price and cost per model for the picked range: history totals answer for every range, the live one included */
 const HM={q:null,at:0,tot:null,err:false};
-function loadModels(){const q=rangeQuery();if(HM.q===q&&HM.tot&&Date.now()-HM.at<6e4)return;
- if(HM.q!==q){HM.tot=null;HM.err=false}HM.q=q;
- hget(HQ+'totals&by=model&'+q).then(d=>{if(HM.q!==q)return;HM.tot=hmap(d);HM.at=Date.now();HM.err=false;paint()},()=>{if(HM.q!==q)return;HM.err=true;paint()})}
+function loadModels(){const q=rangeQuery();if(HM.q===q&&HM.tot&&rfFresh(HM.at))return;
+ if(HM.q!==q){HM.tot=null;HM.err=false}HM.q=q;HM.at=Date.now();
+ hget(HQ+'totals&by=model&'+q).then(d=>{if(HM.q!==q)return;HM.tot=hmap(d);HM.err=false;paint()},()=>{if(HM.q!==q)return;HM.err=true;paint()})}
 function modelPriced(){const t=HM.tot||{};return rangeRows().map(x=>{const h=t[x.id];return Object.assign({},x,{lane:x.lane||laneOfModel(x.id),cost:h?num(h.cost_usd):null,priced:h?h.priced!==false:true,known:!!h})})}
 const perMillion=x=>x.n&&x.tin+x.out?x.cost/(x.tin+x.out)*1e6:null;
 const modelPrice=x=>!x.known?(HM.err||HM.tot?NA:checking()):costText(x.cost,x.priced);

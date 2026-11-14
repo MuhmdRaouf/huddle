@@ -203,6 +203,14 @@ history request, so a day is a day of the chosen zone. The offset is the one the
 browser has now: a range that crosses a daylight-saving change keys the days
 before the change one hour off.
 
+Beside the range picker sit a refresh-now button and a refresh picker (`Off`, `1s`,
+`5s`, `10s`, `30s`, `1m`, `5m`, `15m`, `30m`, `1h`; `1s` by default), drawn as one
+control. The live snapshot is fetched at the chosen interval; history panels are
+fetched at the same interval but never more often than every 5 seconds. `Off`
+fetches nothing on a timer; refresh-now and a range change still fetch. A hidden
+tab fetches nothing and fetches once when it shows again. The choice is remembered
+in the browser and shared by every page.
+
 It shows:
 - Overview: eight stat cards in a full grid (sessions, requests/s, tokens/s, cost at API price, first token, errors by provider, plan quota), the top five things that need you, traffic stacked by provider, providers and the working sessions.
 - Needs you: every question, out-of-quota or failing provider, router fault, job to review, failing setup check and full context, grouped by kind. A session that only ended its turn is not on it.

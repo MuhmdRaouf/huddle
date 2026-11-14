@@ -369,6 +369,7 @@ td.empty{text-align:center;color:var(--faint);padding:28px 14px}
   .search{width:100%;min-width:0}.sbox{flex:1}
   .seg{max-width:100%;overflow-x:auto;scrollbar-width:none}.ph .act .sbox{flex:1 1 100%}
   .livep .lt,.tbk,.crumbs .c0{display:none}.tbright{gap:8px}
+  .tbbrand,.crumbs,.livep b{display:none}.tbright{min-width:0}
   .attn-row{flex-wrap:wrap}.attn-row .tag{min-width:0}
   .attn-row .what{flex:1 1 100%}.attn-row .t,.attn-row .m{white-space:normal;overflow:visible;text-overflow:clip}
   .gauges{grid-template-columns:1fr}
@@ -391,6 +392,23 @@ td.empty{text-align:center;color:var(--faint);padding:28px 14px}
 .rangebar,.tzbar{position:relative}
 .tzbar .mbtn{min-width:132px}
 @media (max-width:700px){.tzbar .mbtn{min-width:0}}
+/* the range picker, refresh-now and the refresh picker read as one control */
+.ctlgroup{display:flex;align-items:center}
+.refbar{position:relative}
+.refbar .mlist{max-height:none}
+.ctlgroup .mbtn{border-radius:0}
+.ctlgroup .rangebar .mbtn{border-radius:8px 0 0 8px}
+.ctlgroup .refbar .mbtn{min-width:62px;margin-left:-1px;border-radius:0 8px 8px 0}
+.rfnow{display:inline-flex;align-items:center;justify-content:center;width:32px;height:30px;margin-left:-1px;padding:0;border:1px solid var(--line);border-radius:0;background:var(--surface);color:var(--muted);cursor:pointer}
+.rfnow:hover{color:var(--text);border-color:var(--faint);position:relative;z-index:1}
+.rfnow:focus-visible{position:relative;z-index:1}
+.rfnow svg.i{width:15px;height:15px}
+.rfnow.spin svg{animation:rfspin .5s ease-out}
+@keyframes rfspin{to{transform:rotate(360deg)}}
+.ctlgroup .mbtn:hover,.ctlgroup .mbtn[aria-expanded="true"]{position:relative;z-index:1}
+.ctlgroup .mval,.tzbar .mval{white-space:nowrap}
+@media (max-width:700px){.ctlgroup .rangebar .mbtn{min-width:0}.ctlgroup .refbar .mbtn{min-width:0;padding-left:8px}}
+@media (prefers-reduced-motion:reduce){.rfnow.spin svg{animation:none}}
 .rangepop{position:absolute;right:0;top:38px;z-index:30;display:grid;gap:10px;min-width:240px;padding:14px;border:1px solid var(--line);border-radius:10px;background:var(--surface);box-shadow:0 8px 30px rgb(0 0 0/.18)}
 
 .rangepop .rerr{font-size:12.5px;color:var(--bad);min-height:0}.rangepop .rerr:empty{display:none}

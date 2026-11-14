@@ -9,8 +9,8 @@ function whoCell(r){const last=x=>String(x).split(':').pop(),ag=r.a?(r.a.type===
  return `<div>${s}</div><div class="cs sans">${esc(ag)}${r.up?` · <span class="mono">${esc(r.up)}</span>`:''}</div>`}
 /* live rows carry no price; the last 15 minutes of history do, keyed by upstream id */
 const RC={map:{},at:0,busy:false};
-function loadReqCost(){if(RC.busy||Date.now()-RC.at<15e3)return;RC.busy=true;
- hget(HQ+'search&range=15m&limit=500').then(d=>{const m={};arr(d.rows).forEach(x=>{if(x.upstream_id&&num(x.cost_usd)!=null)m[x.upstream_id]=x.cost_usd});RC.map=m;RC.at=Date.now();RC.busy=false;paint()},()=>{RC.at=Date.now();RC.busy=false})}
+function loadReqCost(){if(RC.busy||rfFresh(RC.at))return;RC.busy=true;RC.at=Date.now();
+ hget(HQ+'search&range=15m&limit=500').then(d=>{const m={};arr(d.rows).forEach(x=>{if(x.upstream_id&&num(x.cost_usd)!=null)m[x.upstream_id]=x.cost_usd});RC.map=m;RC.busy=false;paint()},()=>{RC.busy=false})}
 const reqCost=r=>r.cost!=null?r.cost:r.up&&RC.map[r.up]!=null?RC.map[r.up]:null;
 const REQ_COLS=[
  {k:'time',label:'Time',v:r=>r.t,h:r=>`<span class="mono muted">${r.h?when(r.t):clock(r.t)}</span>`},

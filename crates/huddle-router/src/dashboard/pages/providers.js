@@ -2,9 +2,9 @@
 const CAUSE={quota:'quota used up'};
 /* totals by provider for the picked range, and the latency buckets that belong to them */
 const HP={q:null,at:0,lane:null,bk:null,reason:[],err:false};
-function loadProviders(){const q=rangeQuery();if(HP.q===q&&HP.lane&&Date.now()-HP.at<6e4)return;
- if(HP.q!==q){HP.lane=HP.bk=null;HP.reason=[];HP.err=false}HP.q=q;
- Promise.all([hget(HQ+'totals&by=lane&'+q),liveRange()?null:hget(HQ+'buckets&'+q),liveRange()?null:hget(HQ+'totals&by=reason&'+q)]).then(([t,b,r])=>{if(HP.q!==q)return;HP.lane=hmap(t);HP.bk=b;HP.reason=arr(r&&r.totals);HP.at=Date.now();HP.err=false;paint()},()=>{if(HP.q!==q)return;HP.err=true;paint()})}
+function loadProviders(){const q=rangeQuery();if(HP.q===q&&HP.lane&&rfFresh(HP.at))return;
+ if(HP.q!==q){HP.lane=HP.bk=null;HP.reason=[];HP.err=false}HP.q=q;HP.at=Date.now();
+ Promise.all([hget(HQ+'totals&by=lane&'+q),liveRange()?null:hget(HQ+'buckets&'+q),liveRange()?null:hget(HQ+'totals&by=reason&'+q)]).then(([t,b,r])=>{if(HP.q!==q)return;HP.lane=hmap(t);HP.bk=b;HP.reason=arr(r&&r.totals);HP.err=false;paint()},()=>{if(HP.q!==q)return;HP.err=true;paint()})}
 
 const snapLane=id=>arr(SNAP.lanes).find(x=>x.id===id)||null;
 const lastIsQuota=id=>{const l=snapLane(id);return !!l&&l.quota_out===true};

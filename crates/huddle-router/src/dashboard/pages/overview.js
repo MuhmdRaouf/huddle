@@ -6,7 +6,7 @@ function attnList(){const all=attnItems(),u=unsetProviders();
  const more=all.length>5?`<div class="attn-row quiet"><div class="what"><div class="m">${all.length-5} more</div></div><a class="btn sm" href="#needs-you">Show all</a></div>`:'';
  return (all.length?rows:`<div class="allclear">${ic('check')} Nothing needs you.</div>`)+more+recovered()+quiet}
 const OV={cost:null,at:0};
-function loadOvCost(){if(!liveRange()||page!=='overview'||Date.now()-OV.at<60000)return;OV.at=Date.now();
+function loadOvCost(){if(!liveRange()||page!=='overview'||rfFresh(OV.at))return;OV.at=Date.now();
  hget(HQ+'totals&by=model&range=15m').then(d=>{OV.cost=d;refresh()},()=>{})}
 const provOf=m=>{const k=MODELS.find(x=>x.id===m);if(k&&k.lane)return k.lane;
  const L=LANES.find(l=>l.id!=='anthropic'&&String(l.match).split(',').some(p=>{p=p.trim();return p.endsWith('*')&&m.startsWith(p.slice(0,-1))}));return L?L.id:'anthropic'};
