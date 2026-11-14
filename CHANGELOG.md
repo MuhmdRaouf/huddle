@@ -33,6 +33,10 @@
 - A refresh-now button and a refresh picker (`Off` to `1h`, `1s` by default) sit beside the range picker as one control. The live snapshot follows the chosen interval; history panels follow it too but never fetch faster than every 5 seconds, and one request per endpoint is in flight at a time. A hidden tab pauses and fetches once when it shows again. The choice is remembered in the browser.
 - The refresh picker gains `Realtime`: one event stream (`/huddle-router/live`, slim form unless the page lists requests) pushes the live snapshot at most four times a second with a keep-alive every 15 seconds, and refresh-now is greyed (`Realtime is on`) while it is chosen. A dropped stream shows `Realtime (reconnecting)`, retries with a delay that grows to 10 seconds, and falls back to the 1 s poll after three failed tries. The stream refuses a foreign Origin, and past 8 open streams the oldest closes.
 
+### Build
+
+- Rust 1.100.0 in `mise.toml`, `rust-version`, the Docker toolchain image and CI.
+
 ## 0.0.7
 
 Provider setup holds across sessions, and the key check gets a real answer.
@@ -134,7 +138,7 @@ The five providers are part of huddle, and a key goes in from a page or a termin
 
 ### Build
 
-- Rust 1.99.1 in `mise.toml`, the Docker toolchain image and CI. mise wraps cargo with mr-boxington (`mbx`), so every worktree shares one build cache.
+- The Rust toolchain is pinned in `mise.toml`, the Docker toolchain image and CI. mise wraps cargo with mr-boxington (`mbx`), so every worktree shares one build cache.
 - One banner per provider in `assets/banners/<p>.svg`, shown in the README's Providers section.
 
 ### Upgrading from 0.0.5

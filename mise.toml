@@ -14,7 +14,7 @@
 
 [tools]
 # mr_boxington wraps cargo with mbx: one shared build cache across every worktree.
-rust         = { version = "1.99.1", components = ["clippy", "rustfmt"], mr_boxington = true }
+rust         = { version = "1.100.0", components = ["clippy", "rustfmt"], mr_boxington = true }
 mr-boxington = "1.30.0"
 python       = "3.14.7"
 pre-commit   = "4.6.2"
