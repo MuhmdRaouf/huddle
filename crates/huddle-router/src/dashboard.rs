@@ -493,3 +493,58 @@ mod gzip_tests {
         assert!(!accepts_gzip(None));
     }
 }
+
+#[cfg(test)]
+#[path = "../build_support/minify_plan.rs"]
+mod minify_plan;
+
+#[cfg(test)]
+mod served_page_tests {
+    use std::io::Read;
+    use std::process::Command;
+
+    use flate2::read::GzDecoder;
+    use huddle_testkit::temp_home::TempHome;
+
+    use super::{PAGE, PAGE_GZIP};
+
+    fn served() -> String {
+        let mut text = String::new();
+        GzDecoder::new(PAGE_GZIP)
+            .read_to_string(&mut text)
+            .expect("the served bytes are gzip");
+        text
+    }
+
+    fn script_of(page: &str) -> &str {
+        let open = page.find("<script>\n").expect("a script tag") + "<script>\n".len();
+        let close = page.rfind("</script>").expect("a closing script tag");
+        &page[open..close]
+    }
+
+    #[test]
+    fn e8_minified_page_parses_and_boots() {
+        let served = served();
+        assert!(served.starts_with("<!doctype html>"));
+        assert!(served.contains("<title>Huddle Admin</title>"));
+        // The markup is untouched, so every id the script reads is still in the page.
+        let markup_start = PAGE.find("<body>").expect("body");
+        let markup_end = PAGE.find("<script>").expect("script");
+        assert!(served.contains(&PAGE[markup_start..markup_end]));
+        // Minifying never grows the page.
+        assert!(served.len() <= PAGE.len());
+
+        // The same parse check the Merger runs: `node --check` on the joined script.
+        let home = TempHome::new();
+        let file = home.root().join("page-script.js");
+        std::fs::write(&file, script_of(&served)).expect("write the script");
+        match Command::new("node").arg("--check").arg(&file).output() {
+            Ok(out) => assert!(
+                out.status.success(),
+                "node --check failed: {}",
+                String::from_utf8_lossy(&out.stderr)
+            ),
+            Err(_) => eprintln!("node is not installed: parse check skipped"),
+        }
+    }
+}

@@ -233,7 +233,16 @@ fn e7_dashboard_is_served_gzipped() {
 
     assert!(lower.contains("content-encoding: gzip"), "{head}");
     assert!(lower.contains("vary: accept-encoding"), "{head}");
-    assert_eq!(gunzip(&body), huddle_router::dashboard::PAGE);
+    // The served page is the joined page, its CSS and JS minified when the build had esbuild.
+    let served = gunzip(&body);
+    let page = huddle_router::dashboard::PAGE;
+    let markup = |text: &str| -> String {
+        let from = text.find("<body>").expect("body");
+        let to = text.find("<script>").expect("script");
+        text[from..to].to_string()
+    };
+    assert_eq!(markup(&served), markup(page));
+    assert!(served.len() <= page.len());
     assert!(
         body.len() < huddle_router::dashboard::PAGE.len() / 2,
         "{} bytes",

@@ -67,4 +67,13 @@ RUN set -eux; \
     mv shellcheck-v0.11.0/shellcheck /usr/local/bin/shellcheck; \
     rm -r sc.tar.xz shellcheck-v0.11.0
 
+# ┌ esbuild minifies the dashboard page at build time. 0.25.10 is the version the
+# │ CI release builds pin; HUDDLE_REQUIRE_MINIFY makes a build without it fail.
+# └ nodejs and npm only install it.
+RUN apt-get update -qq \
+    && apt-get install -y -qq --no-install-recommends nodejs npm \
+    && rm -rf /var/lib/apt/lists/* \
+    && npm install --global esbuild@0.25.10
+ENV HUDDLE_REQUIRE_MINIFY=1
+
 WORKDIR /work

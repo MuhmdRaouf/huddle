@@ -254,6 +254,13 @@ jobs:
           apt-get update
           apt-get install -y --no-install-recommends musl-tools
           echo "CC_$(echo "$TARGET" | tr - _)=musl-gcc" >> "$GITHUB_ENV"
+      - name: Pinned esbuild minifies the dashboard page
+        run: |
+          if [ "$RUNNER_OS" = Linux ]; then
+            apt-get install -y --no-install-recommends nodejs npm
+          fi
+          npm install --global esbuild@0.25.10
+          echo "HUDDLE_REQUIRE_MINIFY=1" >> "$GITHUB_ENV"
       - run: cargo build --release --locked -p huddle --bin huddle --target "$TARGET"
       - name: Name the asset
         run: |

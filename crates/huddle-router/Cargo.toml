@@ -30,4 +30,5 @@ ring.workspace = true
 flate2.workspace = true
 
 [dev-dependencies]
+flate2.workspace = true
 huddle-testkit.workspace = true
