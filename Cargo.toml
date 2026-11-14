@@ -7,7 +7,6 @@ version = "0.0.7"
 edition = "2024"
 rust-version = "1.100"
 license = "GPL-3.0-or-later"
-repository = "https://github.com/MuhmdRaouf/huddle"
 publish = false
 
 [workspace.dependencies]

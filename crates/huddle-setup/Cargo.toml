@@ -9,9 +9,7 @@ publish.workspace = true
 [dependencies]
 huddle-config.workspace = true
 huddle-catalog.workspace = true
-huddle-keystore.workspace = true
 huddle-pki.workspace = true
-huddle-procs.workspace = true
 libc.workspace = true
 ring.workspace = true
 serde.workspace = true

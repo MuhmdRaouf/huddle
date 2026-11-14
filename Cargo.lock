@@ -542,8 +542,6 @@ name = "huddle-catalog"
 version = "0.0.7"
 dependencies = [
  "huddle-testkit",
- "serde",
- "serde_json",
 ]
 
 [[package]]
@@ -552,7 +550,6 @@ version = "0.0.7"
 dependencies = [
  "huddle-testkit",
  "serde",
- "serde_json",
  "toml",
  "toml_edit",
 ]
@@ -624,11 +621,9 @@ name = "huddle-keystore"
 version = "0.0.7"
 dependencies = [
  "huddle-config",
- "huddle-procs",
  "huddle-testkit",
  "libc",
  "serde",
- "serde_json",
 ]
 
 [[package]]
@@ -713,9 +708,7 @@ version = "0.0.7"
 dependencies = [
  "huddle-catalog",
  "huddle-config",
- "huddle-keystore",
  "huddle-pki",
- "huddle-procs",
  "huddle-testkit",
  "libc",
  "ring",
