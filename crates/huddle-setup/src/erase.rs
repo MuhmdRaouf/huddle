@@ -31,6 +31,17 @@ pub fn folders(paths: &Paths) -> Vec<PathBuf> {
     found
 }
 
+/// Whether another folder of `all` that this run deletes holds `dir`, so that its deletion
+/// takes `dir` with it and `dir` needs no report of its own.
+pub fn is_inside_a_deleted(paths: &Paths, dir: &Path, all: &[PathBuf]) -> bool {
+    all.iter().any(|outer| {
+        outer != dir
+            && dir.starts_with(outer)
+            && refusal(paths, outer).is_none()
+            && fs::symlink_metadata(outer).is_ok_and(|meta| meta.is_dir())
+    })
+}
+
 /// Deletes `dir` and everything under it when it is a folder huddle owns.
 pub fn erase(paths: &Paths, dir: &Path) -> Erased {
     if matches!(fs::symlink_metadata(dir), Err(error) if error.kind() == io::ErrorKind::NotFound) {
@@ -86,4 +97,85 @@ fn refusal(paths: &Paths, dir: &Path) -> Option<String> {
         return Some("it holds the user bin folder".to_string());
     }
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use huddle_config::env::Env;
+
+    fn paths() -> Paths {
+        Paths::from_env(&Env::with(&[("HOME", "/h/user")])).expect("paths")
+    }
+
+    #[test]
+    fn c3_refusal_names_a_relative_or_empty_path() {
+        assert_eq!(
+            refusal(&paths(), Path::new("")).as_deref(),
+            Some("the path is empty or relative")
+        );
+        assert_eq!(
+            refusal(&paths(), Path::new("rel/huddle")).as_deref(),
+            Some("the path is empty or relative")
+        );
+    }
+
+    #[test]
+    fn c3_refusal_names_the_root_folder() {
+        assert_eq!(
+            refusal(&paths(), Path::new("/")).as_deref(),
+            Some("it is the root folder")
+        );
+    }
+
+    #[test]
+    fn c3_refusal_names_a_folder_not_called_huddle() {
+        assert_eq!(
+            refusal(&paths(), Path::new("/h/user/data")).as_deref(),
+            Some("it is not named huddle")
+        );
+    }
+
+    #[test]
+    fn c3_refusal_names_a_folder_that_holds_the_home() {
+        assert_eq!(
+            refusal(&paths(), Path::new("/h/huddle")).as_deref(),
+            None,
+            "a huddle folder beside the home is fine"
+        );
+        let mut paths = paths();
+        paths.home = PathBuf::from("/h/huddle/user");
+        assert_eq!(
+            refusal(&paths, Path::new("/h/huddle")).as_deref(),
+            Some("it is the home folder or holds it")
+        );
+    }
+
+    #[test]
+    fn c3_refusal_names_a_folder_that_holds_a_shared_parent() {
+        let mut paths = paths();
+        paths.claude_dir = PathBuf::from("/x/huddle/claude");
+        assert_eq!(
+            refusal(&paths, Path::new("/x/huddle")).as_deref(),
+            Some("it holds folders that are not huddle's")
+        );
+    }
+
+    #[test]
+    fn c3_refusal_names_a_folder_that_holds_the_user_bin() {
+        let mut paths = paths();
+        paths.user_bin_dir = PathBuf::from("/y/huddle/bin");
+        assert_eq!(
+            refusal(&paths, Path::new("/y/huddle")).as_deref(),
+            Some("it holds the user bin folder")
+        );
+    }
+
+    #[test]
+    fn c3_refusal_lets_a_folder_named_huddle_go() {
+        assert_eq!(
+            refusal(&paths(), Path::new("/h/user/.local/share/huddle")),
+            None
+        );
+    }
 }

@@ -53,15 +53,26 @@ pub fn run(provider: &'static Provider, env: &Env) -> i32 {
             return 6;
         }
     };
-    let outcome = match finish(provider, env, &paths, &executable, &secret) {
+    finish_and_report(provider, env, &paths, &executable, &key_line, &secret)
+}
+
+/// Finishes the setup with the key and prints the whole report.
+fn finish_and_report(
+    provider: &'static Provider,
+    env: &Env,
+    paths: &Paths,
+    executable: &std::path::Path,
+    key_line: &str,
+    secret: &SecretString,
+) -> i32 {
+    let outcome = match finish(provider, env, paths, executable, secret) {
         Ok(outcome) => outcome,
         Err(error) => {
             let _ = writeln!(std::io::stderr(), "{error}");
             return 1;
         }
     };
-
-    let report = ready_note::report(provider, &outcome, &executable, Some(&key_line));
+    let report = ready_note::report(provider, &outcome, executable, Some(key_line));
     let _ = write!(std::io::stdout(), "{report}");
     if outcome.ready { 0 } else { 6 }
 }
@@ -88,14 +99,17 @@ fn wait_for_key_page(
         );
         return 0;
     }
-    match ready_note::take(paths, provider) {
-        Some(report) => {
-            let _ = write!(std::io::stdout(), "{report}");
-            let ready = report.starts_with(&ready_note::head(provider, true, true))
-                || report.starts_with(&ready_note::head(provider, true, false));
-            if ready { 0 } else { 6 }
+    if let Some(note) = ready_note::take(paths, provider) {
+        let _ = write!(std::io::stdout(), "{}", note.report);
+        return if note.ready { 0 } else { 6 };
+    }
+    // No note: the page closed without a key, or the note could not be written. A key in the
+    // store means the page did its part, so the setup is finished and reported from here.
+    match find_key(provider, env, paths) {
+        Ok(Some((key_line, secret))) => {
+            finish_and_report(provider, env, paths, executable, &key_line, &secret)
         }
-        None => needs_a_key(provider, Some(&url)),
+        _ => needs_a_key(provider, Some(&url)),
     }
 }
 

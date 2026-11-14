@@ -330,7 +330,8 @@ pub fn entry_handler(ctx: Arc<EntryCtx>) -> Handler {
                 // The live feed is the one dashboard path a page opens cross-origin, so its
                 // Origin is checked too.
                 if req.uri().path() == LIVE_PATH {
-                    // An Origin that is not visible ASCII is refused like a wrong one.
+                    // `to_str` takes only printable ASCII, space and tab; an Origin with any other byte is
+                    // refused like a wrong one.
                     let origin = match req.headers().get(ORIGIN).map(HeaderValue::to_str) {
                         None => None,
                         Some(Ok(origin)) => Some(origin),

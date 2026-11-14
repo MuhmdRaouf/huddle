@@ -117,7 +117,8 @@ pub fn run(paths: &Paths, exe: &Path) -> UninstallReport {
         lines.push(format!("could not remove the agent files: {error}"));
     }
 
-    for dir in erase::folders(paths) {
+    let folders = erase::folders(paths);
+    for dir in folders.iter().cloned() {
         let held = if dir == paths.config_dir {
             unremoved_provider
                 .as_ref()
@@ -138,6 +139,8 @@ pub fn run(paths: &Paths, exe: &Path) -> UninstallReport {
         match erase::erase(paths, &dir) {
             Erased::Removed => lines.push(format!("removed {}", dir.display())),
             Erased::Absent => {}
+            // A folder inside another one this run deletes goes with it: no line of its own.
+            Erased::LeftInPlace(_) if erase::is_inside_a_deleted(paths, &dir, &folders) => {}
             Erased::LeftInPlace(reason) => {
                 lines.push(format!("left in place: {} ({reason})", dir.display()));
             }

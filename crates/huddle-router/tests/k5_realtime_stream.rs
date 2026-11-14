@@ -436,6 +436,15 @@ async fn k5_finished_feeds_do_not_count_against_the_cap() {
     let _ = r.stop.send(true);
 }
 
+/// Bytes the client socket holds that nobody has read.
+fn unread_bytes(stream: &TcpStream) -> libc::c_int {
+    use std::os::fd::AsRawFd;
+    let mut count: libc::c_int = 0;
+    // SAFETY: FIONREAD writes one int through the pointer, and the fd is open.
+    unsafe { libc::ioctl(stream.as_raw_fd(), libc::FIONREAD, &mut count) };
+    count
+}
+
 #[tokio::test]
 async fn c2_evicted_feed_ends_while_its_reader_is_stalled() {
     let anthropic = FakeUpstream::start(|_, _| Step::answer(200, "{}")).await;
@@ -466,6 +475,27 @@ async fn c2_evicted_feed_ends_while_its_reader_is_stalled() {
         ask(r.port, "", &format!(r#"{{"model":"{model}"}}"#)).await;
         n += 1;
     }
+    // The send is blocked, not just slow: once the socket is full, more changes add no byte to
+    // it. The count settles within a few pushes while the last queued frames drain.
+    assert_eq!(viewers(r.port).await, 1, "the stalled feed is still open");
+    let mut previous = unread_bytes(&stalled);
+    let mut blocked = false;
+    for _ in 0..10 {
+        let model = format!("claude-{n}-{}", "m".repeat(150));
+        ask(r.port, "", &format!(r#"{{"model":"{model}"}}"#)).await;
+        n += 1;
+        tokio::time::sleep(Duration::from_millis(900)).await;
+        let now = unread_bytes(&stalled);
+        blocked = now == previous;
+        if blocked {
+            break;
+        }
+        previous = now;
+    }
+    assert!(
+        blocked,
+        "the stalled feed's send is not blocked, so no eviction was needed"
+    );
     let mut others = Vec::new();
     for _ in 0..MAX_LIVE_STREAMS {
         others.push(Feed::open(r.port, "?recent=0", "").await);

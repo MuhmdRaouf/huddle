@@ -43,8 +43,13 @@ fn c2_hook_survives_a_closed_stdout() {
         hook_with_broken_stdout(&home, port, "session-start"),
         Some(0)
     );
+    // A waiting ready note gives `prompt-submit` a report to print, and taking it proves the
+    // hook reached the print.
+    let note = home.root().join(".local/state/huddle/key-page-zai.ready");
+    fs::write(&note, "zai setup: ready.\n").expect("note");
     assert_eq!(
         hook_with_broken_stdout(&home, port, "prompt-submit"),
         Some(0)
     );
+    assert!(!note.exists(), "the hook took the note and printed it");
 }

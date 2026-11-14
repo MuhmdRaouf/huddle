@@ -7,6 +7,7 @@ use std::fs::{self, File};
 use std::io::{self, Read as _, Write as _};
 use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use crate::atomic::write_atomic;
 use crate::files::{DIR_MODE, PRIVATE_FILE_MODE, create_dir};
@@ -14,6 +15,9 @@ use crate::paths::Paths;
 
 const TOKEN_BYTES: usize = 32;
 const BEARER: &str = "Bearer ";
+
+/// Numbers the temp files of `ensure` calls made in this process.
+static TEMP_CALLS: AtomicU64 = AtomicU64::new(0);
 
 /// `<state_dir>/mcp-token`.
 pub fn token_path(paths: &Paths) -> PathBuf {
@@ -98,7 +102,10 @@ impl McpToken {
         }
         // A whole file under a temp name, then a hard link: the link fails when another caller
         // got there first, and nobody ever reads a half-written token.
-        let temp = path.with_extension(format!("{}.tmp", std::process::id()));
+        // The name is unique per call: the pid separates processes, the counter separates
+        // callers inside one.
+        let call = TEMP_CALLS.fetch_add(1, Ordering::Relaxed);
+        let temp = path.with_extension(format!("{}.{call}.tmp", std::process::id()));
         // A crash can leave this name behind, and a recycled pid reuses it.
         let _ = fs::remove_file(&temp);
         let written = (|| {

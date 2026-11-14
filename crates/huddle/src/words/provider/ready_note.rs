@@ -47,27 +47,37 @@ pub fn report(
     lines.join("\n") + "\n"
 }
 
-/// `<state_dir>/key-page-<p>.ready`.
-fn note_path(paths: &Paths, provider: &Provider) -> PathBuf {
-    paths
-        .state_dir
-        .join(format!("key-page-{}.ready", provider.id))
+/// A waiting report and whether its setup ended ready.
+#[derive(Debug, PartialEq, Eq)]
+pub struct Note {
+    pub report: String,
+    pub ready: bool,
 }
 
-pub fn write(paths: &Paths, provider: &Provider, report: &str) {
+/// `<state_dir>/key-page-<p>.ready` for a ready setup, `.not-ready` for the other.
+fn note_path(paths: &Paths, provider: &Provider, ready: bool) -> PathBuf {
+    let suffix = if ready { "ready" } else { "not-ready" };
+    paths
+        .state_dir
+        .join(format!("key-page-{}.{suffix}", provider.id))
+}
+
+pub fn write(paths: &Paths, provider: &Provider, note: &Note) {
     let _ = write_atomic(
-        &note_path(paths, provider),
-        report.as_bytes(),
+        &note_path(paths, provider, note.ready),
+        note.report.as_bytes(),
         PRIVATE_FILE_MODE,
     );
 }
 
-/// The report, removed from disk; none when no page finished a setup since the last take.
-pub fn take(paths: &Paths, provider: &Provider) -> Option<String> {
-    let path = note_path(paths, provider);
-    let text = std::fs::read_to_string(&path).ok()?;
-    std::fs::remove_file(&path).ok()?;
-    Some(text)
+/// The note, removed from disk; none when no page finished a setup since the last take.
+pub fn take(paths: &Paths, provider: &Provider) -> Option<Note> {
+    [true, false].into_iter().find_map(|ready| {
+        let path = note_path(paths, provider, ready);
+        let report = std::fs::read_to_string(&path).ok()?;
+        std::fs::remove_file(&path).ok()?;
+        Some(Note { report, ready })
+    })
 }
 
 /// Every provider's waiting report, in catalog order.
@@ -76,6 +86,7 @@ pub fn take_all(paths: &Paths) -> String {
         .iter()
         .filter_map(|id| provider_by_id(id))
         .filter_map(|provider| take(paths, provider))
+        .map(|note| note.report)
         .collect()
 }
 

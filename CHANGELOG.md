@@ -9,6 +9,7 @@
 - A process the router starts no longer inherits its listening socket after an update handover, so a leftover `git` cannot hold port 4835.
 - MCP over HTTP needs a token: the router refuses `/mcp` without it, and the plugin's `headersHelper` runs `huddle mcp headers` so Claude Code sends it with no step from you. `huddle router status` says `mcp: token ok` or what is wrong.
 - The live dashboard feed refuses an `Origin` header that is not readable text, like a wrong origin, instead of treating it as absent.
+- Setup waiting for the key page reports ready and exits 0 when the key is stored but the ready note cannot be written, instead of `needs a key`.
 
 ### Router
 

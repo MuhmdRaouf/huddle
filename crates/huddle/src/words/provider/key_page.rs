@@ -284,8 +284,11 @@ async fn submit(request: Request<Incoming>, state: &Arc<State>) -> Response<Full
         Ok(Ok(outcome)) => {
             let answer = answer(state.provider, &outcome);
             if answer.state != "refused" {
-                let report = ready_note::report(state.provider, &outcome, &state.executable, None);
-                ready_note::write(&state.paths, state.provider, &report);
+                let note = ready_note::Note {
+                    report: ready_note::report(state.provider, &outcome, &state.executable, None),
+                    ready: outcome.ready,
+                };
+                ready_note::write(&state.paths, state.provider, &note);
                 state.stored.store(true, Ordering::SeqCst);
                 state.done.notify_one();
             }
