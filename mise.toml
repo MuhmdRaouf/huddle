@@ -16,8 +16,8 @@
 # mr_boxington wraps cargo with mbx: one shared build cache across every worktree.
 rust         = { version = "1.100.0", components = ["clippy", "rustfmt"], mr_boxington = true }
 mr-boxington = "1.30.0"
-python       = "3.14.7"
-pre-commit   = "4.6.2"
+python       = "3.15.2"
+pre-commit   = "4.7.0"
 gitleaks     = "8.30.1"
 # bun runs the dev tooling. The tools themselves (esbuild, which minifies the dashboard page) are
 # the devDependencies of package.json, pinned exactly in bun.lock and installed by `mise run setup`.
@@ -43,7 +43,7 @@ run = "pre-commit run --all-files"
 [tasks.check]
 description = "Every gate CI runs: lint, static checks and the test suites"
 dir = "{{config_root}}"
-depends = ["lint", "rust:check"]
+depends = ["lint", "pins:check", "rust:check"]
 run = [
   "mise run rust:check",
 ]
@@ -100,6 +100,11 @@ console.log(`dashboard script ok: ${file}`);
 '
 ''',
 ]
+
+[tasks."pins:check"]
+description = "Fail when a tool pin is a range, a branch or latest, or when a workflow, the Dockerfile or a hook names another version than mise.toml and package.json (PINS_ROOT=<dir> checks another tree)"
+dir = "{{config_root}}"
+run = "bun scripts/pins-check.js"
 
 [tasks."check:history"]
 description = "Scan every commit of the current branch for secrets and AI attribution (as CI does)"

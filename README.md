@@ -485,6 +485,7 @@ mise run check          # every gate CI runs: lint, fmt, clippy and the tests
 mise run rust:check     # the Rust gates alone
 mise run check:history  # secrets and AI attribution in every commit, as CI scans
 mise run dashboard:check # parse the joined dashboard script: syntax errors and duplicate top-level names
+mise run pins:check     # every tool pin is exact and CI, the Dockerfile and the hooks agree with mise.toml
 ```
 
 A machine without the mise tools runs the same gates in the toolchain image.

@@ -114,13 +114,25 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
-          python-version: "3.14.7"
+          python-version: "3.15.2"
       - name: Run every hook on every file
         run: |
-          pip install pre-commit==4.6.2
+          pip install pre-commit==4.7.0
           pre-commit run --all-files --show-diff-on-failure
+
+  # Every tool version a workflow, the Dockerfile or a hook names equals mise.toml and package.json, and no pin is a range.
+  pins:
+    name: "Repo: tool pins agree"
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.4.4
+      - run: bun scripts/pins-check.js
 
   catalogue:
     name: "Repo: marketplace and plugin valid"
@@ -135,8 +147,8 @@ jobs:
           bun-version: 1.4.4
       - name: Validate the marketplace and the plugin
         run: |
-          bunx @anthropic-ai/claude-code@2.1.319 plugin validate .
-          bunx @anthropic-ai/claude-code@2.1.319 plugin validate ./plugin
+          bunx @anthropic-ai/claude-code@2.1.325 plugin validate .
+          bunx @anthropic-ai/claude-code@2.1.325 plugin validate ./plugin
 
   # 3. Tests
 
@@ -303,7 +315,7 @@ jobs:
   all-checks:
     name: All checks passed
     if: always()
-    needs: [plan, secrets, attribution, lint, catalogue, rust-fmt, rust-clippy, rust-test, overhead, rust-cross, rust-size]
+    needs: [plan, secrets, attribution, lint, pins, catalogue, rust-fmt, rust-clippy, rust-test, overhead, rust-cross, rust-size]
     runs-on: ubuntu-26.04
     timeout-minutes: 10
     steps:

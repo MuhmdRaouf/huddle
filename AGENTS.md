@@ -15,6 +15,7 @@ Commands:
 ```sh
 mise run setup                                  # pinned tools, the dev dependencies (bun install) and the pre-commit hook, once per clone
 mise run dashboard:check                        # parse the joined dashboard script; fails on a syntax error or a duplicate top-level name
+mise run pins:check                             # every tool pin is exact; workflows, Dockerfile and hooks match mise.toml and package.json
 mise run check                                  # every gate: lint, fmt, clippy, tests
 mise run docker:check                           # every gate inside the docker toolchain image
 mise run docker:build                           # both static linux binaries, size-checked, in docker

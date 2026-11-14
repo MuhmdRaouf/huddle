@@ -38,6 +38,7 @@
 
 - Rust 1.100.0 in `mise.toml`, `rust-version`, the Docker toolchain image and CI.
 - Every Rust dependency at its latest release, with rusqlite 0.42.0 and a fully updated `Cargo.lock`.
+- Every dev tool and CI action at its latest release, pinned exactly: Python 3.15.2, pre-commit 4.7.0, markdownlint-cli 0.50.0, setup-python 7.1.0, zig 0.17.1 and the Claude Code CLI 2.1.325 that validates the plugin. The toolchain image checks the gitleaks, actionlint and shellcheck archives against their sha256, and `mise run pins:check` (`scripts/pins-check.js`, also the `pins` CI job) fails when a tool pin is a range or a workflow, the Dockerfile or a hook names another version than `mise.toml` and `package.json`.
 
 ## 0.0.7
 
