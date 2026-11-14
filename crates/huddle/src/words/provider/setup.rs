@@ -91,11 +91,9 @@ fn wait_for_key_page(
     match ready_note::take(paths, provider) {
         Some(report) => {
             let _ = write!(std::io::stdout(), "{report}");
-            if report.starts_with(&ready_note::head(provider, true)) {
-                0
-            } else {
-                6
-            }
+            let ready = report.starts_with(&ready_note::head(provider, true, true))
+                || report.starts_with(&ready_note::head(provider, true, false));
+            if ready { 0 } else { 6 }
         }
         None => needs_a_key(provider, Some(&url)),
     }

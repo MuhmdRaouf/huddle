@@ -109,7 +109,9 @@ run `/huddle:setup` again: it names each old plugin it finds. Then use
 | Alibaba Qwen | `qwen3.8-max`, `qwen3.8-flash` | `/huddle:qwen:setup`, `/huddle:qwen:remove`, `/huddle:qwen:usage` |
 
 `setup` checks the key with the provider, enables the lane, starts the router and
-adds the models to `/model`. `remove` takes the lane, the `/model` entries, the
+adds the models to `/model`. A provider it cannot reach reads as
+`ready, key not checked`, with the setup command to run again once online; the
+lane keeps serving. `remove` takes the lane, the `/model` entries, the
 agents and the key back out; the other providers keep serving. `usage` shows
 requests, tokens and estimated cost per model, for today and the last 7 and 30 days.
 

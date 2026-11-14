@@ -141,7 +141,14 @@ fn a_ready_setup_says_so_and_asks_for_one_restart() {
     let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
     stop(&home, port);
     assert_eq!(output.status.code(), Some(0), "{stdout}");
-    assert!(stdout.starts_with("zai setup: ready.\n"), "{stdout}");
+    assert!(
+        stdout.starts_with("zai setup: ready, key not checked.\n"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("Run /huddle:zai:setup again when you are online to check the key.\n"),
+        "{stdout}"
+    );
     assert!(
         stdout.ends_with("Restart Claude Code once so /model shows the new models.\n"),
         "{stdout}"

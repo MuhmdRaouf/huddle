@@ -224,6 +224,12 @@ pub fn render_lines(outcome: &Outcome, provider: &Provider) -> Vec<String> {
         lines.push("key: stored".to_owned());
     }
     lines.push(verdict_line(outcome.verdict, provider));
+    if outcome.verdict == KeyVerdict::Unknown {
+        lines.push(format!(
+            "Run /huddle:{}:setup again when you are online to check the key.",
+            provider.id
+        ));
+    }
     for name in [
         StepName::ModelEntries,
         StepName::Agents,
@@ -512,6 +518,28 @@ mod tests {
         assert_eq!(stored.map(|s| s.expose().to_owned()).as_deref(), Some(KEY));
         let lines = render_lines(&outcome, zai());
         assert_eq!(lines[0], "key: stored");
+    }
+
+    #[test]
+    fn g4_unchecked_key_adds_the_run_again_line() {
+        let outcome = Outcome {
+            verdict: KeyVerdict::Unknown,
+            steps: vec![step(StepName::KeyStored, StepState::Done, Vec::new())],
+            ready: true,
+            changed: false,
+        };
+        let lines = render_lines(&outcome, zai());
+        assert_eq!(
+            lines[..2],
+            [
+                "key: stored".to_owned(),
+                "key: could not reach Z.ai GLM to check the key; continuing.".to_owned()
+            ]
+        );
+        assert_eq!(
+            lines[2],
+            "Run /huddle:zai:setup again when you are online to check the key."
+        );
     }
 
     #[test]

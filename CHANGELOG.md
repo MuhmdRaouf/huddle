@@ -4,6 +4,7 @@
 
 ### Fixes
 
+- Setup that could not reach the provider no longer says ready alone: the report says `ready, key not checked` and names `/huddle:<p>:setup` as the way to check the key once online. The lane keeps serving and exit stays 0.
 - A process the router starts no longer inherits its listening socket after an update handover, so a leftover `git` cannot hold port 4835.
 - MCP over HTTP needs a token: the router refuses `/mcp` without it, and the plugin's `headersHelper` runs `huddle mcp headers` so Claude Code sends it with no step from you. `huddle router status` says `mcp: token ok` or what is wrong.
 

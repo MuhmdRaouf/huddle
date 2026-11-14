@@ -9,13 +9,18 @@ use huddle_config::atomic::write_atomic;
 use huddle_config::files::PRIVATE_FILE_MODE;
 use huddle_config::paths::Paths;
 
-use super::finish::{Outcome, render_lines};
+use super::finish::{KeyVerdict, Outcome, render_lines};
 
 const VERSION_FILE: &str = include_str!("../../../../../VERSION");
 
-/// The words `setup` prints on top of its report.
-pub fn head(provider: &Provider, ready: bool) -> String {
-    let state = if ready { "ready" } else { "not ready" };
+/// The words `setup` prints on top of its report: `ready`, or `ready, key not checked` when
+/// the provider could not be asked about the key, or `not ready`.
+pub fn head(provider: &Provider, ready: bool, key_checked: bool) -> String {
+    let state = match (ready, key_checked) {
+        (false, _) => "not ready",
+        (true, true) => "ready",
+        (true, false) => "ready, key not checked",
+    };
     format!("{} setup: {state}.", provider.id)
 }
 
@@ -32,7 +37,11 @@ pub fn report(
     executable: &Path,
     key_line: Option<&str>,
 ) -> String {
-    let mut lines = vec![head(provider, outcome.ready), runtime_line(executable)];
+    let checked = outcome.verdict != KeyVerdict::Unknown;
+    let mut lines = vec![
+        head(provider, outcome.ready, checked),
+        runtime_line(executable),
+    ];
     lines.extend(key_line.map(str::to_owned));
     lines.extend(render_lines(outcome, provider));
     lines.join("\n") + "\n"
@@ -68,4 +77,24 @@ pub fn take_all(paths: &Paths) -> String {
         .filter_map(|id| provider_by_id(id))
         .filter_map(|provider| take(paths, provider))
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use huddle_catalog::providers::provider_by_id;
+
+    fn zai() -> &'static Provider {
+        provider_by_id("zai").expect("zai")
+    }
+
+    #[test]
+    fn g4_head_names_the_unchecked_key() {
+        assert_eq!(head(zai(), true, true), "zai setup: ready.");
+        assert_eq!(
+            head(zai(), true, false),
+            "zai setup: ready, key not checked."
+        );
+        assert_eq!(head(zai(), false, false), "zai setup: not ready.");
+    }
 }
