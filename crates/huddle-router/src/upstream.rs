@@ -7,7 +7,7 @@
 //! whose proxy variable names a proxy rides a CONNECT tunnel, and a value naming huddle-router
 //! itself is no proxy.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::error::Error as StdError;
 use std::fmt;
 use std::io::{self, ErrorKind};
@@ -187,6 +187,8 @@ pub(crate) enum NextChunk {
     Chunk(Bytes),
     End,
     Failed,
+    /// The reader is behind a chunk the body already dropped: it cannot be read from byte 0.
+    NotReplayable,
 }
 
 /// The bytes of a streamed body kept from byte 0 for a retry.
@@ -195,7 +197,12 @@ pub const REPLAY_PREFIX: u64 = 1024 * 1024;
 pub const SEND_WINDOW: u64 = 256 * 1024;
 
 struct StreamState {
-    chunks: Vec<Bytes>,
+    /// The chunks still held, from chunk number `first` on.
+    chunks: VecDeque<Bytes>,
+    first: usize,
+    /// How many chunks start inside the prefix; they are held until a chunk past it is handed
+    /// out, and every chunk past it is dropped the moment it is handed out.
+    in_prefix: usize,
     filled: u64,
     failed: bool,
     /// The furthest byte any reader has taken.
@@ -205,13 +212,30 @@ struct StreamState {
 }
 
 impl StreamState {
+    /// Chunk number `index`, if it has arrived. A chunk past the prefix leaves the state as it
+    /// is handed out, and the prefix leaves with the first one: no reader can replay the body
+    /// from byte 0 after that.
+    fn hand_out(&mut self, index: usize) -> Option<Bytes> {
+        let offset = index.checked_sub(self.first)?;
+        if offset >= self.chunks.len() {
+            return None;
+        }
+        if index < self.in_prefix {
+            return self.chunks.get(offset).cloned();
+        }
+        let held = self.chunks.drain(..offset).count();
+        self.first += held + 1;
+        self.chunks.pop_front()
+    }
+
     /// The bytes past the prefix that no reader has taken yet.
     fn unsent(&self, prefix: u64) -> u64 {
         self.filled.saturating_sub(self.taken.max(prefix))
     }
 }
 
-/// A body filled while it is being relayed; every attempt reads it from byte 0.
+/// A body filled while it is being relayed; an attempt reads it from byte 0 while it is still
+/// replayable.
 pub struct StreamedBody {
     total: u64,
     prefix: u64,
@@ -236,7 +260,9 @@ impl StreamedBody {
             prefix,
             window,
             state: Mutex::new(StreamState {
-                chunks: Vec::new(),
+                chunks: VecDeque::new(),
+                first: 0,
+                in_prefix: 0,
                 filled: 0,
                 failed: false,
                 taken: 0,
@@ -257,8 +283,11 @@ impl StreamedBody {
     pub async fn push(&self, chunk: Bytes) {
         {
             let mut state = self.lock();
+            if state.filled < self.prefix {
+                state.in_prefix += 1;
+            }
             state.filled += chunk.len() as u64;
-            state.chunks.push(chunk);
+            state.chunks.push_back(chunk);
         }
         self.notify.notify_waiters();
         loop {
@@ -316,6 +345,11 @@ impl StreamedBody {
         self.filled() == self.total
     }
 
+    /// True while every chunk is still held, so a new attempt can read the body from byte 0.
+    pub fn replayable(&self) -> bool {
+        self.lock().first == 0
+    }
+
     pub fn filled(&self) -> u64 {
         self.lock().filled
     }
@@ -329,16 +363,17 @@ impl StreamedBody {
     }
 
     /// Moves the chunks out once the body is whole: one chunk is returned as it is, several are
-    /// joined once, and the stream retains nothing afterwards. A body still filling stays as it is.
+    /// joined once, and the stream retains nothing afterwards. A body still filling, or one that
+    /// dropped a chunk, stays as it is.
     pub fn take_whole(&self) -> Option<Bytes> {
         let mut state = self.lock();
-        if state.filled != self.total {
+        if state.filled != self.total || state.first != 0 {
             return None;
         }
         let mut chunks = std::mem::take(&mut state.chunks);
         drop(state);
         if chunks.len() == 1 {
-            return chunks.pop();
+            return chunks.pop_back();
         }
         let mut whole = Vec::with_capacity(self.total as usize);
         for chunk in &chunks {
@@ -365,8 +400,10 @@ impl StreamedBody {
             let mut wait = std::pin::pin!(self.notify.notified());
             {
                 let mut state = self.lock();
-                if *index < state.chunks.len() {
-                    let chunk = state.chunks[*index].clone();
+                if *index < state.first {
+                    return NextChunk::NotReplayable;
+                }
+                if let Some(chunk) = state.hand_out(*index) {
                     *index += 1;
                     *at += chunk.len() as u64;
                     let ahead = *at > state.taken;
@@ -1398,7 +1435,7 @@ async fn pump(body: RequestBody, frames: mpsc::Sender<Result<Bytes, BodyDropped>
                         }
                     }
                     NextChunk::End => return,
-                    NextChunk::Failed => {
+                    NextChunk::Failed | NextChunk::NotReplayable => {
                         let _ = frames.send(Err(BodyDropped)).await;
                         return;
                     }
@@ -1605,5 +1642,88 @@ mod tests {
             poll_once(third.as_mut()).is_ready(),
             "nobody can read the body any more"
         );
+    }
+
+    const MIB: u64 = 1024 * 1024;
+
+    /// Pushes `chunks` 64 KiB chunks while `reader` takes whatever lets a waiting push go on,
+    /// checking what the body holds after every step; returns how many chunks were read. A
+    /// waiting push has already added its chunk, so the body holds one chunk more until it returns.
+    async fn push_and_read(stream: &StreamedBody, reader: &mut BodyReader, chunks: usize) -> usize {
+        let limit = stream.prefix + stream.window;
+        let mut read = 0;
+        for _ in 0..chunks {
+            let mut push = std::pin::pin!(stream.push(chunk()));
+            while poll_once(push.as_mut()).is_pending() {
+                assert!(matches!(reader.next_chunk().await, NextChunk::Chunk(_)));
+                read += 1;
+                let held = stream.retained_bytes();
+                assert!(
+                    held <= limit + KIB64 as u64,
+                    "held {held} while a push waits"
+                );
+            }
+            assert!(
+                stream.retained_bytes() <= limit,
+                "held {}",
+                stream.retained_bytes()
+            );
+        }
+        read
+    }
+
+    #[tokio::test]
+    async fn l4_chunk_past_prefix_is_dropped() {
+        let stream = StreamedBody::with_limits(3 * MIB, MIB, SEND_WINDOW);
+        let mut reader = stream.reader();
+        let mut read = push_and_read(&stream, &mut reader, 48).await;
+        while let NextChunk::Chunk(_) = reader.next_chunk().await {
+            read += 1;
+            assert!(stream.retained_bytes() <= MIB + SEND_WINDOW);
+        }
+        assert_eq!(read, 48);
+        assert!(
+            stream.retained_bytes() <= MIB,
+            "every chunk past the prefix is gone"
+        );
+    }
+
+    #[tokio::test]
+    async fn l4_body_turns_not_replayable_after_the_prefix() {
+        let stream = StreamedBody::with_limits(3 * MIB, MIB, SEND_WINDOW);
+        let mut reader = stream.reader();
+        for _ in 0..20 {
+            stream.push(chunk()).await;
+        }
+        for _ in 0..16 {
+            assert!(matches!(reader.next_chunk().await, NextChunk::Chunk(_)));
+            assert!(stream.replayable(), "the prefix alone is kept");
+        }
+        assert!(matches!(reader.next_chunk().await, NextChunk::Chunk(_)));
+        assert!(!stream.replayable(), "a chunk past the prefix left");
+        let mut again = stream.reader();
+        assert!(matches!(again.next_chunk().await, NextChunk::NotReplayable));
+        assert!(matches!(reader.next_chunk().await, NextChunk::Chunk(_)));
+    }
+
+    #[tokio::test]
+    async fn l4_a_body_within_the_prefix_stays_replayable() {
+        let stream = StreamedBody::with_limits(8 * KIB64 as u64, MIB, SEND_WINDOW);
+        let _routing = stream.hold();
+        for n in 0..8u8 {
+            stream.push(Bytes::from(vec![n; KIB64])).await;
+        }
+        let mut reads = Vec::new();
+        for _ in 0..2 {
+            let mut reader = stream.reader();
+            let mut body = Vec::new();
+            while let NextChunk::Chunk(chunk) = reader.next_chunk().await {
+                body.extend_from_slice(&chunk);
+            }
+            reads.push(body);
+        }
+        assert_eq!(reads[0].len(), 8 * KIB64);
+        assert_eq!(reads[0], reads[1]);
+        assert!(stream.replayable());
     }
 }

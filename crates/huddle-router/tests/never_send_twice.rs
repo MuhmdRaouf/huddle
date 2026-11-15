@@ -12,8 +12,8 @@ use std::time::Duration;
 use http_body_util::BodyExt;
 use huddle_config::env::Env;
 use huddle_router::upstream::{
-    FailureCode, IDLE_TIMEOUT, RequestBody, StreamedBody, UpstreamClient, UpstreamConfig,
-    UpstreamRequest, forward_headers,
+    FailureCode, IDLE_TIMEOUT, RequestBody, SEND_WINDOW, StreamedBody, UpstreamClient,
+    UpstreamConfig, UpstreamRequest, forward_headers,
 };
 use huddle_testkit::fake_upstream::{FakeUpstream, Step};
 use hyper::body::Bytes;
@@ -51,7 +51,20 @@ fn big_bytes() -> Bytes {
 }
 
 async fn big_stream() -> Arc<StreamedBody> {
-    let s = StreamedBody::new(BIG as u64);
+    fill(StreamedBody::new(BIG as u64)).await
+}
+
+/// A streamed body whose replay prefix covers all of it, so it stays replayable.
+async fn big_replayable_stream() -> Arc<StreamedBody> {
+    fill(StreamedBody::with_limits(
+        BIG as u64,
+        BIG as u64,
+        SEND_WINDOW,
+    ))
+    .await
+}
+
+async fn fill(s: Arc<StreamedBody>) -> Arc<StreamedBody> {
     let data = big_bytes();
     let mut at = 0;
     while at < BIG {
@@ -185,7 +198,7 @@ async fn a_streamed_body_replays_from_byte_zero_on_the_fresh_connection() {
     let answer = c
         .send(request(
             &url,
-            RequestBody::Streamed(big_stream().await),
+            RequestBody::Streamed(big_replayable_stream().await),
             BIG as u64,
         ))
         .await
