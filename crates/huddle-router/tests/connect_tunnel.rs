@@ -72,9 +72,22 @@ async fn connect(port: u16, target: &str) -> (TcpStream, String) {
     (s, String::from_utf8_lossy(&head).into_owned())
 }
 
-async fn body_after(mut s: TcpStream) -> String {
-    let mut out = Vec::new();
-    let _ = tokio::time::timeout(Duration::from_secs(3), s.read_to_end(&mut out)).await;
+// Reads the body the head's Content-Length announces: the router keeps the connection open, so
+// reading to the end would wait out the timeout.
+async fn body_after(mut s: TcpStream, head: &str) -> String {
+    let length = head
+        .lines()
+        .find_map(|line| {
+            let (name, value) = line.split_once(':')?;
+            name.eq_ignore_ascii_case("content-length")
+                .then(|| value.trim().parse::<usize>().ok())?
+        })
+        .expect("a refusal names its Content-Length");
+    let mut out = vec![0u8; length];
+    tokio::time::timeout(Duration::from_secs(5), s.read_exact(&mut out))
+        .await
+        .expect("timely")
+        .expect("read body");
     String::from_utf8_lossy(&out).into_owned()
 }
 
@@ -112,7 +125,7 @@ async fn a_target_that_cannot_be_opened_is_502_and_no_200_goes_out() {
     let (s, head) = connect(port, "example.test:443").await;
     assert!(head.starts_with("HTTP/1.1 502"), "{head}");
     assert!(
-        body_after(s)
+        body_after(s, &head)
             .await
             .contains("huddle-router router: CONNECT failed (the target cannot be reached)")
     );
@@ -138,7 +151,7 @@ async fn targets_on_this_machine_are_refused_before_any_dial() {
         let (s, head) = connect(port, target).await;
         assert!(head.starts_with("HTTP/1.1 403"), "{target}: {head}");
         assert!(
-            body_after(s).await.contains(
+            body_after(s, &head).await.contains(
                 "huddle-router router: CONNECT refused (a CONNECT may not name this machine)"
             ),
             "{target}"
@@ -154,7 +167,9 @@ async fn a_malformed_target_is_refused() {
         let (s, head) = connect(port, target).await;
         assert!(head.starts_with("HTTP/1.1 403"), "{target}: {head}");
         assert!(
-            body_after(s).await.contains("(a CONNECT names host:port)"),
+            body_after(s, &head)
+                .await
+                .contains("(a CONNECT names host:port)"),
             "{target}"
         );
     }

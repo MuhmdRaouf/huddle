@@ -130,7 +130,7 @@ fn a_connect_naming_this_machine_is_refused() {
     let (_anthropic, _zai, daemon) = fixture();
     let reply = raw_exchange(
         daemon.port,
-        "CONNECT 127.0.0.1:9 HTTP/1.1\r\nHost: 127.0.0.1:9\r\n\r\n",
+        "CONNECT 127.0.0.1:9 HTTP/1.1\r\nHost: 127.0.0.1:9\r\nConnection: close\r\n\r\n",
     );
     assert!(reply.starts_with("HTTP/1.1 403"), "{reply}");
     assert!(reply.contains("may not name this machine"), "{reply}");

@@ -1,4 +1,5 @@
 use huddle_testkit::ports::free_port;
+use huddle_testkit::settle::wait_gone;
 use huddle_testkit::temp_home::TempHome;
 use std::net::{SocketAddr, TcpStream};
 use std::process::{Command, Output};
@@ -40,8 +41,8 @@ impl Drop for StopOnDrop<'_> {
 }
 
 /// Waits until the router answers status: its record then names a pid a stop can kill. Then
-/// waits out the detached `router start` the hook spawned: it lives at most its own 3 s
-/// budget, and any process of this run still alive at the end fails the suite guard.
+/// waits for the detached `router start` the hook spawned to end: it lives at most its own
+/// 3 s budget, and any process of this run still alive at the end fails the suite guard.
 fn wait_running(home: &TempHome, port: u16) -> bool {
     let deadline = Instant::now() + Duration::from_secs(10);
     let mut up = false;
@@ -54,7 +55,10 @@ fn wait_running(home: &TempHome, port: u16) -> bool {
     }
     // A router that starts late under load still writes its record; the home's drop stops it.
     home.settle_router(Duration::from_secs(10));
-    thread::sleep(Duration::from_secs(4));
+    assert!(
+        wait_gone(home.root(), "router start --by", Duration::from_secs(10)),
+        "the detached router start ended"
+    );
     up
 }
 

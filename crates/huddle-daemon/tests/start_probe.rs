@@ -1,6 +1,6 @@
 use huddle_config::{env::Env, paths::Paths};
 use huddle_daemon::start::{
-    DEFAULT_BUDGET, HealthAnswer, NO_DAEMON_ENV, StartError, StartOptions, health,
+    DEFAULT_BUDGET, HealthAnswer, NO_DAEMON_ENV, StartError, StartOptions, UPDATE_WAIT, health,
     router_key_check, start,
 };
 use huddle_testkit::script::write_executable;
@@ -108,6 +108,7 @@ fn a_daemon_that_answers_is_named_and_not_started_over() {
         port,
         executable: script,
         budget: DEFAULT_BUDGET,
+        update_wait: UPDATE_WAIT,
     })
     .expect("start");
     assert_eq!(
@@ -154,6 +155,7 @@ fn a_start_with_no_provider_still_starts_the_daemon() {
         port,
         executable: script,
         budget: Duration::from_secs(8),
+        update_wait: UPDATE_WAIT,
     })
     .expect("start");
     assert_eq!(line, format!("huddle-router: http://127.0.0.1:{port}"));
@@ -183,6 +185,7 @@ fn a_malformed_providers_file_is_an_error_before_any_spawn() {
         port: free,
         executable: script,
         budget: DEFAULT_BUDGET,
+        update_wait: UPDATE_WAIT,
     })
     .expect_err("malformed");
     assert!(matches!(error, StartError::ProvidersFile(_)));
@@ -236,6 +239,7 @@ fn a_start_spawns_the_binary_and_waits_for_its_health() {
         port,
         executable: script,
         budget: Duration::from_secs(8),
+        update_wait: UPDATE_WAIT,
     })
     .expect("start");
     assert_eq!(
@@ -273,6 +277,7 @@ fn a_daemon_that_never_answers_names_its_log() {
         port: free,
         executable: script,
         budget: Duration::from_millis(120),
+        update_wait: UPDATE_WAIT,
     })
     .expect_err("never answered");
     assert_eq!(
@@ -304,6 +309,7 @@ fn the_no_daemon_env_refuses_a_spawn() {
         port: free,
         executable: script,
         budget: Duration::from_millis(50),
+        update_wait: UPDATE_WAIT,
     })
     .expect_err("refused");
     assert!(matches!(error, StartError::Refused(_)));
@@ -365,6 +371,7 @@ fn b1_a_slow_daemon_inside_ten_seconds_counts_as_started() {
         port,
         executable: script,
         budget: DEFAULT_BUDGET,
+        update_wait: UPDATE_WAIT,
     })
     .expect("a daemon answering after 4 s starts");
     assert_eq!(
@@ -392,6 +399,7 @@ fn b1_a_daemon_that_exits_stops_the_wait_at_once() {
         port: free,
         executable: script,
         budget: DEFAULT_BUDGET,
+        update_wait: UPDATE_WAIT,
     })
     .expect_err("the daemon exited");
     assert!(
@@ -439,6 +447,7 @@ fn b2_a_start_that_loses_the_lock_waits_for_the_winner() {
         port,
         executable: script,
         budget: Duration::from_secs(8),
+        update_wait: UPDATE_WAIT,
     })
     .expect("the winner answers");
     assert_eq!(

@@ -287,7 +287,12 @@ fn m2_accept_without_commit_leaves_the_change_uncommitted() {
 fn m2_cancel_stops_a_running_job() {
     let r = rig();
     let slow = r.home.root().join("slow-harness");
-    huddle_testkit::script::write_executable(&slow, "#!/bin/sh\nexec sleep 60\n").unwrap();
+    // Answers the run's version probe at once, then takes long.
+    huddle_testkit::script::write_executable(
+        &slow,
+        "#!/bin/sh\ncase \"$1\" in --version) echo 1.0; exit 0;; esac\nexec sleep 60\n",
+    )
+    .unwrap();
     let mut session = Session::start(&r, slow.to_str().unwrap());
     let run = session.ok(
         "huddle_run",

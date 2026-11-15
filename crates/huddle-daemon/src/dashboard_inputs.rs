@@ -119,6 +119,7 @@ pub fn start(version: String, env: Env, paths: Paths, port: u16) -> DashboardInp
         history: Arc::new(|| None),
         // The daemon points this at the config file once it knows the config folder.
         keep_days: Arc::new(|| history_upkeep::DEFAULT_KEEP_DAYS),
+        ping_every: huddle_router::dashboard::PING_EVERY,
     }
 }
 

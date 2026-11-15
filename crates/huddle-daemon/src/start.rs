@@ -146,6 +146,8 @@ pub struct StartOptions<'a> {
     pub executable: PathBuf,
     /// How long to wait for the spawned daemon's health answer; 0 still bounds one probe.
     pub budget: Duration,
+    /// How long a takeover waits for the new daemon's record: [`UPDATE_WAIT`] outside tests.
+    pub update_wait: Duration,
 }
 
 /// The running router's health answer, `None` while nothing answers naming huddle-router
@@ -324,7 +326,7 @@ fn daemon_env(env: &Env, port: u16) -> Vec<(String, String)> {
 
 /// A start's answer when a healthy daemon already serves: a record naming another binary this
 /// one may replace is a takeover — the daemon spawns with `--takeover`, and the start polls
-/// the record until it names a pid that differs from the old one, up to [`UPDATE_WAIT`]. The
+/// the record until it names a pid that differs from the old one, up to `update_wait`. The
 /// same binary, an unknown one, or a start that may not replace the daemon is the quiet
 /// address line as always.
 fn updated_or_up(
@@ -349,7 +351,7 @@ fn updated_or_up(
         &opts.executable,
         &["--takeover", "--by", by],
     )?;
-    let deadline = Instant::now() + UPDATE_WAIT;
+    let deadline = Instant::now() + opts.update_wait;
     loop {
         if let Some(fresh) = read_record(opts.paths)
             && fresh.pid > 0

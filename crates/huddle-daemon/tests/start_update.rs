@@ -1,5 +1,7 @@
 use huddle_config::{env::Env, paths::Paths};
-use huddle_daemon::start::{RouterRecord, StartOptions, may_take_over, same_binary, start};
+use huddle_daemon::start::{
+    RouterRecord, StartOptions, UPDATE_WAIT, may_take_over, same_binary, start,
+};
 use huddle_testkit::script::write_executable;
 use huddle_testkit::temp_home::TempHome;
 use std::{
@@ -80,6 +82,7 @@ fn a_record_naming_this_binary_is_the_quiet_line() {
         port,
         executable: exe,
         budget: Duration::from_secs(1),
+        update_wait: UPDATE_WAIT,
     })
     .expect("start");
     assert_eq!(
@@ -123,6 +126,7 @@ fn a_record_naming_another_binary_is_taken_over() {
         port,
         executable: exe,
         budget: Duration::from_secs(1),
+        update_wait: UPDATE_WAIT,
     })
     .expect("start");
     assert_eq!(line, "huddle-router: updated (pid 1234 \u{2192} 5678)");
@@ -141,14 +145,21 @@ fn a_takeover_nobody_answers_names_the_old_pid_and_the_log() {
     write_record(&paths, 1234, port, "/old/huddle");
     let exe = script(&home, "huddle", "exit 0");
     let exe_text = exe.display().to_string();
+    let began = Instant::now();
     let error = start(&StartOptions {
         env: &env,
         paths: &paths,
         port,
         executable: exe,
         budget: Duration::from_secs(1),
+        update_wait: Duration::from_millis(300),
     })
     .expect_err("never handed over");
+    assert!(
+        began.elapsed() < UPDATE_WAIT / 2,
+        "the takeover waits its own deadline, not the default: {:?}",
+        began.elapsed()
+    );
     assert_eq!(
         error.to_string(),
         format!(
@@ -175,6 +186,7 @@ fn a_binary_the_installed_link_does_not_name_never_takes_over() {
         port,
         executable: old_session,
         budget: Duration::from_secs(1),
+        update_wait: UPDATE_WAIT,
     })
     .expect("start");
     assert_eq!(

@@ -3,7 +3,7 @@
 
 use huddle_config::{env::Env, paths::Paths};
 use huddle_router::{
-    dashboard::{DashboardInputs, MAX_LIVE_STREAMS},
+    dashboard::{DashboardInputs, MAX_LIVE_STREAMS, PING_EVERY},
     dispatch::{Router, RouterConfig},
     server::{ServerLimits, bind, serve},
 };
@@ -30,6 +30,10 @@ struct Rig {
 }
 
 async fn rig(anthropic: FakeUpstream) -> Rig {
+    rig_with(anthropic, DashboardInputs::default()).await
+}
+
+async fn rig_with(anthropic: FakeUpstream, dashboard: DashboardInputs) -> Rig {
     let home = TempHome::new();
     let root = home.root().to_str().expect("utf8").to_string();
     let env = Env::with(&[
@@ -47,7 +51,7 @@ async fn rig(anthropic: FakeUpstream) -> Rig {
             anthropic_url: anthropic.url().parse::<Uri>().expect("uri"),
             log: Arc::new(|_| {}),
             history: None,
-            dashboard: DashboardInputs::default(),
+            dashboard,
         },
         &["zai".to_string()],
     );
@@ -216,18 +220,35 @@ async fn k5_stream_pushes_on_change_and_is_throttled() {
     let _ = r.stop.send(true);
 }
 
+#[test]
+fn k5_an_idle_stream_pings_every_fifteen_seconds_by_default() {
+    assert_eq!(DashboardInputs::default().ping_every, PING_EVERY);
+    assert_eq!(PING_EVERY, Duration::from_secs(15));
+}
+
 #[tokio::test]
-async fn k5_idle_stream_sends_a_keep_alive_within_fifteen_seconds() {
+async fn k5_idle_stream_sends_a_keep_alive_within_its_ping_interval() {
     let anthropic = FakeUpstream::start(|_, _| Step::answer(200, "{}")).await;
-    let r = rig(anthropic).await;
+    let ping_every = Duration::from_millis(300);
+    let r = rig_with(
+        anthropic,
+        DashboardInputs {
+            ping_every,
+            ..DashboardInputs::default()
+        },
+    )
+    .await;
     let mut feed = Feed::open(r.port, "?recent=0", "").await;
     assert!(matches!(feed.next().await, Some(Some(_))));
     let began = Instant::now();
-    let next = tokio::time::timeout(Duration::from_secs(16), feed.next())
+    let next = tokio::time::timeout(ping_every * 10, feed.next())
         .await
-        .expect("a frame inside 16 s");
+        .expect("a frame inside the ping interval");
     assert!(matches!(next, Some(None)), "an idle stream sends a comment");
-    assert!(began.elapsed() <= Duration::from_secs(16));
+    assert!(
+        began.elapsed() >= ping_every / 2,
+        "no comment long before the interval"
+    );
     let _ = r.stop.send(true);
 }
 

@@ -10,7 +10,7 @@ use std::time::Duration;
 use huddle_catalog::providers::Provider;
 use huddle_config::env::Env;
 use huddle_config::paths::{self, Paths};
-use huddle_daemon::start::{StartOptions, router_key_check, start};
+use huddle_daemon::start::{StartOptions, UPDATE_WAIT, router_key_check, start};
 use huddle_keystore::port::{KeystoreError, SecretString, platform_default};
 use huddle_router::dispatch::os_roots;
 use huddle_router::keycheck::{Verdict, check_key, ping_model};
@@ -363,6 +363,7 @@ fn route(
         port,
         executable: executable.to_path_buf(),
         budget: START_BUDGET,
+        update_wait: UPDATE_WAIT,
     };
     match start(&options) {
         Err(error) => {

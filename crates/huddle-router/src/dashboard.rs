@@ -72,7 +72,7 @@ pub const MAX_LIVE_STREAMS: usize = 8;
 /// Milliseconds past a second's end before the follow-up snapshot, so the second counts as whole.
 const SETTLE_SLACK_MS: u64 = 20;
 /// How often an open feed with no request in flight sends a comment so the connection stays up.
-const PING_EVERY: Duration = Duration::from_secs(15);
+pub const PING_EVERY: Duration = Duration::from_secs(15);
 /// How often an open feed refreshes while a request is in flight, so its last-byte time moves.
 const BUSY_EVERY: Duration = Duration::from_secs(5);
 
@@ -115,6 +115,8 @@ pub struct DashboardInputs {
     pub history: HistoryOpen,
     /// How many days of history the router keeps (`[history] keep_days`).
     pub keep_days: Arc<dyn Fn() -> u64 + Send + Sync>,
+    /// How often an idle feed sends its keep-alive comment: `PING_EVERY` unless a test sets it.
+    pub ping_every: Duration,
 }
 
 /// What the session logs and git say about the machine.
@@ -147,6 +149,7 @@ impl Default for DashboardInputs {
             harnesses: Arc::new(checking),
             history: Arc::new(|| None),
             keep_days: Arc::new(|| DEFAULT_KEEP_DAYS),
+            ping_every: PING_EVERY,
         }
     }
 }
@@ -338,7 +341,12 @@ impl Dashboard {
             let (wake, settling) = match settle {
                 Some(at) => (at, true),
                 None => (
-                    last_sent + if idle { PING_EVERY } else { BUSY_EVERY },
+                    last_sent
+                        + if idle {
+                            self.inputs.ping_every
+                        } else {
+                            BUSY_EVERY
+                        },
                     false,
                 ),
             };

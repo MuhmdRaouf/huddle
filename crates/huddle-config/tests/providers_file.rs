@@ -1,9 +1,11 @@
 use huddle_config::providers_file::{
-    DEFAULT_PROVIDERS, ProvidersFileError, providers_path, read_enabled, set_enabled,
+    DEFAULT_PROVIDERS, LOCK_WAIT, ProvidersFileError, providers_path, read_enabled, set_enabled,
+    set_enabled_waiting,
 };
 use huddle_testkit::temp_home::TempHome;
 use std::fs;
 use std::path::Path;
+use std::time::Duration;
 
 const KNOWN: [&str; 5] = ["zai", "kimi", "deepseek", "minimax", "qwen"];
 
@@ -151,8 +153,21 @@ fn a_lock_held_past_the_wait_is_a_typed_error() {
         .open(home.root().join("providers.toml.lock"))
         .expect("lock file");
     lock.lock().expect("take lock");
-    let err = set_enabled(home.root(), "zai", true).unwrap_err();
+    let began = std::time::Instant::now();
+    let err =
+        set_enabled_waiting(home.root(), "zai", true, Duration::from_millis(200)).unwrap_err();
     assert!(matches!(err, ProvidersFileError::Locked { .. }), "{err:?}");
+    let waited = began.elapsed();
+    assert!(
+        waited >= Duration::from_millis(200),
+        "it waited: {waited:?}"
+    );
+    assert!(waited < LOCK_WAIT, "it waited its own deadline: {waited:?}");
+}
+
+#[test]
+fn t8_an_enable_waits_five_seconds_for_the_lock_by_default() {
+    assert_eq!(LOCK_WAIT, Duration::from_secs(5));
 }
 
 #[test]

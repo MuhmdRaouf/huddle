@@ -25,7 +25,7 @@ pub const LOCK_FILE: &str = "providers.toml.lock";
 
 /// How long `set_enabled` waits for the lock. The critical section is a read-modify-write of a
 /// file of a few names, so a longer wait hides a stuck writer.
-const LOCK_WAIT: Duration = Duration::from_secs(5);
+pub const LOCK_WAIT: Duration = Duration::from_secs(5);
 /// The pause between lock tries.
 const LOCK_RETRY: Duration = Duration::from_millis(50);
 
@@ -93,6 +93,16 @@ pub fn read_enabled(dir: &Path, known: &[&str]) -> Result<Vec<String>, Providers
 /// itself is atomic, so a reader sees the whole old file or the whole new one. No write, and no
 /// mtime change, when the provider is already in the wanted state.
 pub fn set_enabled(dir: &Path, name: &str, on: bool) -> Result<(), ProvidersFileError> {
+    set_enabled_waiting(dir, name, on, LOCK_WAIT)
+}
+
+/// `set_enabled` with its own wait for the lock in place of [`LOCK_WAIT`].
+pub fn set_enabled_waiting(
+    dir: &Path,
+    name: &str,
+    on: bool,
+    lock_wait: Duration,
+) -> Result<(), ProvidersFileError> {
     let path = providers_path(dir);
     let lock_path = dir.join(LOCK_FILE);
     let file_text = path.display().to_string();
@@ -113,7 +123,7 @@ pub fn set_enabled(dir: &Path, name: &str, on: bool) -> Result<(), ProvidersFile
             file: lock_text.clone(),
             message: err.to_string(),
         })?;
-    take_lock(&lock, &lock_text)?;
+    take_lock(&lock, &lock_text, lock_wait)?;
 
     let mut doc = read_current(&path)?;
     let mut providers = providers_of(&doc, &file_text)?;
@@ -198,10 +208,10 @@ fn providers_of(doc: &DocumentMut, file: &str) -> Result<Vec<String>, ProvidersF
     }
 }
 
-/// Takes the file lock, waiting up to 5 s in 50 ms steps. The lock dies with the `File`, so the
-/// caller keeps it in scope for the whole critical section.
-fn take_lock(file: &fs::File, lock_text: &str) -> Result<(), ProvidersFileError> {
-    let deadline = Instant::now() + LOCK_WAIT;
+/// Takes the file lock, waiting up to `wait` in 50 ms steps. The lock dies with the `File`, so
+/// the caller keeps it in scope for the whole critical section.
+fn take_lock(file: &fs::File, lock_text: &str, wait: Duration) -> Result<(), ProvidersFileError> {
+    let deadline = Instant::now() + wait;
     loop {
         match file.try_lock() {
             Ok(()) => return Ok(()),
