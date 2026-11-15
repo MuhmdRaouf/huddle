@@ -97,7 +97,7 @@ impl Lane {
 
     /// Forwards one request, read whole, for this lane.
     pub async fn forward(&self, parts: Parts, body: Bytes, model: &str) -> Response<RespBody> {
-        let adapted = adapt(&body, self.provider);
+        let adapted = adapt(body, self.provider);
         let length = adapted.len() as u64;
         self.send(parts, RequestBody::Whole(adapted), length, model)
             .await

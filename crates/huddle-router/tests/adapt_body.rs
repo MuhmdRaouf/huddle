@@ -5,7 +5,7 @@ use hyper::body::Bytes;
 
 fn run(id: &str, body: &str) -> Bytes {
     adapt(
-        &Bytes::copy_from_slice(body.as_bytes()),
+        Bytes::copy_from_slice(body.as_bytes()),
         provider_by_id(id).expect("provider"),
     )
 }
@@ -114,7 +114,7 @@ fn a_body_for_a_provider_with_no_strip_goes_out_byte_identical() {
     let body = r#"{ "model":"glm-5.3-flash","max_tokens":9999999,"tools":[{"type":"web_search_20250305"}],"cache_control":{"type":"ephemeral"},"context_management":{"x":1}}"#;
     for id in ["zai", "kimi", "deepseek", "minimax"] {
         let original = Bytes::copy_from_slice(body.as_bytes());
-        let out = adapt(&original, provider_by_id(id).expect("provider"));
+        let out = adapt(original.clone(), provider_by_id(id).expect("provider"));
         assert_eq!(out, original, "{id}");
         assert_eq!(
             out.as_ptr(),
@@ -129,4 +129,24 @@ fn scan_with_strip_and_no_names_is_the_plain_scan() {
     let scanned = scan_with_strip(br#"{"a":1}"#, &[]).expect("object");
     assert!(scanned.strip_edits.is_empty());
     assert_eq!(scanned.scan.members.len(), 1);
+}
+
+#[test]
+fn l2_adapt_without_a_strip_member_returns_the_same_allocation() {
+    let body = r#"{"model":"qwen3.8-max","messages":[]}"#;
+    let input = Bytes::copy_from_slice(body.as_bytes());
+    let ptr = input.as_ptr();
+    let out = adapt(input, provider_by_id("qwen").expect("provider"));
+    assert_eq!(out.as_ptr(), ptr);
+    assert_eq!(text(&out), body);
+}
+
+#[test]
+fn l2_adapt_with_a_strip_member_leaves_one_owner() {
+    let input = Bytes::copy_from_slice(
+        br#"{"model":"qwen3.8-max","context_management":{"x":1},"messages":[]}"#,
+    );
+    let out = adapt(input, provider_by_id("qwen").expect("provider"));
+    assert_eq!(text(&out), r#"{"model":"qwen3.8-max","messages":[]}"#);
+    assert!(out.is_unique());
 }

@@ -8,18 +8,19 @@ use crate::body;
 use huddle_catalog::providers::Provider;
 use hyper::body::Bytes;
 
-/// The body as the provider accepts it. A provider with no strip list, a body the scanner
-/// refuses and a body holding none of the names all go as they came, the same bytes uncopied.
-pub fn adapt(body: &Bytes, provider: &Provider) -> Bytes {
+/// The body as the provider accepts it, taking the body so one copy is held. A provider with
+/// no strip list, a body the scanner refuses and a body holding none of the names return the
+/// same allocation; an edited body is the new bytes and the original is released.
+pub fn adapt(body: Bytes, provider: &Provider) -> Bytes {
     if provider.strip.is_empty() {
-        return body.clone();
+        return body;
     }
-    let Some(scanned) = body::scan_with_strip(body, provider.strip) else {
-        return body.clone();
+    let Some(scanned) = body::scan_with_strip(&body, provider.strip) else {
+        return body;
     };
     let mut edits = scanned.strip_edits;
     if edits.is_empty() {
-        return body.clone();
+        return body;
     }
-    Bytes::from(body::apply(body, &mut edits))
+    Bytes::from(body::apply(&body, &mut edits))
 }
