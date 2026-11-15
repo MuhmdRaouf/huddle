@@ -797,22 +797,23 @@ fn the_router_card_the_checks_and_the_hosts_fill_while_a_page_is_open() {
 }
 
 #[test]
-fn with_no_page_open_no_session_log_or_check_is_read() {
+fn a_state_poll_with_no_feed_fills_sessions_checks_and_the_router_card() {
     let (anthropic, zai) = (usage_upstream(), usage_upstream());
     let daemon = fixture_with(&anthropic, &zai);
     write_session_log(&daemon);
 
-    std::thread::sleep(Duration::from_millis(300));
-    let snapshot = state(daemon.port);
-    std::thread::sleep(Duration::from_millis(600));
-    let snapshot_later = state(daemon.port);
-
-    for shown in [&snapshot, &snapshot_later] {
-        assert_eq!(shown["sessions"].as_array().map(Vec::len), Some(0));
-        assert_eq!(shown["plugins"]["state"], "checking");
-        assert_eq!(shown["harnesses"]["state"], "checking");
-        assert!(shown["router"]["rss_bytes"].is_null());
-    }
+    // The default page polls `/state` once a second and opens no feed; each poll holds the
+    // readings for a few seconds, so they land while it keeps polling.
+    let shown = wait_for("sessions, checks and a process sample from polls", || {
+        let snapshot = state(daemon.port);
+        let ready = snapshot["sessions"]
+            .as_array()
+            .is_some_and(|s| !s.is_empty())
+            && snapshot["plugins"]["state"] == "ready"
+            && snapshot["router"]["rss_bytes"].is_u64();
+        ready.then_some(snapshot)
+    });
+    assert_eq!(shown["router"]["viewers"], 0);
 }
 
 #[test]

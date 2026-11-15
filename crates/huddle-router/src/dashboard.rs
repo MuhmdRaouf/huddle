@@ -13,8 +13,9 @@ use http_body_util::BodyExt;
 use hyper::body::{Bytes, Frame};
 use hyper::header::{CACHE_CONTROL, CONTENT_ENCODING, CONTENT_TYPE, HeaderValue, VARY};
 use hyper::{Response, StatusCode};
+use tokio::runtime::Handle;
 use tokio::sync::{mpsc, oneshot, watch};
-use tokio::time::{Instant, sleep_until};
+use tokio::time::{Instant, sleep, sleep_until};
 
 use crate::anthropic::StreamingBody;
 use crate::connect::Phase;
@@ -77,6 +78,16 @@ const SETTLE_SLACK_MS: u64 = 20;
 pub const PING_EVERY: Duration = Duration::from_secs(15);
 /// How often an open feed refreshes while a request is in flight, so its last-byte time moves.
 const BUSY_EVERY: Duration = Duration::from_secs(5);
+
+/// How long after a request finishes the router reads the sessions once more, so the request's
+/// agent and tokens land without a page open: the sessions cache's own freshness.
+const CREDIT_AFTER: Duration = Duration::from_secs(5);
+
+/// How long a credit pass waits for the cache's background read before it asks again.
+const CREDIT_FOLLOW_UP: Duration = Duration::from_secs(1);
+
+/// How many follow-up asks one credit pass makes after its first ask.
+const CREDIT_FOLLOW_UPS: usize = 2;
 
 /// Answers whether the keystore holds a key for a provider id; `None` when unknown.
 pub type KeyPresent = Arc<dyn Fn(&str) -> Option<bool> + Send + Sync>;
@@ -172,6 +183,10 @@ pub struct Dashboard {
     reading: Mutex<Reading>,
     /// The one snapshot builder every open feed reads from, while a feed is open.
     hub: Mutex<Option<Arc<Hub>>>,
+    /// How long after a finished request the router reads the sessions for its credit.
+    credit_after: Duration,
+    /// How long a credit pass waits before asking again when its ask credited nothing.
+    credit_follow_up: Duration,
     /// How many snapshots were built.
     #[cfg(test)]
     builds: std::sync::atomic::AtomicUsize,
@@ -191,6 +206,8 @@ struct Event {
     text: Bytes,
     /// No request was in flight when it was built.
     idle: bool,
+    /// The live-state read's number: a larger one read later.
+    seq: u64,
 }
 
 /// The latest event of each form, slim and full. The builder serializes only the forms a feed
@@ -226,8 +243,77 @@ impl Dashboard {
             history_cache: Arc::default(),
             reading: Mutex::default(),
             hub: Mutex::new(None),
+            credit_after: CREDIT_AFTER,
+            credit_follow_up: CREDIT_FOLLOW_UP,
             #[cfg(test)]
             builds: std::sync::atomic::AtomicUsize::new(0),
+        }
+    }
+
+    /// Sets the wait between a pass's asks; the default is `CREDIT_FOLLOW_UP`.
+    pub fn with_credit_follow_up(mut self, wait: Duration) -> Dashboard {
+        self.credit_follow_up = wait;
+        self
+    }
+
+    /// Sets the wait before the credit pass; the default is `CREDIT_AFTER`.
+    pub fn with_credit_after(mut self, wait: Duration) -> Dashboard {
+        self.credit_after = wait;
+        self
+    }
+
+    /// Takes one sessions reading after the router has been quiet, so a finished request's
+    /// agent and tokens land without a page open. Each finish restarts a wait of `credit_after`;
+    /// when it ends, the pass reads once, and only when a finished request still lacks its
+    /// agent or tokens and no feed is open (an open feed credits already). While requests keep
+    /// finishing, or with nothing pending, nothing is read. The sessions cache answers a stale
+    /// ask with its old reading and reads in the background, so a pass that credited nothing
+    /// asks again after `credit_follow_up`, at most twice more. Ends with the drain.
+    pub fn credit_after_finishes(self: &Arc<Self>) {
+        if let Ok(runtime) = Handle::try_current() {
+            runtime.spawn(Arc::clone(self).credit_passes(self.live.subscribe_finishes()));
+        }
+    }
+
+    async fn credit_passes(self: Arc<Self>, mut finishes: watch::Receiver<u64>) {
+        loop {
+            tokio::select! {
+                changed = finishes.changed() => {
+                    if changed.is_err() {
+                        return;
+                    }
+                }
+                () = drained(self.drain.clone()) => return,
+            }
+            // Each finish restarts the wait: the pass runs once the router has been quiet.
+            loop {
+                tokio::select! {
+                    changed = finishes.changed() => {
+                        if changed.is_err() {
+                            return;
+                        }
+                    }
+                    () = sleep(self.credit_after) => break,
+                    () = drained(self.drain.clone()) => return,
+                }
+            }
+            self.credit_pass().await;
+        }
+    }
+
+    /// One pass: asks for the sessions once, and while that ask credited nothing and a request
+    /// still awaits its credit, waits `credit_follow_up` and asks again, at most
+    /// `CREDIT_FOLLOW_UPS` more times. The cache answers a stale ask with the old reading and
+    /// reads in the background, so the follow-up finds the new reading or the same one.
+    async fn credit_pass(&self) {
+        for ask in 0..=CREDIT_FOLLOW_UPS {
+            if !self.live.awaiting_credit() || self.lock_hub().is_some() {
+                return;
+            }
+            if ask > 0 {
+                sleep(self.credit_follow_up).await;
+            }
+            self.machine();
         }
     }
 
@@ -271,6 +357,7 @@ impl Dashboard {
 
     /// The snapshot as one JSON answer.
     pub fn state_answer(&self) -> Response<RespBody> {
+        self.live.polled(now_ms());
         let mut response = json_answer(StatusCode::OK, self.snapshot_json());
         response
             .headers_mut()
@@ -281,6 +368,7 @@ impl Dashboard {
     /// The snapshot without its recent rows, for a page that does not show them. Every other field,
     /// the counts derived from the rows included, is the full answer's.
     pub fn state_slim_answer(&self) -> Response<RespBody> {
+        self.live.polled(now_ms());
         let mut snapshot = self.snapshot();
         snapshot.recent.clear();
         let mut response = json_answer(StatusCode::OK, slim_json(&snapshot));
@@ -388,6 +476,7 @@ impl Dashboard {
         let _viewer = self.live.viewer();
         let mut events = self.join_hub(slim);
         let snapshot = self.snapshot();
+        let first = snapshot.read_seq;
         let mut idle = snapshot.in_flight.is_empty();
         if !send(&tx, event_text(snapshot, slim), &mut evicted).await {
             return;
@@ -400,7 +489,12 @@ impl Dashboard {
                     if changed.is_err() {
                         return;
                     }
-                    Some(events.borrow_and_update().clone())
+                    // A hub build that began before this feed's own snapshot is older than it.
+                    let event = events.borrow_and_update().clone();
+                    if event.seq <= first {
+                        continue;
+                    }
+                    Some(event)
                 }
                 () = sleep_until_some(ping) => None,
                 _ = tx.closed() => return,
@@ -431,6 +525,7 @@ impl Dashboard {
             watch::channel(Event {
                 text: Bytes::new(),
                 idle: true,
+                seq: 0,
             })
             .0
         };
@@ -484,16 +579,18 @@ impl Dashboard {
                 changes.borrow_and_update();
             }
             let mut snapshot = self.snapshot();
+            let seq = snapshot.read_seq;
             idle = snapshot.in_flight.is_empty();
             if hub.full.receiver_count() > 0 {
                 let text = event_line(&serde_json::to_string(&snapshot).unwrap_or_default());
-                hub.full.send_replace(Event { text, idle });
+                hub.full.send_replace(Event { text, idle, seq });
             }
             if hub.slim.receiver_count() > 0 {
                 snapshot.recent.clear();
                 hub.slim.send_replace(Event {
                     text: event_line(&slim_json(&snapshot)),
                     idle,
+                    seq,
                 });
             }
             last_built = Instant::now();
@@ -540,8 +637,14 @@ impl Dashboard {
         self.snapshot_with(false)
     }
 
-    /// `with_quota` adds the cached quota answers to a snapshot nobody watches.
     fn snapshot_with(&self, with_quota: bool) -> Snapshot {
+        self.snapshot_at(now_ms(), with_quota)
+    }
+
+    /// The snapshot at `now`. `with_quota` adds the cached quota answers to a snapshot nobody
+    /// watches. The log, git and process reads belong to a watched live state: an open feed, or a
+    /// `/state` poll within the hold time.
+    fn snapshot_at(&self, now: u64, with_quota: bool) -> Snapshot {
         let enabled = (self.enabled)();
         let mut lanes = vec![LaneMeta {
             id: "anthropic".to_owned(),
@@ -567,8 +670,7 @@ impl Dashboard {
                 key: (self.inputs.key_present)(provider.id),
             }
         }));
-        // The log, git and `ps` reads belong to an open page: without a viewer none is asked.
-        let watched = self.live.viewers() > 0;
+        let watched = self.live.watched_at(now);
         let mut inputs = SnapshotInputs {
             version: self.inputs.version.clone(),
             pid: std::process::id(),
@@ -584,9 +686,10 @@ impl Dashboard {
             ..SnapshotInputs::default()
         };
         if let Some(quota) = &self.quota {
-            if watched {
+            let viewers = self.live.viewers();
+            if viewers > 0 {
                 // The asks run off the snapshot's path; the answers land in a later snapshot.
-                let (fetcher, viewers, ids) = (Arc::clone(quota), self.live.viewers(), enabled);
+                let (fetcher, ids) = (Arc::clone(quota), enabled);
                 inputs.quota = quota.view();
                 tokio::spawn(async move { fetcher.refresh(now_ms(), viewers, &ids).await });
             } else if with_quota {
@@ -602,7 +705,7 @@ impl Dashboard {
         #[cfg(test)]
         self.builds
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        let mut snapshot = self.live.snapshot(now_ms(), &inputs);
+        let mut snapshot = self.live.snapshot(now, &inputs);
         join::apply(&mut snapshot);
         snapshot
     }
@@ -942,5 +1045,341 @@ mod l24_tests {
         assert_eq!(json["sessions"][0]["id"], "s1");
         assert_eq!(json["worktrees"], serde_json::json!([]));
         assert!(json.get("machine").is_none());
+    }
+}
+
+#[cfg(test)]
+mod l28_tests {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::{Arc, Mutex};
+    use std::time::Duration;
+
+    use http_body_util::BodyExt;
+    use huddle_sessions::{RequestTag, Session, SessionState, Usage};
+    use hyper::body::Bytes;
+
+    use super::{Dashboard, DashboardInputs, Event, Machine};
+    use crate::dispatch::now_ms;
+    use crate::live::{Finish, LiveState, RequestStart};
+    use crate::server::RespBody;
+
+    fn session(request: &str) -> Session {
+        Session {
+            id: "s1".into(),
+            title: String::new(),
+            project: None,
+            repo: None,
+            worktree: None,
+            cwd: Some("/p/huddle".into()),
+            branch: None,
+            model: None,
+            state: SessionState::YourTurn,
+            started_ms: None,
+            last_ms: None,
+            state_since_ms: None,
+            open_tasks: 0,
+            question_tool: None,
+            context_tokens: None,
+            context_limit: 200_000,
+            cache_ttl_ms: 300_000,
+            last_request_ms: None,
+            agents: Vec::new(),
+            request_ids: vec![RequestTag {
+                request_id: request.into(),
+                agent_id: "agent-x".into(),
+                usage: Usage {
+                    input: 10,
+                    cache_read: 200,
+                    cache_write: 30,
+                    output: 70,
+                },
+                stop: None,
+            }],
+        }
+    }
+
+    /// A request that finished with the upstream id `req_A`, whose session tag lands later.
+    fn finish_request(live: &LiveState) {
+        let id = live.start(RequestStart {
+            session: Some("s1".into()),
+            model: "claude-opus-5-5".into(),
+            lane: "anthropic".into(),
+            now_ms: now_ms(),
+        });
+        live.finish(
+            id,
+            Finish {
+                status: 200,
+                upstream_id: Some("req_A".into()),
+                now_ms: now_ms(),
+                ..Finish::default()
+            },
+        );
+    }
+
+    type Sessions = Arc<dyn Fn() -> Arc<Machine> + Send + Sync>;
+
+    /// A sessions input that models the daemon's cache: the first ask returns the old reading
+    /// and starts a read; the tagged reading comes back from the next ask on.
+    fn cache_like(asks: Arc<AtomicUsize>) -> Sessions {
+        let old = Arc::new(Machine::default());
+        let tagged = Arc::new(Machine {
+            sessions: vec![session("req_A")],
+            worktrees: Vec::new(),
+        });
+        Arc::new(move || {
+            if asks.fetch_add(1, Ordering::Relaxed) == 0 {
+                Arc::clone(&old)
+            } else {
+                Arc::clone(&tagged)
+            }
+        })
+    }
+
+    /// A dashboard on `sessions` with a 40 ms quiet wait and a 20 ms follow-up wait.
+    fn fast(live: &Arc<LiveState>, sessions: Sessions) -> Arc<Dashboard> {
+        let inputs = DashboardInputs {
+            sessions,
+            ..DashboardInputs::default()
+        };
+        let dashboard = Arc::new(
+            Dashboard::new(Arc::clone(live), inputs, Arc::new(Vec::new))
+                .with_credit_after(Duration::from_millis(40))
+                .with_credit_follow_up(Duration::from_millis(20)),
+        );
+        dashboard.credit_after_finishes();
+        dashboard
+    }
+
+    #[tokio::test]
+    async fn l28_the_last_request_is_credited_while_the_router_stays_idle() {
+        let live = Arc::new(LiveState::new(now_ms()));
+        let asks = Arc::new(AtomicUsize::new(0));
+        let _dashboard = fast(&live, cache_like(Arc::clone(&asks)));
+        finish_request(&live);
+        // No feed, no poll, no other request: only the router's own follow-up can credit it.
+        tokio::time::sleep(Duration::from_millis(600)).await;
+        let snapshot = live.snapshot(now_ms(), &crate::live::SnapshotInputs::default());
+        let row = snapshot.recent.first().expect("the finished request");
+        assert_eq!(row.agent.as_deref(), Some("s1:agent-x"));
+        assert_eq!(row.tokens_out, Some(70));
+        assert_eq!(asks.load(Ordering::Relaxed), 2, "the ask and one follow-up");
+    }
+
+    #[tokio::test]
+    async fn l28_a_pass_stops_after_two_follow_up_asks() {
+        let live = Arc::new(LiveState::new(now_ms()));
+        let asks = Arc::new(AtomicUsize::new(0));
+        let never = Arc::new(Machine::default());
+        let sessions: Sessions = Arc::new({
+            let asks = Arc::clone(&asks);
+            move || {
+                asks.fetch_add(1, Ordering::Relaxed);
+                Arc::clone(&never)
+            }
+        });
+        let _dashboard = fast(&live, sessions);
+        finish_request(&live);
+        tokio::time::sleep(Duration::from_millis(600)).await;
+        assert_eq!(
+            asks.load(Ordering::Relaxed),
+            3,
+            "one ask and two follow-ups"
+        );
+    }
+
+    #[tokio::test]
+    async fn l28_no_reading_while_a_page_is_open() {
+        let (dashboard, live, asks) = counting();
+        let _feed = dashboard.join_hub(false);
+        finish_request(&live);
+        tokio::time::sleep(Duration::from_millis(600)).await;
+        assert_eq!(asks.load(Ordering::Relaxed), 0);
+    }
+
+    /// A dashboard with a counting sessions closure and a 200 ms quiet wait, its credit task on.
+    fn counting() -> (Arc<Dashboard>, Arc<LiveState>, Arc<AtomicUsize>) {
+        let live = Arc::new(LiveState::new(now_ms()));
+        let asks = Arc::new(AtomicUsize::new(0));
+        let after = Arc::new(Machine {
+            sessions: vec![session("req_A")],
+            worktrees: Vec::new(),
+        });
+        let inputs = DashboardInputs {
+            sessions: Arc::new({
+                let asks = Arc::clone(&asks);
+                move || {
+                    asks.fetch_add(1, Ordering::Relaxed);
+                    Arc::clone(&after)
+                }
+            }),
+            ..DashboardInputs::default()
+        };
+        let dashboard = Arc::new(
+            Dashboard::new(Arc::clone(&live), inputs, Arc::new(Vec::new))
+                .with_credit_after(Duration::from_millis(200))
+                .with_credit_follow_up(Duration::from_millis(20)),
+        );
+        dashboard.credit_after_finishes();
+        (dashboard, live, asks)
+    }
+
+    #[tokio::test]
+    async fn l28_no_reading_is_taken_while_requests_keep_flowing() {
+        let (_dashboard, live, asks) = counting();
+        // A finish every 10 ms for 800 ms: never quiet for 200 ms.
+        for _ in 0..80 {
+            finish_request(&live);
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        assert_eq!(asks.load(Ordering::Relaxed), 0);
+    }
+
+    #[tokio::test]
+    async fn l28_one_reading_follows_a_quiet_spell() {
+        let (_dashboard, live, asks) = counting();
+        for _ in 0..5 {
+            finish_request(&live);
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        tokio::time::sleep(Duration::from_millis(700)).await;
+        assert_eq!(asks.load(Ordering::Relaxed), 1);
+    }
+
+    #[tokio::test]
+    async fn l28_no_reading_when_nothing_is_pending() {
+        let (_dashboard, live, asks) = counting();
+        // Finished without an upstream id: nothing a session tag could credit.
+        let id = live.start(RequestStart {
+            session: Some("s1".into()),
+            model: "claude-opus-5-5".into(),
+            lane: "anthropic".into(),
+            now_ms: now_ms(),
+        });
+        live.finish(
+            id,
+            Finish {
+                status: 200,
+                now_ms: now_ms(),
+                ..Finish::default()
+            },
+        );
+        tokio::time::sleep(Duration::from_millis(600)).await;
+        assert_eq!(asks.load(Ordering::Relaxed), 0);
+    }
+
+    #[tokio::test]
+    async fn l28_events_that_are_not_finishes_wake_no_pass() {
+        let (_dashboard, live, asks) = counting();
+        finish_request(&live);
+        tokio::time::sleep(Duration::from_millis(700)).await;
+        let after_first = asks.load(Ordering::Relaxed);
+        // Probe rounds file events while the path is down: no finish, no reading.
+        for _ in 0..5 {
+            live.note_event(now_ms(), "huddle-router: probe x");
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+        assert_eq!(asks.load(Ordering::Relaxed), after_first);
+    }
+
+    #[tokio::test]
+    async fn l28_nothing_is_read_while_nothing_finishes() {
+        let live = Arc::new(LiveState::new(now_ms()));
+        let asks = Arc::new(AtomicUsize::new(0));
+        let inputs = DashboardInputs {
+            sessions: Arc::new({
+                let asks = Arc::clone(&asks);
+                move || {
+                    asks.fetch_add(1, Ordering::Relaxed);
+                    Arc::new(Machine::default())
+                }
+            }),
+            ..DashboardInputs::default()
+        };
+        let dashboard = Arc::new(
+            Dashboard::new(live, inputs, Arc::new(Vec::new))
+                .with_credit_after(Duration::from_millis(40)),
+        );
+        dashboard.credit_after_finishes();
+        tokio::time::sleep(Duration::from_millis(600)).await;
+        assert_eq!(asks.load(Ordering::Relaxed), 0);
+    }
+
+    #[test]
+    fn l28_the_watch_ends_after_the_hold_time() {
+        let asks = Arc::new(AtomicUsize::new(0));
+        let inputs = DashboardInputs {
+            sessions: Arc::new({
+                let asks = Arc::clone(&asks);
+                move || {
+                    asks.fetch_add(1, Ordering::Relaxed);
+                    Arc::new(Machine::default())
+                }
+            }),
+            ..DashboardInputs::default()
+        };
+        let live = Arc::new(LiveState::new(0));
+        let dashboard = Dashboard::new(Arc::clone(&live), inputs, Arc::new(Vec::new));
+        let polled = 1_000_000;
+        live.polled(polled);
+        dashboard.snapshot_at(polled + 4_999, false);
+        assert_eq!(asks.load(Ordering::Relaxed), 1, "within the hold time");
+        dashboard.snapshot_at(polled + 5_000, false);
+        assert_eq!(
+            asks.load(Ordering::Relaxed),
+            1,
+            "at the end of the hold time"
+        );
+        // A later poll holds it again.
+        live.polled(polled + 6_000);
+        dashboard.snapshot_at(polled + 7_000, false);
+        assert_eq!(asks.load(Ordering::Relaxed), 2);
+    }
+
+    /// The next `snapshot` event's bytes, skipping keep-alive comments.
+    async fn next_event(body: &mut RespBody) -> Bytes {
+        loop {
+            let frame = tokio::time::timeout(Duration::from_secs(10), body.frame())
+                .await
+                .expect("an event within 10 s")
+                .expect("the feed is open")
+                .expect("a frame");
+            if let Ok(data) = frame.into_data()
+                && data.starts_with(b"event: snapshot")
+            {
+                return data;
+            }
+        }
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn l28_a_joining_feed_skips_an_older_hub_frame() {
+        let dashboard = Arc::new(Dashboard::new(
+            Arc::new(LiveState::new(now_ms())),
+            DashboardInputs::default(),
+            Arc::new(Vec::new),
+        ));
+        let mut feed = dashboard.live_answer(false).into_body();
+        next_event(&mut feed).await;
+        let hub = Arc::clone(
+            Mutex::lock(&dashboard.hub)
+                .expect("hub lock")
+                .as_ref()
+                .expect("the hub of the open feed"),
+        );
+        // A build that started before the feed's own snapshot publishes late.
+        hub.full.send_replace(Event {
+            text: Bytes::from_static(b"event: snapshot\ndata: {\"stale\":true}\n\n"),
+            idle: true,
+            seq: 1,
+        });
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        hub.full.send_replace(Event {
+            text: Bytes::from_static(b"event: snapshot\ndata: {\"fresh\":true}\n\n"),
+            idle: true,
+            seq: u64::MAX,
+        });
+        let next = next_event(&mut feed).await;
+        assert!(next.windows(5).any(|w| w == b"fresh"), "{next:?}");
     }
 }

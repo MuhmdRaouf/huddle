@@ -428,6 +428,7 @@ impl Router {
                 .with_quota(quota)
                 .ending_with(self.connections.phase_signal()),
         );
+        dashboard.credit_after_finishes();
         let entry = entry_handler(Arc::new(EntryCtx {
             port: Some(self.port),
             connect,

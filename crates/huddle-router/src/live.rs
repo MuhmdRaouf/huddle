@@ -256,6 +256,9 @@ pub struct InFlightRow {
 /// The dashboard's JSON: `GET /huddle-router/state` and each `snapshot` event.
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]
 pub struct Snapshot {
+    /// Which live-state read built this snapshot; not part of the JSON.
+    #[serde(skip)]
+    pub read_seq: u64,
     pub version: String,
     pub pid: u32,
     pub started_ms: u64,
@@ -303,6 +306,7 @@ struct LiveCopy {
     models: Vec<ModelRow>,
     errors_5m: u32,
     last_error: Option<LastError>,
+    read_seq: u64,
 }
 
 /// One provider as the Providers page reads it beyond its lane row.
@@ -376,12 +380,22 @@ struct Inner {
     last_error: Option<LastError>,
 }
 
+/// How long a `/state` poll keeps the live state watched: past the page's default one second
+/// refresh, so a polling page always finds the machine state read.
+const POLL_HOLD_MS: u64 = 5_000;
+
 /// Counters, the last 200 requests and the in-flight set. One mutex, held only inside a call.
 pub struct LiveState {
     started_ms: u64,
     inner: Mutex<Inner>,
     changes: watch::Sender<u64>,
+    /// Moves on every `finish` only, so a credit pass wakes for nothing else.
+    finishes: watch::Sender<u64>,
+    /// How many live-state reads snapshots took.
+    reads: AtomicU64,
     viewers: AtomicUsize,
+    /// The time, in milliseconds, until which a `/state` poll keeps the live state watched.
+    polled_until_ms: AtomicU64,
     sink: Option<Arc<dyn HistorySink>>,
     events: RouterEvents,
     /// How many times `credit` ran.
@@ -416,7 +430,10 @@ impl LiveState {
                 last_error: None,
             }),
             changes: watch::channel(0).0,
+            finishes: watch::channel(0).0,
+            reads: AtomicU64::new(0),
             viewers: AtomicUsize::new(0),
+            polled_until_ms: AtomicU64::new(0),
             sink,
             events: RouterEvents::default(),
             #[cfg(test)]
@@ -454,6 +471,17 @@ impl LiveState {
         self.viewers.load(Ordering::Relaxed)
     }
 
+    /// Marks the live state watched for `POLL_HOLD_MS` after a `/state` poll at `now_ms`.
+    pub fn polled(&self, now_ms: u64) {
+        self.polled_until_ms
+            .fetch_max(now_ms.saturating_add(POLL_HOLD_MS), Ordering::Relaxed);
+    }
+
+    /// True while a feed is open or a `/state` poll came less than `POLL_HOLD_MS` before `now_ms`.
+    pub fn watched_at(&self, now_ms: u64) -> bool {
+        self.viewers() > 0 || now_ms < self.polled_until_ms.load(Ordering::Relaxed)
+    }
+
     /// True when no request is in flight.
     pub fn idle(&self) -> bool {
         lock(&self.inner).active.is_empty()
@@ -464,6 +492,19 @@ impl LiveState {
         Viewer {
             live: Arc::clone(self),
         }
+    }
+
+    /// A counter that moves on every `finish`, and on nothing else.
+    pub fn subscribe_finishes(&self) -> watch::Receiver<u64> {
+        self.finishes.subscribe()
+    }
+
+    /// True when a finished request that carries an upstream id still lacks its agent or its
+    /// tokens: a sessions reading could credit it.
+    pub fn awaiting_credit(&self) -> bool {
+        lock(&self.inner).recent.iter().any(|row| {
+            row.upstream_id.is_some() && (row.agent.is_none() || row.tokens_out.is_none())
+        })
     }
 
     /// A counter that moves on every `start` and `finish`, never on `byte`.
@@ -534,6 +575,7 @@ impl LiveState {
                 sink.finished(history_row(&row));
             }
             self.bump();
+            self.finishes.send_modify(|count| *count += 1);
         }
     }
 
@@ -646,12 +688,14 @@ impl LiveState {
             models,
             errors_5m,
             last_error,
+            read_seq,
         } = self.copy_live(now_ms, &inputs.lanes);
         in_flight.sort_by_key(|row| row.id);
         recent_counts::mark_lanes(&mut lanes, &recent, now_ms);
         let recent_counts = recent_counts::count(&recent, now_ms);
         let (events, path) = self.events.view();
         Snapshot {
+            read_seq,
             version: inputs.version.clone(),
             pid: inputs.pid,
             started_ms: self.started_ms,
@@ -728,7 +772,10 @@ impl LiveState {
             series.prune(now_ms);
         }
         inner.models.retain(|_, series| !series.is_empty());
+        // Numbered under the mutex: a larger number read the live state later.
+        let read_seq = self.reads.fetch_add(1, Ordering::Relaxed) + 1;
         LiveCopy {
+            read_seq,
             per_second,
             in_flight,
             recent,

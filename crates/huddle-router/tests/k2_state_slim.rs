@@ -173,3 +173,76 @@ async fn k2_slim_form_with_200_rows_is_under_25_kb() {
     assert!(slim < 25_000, "{slim}");
     assert!(slim < full);
 }
+
+/// A dashboard whose inputs hold one session, one worktree and a plugin reading, and no feed.
+fn dashboard_with_machine() -> Dashboard {
+    use huddle_router::dashboard::Machine;
+    use huddle_sessions::{Session, SessionState, Worktree, WorktreeKind};
+    let session = Session {
+        id: "s1".into(),
+        title: String::new(),
+        project: None,
+        repo: None,
+        worktree: None,
+        cwd: Some("/p/huddle".into()),
+        branch: None,
+        model: None,
+        state: SessionState::YourTurn,
+        started_ms: None,
+        last_ms: None,
+        state_since_ms: None,
+        open_tasks: 0,
+        question_tool: None,
+        context_tokens: None,
+        context_limit: 200_000,
+        cache_ttl_ms: 300_000,
+        last_request_ms: None,
+        agents: Vec::new(),
+        request_ids: Vec::new(),
+    };
+    let tree = Worktree {
+        path: "/p/huddle".into(),
+        project: "huddle".into(),
+        repo: "/p/huddle".into(),
+        branch: Some("main".into()),
+        head: None,
+        kind: WorktreeKind::Checkout,
+        used_by: None,
+        changes: None,
+        last_commit_ms: None,
+    };
+    let machine = Arc::new(Machine {
+        sessions: vec![session],
+        worktrees: vec![tree],
+    });
+    let inputs = DashboardInputs {
+        sessions: Arc::new(move || Arc::clone(&machine)),
+        plugins: Arc::new(|| serde_json::json!({ "state": "ready", "rows": [], "checks": [] })),
+        ..DashboardInputs::default()
+    };
+    Dashboard::new(Arc::new(LiveState::new(0)), inputs, Arc::new(Vec::new))
+}
+
+#[tokio::test]
+async fn l28_a_state_poll_returns_sessions_worktrees_and_plugins() {
+    let dashboard = dashboard_with_machine();
+    for slim in [false, true] {
+        let answer = if slim {
+            dashboard.state_slim_answer()
+        } else {
+            dashboard.state_answer()
+        };
+        let state = json_of(answer.into_body()).await;
+        assert_eq!(
+            state["sessions"].as_array().map(Vec::len),
+            Some(1),
+            "slim={slim}"
+        );
+        assert_eq!(
+            state["worktrees"].as_array().map(Vec::len),
+            Some(1),
+            "slim={slim}"
+        );
+        assert_eq!(state["plugins"]["state"], "ready", "slim={slim}");
+    }
+}
