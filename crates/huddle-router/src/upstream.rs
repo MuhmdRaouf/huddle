@@ -38,9 +38,9 @@ use tokio_rustls::client::TlsStream;
 pub const IDLE_TIMEOUT: Duration = Duration::from_secs(600);
 
 const MAX_CONNS_PER_HOST: usize = 256;
-const MAX_IDLE_PER_HOST: usize = 64;
+const MAX_IDLE_PER_HOST: usize = 16;
 const MAX_IDLE_TOTAL: usize = 256;
-/// An idle connection older than this is discarded on checkout.
+/// An idle connection older than this is discarded when another returns and on checkout.
 const IDLE_CONN_TTL: Duration = Duration::from_secs(90);
 /// The largest body slice handed to the wire in one frame.
 const FRAME: usize = 64 * 1024;
@@ -649,9 +649,11 @@ fn lock_pools(
     pools.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
-/// Returns a connection to its host pool, trimming the oldest idle connections beyond the limits.
-fn push_idle(pools: &mut HashMap<String, HostPool>, key: String, conn: IdleConn) {
+/// Returns a connection to its host pool, dropping the host's idle connections past `ttl` and the
+/// oldest ones beyond the limits.
+fn push_idle(pools: &mut HashMap<String, HostPool>, key: String, conn: IdleConn, ttl: Duration) {
     let host = pools.entry(key).or_insert_with(HostPool::new);
+    host.idle.retain(|idle| idle.returned_at.elapsed() <= ttl);
     host.idle.push(conn);
     host.idle.sort_by_key(|conn| conn.returned_at);
     while host.idle.len() > MAX_IDLE_PER_HOST {
@@ -1037,6 +1039,7 @@ pub struct UpstreamClient {
     env: Env,
     tls: Option<TlsConnector>,
     idle: Duration,
+    idle_ttl: Duration,
     pool: Arc<Mutex<HashMap<String, HostPool>>>,
 }
 
@@ -1046,6 +1049,7 @@ impl UpstreamClient {
             env: cfg.env,
             tls: tls_connector(cfg.roots),
             idle: cfg.idle,
+            idle_ttl: IDLE_CONN_TTL,
             pool: Arc::new(Mutex::new(HashMap::new())),
         }
     }
@@ -1100,7 +1104,7 @@ impl UpstreamClient {
         let mut pools = lock_pools(&self.pool);
         let host = pools.get_mut(key)?;
         while let Some(conn) = host.idle.pop() {
-            if conn.returned_at.elapsed() <= IDLE_CONN_TTL && conn.live.sender.is_ready() {
+            if conn.returned_at.elapsed() <= self.idle_ttl && conn.live.sender.is_ready() {
                 return Some(conn);
             }
         }
@@ -1125,7 +1129,7 @@ impl UpstreamClient {
             return 0;
         };
         host.idle.retain(|conn| {
-            conn.returned_at.elapsed() <= IDLE_CONN_TTL && conn.live.sender.is_ready()
+            conn.returned_at.elapsed() <= self.idle_ttl && conn.live.sender.is_ready()
         });
         host.idle.len()
     }
@@ -1370,6 +1374,7 @@ impl UpstreamClient {
                 dial,
                 sender: Some(sender),
                 pool: Arc::clone(&self.pool),
+                idle_ttl: self.idle_ttl,
                 key: key.to_owned(),
                 permit: Some(permit),
                 reused,
@@ -1384,6 +1389,7 @@ pub struct ConnGuard {
     dial: Dial,
     sender: Option<SendRequest<AttemptBody>>,
     pool: Arc<Mutex<HashMap<String, HostPool>>>,
+    idle_ttl: Duration,
     key: String,
     permit: Option<OwnedSemaphorePermit>,
     /// Whether the request ran on a socket checked out of the pool.
@@ -1403,6 +1409,7 @@ impl ConnGuard {
             sender,
             permit,
             pool,
+            idle_ttl,
             key,
             poolable,
             ..
@@ -1425,6 +1432,7 @@ impl ConnGuard {
                 },
                 returned_at: Instant::now(),
             },
+            idle_ttl,
         );
     }
 }
@@ -1807,5 +1815,73 @@ mod tests {
             poll_once(fourth.as_mut()).is_ready(),
             "the retry passed the furthest byte"
         );
+    }
+}
+
+#[cfg(test)]
+mod pool_tests {
+    use super::*;
+    use huddle_config::env::Env;
+    use huddle_testkit::fake_upstream::{FakeUpstream, Step};
+
+    fn client(idle_ttl: Duration) -> UpstreamClient {
+        let mut client = UpstreamClient::new(UpstreamConfig {
+            env: Env::with(&[]),
+            roots: RootCertStore::empty(),
+            idle: IDLE_TIMEOUT,
+        });
+        client.idle_ttl = idle_ttl;
+        client
+    }
+
+    async fn answer(client: &UpstreamClient, url: &str) -> UpstreamAnswer {
+        let uri: Uri = url.parse().expect("uri");
+        let request = UpstreamRequest {
+            method: Method::POST,
+            headers: forward_headers(&HeaderMap::new(), &uri, 2),
+            url: uri,
+            body: RequestBody::Whole(Bytes::from_static(b"{}")),
+        };
+        client.send(request).await.expect("send")
+    }
+
+    async fn drain(answer: UpstreamAnswer) -> ConnGuard {
+        use http_body_util::BodyExt;
+        let UpstreamAnswer { conn, body, .. } = answer;
+        let _ = body.collect().await.expect("body");
+        conn
+    }
+
+    fn pooled(client: &UpstreamClient) -> usize {
+        idle_total(&lock_pools(&client.pool))
+    }
+
+    #[tokio::test]
+    async fn l10_an_expired_idle_socket_is_dropped_when_another_returns() {
+        let upstream = FakeUpstream::start(|_, _| Step::answer(200, "ok")).await;
+        let client = client(Duration::from_millis(50));
+        let url = format!("{}/v1/messages", upstream.url());
+        let first = drain(answer(&client, &url).await).await;
+        let second = drain(answer(&client, &url).await).await;
+        first.finish();
+        assert_eq!(pooled(&client), 1);
+        tokio::time::sleep(Duration::from_millis(120)).await;
+        second.finish();
+        assert_eq!(pooled(&client), 1, "the expired socket left the pool");
+    }
+
+    #[tokio::test]
+    async fn l10_a_host_keeps_at_most_16_idle_sockets() {
+        let upstream = FakeUpstream::start(|_, _| Step::answer(200, "ok")).await;
+        let client = client(IDLE_CONN_TTL);
+        let url = format!("{}/v1/messages", upstream.url());
+        let mut held = Vec::new();
+        for _ in 0..40 {
+            held.push(drain(answer(&client, &url).await).await);
+        }
+        for conn in held {
+            conn.finish();
+        }
+        assert_eq!(pooled(&client), 16);
     }
 }
