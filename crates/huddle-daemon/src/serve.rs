@@ -196,7 +196,7 @@ pub(crate) enum Mode {
 pub struct Acquired {
     pub listener: TcpListener,
     pub lock_guard: Option<singleton::LockGuard>,
-    pub lock_release: Option<tokio::sync::oneshot::Sender<()>>,
+    pub lock_release: Option<tokio::sync::oneshot::Receiver<singleton::LockGuard>>,
     /// `handover` after a takeover, else the reason the caller gave.
     pub started_by: String,
     /// The line a takeover logged, for the dashboard's recent events.
@@ -894,20 +894,22 @@ async fn rss_check(
 }
 
 /// Takes the router lock once the previous daemon lets go and holds it until the returned
-/// sender drops: a takeover start serves the port before it can prove it is the one daemon, and
-/// the lock catches up with it. A wait that fails is logged, the daemon serves unheld.
-fn hold_lock_behind_the_run(run_dir: PathBuf, log: Logger) -> tokio::sync::oneshot::Sender<()> {
-    let (done_tx, done_rx) = tokio::sync::oneshot::channel::<()>();
+/// receiver drops: a takeover start serves the port before it can prove it is the one daemon, and
+/// the lock catches up with it. The waiting thread ends once it has the lock: the guard waits in
+/// the channel, and dropping the receiver drops it, also when it arrives after the drop. A wait
+/// that fails is logged, the daemon serves unheld.
+fn hold_lock_behind_the_run(
+    run_dir: PathBuf,
+    log: Logger,
+) -> tokio::sync::oneshot::Receiver<singleton::LockGuard> {
+    let (guard_tx, guard_rx) = tokio::sync::oneshot::channel();
     tokio::task::spawn_blocking(move || {
         match singleton::wait(&run_dir.join(LOCK_FILE), ROUTER_NAME, TAKEOVER_LOCK_WAIT) {
-            Ok(guard) => {
-                let _ = done_rx.blocking_recv();
-                drop(guard);
-            }
+            Ok(guard) => drop(guard_tx.send(guard)),
             Err(error) => log(singleton_line(&error)),
         }
     });
-    done_tx
+    guard_rx
 }
 
 /// One log line for a lock failure.
@@ -916,6 +918,36 @@ pub(crate) fn singleton_line(error: &SingletonError) -> String {
         SingletonError::Held(held) => format!("huddle-router: {held}"),
         SingletonError::Io { path, source } => {
             format!("huddle-router: {}: {source}", path.display())
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use huddle_testkit::temp_home::TempHome;
+
+    #[tokio::test]
+    async fn l11_the_takeover_lock_is_held_by_the_receiver_and_freed_when_it_drops() {
+        let home = TempHome::new();
+        let run_dir = home.root().join("r");
+        let path = run_dir.join(LOCK_FILE);
+        let previous = singleton::lock(&path, "previous").expect("previous daemon's lock");
+        let held = hold_lock_behind_the_run(run_dir, Arc::new(|_| {}));
+        // The wait joins the queue behind the previous daemon.
+        drop(previous);
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while singleton::lock(&path, "probe").is_ok() {
+            assert!(Instant::now() < deadline, "the lock was never taken");
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+        // A second router cannot take it while the receiver lives.
+        assert!(singleton::lock(&path, "second").is_err());
+        drop(held);
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while singleton::lock(&path, "after").is_err() {
+            assert!(Instant::now() < deadline, "the lock was never freed");
+            tokio::time::sleep(Duration::from_millis(50)).await;
         }
     }
 }

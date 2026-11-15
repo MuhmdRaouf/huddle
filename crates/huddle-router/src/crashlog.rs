@@ -6,10 +6,10 @@ use std::io::Write;
 use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::mpsc::{Receiver, SyncSender, TrySendError, sync_channel};
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use std::sync::mpsc::{Receiver, Sender, SyncSender, channel, sync_channel};
 use std::thread::{self, JoinHandle};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use crate::clock;
 
@@ -36,19 +36,26 @@ pub type Logger = Arc<dyn Fn(String) + Send + Sync>;
 /// (or after `FLUSH_WAIT`), so the exit and crash lines reach the disk before the process ends.
 /// Dropping the logger writes what is queued.
 pub fn router_logs(state_dir: &Path) -> Logger {
-    let all = LineWriter::spawn(&state_dir.join("router.log"), ROUTER_LOG_LIMIT);
-    let events = LineWriter::spawn(&state_dir.join("router-events.log"), EVENTS_LOG_LIMIT);
+    let writer = LineWriter::spawn(&[
+        (state_dir.join("router.log"), ROUTER_LOG_LIMIT),
+        (state_dir.join("router-events.log"), EVENTS_LOG_LIMIT),
+    ]);
     Arc::new(move |line: String| {
         if is_event(&line) {
-            events.line(line.clone());
-            all.line(line);
-            events.flush();
-            all.flush();
+            writer.line(ALL, line.clone());
+            writer.line(EVENTS, line);
+            writer.flush();
         } else {
-            all.line(line);
+            writer.line(ALL, line);
         }
     })
 }
+
+/// Position of `router.log` among the files `router_logs` writes.
+const ALL: usize = 0;
+
+/// Position of `router-events.log` among the files `router_logs` writes.
+const EVENTS: usize = 1;
 
 /// Whether `line` (without its timestamp) is an event line.
 pub fn is_event(line: &str) -> bool {
@@ -62,68 +69,93 @@ pub fn is_event(line: &str) -> bool {
 /// file during a handover rotate it once and lose no line. Never fails: a full disk costs the
 /// line. Does not recreate a removed directory. Dropping the logger writes what is queued.
 pub fn rotating_log(path: &Path, limit: u64) -> Logger {
-    let writer = LineWriter::spawn(path, limit);
-    Arc::new(move |line: String| writer.line(line))
+    let writer = LineWriter::spawn(&[(path.to_path_buf(), limit)]);
+    Arc::new(move |line: String| writer.line(0, line))
 }
 
-/// Lines waiting for the writer thread; past this a line is dropped and counted.
+/// Lines waiting for the writer thread, per file; past this a line is dropped and counted.
 const QUEUE: usize = 4096;
 
 /// The longest an event line waits for the writer to catch up.
 const FLUSH_WAIT: Duration = Duration::from_secs(2);
 
 enum Message {
-    Line(String),
+    /// A line for the file at this position.
+    Line(usize, String),
     Flush(SyncSender<()>),
 }
 
-/// One log file and the thread that appends to it.
+/// How many lines one file has waiting, and how many it dropped.
+struct Lane {
+    capacity: usize,
+    pending: AtomicUsize,
+    dropped: AtomicU64,
+}
+
+/// One thread that appends to every log file, each with its own queue limit, so a flood of
+/// request lines never crowds out an event line.
 struct LineWriter {
-    tx: Option<SyncSender<Message>>,
-    dropped: Arc<AtomicU64>,
+    tx: Option<Sender<Message>>,
+    lanes: Arc<Vec<Lane>>,
     thread: Option<JoinHandle<()>>,
 }
 
 impl LineWriter {
-    fn spawn(path: &Path, limit: u64) -> LineWriter {
-        Self::start(path, limit, QUEUE, None)
+    fn spawn(files: &[(PathBuf, u64)]) -> LineWriter {
+        Self::start(files, QUEUE, None)
     }
 
     /// A writer that waits for `gate` to fire or drop before it handles its first message.
     #[cfg(test)]
-    fn spawn_gated(path: &Path, limit: u64, queue: usize, gate: Receiver<()>) -> LineWriter {
-        Self::start(path, limit, queue, Some(gate))
+    fn spawn_gated(files: &[(PathBuf, u64)], queue: usize, gate: Receiver<()>) -> LineWriter {
+        Self::start(files, queue, Some(gate))
     }
 
-    fn start(path: &Path, limit: u64, queue: usize, gate: Option<Receiver<()>>) -> LineWriter {
-        let (tx, rx) = sync_channel(queue);
-        let dropped = Arc::new(AtomicU64::new(0));
-        let lost = Arc::clone(&dropped);
-        let path = path.to_path_buf();
+    fn start(files: &[(PathBuf, u64)], queue: usize, gate: Option<Receiver<()>>) -> LineWriter {
+        let (tx, rx) = channel();
+        let lanes: Arc<Vec<Lane>> = Arc::new(
+            files
+                .iter()
+                .map(|_| Lane {
+                    capacity: queue,
+                    pending: AtomicUsize::new(0),
+                    dropped: AtomicU64::new(0),
+                })
+                .collect(),
+        );
+        let mut sinks: Vec<Sink> = files
+            .iter()
+            .map(|(path, limit)| Sink::new(path.clone(), *limit))
+            .collect();
+        let shared = Arc::clone(&lanes);
         let thread = thread::Builder::new()
             .name("huddle-log".to_string())
             .spawn(move || {
                 if let Some(gate) = gate {
                     let _ = gate.recv();
                 }
-                run(&mut Sink::new(path, limit), &rx, &lost);
+                run(&mut sinks, &rx, &shared);
             })
             .ok();
         LineWriter {
             tx: Some(tx),
-            dropped,
+            lanes,
             thread,
         }
     }
 
-    /// Queues a line without blocking. A full queue drops the line and counts it.
-    fn line(&self, line: String) {
-        let sent = match &self.tx {
-            Some(tx) => tx.try_send(Message::Line(line)).is_ok(),
-            None => false,
-        };
-        if !sent {
-            self.dropped.fetch_add(1, Ordering::Relaxed);
+    /// Queues a line for the file at `file` without blocking. A full queue drops the line and
+    /// counts it.
+    fn line(&self, file: usize, line: String) {
+        let lane = &self.lanes[file];
+        let queued = lane.pending.fetch_add(1, Ordering::AcqRel) < lane.capacity
+            && match &self.tx {
+                Some(tx) => tx.send(Message::Line(file, line)).is_ok(),
+                None => false,
+            };
+        if !queued {
+            lane.pending.fetch_sub(1, Ordering::AcqRel);
+            lane.dropped.fetch_add(1, Ordering::Relaxed);
         }
     }
 
@@ -133,26 +165,14 @@ impl LineWriter {
             return;
         };
         let (ack, done) = sync_channel(1);
-        let deadline = Instant::now() + FLUSH_WAIT;
-        let mut message = Message::Flush(ack);
-        loop {
-            match tx.try_send(message) {
-                Ok(()) => {
-                    let _ = done.recv_timeout(deadline.saturating_duration_since(Instant::now()));
-                    return;
-                }
-                Err(TrySendError::Full(back)) if Instant::now() < deadline => {
-                    message = back;
-                    thread::sleep(Duration::from_millis(1));
-                }
-                Err(_) => return,
-            }
+        if tx.send(Message::Flush(ack)).is_ok() {
+            let _ = done.recv_timeout(FLUSH_WAIT);
         }
     }
 
     #[cfg(test)]
-    fn dropped(&self) -> u64 {
-        self.dropped.load(Ordering::Relaxed)
+    fn dropped(&self, file: usize) -> u64 {
+        self.lanes[file].dropped.load(Ordering::Relaxed)
     }
 }
 
@@ -166,22 +186,27 @@ impl Drop for LineWriter {
     }
 }
 
-/// The writer thread: appends each line, and says how many lines the queue dropped once it
-/// has caught up.
-fn run(sink: &mut Sink, rx: &Receiver<Message>, lost: &AtomicU64) {
+/// The writer thread: appends each line to its file, and says how many lines each queue
+/// dropped once it has caught up.
+fn run(sinks: &mut [Sink], rx: &Receiver<Message>, lanes: &[Lane]) {
     loop {
         let next = match rx.try_recv() {
             Ok(message) => Some(message),
             Err(_) => {
-                let count = lost.swap(0, Ordering::Relaxed);
-                if count > 0 {
-                    sink.append(&format!("huddle-router: log: dropped {count} lines"));
+                for (sink, lane) in sinks.iter_mut().zip(lanes) {
+                    let count = lane.dropped.swap(0, Ordering::Relaxed);
+                    if count > 0 {
+                        sink.append(&format!("huddle-router: log: dropped {count} lines"));
+                    }
                 }
                 rx.recv().ok()
             }
         };
         match next {
-            Some(Message::Line(line)) => sink.append(&line),
+            Some(Message::Line(file, line)) => {
+                lanes[file].pending.fetch_sub(1, Ordering::AcqRel);
+                sinks[file].append(&line);
+            }
             Some(Message::Flush(ack)) => {
                 let _ = ack.send(());
             }
@@ -425,7 +450,8 @@ mod tests {
         queue: usize,
     ) -> (LineWriter, std::sync::mpsc::Sender<()>) {
         let (release, gate) = std::sync::mpsc::channel();
-        (LineWriter::spawn_gated(path, limit, queue, gate), release)
+        let files = [(path.to_path_buf(), limit)];
+        (LineWriter::spawn_gated(&files, queue, gate), release)
     }
 
     #[test]
@@ -433,7 +459,7 @@ mod tests {
         let home = TempHome::new();
         let path = home.root().join("router.log");
         let (writer, release) = held_back(&path, ROUTER_LOG_LIMIT, 16);
-        writer.line("held".to_string());
+        writer.line(0, "held".to_string());
         assert!(!path.exists(), "the caller wrote the file");
         release.send(()).expect("release");
         drop(writer);
@@ -564,9 +590,9 @@ mod tests {
         let path = home.root().join("router.log");
         let (writer, release) = held_back(&path, ROUTER_LOG_LIMIT, 2);
         for round in 0..5 {
-            writer.line(format!("line {round}"));
+            writer.line(0, format!("line {round}"));
         }
-        assert_eq!(writer.dropped(), 3);
+        assert_eq!(writer.dropped(0), 3);
         release.send(()).expect("release");
         drop(writer);
         let text = fs::read_to_string(&path).expect("read");
@@ -579,5 +605,25 @@ mod tests {
             text.contains("huddle-router: log: dropped 3 lines"),
             "{text}"
         );
+    }
+
+    #[test]
+    fn l11_a_flood_on_one_file_leaves_the_other_files_queue_alone() {
+        let home = TempHome::new();
+        let files = [
+            (home.root().join("router.log"), ROUTER_LOG_LIMIT),
+            (home.root().join("router-events.log"), EVENTS_LOG_LIMIT),
+        ];
+        let (release, gate) = std::sync::mpsc::channel();
+        let writer = LineWriter::spawn_gated(&files, 2, gate);
+        for round in 0..5 {
+            writer.line(ALL, format!("request {round}"));
+        }
+        writer.line(EVENTS, "event".to_string());
+        assert_eq!((writer.dropped(ALL), writer.dropped(EVENTS)), (3, 0));
+        release.send(()).expect("release");
+        drop(writer);
+        let events = fs::read_to_string(&files[1].0).expect("events");
+        assert!(events.ends_with(" event\n"), "{events}");
     }
 }

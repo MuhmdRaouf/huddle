@@ -3,6 +3,7 @@
 
 use std::io::Write;
 use std::sync::{Arc, OnceLock};
+use std::time::Duration;
 
 use huddle_config::env::Env;
 use huddle_config::paths::Paths;
@@ -59,7 +60,7 @@ pub fn run(args: &[String], env: &Env) -> i32 {
         log: Arc::clone(&log),
         output,
     };
-    let runtime = match tokio::runtime::Runtime::new() {
+    let runtime = match build_runtime(worker) {
         Ok(runtime) => runtime,
         Err(error) => {
             let _ = writeln!(std::io::stderr(), "{error}");
@@ -104,6 +105,34 @@ pub fn run(args: &[String], env: &Env) -> i32 {
     // The word ends here: dropping the runtime would wait for the takeover lock's blocking
     // wait, and the outcome is already on its stream.
     std::process::exit(code);
+}
+
+/// Runtime threads of the worker's multi-thread runtime.
+const WORKER_THREADS: usize = 4;
+/// How long an idle blocking thread lives; the start-up jobs leave none behind at idle.
+const BLOCKING_KEEP_ALIVE: Duration = Duration::from_secs(1);
+
+/// The worker serves requests on a small multi-thread runtime; the supervisor only waits on its
+/// child, a 1 s check and the handover socket, so one thread runs it. Runtime threads carry the
+/// process role in their names.
+fn build_runtime(worker: bool) -> std::io::Result<tokio::runtime::Runtime> {
+    let mut builder = if worker {
+        let mut builder = tokio::runtime::Builder::new_multi_thread();
+        builder
+            .worker_threads(WORKER_THREADS)
+            .thread_keep_alive(BLOCKING_KEEP_ALIVE);
+        builder
+    } else {
+        tokio::runtime::Builder::new_current_thread()
+    };
+    builder
+        .thread_name(if worker {
+            "huddle-worker"
+        } else {
+            "huddle-supervisor"
+        })
+        .enable_all()
+        .build()
 }
 
 /// Sets the stop flag on SIGINT or SIGTERM, and on SIGUSR1 tells a worker its socket was handed
