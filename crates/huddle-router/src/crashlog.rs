@@ -6,6 +6,10 @@ use std::io::Write;
 use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::mpsc::{Receiver, SyncSender, TrySendError, sync_channel};
+use std::thread::{self, JoinHandle};
+use std::time::{Duration, Instant};
 
 use crate::clock;
 
@@ -27,14 +31,22 @@ pub type Logger = Arc<dyn Fn(String) + Send + Sync>;
 /// The router's two logs in `state_dir`: every line goes to `router.log`, and each event line
 /// (start, exit, handover, path failing, probe, recovered, reload, restart reason, crash) also
 /// goes to `router-events.log`, which request lines never fill.
+///
+/// A request line is queued and written later. An event line returns once both files hold it
+/// (or after `FLUSH_WAIT`), so the exit and crash lines reach the disk before the process ends.
+/// Dropping the logger writes what is queued.
 pub fn router_logs(state_dir: &Path) -> Logger {
-    let all = rotating_log(&state_dir.join("router.log"), ROUTER_LOG_LIMIT);
-    let events = rotating_log(&state_dir.join("router-events.log"), EVENTS_LOG_LIMIT);
+    let all = LineWriter::spawn(&state_dir.join("router.log"), ROUTER_LOG_LIMIT);
+    let events = LineWriter::spawn(&state_dir.join("router-events.log"), EVENTS_LOG_LIMIT);
     Arc::new(move |line: String| {
         if is_event(&line) {
-            events(line.clone());
+            events.line(line.clone());
+            all.line(line);
+            events.flush();
+            all.flush();
+        } else {
+            all.line(line);
         }
-        all(line);
     })
 }
 
@@ -43,28 +55,190 @@ pub fn is_event(line: &str) -> bool {
     line.starts_with(EVENT_PREFIX)
 }
 
-/// Appends `<ISO ts> <line>\n` to `path` (0644). Before the append that would pass `limit`
-/// it rotates `path` to `<path>.1`, shifting older files up and deleting the one past
-/// `LOG_KEEP`. The size comes from the disk and the rotation runs under an exclusive lock on
-/// `<path>.lock`, so two routers writing the same file during a handover rotate it once and
-/// lose no line. Never fails: a full disk costs the line. Does not recreate a removed
-/// directory.
+/// Appends `<ISO ts> <line>\n` to `path` (0644) from one writer thread. Before the append that
+/// would pass `limit` the writer rotates `path` to `<path>.1`, shifting older files up and
+/// deleting the one past `LOG_KEEP`. The size is read from the disk before a rotation and the
+/// rotation runs under an exclusive lock on `<path>.lock`, so two routers writing the same
+/// file during a handover rotate it once and lose no line. Never fails: a full disk costs the
+/// line. Does not recreate a removed directory. Dropping the logger writes what is queued.
 pub fn rotating_log(path: &Path, limit: u64) -> Logger {
-    let path = path.to_path_buf();
-    Arc::new(move |line: String| {
+    let writer = LineWriter::spawn(path, limit);
+    Arc::new(move |line: String| writer.line(line))
+}
+
+/// Lines waiting for the writer thread; past this a line is dropped and counted.
+const QUEUE: usize = 4096;
+
+/// The longest an event line waits for the writer to catch up.
+const FLUSH_WAIT: Duration = Duration::from_secs(2);
+
+enum Message {
+    Line(String),
+    Flush(SyncSender<()>),
+}
+
+/// One log file and the thread that appends to it.
+struct LineWriter {
+    tx: Option<SyncSender<Message>>,
+    dropped: Arc<AtomicU64>,
+    thread: Option<JoinHandle<()>>,
+}
+
+impl LineWriter {
+    fn spawn(path: &Path, limit: u64) -> LineWriter {
+        Self::start(path, limit, QUEUE, None)
+    }
+
+    /// A writer that waits for `gate` to fire or drop before it handles its first message.
+    #[cfg(test)]
+    fn spawn_gated(path: &Path, limit: u64, queue: usize, gate: Receiver<()>) -> LineWriter {
+        Self::start(path, limit, queue, Some(gate))
+    }
+
+    fn start(path: &Path, limit: u64, queue: usize, gate: Option<Receiver<()>>) -> LineWriter {
+        let (tx, rx) = sync_channel(queue);
+        let dropped = Arc::new(AtomicU64::new(0));
+        let lost = Arc::clone(&dropped);
+        let path = path.to_path_buf();
+        let thread = thread::Builder::new()
+            .name("huddle-log".to_string())
+            .spawn(move || {
+                if let Some(gate) = gate {
+                    let _ = gate.recv();
+                }
+                run(&mut Sink::new(path, limit), &rx, &lost);
+            })
+            .ok();
+        LineWriter {
+            tx: Some(tx),
+            dropped,
+            thread,
+        }
+    }
+
+    /// Queues a line without blocking. A full queue drops the line and counts it.
+    fn line(&self, line: String) {
+        let sent = match &self.tx {
+            Some(tx) => tx.try_send(Message::Line(line)).is_ok(),
+            None => false,
+        };
+        if !sent {
+            self.dropped.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+
+    /// Waits until every line queued so far is written, for at most `FLUSH_WAIT`.
+    fn flush(&self) {
+        let Some(tx) = &self.tx else {
+            return;
+        };
+        let (ack, done) = sync_channel(1);
+        let deadline = Instant::now() + FLUSH_WAIT;
+        let mut message = Message::Flush(ack);
+        loop {
+            match tx.try_send(message) {
+                Ok(()) => {
+                    let _ = done.recv_timeout(deadline.saturating_duration_since(Instant::now()));
+                    return;
+                }
+                Err(TrySendError::Full(back)) if Instant::now() < deadline => {
+                    message = back;
+                    thread::sleep(Duration::from_millis(1));
+                }
+                Err(_) => return,
+            }
+        }
+    }
+
+    #[cfg(test)]
+    fn dropped(&self) -> u64 {
+        self.dropped.load(Ordering::Relaxed)
+    }
+}
+
+impl Drop for LineWriter {
+    /// Writes what is queued and waits for the thread.
+    fn drop(&mut self) {
+        self.tx = None;
+        if let Some(thread) = self.thread.take() {
+            let _ = thread.join();
+        }
+    }
+}
+
+/// The writer thread: appends each line, and says how many lines the queue dropped once it
+/// has caught up.
+fn run(sink: &mut Sink, rx: &Receiver<Message>, lost: &AtomicU64) {
+    loop {
+        let next = match rx.try_recv() {
+            Ok(message) => Some(message),
+            Err(_) => {
+                let count = lost.swap(0, Ordering::Relaxed);
+                if count > 0 {
+                    sink.append(&format!("huddle-router: log: dropped {count} lines"));
+                }
+                rx.recv().ok()
+            }
+        };
+        match next {
+            Some(Message::Line(line)) => sink.append(&line),
+            Some(Message::Flush(ack)) => {
+                let _ = ack.send(());
+            }
+            None => return,
+        }
+    }
+}
+
+/// The open log file and its byte count.
+struct Sink {
+    path: PathBuf,
+    limit: u64,
+    file: Option<fs::File>,
+    size: u64,
+}
+
+impl Sink {
+    fn new(path: PathBuf, limit: u64) -> Sink {
+        Sink {
+            path,
+            limit,
+            file: None,
+            size: 0,
+        }
+    }
+
+    fn append(&mut self, line: &str) {
         let text = format!("{} {}\n", clock::iso_utc_ms(clock::now_ms()), line);
-        if size_of(&path) + text.len() as u64 > limit {
-            rotate(&path, limit, text.len() as u64);
+        let incoming = text.len() as u64;
+        if self.file.is_some() && self.size + incoming > self.limit {
+            rotate(&self.path, self.limit, incoming);
+            self.file = None;
         }
-        let opened = fs::OpenOptions::new()
-            .append(true)
-            .create(true)
-            .mode(huddle_config::files::FILE_MODE)
-            .open(&path);
-        if let Ok(mut file) = opened {
-            let _ = file.write_all(text.as_bytes());
+        if self.file.is_none() {
+            self.file = open_append(&self.path);
+            self.size = size_of(&self.path);
+            if self.file.is_some() && self.size + incoming > self.limit {
+                rotate(&self.path, self.limit, incoming);
+                self.file = open_append(&self.path);
+                self.size = size_of(&self.path);
+            }
         }
-    })
+        if let Some(file) = &mut self.file
+            && file.write_all(text.as_bytes()).is_ok()
+        {
+            self.size += incoming;
+        }
+    }
+}
+
+fn open_append(path: &Path) -> Option<fs::File> {
+    fs::OpenOptions::new()
+        .append(true)
+        .create(true)
+        .mode(huddle_config::files::FILE_MODE)
+        .open(path)
+        .ok()
 }
 
 fn size_of(path: &Path) -> u64 {
@@ -145,6 +319,7 @@ mod tests {
         let path = home.root().join("router.log");
         let log = rotating_log(&path, ROUTER_LOG_LIMIT);
         log("hello".to_string());
+        drop(log);
         let text = fs::read_to_string(&path).expect("read");
         assert!(text.ends_with(" hello\n"), "{text}");
         assert_eq!(
@@ -164,20 +339,12 @@ mod tests {
         let log = rotating_log(&path, 100);
         log("a".repeat(50));
         log("b".repeat(50));
+        drop(log);
         let rolled = fs::read_to_string(home.root().join("router.log.1")).expect("rolled");
         assert!(rolled.contains(&"a".repeat(50)));
         let current = fs::read_to_string(&path).expect("current");
         assert!(current.contains(&"b".repeat(50)));
         assert!(!current.contains(&"a".repeat(50)));
-    }
-
-    #[test]
-    fn a_removed_directory_is_not_recreated() {
-        let home = TempHome::new();
-        let dir = home.root().join("gone");
-        let log = rotating_log(&dir.join("router.log"), ROUTER_LOG_LIMIT);
-        log("line".to_string());
-        assert!(!dir.exists());
     }
 
     #[test]
@@ -218,6 +385,7 @@ mod tests {
         let log = router_logs(home.root());
         log("POST /v1/messages model=- -> anthropic 200".to_string());
         log("huddle-router: Anthropic path failing (ETIMEDOUT)".to_string());
+        drop(log);
         let events = fs::read_to_string(home.root().join("router-events.log")).unwrap_or_default();
         assert!(events.contains("Anthropic path failing"), "{events}");
         assert!(!events.contains("POST /v1/messages"), "{events}");
@@ -234,6 +402,7 @@ mod tests {
         for round in 0..9 {
             log(format!("{round}{}", "x".repeat(60)));
         }
+        drop(log);
         let first_of = |name: &str| {
             fs::read_to_string(home.root().join(name))
                 .unwrap_or_default()
@@ -249,14 +418,65 @@ mod tests {
         assert!(!home.root().join("router.log.6").exists());
     }
 
+    /// A writer that starts only when the returned sender fires or drops.
+    fn held_back(
+        path: &Path,
+        limit: u64,
+        queue: usize,
+    ) -> (LineWriter, std::sync::mpsc::Sender<()>) {
+        let (release, gate) = std::sync::mpsc::channel();
+        (LineWriter::spawn_gated(path, limit, queue, gate), release)
+    }
+
     #[test]
-    fn k17_two_writers_never_lose_a_line_across_a_rotation() {
+    fn l12_a_log_call_does_not_touch_the_file_on_the_calling_thread() {
         let home = TempHome::new();
         let path = home.root().join("router.log");
-        let writers: Vec<_> = ["a", "b"]
+        let (writer, release) = held_back(&path, ROUTER_LOG_LIMIT, 16);
+        writer.line("held".to_string());
+        assert!(!path.exists(), "the caller wrote the file");
+        release.send(()).expect("release");
+        drop(writer);
+        let text = fs::read_to_string(&path).expect("read");
+        assert!(text.ends_with(" held\n"), "{text}");
+    }
+
+    #[test]
+    fn l12_the_last_lines_are_flushed_on_drop() {
+        let home = TempHome::new();
+        let path = home.root().join("router.log");
+        let log = rotating_log(&path, ROUTER_LOG_LIMIT);
+        for round in 0..200 {
+            log(format!("line {round}"));
+        }
+        drop(log);
+        let text = fs::read_to_string(&path).expect("read");
+        assert_eq!(text.lines().count(), 200);
+        assert!(text.ends_with(" line 199\n"), "{text}");
+    }
+
+    #[test]
+    fn l12_an_event_line_is_on_disk_when_the_call_returns() {
+        let home = TempHome::new();
+        let log = router_logs(home.root());
+        log("huddle-router: exit: signal SIGTERM".to_string());
+        for name in ["router.log", "router-events.log"] {
+            let text = fs::read_to_string(home.root().join(name)).expect(name);
+            assert!(text.contains("exit: signal SIGTERM"), "{name}: {text}");
+        }
+    }
+
+    #[test]
+    fn l12_two_writers_on_one_file_lose_no_line_across_a_rotation() {
+        let home = TempHome::new();
+        let path = home.root().join("router.log");
+        let logs: Vec<_> = ["a", "b"]
             .into_iter()
-            .map(|tag| {
-                let log = rotating_log(&path, 2000);
+            .map(|tag| (tag, rotating_log(&path, 2000)))
+            .collect();
+        let threads: Vec<_> = logs
+            .into_iter()
+            .map(|(tag, log)| {
                 std::thread::spawn(move || {
                     for round in 0..40 {
                         log(format!("{tag}{round:02}"));
@@ -264,8 +484,8 @@ mod tests {
                 })
             })
             .collect();
-        for writer in writers {
-            writer.join().expect("writer");
+        for thread in threads {
+            thread.join().expect("writer");
         }
         let mut all = String::new();
         for name in [
@@ -284,5 +504,80 @@ mod tests {
                 assert_eq!(all.matches(&want).count(), 1, "{want} in {all}");
             }
         }
+    }
+
+    #[test]
+    fn k17_two_writers_never_lose_a_line_across_a_rotation() {
+        let home = TempHome::new();
+        let path = home.root().join("router.log");
+        let logs: Vec<_> = ["a", "b"]
+            .into_iter()
+            .map(|tag| (tag, rotating_log(&path, 2000)))
+            .collect();
+        let threads: Vec<_> = logs
+            .into_iter()
+            .map(|(tag, log)| {
+                std::thread::spawn(move || {
+                    for round in 0..40 {
+                        log(format!("{tag}{round:02}"));
+                    }
+                })
+            })
+            .collect();
+        for thread in threads {
+            thread.join().expect("writer");
+        }
+        let mut all = String::new();
+        for name in [
+            "router.log",
+            "router.log.1",
+            "router.log.2",
+            "router.log.3",
+            "router.log.4",
+            "router.log.5",
+        ] {
+            all.push_str(&fs::read_to_string(home.root().join(name)).unwrap_or_default());
+        }
+        for tag in ["a", "b"] {
+            for round in 0..40 {
+                let want = format!(" {tag}{round:02}\n");
+                assert_eq!(all.matches(&want).count(), 1, "{want} in {all}");
+            }
+        }
+    }
+
+    #[test]
+    fn l12_a_removed_directory_is_not_recreated() {
+        let home = TempHome::new();
+        let dir = home.root().join("gone");
+        let log = rotating_log(&dir.join("router.log"), 100);
+        for round in 0..10 {
+            log(format!("line {round}"));
+        }
+        drop(log);
+        assert!(!dir.exists());
+    }
+
+    #[test]
+    fn l12_a_full_queue_drops_lines_and_the_writer_says_how_many() {
+        let home = TempHome::new();
+        let path = home.root().join("router.log");
+        let (writer, release) = held_back(&path, ROUTER_LOG_LIMIT, 2);
+        for round in 0..5 {
+            writer.line(format!("line {round}"));
+        }
+        assert_eq!(writer.dropped(), 3);
+        release.send(()).expect("release");
+        drop(writer);
+        let text = fs::read_to_string(&path).expect("read");
+        assert!(
+            text.contains(" line 0\n") && text.contains(" line 1\n"),
+            "{text}"
+        );
+        assert!(!text.contains(" line 2\n"), "{text}");
+        assert!(
+            text.contains("huddle-router: log: dropped 3 lines"),
+            "{text}"
+        );
     }
 }
