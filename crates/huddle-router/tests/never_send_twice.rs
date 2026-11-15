@@ -331,3 +331,195 @@ async fn a_timeout_or_a_refused_connection_is_never_retried() {
     assert_eq!(err.code, FailureCode::ETimedOut);
     assert_eq!(upstream.connections(), 1);
 }
+
+const KIB64: usize = 64 * 1024;
+const MIB: usize = 1024 * 1024;
+
+/// Bytes that depend on their offset, so a reordered, lost or doubled chunk changes the body.
+fn patterned(len: usize) -> Bytes {
+    (0..len as u64)
+        .map(|at| (at ^ (at >> 8) ^ (at >> 16)) as u8)
+        .collect::<Vec<u8>>()
+        .into()
+}
+
+/// Pushes `data[from..to]` in 64 KiB chunks.
+async fn push_range(stream: &StreamedBody, data: &Bytes, from: usize, to: usize) {
+    let mut at = from;
+    while at < to {
+        let end = (at + KIB64).min(to);
+        stream.push(data.slice(at..end)).await;
+        at = end;
+    }
+}
+
+/// Sends `data` as a streamed body that fills while the request goes out, holding it the way a
+/// route does until the call returns. The last chunk waits until `release` says so, so the body
+/// is still filling when the pooled socket dies and the attempt cannot count as handed over.
+async fn send_filling(
+    c: &UpstreamClient,
+    url: &str,
+    data: &Bytes,
+    release: impl Fn() -> bool + Send + 'static,
+) -> Result<huddle_router::upstream::UpstreamAnswer, huddle_router::upstream::Failure> {
+    let stream = StreamedBody::new(data.len() as u64);
+    let routing = stream.hold();
+    let filler = {
+        let stream = Arc::clone(&stream);
+        let data = data.clone();
+        tokio::spawn(async move {
+            let tail = data.len() - KIB64;
+            push_range(&stream, &data, 0, tail).await;
+            while !release() {
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
+            push_range(&stream, &data, tail, data.len()).await;
+        })
+    };
+    let result = c
+        .send(request(
+            url,
+            RequestBody::Streamed(stream),
+            data.len() as u64,
+        ))
+        .await;
+    drop(routing);
+    filler.abort();
+    result
+}
+
+#[tokio::test]
+async fn l5_a_dead_reused_socket_under_a_small_body_is_retried_once() {
+    let upstream = FakeUpstream::start(|conn, req| match (conn, req) {
+        (1, 1) => Step::answer(200, "warm"),
+        (1, 2) => Step::ReadThenReset(100 * 1024),
+        _ => Step::answer(200, "retried"),
+    })
+    .await;
+    let c = client();
+    let url = format!("{}/v1/messages", upstream.url());
+    warm(&c, &url).await;
+
+    let data = patterned(512 * 1024);
+    let probe = upstream.clone();
+    let answer = send_filling(&c, &url, &data, move || probe.connections() == 2)
+        .await
+        .expect("the retry succeeds");
+    assert_eq!(answer.status.as_u16(), 200);
+    assert_eq!(upstream.connections(), 2, "one fresh connection");
+    let complete: Vec<_> = upstream
+        .requests()
+        .into_iter()
+        .filter(|r| r.complete && r.body.len() == data.len())
+        .collect();
+    assert_eq!(complete.len(), 1, "one full copy");
+    assert_eq!(complete[0].connection, 2);
+    assert!(
+        complete[0].body == data,
+        "the retry sent the body byte for byte"
+    );
+}
+
+#[tokio::test]
+async fn l5_a_dead_reused_socket_under_a_large_body_is_not_retried() {
+    let upstream = FakeUpstream::start(|conn, req| match (conn, req) {
+        (1, 1) => Step::answer(200, "warm"),
+        (1, 2) => Step::ReadThenReset(2 * MIB),
+        _ => Step::answer(200, "a second attempt"),
+    })
+    .await;
+    let c = client();
+    let url = format!("{}/v1/messages", upstream.url());
+    warm(&c, &url).await;
+
+    let data = patterned(3 * MIB);
+    let err = send_filling(&c, &url, &data, || false)
+        .await
+        .err()
+        .expect("the client gets the cut");
+    assert!(!err.client_closed);
+    assert!(matches!(
+        err.code,
+        FailureCode::EConnReset | FailureCode::EPipe | FailureCode::EUpstream
+    ));
+    assert_eq!(upstream.connections(), 1, "no second attempt");
+    let seen = upstream.requests();
+    assert_eq!(seen.len(), 2, "the warm-up and the one large request");
+    let cut = &seen[1];
+    assert!(!cut.complete);
+    assert!(cut.body.len() > MIB, "the cut came past the prefix");
+    assert!(
+        cut.body[..] == data[..cut.body.len()],
+        "the bytes before the cut arrived in order"
+    );
+}
+
+#[tokio::test]
+async fn l5_retry_waits_for_the_first_pump_to_end() {
+    let _heavy = HEAVY.lock().await;
+    const PREFIX: usize = 6 * MIB;
+    let (seen_tx, mut seen_rx) = tokio::sync::mpsc::unbounded_channel::<()>();
+    let (go_tx, go_rx) = std::sync::mpsc::channel::<()>();
+    let go_rx = std::sync::Mutex::new(go_rx);
+    let upstream = FakeUpstream::start(move |conn, req| match (conn, req) {
+        (1, 1) => Step::answer(200, "warm"),
+        (1, 2) => Step::ReadThenReset(PREFIX),
+        _ => {
+            // The retry's head is in: hold its body until the test has offered the first chunk
+            // past the prefix to whatever reader is still alive.
+            let _ = seen_tx.send(());
+            let _ = go_rx.lock().map(|rx| rx.recv());
+            Step::answer(200, "retried")
+        }
+    })
+    .await;
+    let c = client();
+    let url = format!("{}/v1/messages", upstream.url());
+    warm(&c, &url).await;
+
+    let data = patterned(BIG);
+    let stream = StreamedBody::with_limits(BIG as u64, PREFIX as u64, SEND_WINDOW);
+    let routing = stream.hold();
+    let call = {
+        let c = Arc::new(c);
+        let stream = Arc::clone(&stream);
+        let url = url.clone();
+        tokio::spawn(async move {
+            c.send(request(&url, RequestBody::Streamed(stream), BIG as u64))
+                .await
+                .map(|answer| answer.status.as_u16())
+                .map_err(|failure| failure.code)
+        })
+    };
+    push_range(&stream, &data, 0, PREFIX).await;
+    tokio::time::timeout(Duration::from_secs(30), seen_rx.recv())
+        .await
+        .expect("the retry is dialled")
+        .expect("the fake is alive");
+    push_range(&stream, &data, PREFIX, PREFIX + KIB64).await;
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    go_tx.send(()).expect("go");
+    let rest = {
+        let stream = Arc::clone(&stream);
+        let data = data.clone();
+        tokio::spawn(async move { push_range(&stream, &data, PREFIX + KIB64, BIG).await })
+    };
+    let status = call
+        .await
+        .expect("call")
+        .expect("the retry replays the body");
+    drop(routing);
+    rest.await.expect("rest");
+    assert_eq!(status, 200);
+    let retried: Vec<_> = upstream
+        .requests()
+        .into_iter()
+        .filter(|r| r.connection == 2)
+        .collect();
+    assert_eq!(retried.len(), 1);
+    assert!(retried[0].complete, "never a half-sent second request");
+    assert!(
+        retried[0].body == data,
+        "the retry sent the full body in order"
+    );
+}

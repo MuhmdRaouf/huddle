@@ -1,14 +1,18 @@
+use http_body_util::BodyExt;
 use huddle_config::env::Env;
 use huddle_pki::ca::{ROUTER_HOST, load_or_create};
 use huddle_pki::leaf::LeafCache;
 use huddle_router::anthropic::{AnthropicPath, STREAM_HEAD_BYTES};
 use huddle_router::connect::{ConnectCtx, Decrypt, TunnelTracker, connect_handler};
 use huddle_router::server::{BODY_LIMIT, Handler, ServerLimits, bind, full_body, serve};
-use huddle_router::upstream::{IDLE_TIMEOUT, UpstreamClient, UpstreamConfig};
+use huddle_router::upstream::{
+    IDLE_TIMEOUT, RequestBody, UpstreamClient, UpstreamConfig, UpstreamRequest, forward_headers,
+};
 use huddle_testkit::fake_upstream::{FakeUpstream, Step};
 use huddle_testkit::temp_home::TempHome;
 use hyper::body::Bytes;
-use hyper::{Request, Response};
+use hyper::header::HeaderMap;
+use hyper::{Method, Request, Response, Uri};
 use rustls::RootCertStore;
 use rustls::pki_types::{CertificateDer, ServerName};
 use std::sync::{Arc, Mutex};
@@ -59,13 +63,30 @@ async fn rig(
     }));
     let streamed_calls: Arc<Mutex<Vec<(String, u64)>>> = Arc::default();
     let streamed_sink = streamed_calls.clone();
+    let route_client = client.clone();
+    let lane_url: Uri = format!("{}/v1/messages", upstream.url())
+        .parse()
+        .expect("lane url");
+    // The stub lane relays the body to the fake upstream the way a lane does, so a body past the
+    // send window drains at the upstream's pace instead of stalling the filler.
     let streamed_route: huddle_router::anthropic::StreamedRoute =
         Arc::new(move |_parts, stream, model| {
             let sink = streamed_sink.clone();
+            let client = route_client.clone();
+            let url = lane_url.clone();
             Box::pin(async move {
                 sink.lock().unwrap().push((model, stream.filled()));
-                while !stream.is_whole() {
-                    tokio::time::sleep(Duration::from_millis(5)).await;
+                let len = stream.len();
+                let request = UpstreamRequest {
+                    method: Method::POST,
+                    headers: forward_headers(&HeaderMap::new(), &url, len),
+                    url,
+                    body: RequestBody::Streamed(stream),
+                };
+                if let Ok(answer) = client.send(request).await {
+                    let conn = answer.conn;
+                    let _ = answer.body.collect().await;
+                    conn.finish();
                 }
                 Response::new(full_body("streamed-route"))
             })
@@ -351,4 +372,20 @@ async fn a_non_model_request_takes_the_pass_through() {
     .await
     .expect("req");
     assert!(read_to_end(tls).await.contains("pass"));
+}
+
+#[tokio::test]
+async fn l5_the_stub_lane_drains_a_body_past_the_send_window() {
+    let rig = rig(|_, _| Step::answer(200, "ok"), IDLE_TIMEOUT, BODY_LIMIT).await;
+    let body = message("glm-5.3-flash", 2 * 1024 * 1024);
+    let mut tls = tls_session(&rig).await;
+    tls.write_all(&post_head(body.len()).into_bytes())
+        .await
+        .expect("head");
+    tls.write_all(&body).await.expect("body");
+    let resp = read_to_end(tls).await;
+    assert!(resp.contains("streamed-route"), "{resp}");
+    let seen = rig.upstream.requests();
+    assert_eq!(seen.len(), 1);
+    assert!(seen[0].body == body, "the lane relayed the whole body");
 }

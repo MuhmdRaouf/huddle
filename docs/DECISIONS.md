@@ -76,9 +76,10 @@ budget: idle connections and feeds close at once, a request in flight finishes, 
 
 ## D11: A streamed request is sent once
 
-An upstream reset before the body reached the transport retries once, on a fresh connection, replaying the body
-from byte zero. A timeout or a refused connection is never retried, and an answer already streaming is never
-sent again in full.
+An upstream reset on a reused socket before the body reached the transport retries once, on a fresh connection,
+replaying the body from byte zero, while the router still holds it: the first 1 MiB is kept for that. Once a
+chunk past it is sent, the body cannot be replayed, so the client gets the cut and retries. A timeout or a
+refused connection is never retried, and an answer already streaming is never sent again in full.
 
 ## D12: Request history
 

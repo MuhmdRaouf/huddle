@@ -83,14 +83,16 @@ pub struct Failure {
 }
 
 /// One failed attempt's verdict: the code a final report carries, whether the attempt ran on a
-/// pooled socket, whether the body's last byte was handed to the transport, and whether the
-/// socket went away mid-request.
+/// pooled socket, whether the body's last byte was handed to the transport, whether the socket
+/// went away mid-request, and whether the body can still be read from byte 0 once the attempt
+/// has ended.
 struct AttemptFailure {
     code: FailureCode,
     trace: Trace,
     reused: bool,
     handed_over: bool,
     closed_early: bool,
+    replayable: bool,
 }
 
 impl From<AttemptFailure> for Failure {
@@ -104,9 +106,11 @@ impl From<AttemptFailure> for Failure {
 }
 
 /// A reused socket earns one retry on a fresh connection, and only before the whole body was
-/// handed over: after it the upstream may hold the whole request, so it is never asked twice.
+/// handed over: after it the upstream may hold the whole request, so it is never asked twice. A
+/// body that dropped a chunk past its replay prefix cannot be sent again from byte 0, so its
+/// failure is final and the client gets the cut.
 fn retryable(f: &AttemptFailure) -> bool {
-    f.reused && !f.handed_over && f.closed_early
+    f.reused && !f.handed_over && f.closed_early && f.replayable
 }
 
 /// Headers that describe one connection, never the message: they are not copied across a hop.
@@ -1047,7 +1051,8 @@ impl UpstreamClient {
     }
 
     /// Sends one request upstream: one attempt, then one retry on a fresh, unpooled connection
-    /// when the failure says a reused socket died before the whole body was handed over.
+    /// when the failure says a reused socket died before the whole body was handed over and the
+    /// body still replays from byte 0.
     pub async fn send(&self, req: UpstreamRequest) -> Result<UpstreamAnswer, Failure> {
         let first = match self.attempt(&req, false).await {
             Ok(answer) => return Ok(answer),
@@ -1307,31 +1312,44 @@ impl UpstreamClient {
             // A builder that already failed on the method or the uri has no header slot.
             None => return Err(dial_failure(FailureCode::EUpstream)),
         };
-        tokio::spawn(pump(req.body.clone(), frames));
+        let pumping = tokio::spawn(pump(req.body.clone(), frames));
         let mut sender = sender;
-        let mut answer = if streamed {
-            // The body fills while the request goes out: take an early head if one arrives, else
-            // wait for the last byte, then start the idle budget; the head's arrival ends it.
-            let mut head = std::pin::pin!(sender.send_request(wire_request));
-            let first = tokio::select! {
-                answer = &mut head => Some(answer),
-                _ = handed.wait() => None,
-            };
-            match first {
-                Some(answer) => {
-                    answer.map_err(|err| hyper_failure(&err, &dial, reused, &handed))?
+        let exchange = async {
+            if streamed {
+                // The body fills while the request goes out: take an early head if one arrives, else
+                // wait for the last byte, then start the idle budget; the head's arrival ends it.
+                let mut head = std::pin::pin!(sender.send_request(wire_request));
+                let first = tokio::select! {
+                    answer = &mut head => Some(answer),
+                    _ = handed.wait() => None,
+                };
+                match first {
+                    Some(answer) => {
+                        answer.map_err(|err| hyper_failure(&err, &dial, reused, &handed))
+                    }
+                    None => match tokio::time::timeout(self.idle, head.as_mut()).await {
+                        Ok(Ok(answer)) => Ok(answer),
+                        Ok(Err(err)) => Err(hyper_failure(&err, &dial, reused, &handed)),
+                        Err(_) => Err(timeout_failure(&dial, reused, &handed)),
+                    },
                 }
-                None => match tokio::time::timeout(self.idle, head.as_mut()).await {
-                    Ok(Ok(answer)) => answer,
-                    Ok(Err(err)) => return Err(hyper_failure(&err, &dial, reused, &handed)),
-                    Err(_) => return Err(timeout_failure(&dial, reused, &handed)),
-                },
+            } else {
+                match tokio::time::timeout(self.idle, sender.send_request(wire_request)).await {
+                    Ok(Ok(answer)) => Ok(answer),
+                    Ok(Err(err)) => Err(hyper_failure(&err, &dial, reused, &handed)),
+                    Err(_) => Err(timeout_failure(&dial, reused, &handed)),
+                }
             }
-        } else {
-            match tokio::time::timeout(self.idle, sender.send_request(wire_request)).await {
-                Ok(Ok(answer)) => answer,
-                Ok(Err(err)) => return Err(hyper_failure(&err, &dial, reused, &handed)),
-                Err(_) => return Err(timeout_failure(&dial, reused, &handed)),
+        };
+        let mut answer = match exchange.await {
+            Ok(answer) => answer,
+            Err(mut failure) => {
+                // A pump left reading would take the first chunk past the prefix when it
+                // arrives and drop the prefix under a retry: it ends before the body is weighed.
+                pumping.abort();
+                let _ = pumping.await;
+                failure.replayable = replayable(&req.body);
+                return Err(failure);
             }
         };
         // A `101` answer hands the connection over: the tunnel is taken before the answer is
@@ -1514,12 +1532,14 @@ fn dial_failure(code: FailureCode) -> AttemptFailure {
         reused: false,
         handed_over: false,
         closed_early: false,
+        replayable: true,
     }
 }
 
 /// The attempt verdict for a transport error: the socket went away when hyper says the message
 /// was incomplete or canceled, or the code is a reset or a broken pipe. A timeout, a refused
-/// connection and a certificate failure are never a closed socket.
+/// connection and a certificate failure are never a closed socket. `drive` weighs `replayable`
+/// once the attempt's pump has ended.
 fn hyper_failure(err: &HyperError, dial: &Dial, reused: bool, handed: &Handed) -> AttemptFailure {
     let code = classify(err);
     AttemptFailure {
@@ -1531,10 +1551,12 @@ fn hyper_failure(err: &HyperError, dial: &Dial, reused: bool, handed: &Handed) -
             || err.is_canceled()
             || code == FailureCode::EConnReset
             || code == FailureCode::EPipe,
+        replayable: true,
     }
 }
 
-/// Silence is never a closed socket: no retry rides on a timeout.
+/// Silence is never a closed socket: no retry rides on a timeout. `drive` weighs `replayable`
+/// once the attempt's pump has ended.
 fn timeout_failure(dial: &Dial, reused: bool, handed: &Handed) -> AttemptFailure {
     AttemptFailure {
         code: FailureCode::ETimedOut,
@@ -1542,6 +1564,7 @@ fn timeout_failure(dial: &Dial, reused: bool, handed: &Handed) -> AttemptFailure
         reused,
         handed_over: handed.is_marked(),
         closed_early: false,
+        replayable: true,
     }
 }
 
@@ -1552,6 +1575,14 @@ fn silent_phase(handed: &Handed) -> Phase {
         Phase::Headers
     } else {
         Phase::Send
+    }
+}
+
+/// Whether a new attempt can read the body from byte 0: a whole body always can.
+fn replayable(body: &RequestBody) -> bool {
+    match body {
+        RequestBody::Whole(_) => true,
+        RequestBody::Streamed(stream) => stream.replayable(),
     }
 }
 
@@ -1725,5 +1756,56 @@ mod tests {
         assert_eq!(reads[0].len(), 8 * KIB64);
         assert_eq!(reads[0], reads[1]);
         assert!(stream.replayable());
+    }
+
+    #[tokio::test]
+    async fn l5_fail_releases_a_waiting_push() {
+        let stream = StreamedBody::with_limits(3 * KIB64 as u64, KIB64 as u64, KIB64 as u64);
+        let _routing = stream.hold();
+        let _reader = stream.reader();
+        stream.push(chunk()).await;
+        stream.push(chunk()).await;
+        let mut third = std::pin::pin!(stream.push(chunk()));
+        assert!(poll_once(third.as_mut()).is_pending(), "the window is full");
+        stream.fail();
+        assert!(
+            poll_once(third.as_mut()).is_ready(),
+            "a failed body never waits"
+        );
+    }
+
+    #[tokio::test]
+    async fn l5_retry_from_zero_releases_only_past_the_furthest_byte() {
+        // The prefix ends inside chunk 1, so a reader that took chunks 0 and 1 is past it and the
+        // body still replays from byte 0.
+        let stream =
+            StreamedBody::with_limits(4 * KIB64 as u64, 3 * KIB64 as u64 / 2, KIB64 as u64);
+        let _routing = stream.hold();
+        let mut first = stream.reader();
+        stream.push(chunk()).await;
+        stream.push(chunk()).await;
+        assert!(matches!(first.next_chunk().await, NextChunk::Chunk(_)));
+        assert!(matches!(first.next_chunk().await, NextChunk::Chunk(_)));
+        stream.push(chunk()).await;
+        let mut fourth = std::pin::pin!(stream.push(chunk()));
+        assert!(
+            poll_once(fourth.as_mut()).is_pending(),
+            "the window is full"
+        );
+        drop(first);
+        assert!(stream.replayable());
+        let mut retry = stream.reader();
+        for taken in 1..=2 {
+            assert!(matches!(retry.next_chunk().await, NextChunk::Chunk(_)));
+            assert!(
+                poll_once(fourth.as_mut()).is_pending(),
+                "chunk {taken} of the retry is not past the furthest byte"
+            );
+        }
+        assert!(matches!(retry.next_chunk().await, NextChunk::Chunk(_)));
+        assert!(
+            poll_once(fourth.as_mut()).is_ready(),
+            "the retry passed the furthest byte"
+        );
     }
 }
