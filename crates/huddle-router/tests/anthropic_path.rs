@@ -96,11 +96,11 @@ async fn rig(
         env: Env::with(&[]),
         dial: None,
         tunnels: TunnelTracker::new(),
-        decrypt: Some(Arc::new(Decrypt {
+        decrypt: Some(Arc::new(Decrypt::new(
             leaf,
             intercept,
-            limits: ServerLimits::default(),
-        })),
+            ServerLimits::default(),
+        ))),
     });
     let listener = bind(0).await.expect("bind");
     let port = listener.local_addr().expect("addr").port();

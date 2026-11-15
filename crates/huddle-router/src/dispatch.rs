@@ -367,14 +367,14 @@ impl Router {
             env: self.env.clone(),
             dial: None,
             tunnels: Arc::clone(&self.tunnels),
-            decrypt: Some(Arc::new(Decrypt {
-                leaf: Arc::new(LeafCache::new(
+            decrypt: Some(Arc::new(Decrypt::new(
+                Arc::new(LeafCache::new(
                     self.paths.ca_dir.clone(),
                     pass_note(Arc::clone(&self.log)),
                 )),
-                intercept: self.intercept_with_context(),
-                limits: ServerLimits::default(),
-            })),
+                self.intercept_with_context(),
+                ServerLimits::default(),
+            ))),
         }));
         let router = Arc::clone(self);
         let forward: Handler = Arc::new(move |req| {

@@ -14,8 +14,8 @@ use std::convert::Infallible;
 use std::io;
 use std::net::IpAddr;
 use std::pin::Pin;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, OnceLock};
 use std::time::{Duration, SystemTime};
 
 use hyper::Uri;
@@ -53,7 +53,6 @@ pub type DialFuture = Pin<Box<dyn Future<Output = io::Result<TcpStream>> + Send>
 pub type DialFn = Arc<dyn Fn(String) -> DialFuture + Send + Sync>;
 
 /// Serves the requests inside a decrypted conversation.
-#[derive(Clone)]
 pub struct Decrypt {
     /// The local CA's cache: it hands out the leaf the handshake presents.
     pub leaf: Arc<LeafCache>,
@@ -62,6 +61,29 @@ pub struct Decrypt {
     pub intercept: Handler,
     /// The read limits the decrypted conversation serves under.
     pub limits: ServerLimits,
+    /// The one TLS server config every tunnel handshakes with, built on the first tunnel: its
+    /// session cache lets a client resume a session across tunnels.
+    tls: OnceLock<Arc<rustls::ServerConfig>>,
+}
+
+impl Decrypt {
+    pub fn new(leaf: Arc<LeafCache>, intercept: Handler, limits: ServerLimits) -> Decrypt {
+        Decrypt {
+            leaf,
+            intercept,
+            limits,
+            tls: OnceLock::new(),
+        }
+    }
+
+    /// The shared TLS server config, or the error that kept it from being built.
+    fn tls_config(&self) -> Result<Arc<rustls::ServerConfig>, rustls::Error> {
+        if let Some(config) = self.tls.get() {
+            return Ok(Arc::clone(config));
+        }
+        let config = Arc::new(decrypted_config(self.leaf.clone())?);
+        Ok(Arc::clone(self.tls.get_or_init(|| config)))
+    }
 }
 
 /// One CONNECT handler's collaborators.
@@ -182,11 +204,11 @@ async fn serve_decrypted(
     decrypt: Arc<Decrypt>,
     phase_rx: watch::Receiver<Phase>,
 ) {
-    let config = match decrypted_config(decrypt.leaf.clone()) {
+    let config = match decrypt.tls_config() {
         Ok(config) => config,
         Err(_) => return,
     };
-    let tls = match TlsAcceptor::from(Arc::new(config))
+    let tls = match TlsAcceptor::from(config)
         .accept(TokioIo::new(upgraded))
         .await
     {
@@ -254,7 +276,7 @@ pub(crate) async fn drive_through_drain<C: Future + Unpin>(
 }
 
 /// The TLS server config of a decrypted conversation: TLS 1.2 and 1.3, no client certificates,
-/// the local CA's leaf, HTTP/1.1 over ALPN.
+/// the local CA's leaf, HTTP/1.1 over ALPN, and rustls's default in-memory session cache.
 fn decrypted_config(leaf: Arc<LeafCache>) -> Result<rustls::ServerConfig, rustls::Error> {
     let mut config = rustls::ServerConfig::builder_with_provider(Arc::new(
         rustls::crypto::ring::default_provider(),

@@ -58,6 +58,7 @@ struct Rig {
     port: u16,
     tunnels: Arc<TunnelTracker>,
     notes: Arc<Mutex<Vec<String>>>,
+    leaf: Arc<LeafCache>,
 }
 
 async fn rig(dir: PathBuf, seen: Arc<Mutex<Vec<String>>>, dial: Option<DialFn>) -> Rig {
@@ -72,11 +73,11 @@ async fn rig(dir: PathBuf, seen: Arc<Mutex<Vec<String>>>, dial: Option<DialFn>) 
         env: Env::with(&[]),
         dial,
         tunnels: tunnels.clone(),
-        decrypt: Some(Arc::new(Decrypt {
-            leaf,
-            intercept: stub_intercept(seen),
-            limits: ServerLimits::default(),
-        })),
+        decrypt: Some(Arc::new(Decrypt::new(
+            leaf.clone(),
+            stub_intercept(seen),
+            ServerLimits::default(),
+        ))),
     });
     let listener = bind(0).await.expect("bind");
     let port = listener.local_addr().expect("addr").port();
@@ -90,6 +91,7 @@ async fn rig(dir: PathBuf, seen: Arc<Mutex<Vec<String>>>, dial: Option<DialFn>) 
         port,
         tunnels,
         notes,
+        leaf,
     }
 }
 
@@ -328,4 +330,134 @@ async fn t5_decrypted_model_requests_reach_the_history() {
     assert_eq!(provider_row.status, 200);
     drop(zai);
     drop(anthropic);
+}
+
+/// Accepts any server certificate and keeps the end-entity certificate the server presented.
+#[derive(Debug)]
+struct RecordingVerifier {
+    presented: Mutex<Option<Vec<u8>>>,
+}
+
+impl rustls::client::danger::ServerCertVerifier for RecordingVerifier {
+    fn verify_server_cert(
+        &self,
+        end_entity: &CertificateDer<'_>,
+        _intermediates: &[CertificateDer<'_>],
+        _server_name: &ServerName<'_>,
+        _ocsp: &[u8],
+        _now: rustls::pki_types::UnixTime,
+    ) -> Result<rustls::client::danger::ServerCertVerified, rustls::Error> {
+        *self.presented.lock().unwrap() = Some(end_entity.as_ref().to_vec());
+        Ok(rustls::client::danger::ServerCertVerified::assertion())
+    }
+
+    fn verify_tls12_signature(
+        &self,
+        message: &[u8],
+        cert: &CertificateDer<'_>,
+        dss: &rustls::DigitallySignedStruct,
+    ) -> Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
+        rustls::crypto::verify_tls12_signature(
+            message,
+            cert,
+            dss,
+            &rustls::crypto::ring::default_provider().signature_verification_algorithms,
+        )
+    }
+
+    fn verify_tls13_signature(
+        &self,
+        message: &[u8],
+        cert: &CertificateDer<'_>,
+        dss: &rustls::DigitallySignedStruct,
+    ) -> Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
+        rustls::crypto::verify_tls13_signature(
+            message,
+            cert,
+            dss,
+            &rustls::crypto::ring::default_provider().signature_verification_algorithms,
+        )
+    }
+
+    fn supported_verify_schemes(&self) -> Vec<rustls::SignatureScheme> {
+        rustls::crypto::ring::default_provider()
+            .signature_verification_algorithms
+            .supported_schemes()
+    }
+}
+
+/// A client that records the certificate it is shown and keeps its own session store.
+fn recording_client() -> (TlsConnector, Arc<RecordingVerifier>) {
+    let verifier = Arc::new(RecordingVerifier {
+        presented: Mutex::new(None),
+    });
+    let mut config = rustls::ClientConfig::builder_with_provider(Arc::new(
+        rustls::crypto::ring::default_provider(),
+    ))
+    .with_safe_default_protocol_versions()
+    .expect("versions")
+    .dangerous()
+    .with_custom_certificate_verifier(verifier.clone())
+    .with_no_client_auth();
+    config.alpn_protocols = vec![b"http/1.1".to_vec()];
+    (TlsConnector::from(Arc::new(config)), verifier)
+}
+
+#[tokio::test]
+async fn l9_a_second_tunnel_resumes_the_tls_session() {
+    let home = TempHome::new();
+    let dir = ca_dir(&home);
+    load_or_create(&dir, SystemTime::now()).expect("ca");
+    let rig = rig(dir, Arc::default(), None).await;
+    let (client, _) = recording_client();
+    let name = ServerName::try_from(ROUTER_HOST.to_string()).expect("name");
+    let mut kinds = Vec::new();
+    for _ in 0..2 {
+        let tcp = connect_ok(rig.port, &format!("{ROUTER_HOST}:443")).await;
+        let tls = client.connect(name.clone(), tcp).await.expect("handshake");
+        kinds.push(tls.get_ref().1.handshake_kind());
+        // Reading to the end takes the session ticket the server sends after the handshake.
+        let resp = roundtrip(tls).await;
+        assert!(resp.contains(r#"{"ok":"decrypted"}"#), "{resp}");
+    }
+    assert_eq!(
+        kinds,
+        [
+            Some(rustls::HandshakeKind::Full),
+            Some(rustls::HandshakeKind::Resumed)
+        ]
+    );
+}
+
+#[tokio::test]
+async fn l9_a_leaf_that_is_re_signed_is_presented_by_the_shared_config() {
+    let home = TempHome::new();
+    let dir = ca_dir(&home);
+    load_or_create(&dir, SystemTime::now()).expect("ca");
+    let rig = rig(dir, Arc::default(), None).await;
+    let name = ServerName::try_from(ROUTER_HOST.to_string()).expect("name");
+    let first = rig.leaf.get(SystemTime::now()).expect("first leaf");
+    let (client, seen) = recording_client();
+    let tcp = connect_ok(rig.port, &format!("{ROUTER_HOST}:443")).await;
+    let tls = client.connect(name.clone(), tcp).await.expect("handshake");
+    roundtrip(tls).await;
+    assert_eq!(
+        seen.presented.lock().unwrap().as_deref(),
+        Some(first.certified.cert[0].as_ref())
+    );
+    // Inside the re-sign window the cache signs a new leaf, and the next tunnel presents it.
+    let later = SystemTime::now() + Duration::from_secs(6 * 86_400 + 3 * 3600);
+    let second = rig.leaf.get(later).expect("re-signed leaf");
+    assert_ne!(
+        first.certified.cert[0].as_ref(),
+        second.certified.cert[0].as_ref()
+    );
+    let (client, seen) = recording_client();
+    let tcp = connect_ok(rig.port, &format!("{ROUTER_HOST}:443")).await;
+    let tls = client.connect(name, tcp).await.expect("handshake");
+    roundtrip(tls).await;
+    assert_eq!(
+        seen.presented.lock().unwrap().as_deref(),
+        Some(second.certified.cert[0].as_ref())
+    );
 }
