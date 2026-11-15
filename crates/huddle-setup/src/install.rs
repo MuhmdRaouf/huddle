@@ -83,7 +83,7 @@ pub fn run(env: &Env, paths: &Paths, exe: &Path) -> Result<InstallReport, Instal
     huddle_config::mcp_token::McpToken::ensure(&token)
         .map_err(|error| InstallError::Config(format!("{}: {error}", token.display())))?;
 
-    let up_before = router_answers(port);
+    let up_before = router_listens(port);
     start_router(exe)?;
     if !router_answers(port) {
         return Err(InstallError::Router(format!(
@@ -149,12 +149,17 @@ fn start_router(exe: &Path) -> Result<(), InstallError> {
     Ok(())
 }
 
-/// True once something accepts connections on `127.0.0.1:port`.
-fn router_answers(port: u16) -> bool {
+/// True when something accepts connections on `127.0.0.1:port`, after one probe.
+fn router_listens(port: u16) -> bool {
     let addr = SocketAddr::from(([127, 0, 0, 1], port));
+    TcpStream::connect_timeout(&addr, PROBE_TIMEOUT).is_ok()
+}
+
+/// True once something accepts connections on `127.0.0.1:port`, polling until the budget is spent.
+fn router_answers(port: u16) -> bool {
     let deadline = Instant::now() + PROBE_BUDGET;
     while Instant::now() < deadline {
-        if TcpStream::connect_timeout(&addr, PROBE_TIMEOUT).is_ok() {
+        if router_listens(port) {
             return true;
         }
         std::thread::sleep(PROBE_STEP);
@@ -172,4 +177,28 @@ fn process_https_proxy(env: &Env) -> Option<String> {
         }
     }
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use huddle_testkit::ports::{free_port, listen};
+
+    #[test]
+    fn l33_the_already_up_look_is_one_probe() {
+        // Nothing is listening: the look gives up within one probe, not the whole budget.
+        let port = free_port();
+        let started = Instant::now();
+        assert!(!router_listens(port), "nothing listens on {port}");
+        assert!(
+            started.elapsed() < Duration::from_millis(1500),
+            "the look took {:?}",
+            started.elapsed()
+        );
+
+        // A listener answers on the first probe.
+        let listener = listen();
+        let port = listener.local_addr().expect("addr").port();
+        assert!(router_listens(port));
+    }
 }

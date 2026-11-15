@@ -88,6 +88,27 @@ fn install_starts_the_router_patches_settings_and_says_restart_once() {
 }
 
 #[test]
+fn l33_setup_on_a_fresh_home_reports_started() {
+    let home = TempHome::new();
+    let port = free_port();
+    let _stop = StopOnDrop(&home, port);
+
+    let out = huddle(&home, port, &["setup", "--install"]);
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        stdout.contains(&format!("started huddle-router on port {port}")),
+        "{stdout}"
+    );
+    assert!(wait_for_port(port), "the router answers on the port");
+}
+
+#[test]
 fn h2_install_names_the_ca() {
     let home = TempHome::new();
     let port = free_port();
