@@ -817,8 +817,8 @@ fn fill_history(gate: &history_upkeep::FillGate, paths: &Paths, window_ms: u64, 
     let claude_dir = paths.claude_dir.clone();
     let now = u64::try_from(now_ms()).unwrap_or(0);
     let log = Arc::clone(log);
-    gate.start(move || {
-        if let Err(error) = history_upkeep::fill(&db, &claude_dir, now, window_ms) {
+    gate.start(move |state| {
+        if let Err(error) = history_upkeep::fill_with(state, &db, &claude_dir, now, window_ms) {
             log(format!("huddle-router: history fill: {error}"));
         }
     });

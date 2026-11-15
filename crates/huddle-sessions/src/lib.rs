@@ -18,5 +18,5 @@ pub use model::{
 };
 pub use scan::scan;
 pub use time::parse_iso_ms;
-pub use usage_for::{LogUsage, usage_for};
+pub use usage_for::{LogUsage, UsageReader, usage_for};
 pub use worktrees::worktrees;

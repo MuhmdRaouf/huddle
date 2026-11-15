@@ -1,13 +1,14 @@
 //! Keeping `huddle.db` current: pruning old rows by `[history] keep_days` and filling rows whose
 //! usage the router could not read from the session logs.
 
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex, PoisonError};
 use std::thread;
 
 use huddle_history::{Credit, History, HistoryError};
-use huddle_sessions::usage_for;
+use huddle_sessions::UsageReader;
 
 /// Rows are kept this many days when `config.toml` does not say.
 pub const DEFAULT_KEEP_DAYS: u64 = 90;
@@ -18,6 +19,41 @@ pub const FIRST_FILL_WINDOW_MS: u64 = 30 * 86_400_000;
 /// How far back every later fill looks. A log changes right after its request, so a day is
 /// enough, and rows no log will ever credit (other providers') stay cheap to skip.
 pub const FILL_WINDOW_MS: u64 = 86_400_000;
+
+/// How long a fill keeps asking the logs for one id. A row no log credits (another provider's,
+/// a request the client dropped) is left alone after this.
+pub const GIVE_UP_MS: u64 = 3_600_000;
+
+/// What a fill thread carries from one tick to the next: how far each log was read, and when
+/// each id was first asked for. A restart starts it empty.
+#[derive(Default)]
+pub struct FillState {
+    reader: UsageReader,
+    first_asked: HashMap<String, u64>,
+}
+
+impl FillState {
+    /// Bytes read from session logs so far.
+    pub fn bytes_read(&self) -> u64 {
+        self.reader.bytes_read()
+    }
+
+    /// The ids still worth asking for at `now_ms`: each is recorded on first sight and left out
+    /// once `GIVE_UP_MS` has passed. An id no longer missing is forgotten.
+    fn askable(&mut self, missing: Vec<String>, now_ms: u64) -> Vec<String> {
+        let current: HashSet<&str> = missing.iter().map(String::as_str).collect();
+        self.first_asked
+            .retain(|id, _| current.contains(id.as_str()));
+        let mut askable = Vec::new();
+        for id in &missing {
+            let first = *self.first_asked.entry(id.clone()).or_insert(now_ms);
+            if now_ms.saturating_sub(first) < GIVE_UP_MS {
+                askable.push(id.clone());
+            }
+        }
+        askable
+    }
+}
 
 /// `[history] keep_days` of the config file; the default when the file, the table or the key
 /// is missing or not a positive integer.
@@ -40,14 +76,17 @@ pub fn prune(db_path: &Path, config_path: &Path, now_ms: u64) -> Result<usize, H
 /// `claude_dir`, and marks error answers as having no tokens. Returns how many rows changed.
 pub fn fill_missing(
     history: &mut History,
+    state: &mut FillState,
     claude_dir: &Path,
     now_ms: u64,
     window_ms: u64,
 ) -> Result<usize, HistoryError> {
     let since = now_ms.saturating_sub(window_ms);
     let settled = history.settle_failed(since)?;
-    let ids = history.missing_usage(since)?;
-    let credits: Vec<Credit> = usage_for(claude_dir, &ids, since)
+    let ids = state.askable(history.missing_usage(since)?, now_ms);
+    let credits: Vec<Credit> = state
+        .reader
+        .read(claude_dir, &ids, since)
         .into_iter()
         .map(|found| Credit {
             agent: Some(format!("{}:{}", found.session, found.agent_id)),
@@ -76,12 +115,29 @@ pub fn fill(
     now_ms: u64,
     window_ms: u64,
 ) -> Result<usize, HistoryError> {
+    fill_with(
+        &mut FillState::default(),
+        db_path,
+        claude_dir,
+        now_ms,
+        window_ms,
+    )
+}
+
+/// `fill` that keeps its read positions and asked ids in `state` between ticks.
+pub fn fill_with(
+    state: &mut FillState,
+    db_path: &Path,
+    claude_dir: &Path,
+    now_ms: u64,
+    window_ms: u64,
+) -> Result<usize, HistoryError> {
     let mut history = match History::open_existing(db_path) {
         Ok(history) => history,
         Err(_) if !db_path.exists() => return Ok(0),
         Err(error) => return Err(error),
     };
-    fill_missing(&mut history, claude_dir, now_ms, window_ms)
+    fill_missing(&mut history, state, claude_dir, now_ms, window_ms)
 }
 
 /// Opens an existing database for a history request, read-only. None when there is no database
@@ -100,20 +156,23 @@ pub fn open_for_read(db_path: &Path) -> Option<History> {
 #[derive(Clone, Default)]
 pub struct FillGate {
     running: Arc<AtomicBool>,
+    state: Arc<Mutex<FillState>>,
 }
 
 impl FillGate {
-    /// Starts `work` on its own thread. False, with nothing started, while a fill still runs.
-    pub fn start(&self, work: impl FnOnce() + Send + 'static) -> bool {
+    /// Starts `work` on its own thread, with the state every fill shares. False, with nothing
+    /// started, while a fill still runs.
+    pub fn start(&self, work: impl FnOnce(&mut FillState) + Send + 'static) -> bool {
         if self.running.swap(true, Ordering::AcqRel) {
             return false;
         }
         let running = Arc::clone(&self.running);
+        let state = Arc::clone(&self.state);
         let started = thread::Builder::new()
             .name("huddle-history-fill".into())
             .spawn(move || {
                 let _release = Release(running);
-                work();
+                work(&mut state.lock().unwrap_or_else(PoisonError::into_inner));
             });
         if started.is_err() {
             self.running.store(false, Ordering::Release);
@@ -226,7 +285,14 @@ mod tests {
             .insert(&[row(NOW - DAY, Some("req_1")), row(NOW - DAY, Some("req_2"))])
             .expect("insert");
 
-        let changed = fill_missing(&mut history, home.root(), NOW, FILL_WINDOW_MS).expect("fill");
+        let changed = fill_missing(
+            &mut history,
+            &mut FillState::default(),
+            home.root(),
+            NOW,
+            FILL_WINDOW_MS,
+        )
+        .expect("fill");
 
         assert_eq!(changed, 1);
         let rows = rows_of(&history);
@@ -258,7 +324,14 @@ mod tests {
             .insert(&[failed(429), failed(499), row(NOW - DAY / 2, Some("req_ok"))])
             .expect("insert");
 
-        fill_missing(&mut history, home.root(), NOW, FILL_WINDOW_MS).expect("fill");
+        fill_missing(
+            &mut history,
+            &mut FillState::default(),
+            home.root(),
+            NOW,
+            FILL_WINDOW_MS,
+        )
+        .expect("fill");
 
         let rows = rows_of(&history);
         let by = |status: u16| rows.iter().find(|r| r.status == status).expect("row");
@@ -341,23 +414,66 @@ mod tests {
     }
 
     #[test]
+    fn l17_an_id_that_failed_for_an_hour_is_not_asked_again() {
+        let home = TempHome::new();
+        let mut history = History::open(&home.root().join("huddle.db")).expect("open");
+        history
+            .insert(&[row(NOW - DAY / 2, Some("req_9"))])
+            .expect("insert");
+        let mut state = FillState::default();
+
+        let first = fill_missing(&mut history, &mut state, home.root(), NOW, FILL_WINDOW_MS);
+        assert_eq!(first.expect("fill"), 0, "no log credits the id yet");
+
+        write_log(home.root());
+        let late = NOW + GIVE_UP_MS;
+        let second = fill_missing(&mut history, &mut state, home.root(), late, FILL_WINDOW_MS);
+
+        assert_eq!(
+            second.expect("fill"),
+            0,
+            "an hour on, the id is not asked for"
+        );
+        assert_eq!(state.bytes_read(), 0, "no log was read for it");
+        assert_eq!(rows_of(&history)[0].tokens_out, None);
+    }
+
+    #[test]
+    fn l17_an_id_inside_its_hour_is_still_asked_for() {
+        let home = TempHome::new();
+        let mut history = History::open(&home.root().join("huddle.db")).expect("open");
+        history
+            .insert(&[row(NOW - DAY / 2, Some("req_9"))])
+            .expect("insert");
+        let mut state = FillState::default();
+        fill_missing(&mut history, &mut state, home.root(), NOW, FILL_WINDOW_MS).expect("fill");
+
+        write_log(home.root());
+        let soon = NOW + GIVE_UP_MS - 1;
+        let changed = fill_missing(&mut history, &mut state, home.root(), soon, FILL_WINDOW_MS);
+
+        assert_eq!(changed.expect("fill"), 1);
+        assert_eq!(rows_of(&history)[0].tokens_out, Some(2));
+    }
+
+    #[test]
     fn d1_a_slow_fill_never_delays_a_stop() {
         let gate = FillGate::default();
         let (release, hold) = std::sync::mpsc::channel::<()>();
         let begun = Instant::now();
 
-        assert!(gate.start(move || {
+        assert!(gate.start(move |_| {
             let _ = hold.recv_timeout(std::time::Duration::from_secs(10));
         }));
         assert!(
             begun.elapsed() < std::time::Duration::from_millis(500),
             "starting a fill returns at once"
         );
-        assert!(!gate.start(|| {}), "a second fill waits for the first");
+        assert!(!gate.start(|_| {}), "a second fill waits for the first");
 
         release.send(()).expect("release");
         let deadline = Instant::now() + std::time::Duration::from_secs(5);
-        while !gate.start(|| {}) {
+        while !gate.start(|_| {}) {
             assert!(Instant::now() < deadline, "the gate reopens after the fill");
             std::thread::sleep(std::time::Duration::from_millis(10));
         }

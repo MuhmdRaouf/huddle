@@ -4,7 +4,7 @@ use std::fs::{self, File};
 use std::path::Path;
 use std::time::{Duration, UNIX_EPOCH};
 
-use huddle_sessions::usage_for;
+use huddle_sessions::{UsageReader, usage_for};
 use huddle_testkit::temp_home::TempHome;
 
 const SINCE_MS: u64 = 1_800_000_000_000;
@@ -90,4 +90,90 @@ fn t5_usage_for_with_no_ids_or_no_folder_is_empty() {
     let home = TempHome::new();
     assert!(usage_for(home.root(), &ids(&["x"]), 0).is_empty());
     assert!(usage_for(home.root(), &[], 0).is_empty());
+}
+
+fn append(path: &Path, text: &str, modified_ms: u64) {
+    use std::io::Write;
+    let mut file = File::options().append(true).open(path).expect("open");
+    file.write_all(text.as_bytes()).expect("append");
+    file.set_modified(UNIX_EPOCH + Duration::from_millis(modified_ms))
+        .expect("mtime");
+}
+
+#[test]
+fn l17_a_second_tick_reads_only_the_appended_bytes() {
+    let home = TempHome::new();
+    let path = home.root().join("projects/-w-huddle/s1.jsonl");
+    let first = assistant("req_1", 11);
+    write(&path, &first, SINCE_MS + 10);
+    let mut reader = UsageReader::default();
+    let wanted = ids(&["req_1", "req_2"]);
+
+    let tick_one = reader.read(home.root(), &wanted, SINCE_MS);
+    assert_eq!(reader.bytes_read(), first.len() as u64);
+    assert_eq!(tick_one.len(), 1);
+
+    let second = assistant("req_2", 22);
+    append(&path, &second, SINCE_MS + 20);
+    let tick_two = reader.read(home.root(), &wanted, SINCE_MS);
+
+    assert_eq!(
+        reader.bytes_read(),
+        (first.len() + second.len()) as u64,
+        "tick 2 reads the appended bytes only"
+    );
+    assert_eq!(tick_two.len(), 1);
+    assert_eq!(tick_two[0].request_id, "req_2");
+    assert_eq!(
+        tick_two[0].project.as_deref(),
+        Some("huddle"),
+        "the working directory seen in tick 1 still attributes tick 2"
+    );
+    let full = usage_for(home.root(), &wanted, SINCE_MS);
+    assert_eq!(
+        full.len(),
+        2,
+        "the two ticks credit what one full parse does"
+    );
+
+    let before = reader.bytes_read();
+    reader.read(home.root(), &wanted, SINCE_MS);
+    assert_eq!(reader.bytes_read(), before, "an unchanged log is skipped");
+}
+
+#[test]
+fn l17_a_truncated_log_is_read_from_the_start() {
+    let home = TempHome::new();
+    let path = home.root().join("projects/-w-huddle/s1.jsonl");
+    write(&path, &assistant("req_1", 11), SINCE_MS + 10);
+    let mut reader = UsageReader::default();
+    let wanted = ids(&["req_1", "req_2"]);
+    reader.read(home.root(), &wanted, SINCE_MS);
+
+    let shorter = assistant("req_2", 5);
+    assert!(shorter.len() <= assistant("req_1", 11).len());
+    write(&path, &shorter, SINCE_MS + 20);
+    let found = reader.read(home.root(), &wanted, SINCE_MS);
+
+    assert_eq!(found.len(), 1);
+    assert_eq!(found[0].request_id, "req_2");
+    assert_eq!(found[0].usage.output, 5);
+}
+
+#[test]
+fn l17_a_partial_last_line_waits_for_the_next_tick() {
+    let home = TempHome::new();
+    let path = home.root().join("projects/-w-huddle/s1.jsonl");
+    let line = assistant("req_1", 11);
+    let (head, tail) = line.split_at(line.len() / 2);
+    write(&path, head, SINCE_MS + 10);
+    let mut reader = UsageReader::default();
+    let wanted = ids(&["req_1"]);
+
+    assert!(reader.read(home.root(), &wanted, SINCE_MS).is_empty());
+
+    append(&path, tail, SINCE_MS + 20);
+    let found = reader.read(home.root(), &wanted, SINCE_MS);
+    assert_eq!(found.len(), 1);
+    assert_eq!(found[0].usage.output, 11);
 }
