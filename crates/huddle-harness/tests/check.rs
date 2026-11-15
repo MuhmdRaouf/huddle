@@ -167,7 +167,13 @@ fn the_markdown_report_reads_as_specified() {
 #[test]
 fn every_builtin_entry_gets_a_report() {
     let home = TempHome::new();
-    let env = Env::with(&[("PATH", home.root().to_str().expect("utf8"))]);
+    // A stand-in for the app-bundled ZCode CLI: without it the check would resolve the
+    // entry through the app's fixed install paths and start the real app.
+    let zcode_bin = tool(home.root(), "zcode", "zcode/1.0", 0);
+    let env = Env::with(&[
+        ("PATH", home.root().to_str().expect("utf8")),
+        ("ZCODE_CLI", zcode_bin.as_str()),
+    ]);
     let reports = check_all(&builtin(), &env);
     assert_eq!(reports.len(), builtin().len());
     let table = render_all_markdown(&reports);
@@ -179,6 +185,22 @@ fn every_builtin_entry_gets_a_report() {
     assert_eq!(json.as_array().map(|a| a.len()), Some(reports.len()));
     let one: serde_json::Value = serde_json::from_str(&render_json(&reports[0])).expect("json");
     assert_eq!(one["id"], "amp");
+    let zcode = reports
+        .iter()
+        .find(|report| report.id == "zcode")
+        .expect("zcode report");
+    assert!(
+        zcode.checks[0].ok,
+        "zcode binary check failed: {}",
+        zcode.checks[0].detail
+    );
+    assert!(
+        zcode.checks[0]
+            .detail
+            .starts_with(home.root().to_str().expect("utf8")),
+        "zcode resolved outside the temp home: {}",
+        zcode.checks[0].detail
+    );
 }
 
 #[test]

@@ -242,6 +242,9 @@ pub fn child_env(
         // No test opens a real browser: this one does nothing.
         ("HUDDLE_BROWSER", "true".to_string()),
         ("HUDDLE_ROUTER_PORT", router_port.to_string()),
+        // A test that forgets its ZCode stand-in resolves the entry to this missing path
+        // instead of the app's fixed install paths on the test machine.
+        ("ZCODE_CLI", path("no-zcode")),
         // A test that forgets its fake upstream fails here instead of calling a real provider.
         ("ZAI_BASE_URL", CLOSED_PORT_URL.to_string()),
         ("KIMI_BASE_URL", CLOSED_PORT_URL.to_string()),
