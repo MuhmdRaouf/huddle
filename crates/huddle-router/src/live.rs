@@ -7,7 +7,7 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use huddle_catalog::providers::provider_by_id;
 use huddle_history::{Credit, Row};
-use huddle_sessions::{RequestTag, Session, Worktree};
+use huddle_sessions::{RequestTag, Session, SessionState, Worktree};
 use tokio::sync::watch;
 
 use crate::answer_facts::PlanUsage;
@@ -281,8 +281,8 @@ pub struct Snapshot {
     pub in_flight: Vec<InFlightRow>,
     pub jobs: Vec<JobRow>,
     /// `sessions` and `worktrees`, held by reference to the reading they came from.
-    #[serde(flatten, serialize_with = "machine_fields")]
-    pub machine: Arc<Machine>,
+    #[serde(flatten)]
+    pub machine: MachineView,
     pub plugins: serde_json::Value,
     pub harnesses: serde_json::Value,
     pub hosts: Vec<String>,
@@ -290,9 +290,54 @@ pub struct Snapshot {
     pub providers: BTreeMap<String, ProviderView>,
 }
 
-/// Writes the machine's fields in place of the shared handle.
-fn machine_fields<S: serde::Serializer>(machine: &Arc<Machine>, out: S) -> Result<S::Ok, S::Error> {
-    serde::Serialize::serialize(&**machine, out)
+/// The machine's part of a snapshot: the shared reading plus the ids of the sessions that
+/// have a request in flight. The reading is never copied; a busy session is copied only
+/// while the snapshot is written to JSON.
+#[derive(Debug, Clone, PartialEq)]
+pub struct MachineView {
+    pub reading: Arc<Machine>,
+    pub working: Vec<String>,
+}
+
+/// One session a snapshot writes: the reading's session as it is, or a copy of it marked
+/// working while one of its requests is in flight.
+enum SessionView<'a> {
+    Reading(&'a Session),
+    WorkingCopy(Box<Session>),
+}
+
+impl serde::Serialize for SessionView<'_> {
+    fn serialize<S: serde::Serializer>(&self, out: S) -> Result<S::Ok, S::Error> {
+        match self {
+            Self::Reading(session) => serde::Serialize::serialize(session, out),
+            Self::WorkingCopy(session) => serde::Serialize::serialize(session, out),
+        }
+    }
+}
+
+impl serde::Serialize for MachineView {
+    fn serialize<S: serde::Serializer>(&self, out: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeMap;
+        let sessions: Vec<SessionView> = self
+            .reading
+            .sessions
+            .iter()
+            .map(|session| {
+                if self.working.iter().any(|id| id == &session.id) {
+                    let mut copy = session.clone();
+                    copy.state = SessionState::Working;
+                    copy.state_since_ms = None;
+                    SessionView::WorkingCopy(Box::new(copy))
+                } else {
+                    SessionView::Reading(session)
+                }
+            })
+            .collect();
+        let mut map = out.serialize_map(Some(2))?;
+        map.serialize_entry("sessions", &sessions)?;
+        map.serialize_entry("worktrees", &self.reading.worktrees)?;
+        map.end()
+    }
 }
 
 /// The live state's part of one snapshot.
@@ -725,7 +770,10 @@ impl LiveState {
             recent_counts,
             in_flight,
             jobs: inputs.jobs.clone(),
-            machine: Arc::clone(&inputs.machine),
+            machine: MachineView {
+                reading: Arc::clone(&inputs.machine),
+                working: Vec::new(),
+            },
             plugins: inputs.plugins.clone(),
             harnesses: inputs.harnesses.clone(),
             hosts: inputs.hosts.clone(),

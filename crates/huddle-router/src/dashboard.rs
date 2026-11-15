@@ -896,7 +896,8 @@ mod l24_tests {
 
     use super::{Dashboard, DashboardInputs, Machine};
     use crate::dispatch::now_ms;
-    use crate::live::{Finish, LiveState, RequestStart};
+    use crate::join;
+    use crate::live::{Finish, InFlightRow, LiveState, RequestStart};
     use crate::server::RespBody;
 
     fn session(id: &str, request: &str) -> Session {
@@ -1036,13 +1037,27 @@ mod l24_tests {
             machine: Arc::clone(&machine),
             ..crate::live::SnapshotInputs::default()
         };
-        let first = live.snapshot(now_ms(), &inputs);
+        let mut first = live.snapshot(now_ms(), &inputs);
         let second = live.snapshot(now_ms(), &inputs);
         assert_eq!(Arc::strong_count(&machine), 4);
-        assert!(Arc::ptr_eq(&first.machine, &second.machine));
+        assert!(Arc::ptr_eq(&first.machine.reading, &second.machine.reading));
+        // A session with a request in flight does not copy the reading either.
+        first.in_flight = vec![InFlightRow {
+            id: 1,
+            started_ms: 0,
+            last_byte_ms: 0,
+            session: Some("s1".into()),
+            model: "claude-opus-5-5".into(),
+            lane: "anthropic".into(),
+            agent: None,
+        }];
+        join::apply(&mut first);
+        assert!(Arc::ptr_eq(&first.machine.reading, &machine));
+        assert_eq!(Arc::strong_count(&machine), 4);
         // The page still reads `sessions` and `worktrees` at the top level.
         let json = serde_json::to_value(&first).expect("json");
         assert_eq!(json["sessions"][0]["id"], "s1");
+        assert_eq!(json["sessions"][0]["state"], "working");
         assert_eq!(json["worktrees"], serde_json::json!([]));
         assert!(json.get("machine").is_none());
     }

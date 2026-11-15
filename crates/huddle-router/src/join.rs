@@ -3,10 +3,6 @@
 //! gains its lane's numbers. Requests are credited earlier, by `LiveState::credit`. Pure: the
 //! reading or the snapshot goes in, the same one comes out joined.
 
-use std::sync::Arc;
-
-use huddle_sessions::SessionState;
-
 use crate::live::{Machine, Snapshot};
 
 /// Joins what a sessions reading says on its own, once per reading: each worktree names the
@@ -18,31 +14,31 @@ pub fn reading(machine: &mut Machine) {
     name_worktree_users(machine);
 }
 
-/// Joins requests, sessions and plugin rows in place. The shared reading is copied only when
-/// a session in it has a request in flight.
+/// Joins requests, sessions and plugin rows in place. The shared reading is never copied;
+/// the busy session ids ride beside it.
 pub fn apply(snapshot: &mut Snapshot) {
     mark_working(snapshot);
     credit_plugins(snapshot);
 }
 
 fn mark_working(snapshot: &mut Snapshot) {
-    let busy = |id: &str| {
-        snapshot
-            .in_flight
-            .iter()
-            .any(|row| row.session.as_deref() == Some(id))
-    };
-    if !snapshot.machine.sessions.iter().any(|s| busy(&s.id)) {
+    let busy: Vec<String> = snapshot
+        .in_flight
+        .iter()
+        .filter_map(|row| row.session.clone())
+        .collect();
+    if busy.is_empty() {
         return;
     }
-    let mut machine = Machine::clone(&snapshot.machine);
-    for session in &mut machine.sessions {
-        if busy(&session.id) {
-            session.state = SessionState::Working;
-            session.state_since_ms = None;
-        }
-    }
-    snapshot.machine = Arc::new(machine);
+    let working: Vec<String> = snapshot
+        .machine
+        .reading
+        .sessions
+        .iter()
+        .filter(|session| busy.iter().any(|id| id == &session.id))
+        .map(|session| session.id.clone())
+        .collect();
+    snapshot.machine.working = working;
 }
 
 /// A worktree whose path is a session's `cwd` is used by that session.
@@ -95,9 +91,11 @@ fn credit_plugins(snapshot: &mut Snapshot) {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
     use super::*;
     use crate::live::{InFlightRow, LaneLast, LaneRow, LiveState, Machine, SnapshotInputs};
-    use huddle_sessions::{Session, Worktree, WorktreeKind};
+    use huddle_sessions::{Session, SessionState, Worktree, WorktreeKind};
     use serde_json::json;
 
     fn session(id: &str, cwd: &str) -> Session {
@@ -146,50 +144,36 @@ mod tests {
         }
     }
 
-    fn snapshot() -> Snapshot {
+    fn snapshot_with(machine: Machine) -> Snapshot {
         let live = LiveState::new(0);
         let inputs = SnapshotInputs {
-            machine: Arc::new(Machine {
-                sessions: vec![session("s1", "/p/huddle"), session("s2", "/p/other")],
-                worktrees: Vec::new(),
-            }),
+            machine: Arc::new(machine),
             ..SnapshotInputs::default()
         };
         live.snapshot(0, &inputs)
     }
 
-    #[test]
-    fn a_session_with_a_request_in_flight_is_working() {
-        let mut snap = snapshot();
-        let reading = Arc::clone(&snap.machine);
-        snap.in_flight = vec![InFlightRow {
+    fn snapshot() -> Snapshot {
+        snapshot_with(Machine {
+            sessions: vec![session("s1", "/p/huddle"), session("s2", "/p/other")],
+            worktrees: Vec::new(),
+        })
+    }
+
+    fn in_flight(id: &str) -> InFlightRow {
+        InFlightRow {
             id: 1,
             started_ms: 0,
             last_byte_ms: 0,
-            session: Some("s1".into()),
+            session: Some(id.into()),
             model: "m".into(),
             lane: "anthropic".into(),
             agent: None,
-        }];
-        apply(&mut snap);
-        assert_eq!(snap.machine.sessions[0].state, SessionState::Working);
-        assert_eq!(snap.machine.sessions[0].state_since_ms, None);
-        assert_eq!(snap.machine.sessions[1].state, SessionState::YourTurn);
-        // The shared reading keeps what the log says.
-        assert_eq!(reading.sessions[0].state, SessionState::YourTurn);
+        }
     }
 
-    #[test]
-    fn with_nothing_in_flight_the_snapshot_keeps_the_shared_reading() {
-        let mut snap = snapshot();
-        let reading = Arc::clone(&snap.machine);
-        apply(&mut snap);
-        assert!(Arc::ptr_eq(&reading, &snap.machine));
-    }
-
-    #[test]
-    fn a_worktree_at_a_sessions_cwd_names_it() {
-        let tree = |path: &str| Worktree {
+    fn tree(path: &str) -> Worktree {
+        Worktree {
             path: path.into(),
             project: "huddle".into(),
             repo: "/p/huddle".into(),
@@ -199,7 +183,91 @@ mod tests {
             used_by: None,
             changes: None,
             last_commit_ms: None,
-        };
+        }
+    }
+
+    #[test]
+    fn a_session_with_a_request_in_flight_is_working() {
+        let mut snap = snapshot();
+        snap.in_flight = vec![in_flight("s1")];
+        apply(&mut snap);
+        let json = serde_json::to_value(&snap).expect("snapshot is serializable");
+        assert_eq!(json["sessions"][0]["state"], "working");
+        assert_eq!(
+            json["sessions"][0]["state_since_ms"],
+            serde_json::Value::Null
+        );
+        assert_eq!(json["sessions"][1]["state"], "your_turn");
+        // The shared reading keeps what the log says.
+        assert_eq!(
+            snap.machine.reading.sessions[0].state,
+            SessionState::YourTurn
+        );
+    }
+
+    #[test]
+    fn with_nothing_in_flight_the_snapshot_keeps_the_shared_reading() {
+        let mut snap = snapshot();
+        let reading = Arc::clone(&snap.machine.reading);
+        apply(&mut snap);
+        assert!(Arc::ptr_eq(&reading, &snap.machine.reading));
+    }
+
+    #[test]
+    fn l42_a_joined_snapshot_with_a_busy_session_still_shares_the_reading() {
+        let mut snap = snapshot();
+        let reading = Arc::clone(&snap.machine.reading);
+        let count_before = Arc::strong_count(&reading);
+        snap.in_flight = vec![in_flight("s1")];
+        apply(&mut snap);
+        assert!(Arc::ptr_eq(&snap.machine.reading, &reading));
+        assert_eq!(Arc::strong_count(&reading), count_before);
+    }
+
+    #[test]
+    fn l42_the_busy_session_is_written_as_working_and_the_others_are_not() {
+        let mut snap = snapshot();
+        let reading = Arc::clone(&snap.machine.reading);
+        snap.in_flight = vec![in_flight("s1")];
+        apply(&mut snap);
+        let json = serde_json::to_value(&snap).expect("snapshot is serializable");
+        assert_eq!(json["sessions"][0]["state"], "working");
+        assert_eq!(
+            json["sessions"][0]["state_since_ms"],
+            serde_json::Value::Null
+        );
+        assert_eq!(
+            json["sessions"][1],
+            serde_json::to_value(&reading.sessions[1]).expect("session is serializable")
+        );
+        // The shared reading keeps what the log says.
+        assert_eq!(reading.sessions[0].state, SessionState::YourTurn);
+    }
+
+    #[test]
+    fn l42_the_joined_json_is_what_the_old_join_wrote() {
+        let mut snap = snapshot_with(Machine {
+            sessions: vec![
+                session("s1", "/p/huddle"),
+                session("s2", "/p/other"),
+                session("s3", "/p/third"),
+            ],
+            worktrees: vec![tree("/p/huddle"), tree("/p/other")],
+        });
+        snap.in_flight = vec![in_flight("s1")];
+        apply(&mut snap);
+        // The same machine, joined by hand.
+        let mut hand = (*snap.machine.reading).clone();
+        hand.sessions[0].state = SessionState::Working;
+        hand.sessions[0].state_since_ms = None;
+        let joined = serde_json::to_value(&snap).expect("snapshot is serializable");
+        let manual = serde_json::to_value(&hand).expect("machine is serializable");
+        assert_eq!(joined["sessions"], manual["sessions"]);
+        assert_eq!(joined["worktrees"], manual["worktrees"]);
+    }
+
+    #[test]
+    fn a_worktree_at_a_sessions_cwd_names_it() {
         let mut machine = Machine {
             sessions: vec![session("s1", "/p/huddle")],
             worktrees: vec![tree("/p/huddle"), tree("/p/idle")],
