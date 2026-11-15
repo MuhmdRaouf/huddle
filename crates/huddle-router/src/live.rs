@@ -132,6 +132,13 @@ pub struct Supervision {
     pub last_restart: String,
 }
 
+/// What the session logs and git say about the machine.
+#[derive(Debug, Clone, Default, PartialEq, serde::Serialize)]
+pub struct Machine {
+    pub sessions: Vec<Session>,
+    pub worktrees: Vec<Worktree>,
+}
+
 /// What the live state cannot know: the process, its wiring, the lane list, the jobs and what
 /// the daemon read from the machine. The plugin and harness pages arrive as built JSON: the
 /// daemon owns their shape and the router only carries them.
@@ -148,8 +155,8 @@ pub struct SnapshotInputs {
     pub process: ProcessUsage,
     /// `None` for a router with no supervising parent.
     pub supervision: Option<Supervision>,
-    pub sessions: Vec<Session>,
-    pub worktrees: Vec<Worktree>,
+    /// The sessions and worktrees reading, shared with every snapshot built from it.
+    pub machine: Arc<Machine>,
     pub plugins: serde_json::Value,
     pub harnesses: serde_json::Value,
     pub hosts: Vec<String>,
@@ -270,13 +277,32 @@ pub struct Snapshot {
     pub recent_counts: RecentCounts,
     pub in_flight: Vec<InFlightRow>,
     pub jobs: Vec<JobRow>,
-    pub sessions: Vec<Session>,
-    pub worktrees: Vec<Worktree>,
+    /// `sessions` and `worktrees`, held by reference to the reading they came from.
+    #[serde(flatten, serialize_with = "machine_fields")]
+    pub machine: Arc<Machine>,
     pub plugins: serde_json::Value,
     pub harnesses: serde_json::Value,
     pub hosts: Vec<String>,
     /// What each provider says is left of its plan or balance, by provider id.
     pub providers: BTreeMap<String, ProviderView>,
+}
+
+/// Writes the machine's fields in place of the shared handle.
+fn machine_fields<S: serde::Serializer>(machine: &Arc<Machine>, out: S) -> Result<S::Ok, S::Error> {
+    serde::Serialize::serialize(&**machine, out)
+}
+
+/// The live state's part of one snapshot.
+struct LiveCopy {
+    per_second: Vec<u32>,
+    in_flight: Vec<InFlightRow>,
+    recent: Vec<RecentRow>,
+    lanes: Vec<LaneRow>,
+    plan: Option<PlanUsage>,
+    buckets: Buckets,
+    models: Vec<ModelRow>,
+    errors_5m: u32,
+    last_error: Option<LastError>,
 }
 
 /// One provider as the Providers page reads it beyond its lane row.
@@ -358,6 +384,9 @@ pub struct LiveState {
     viewers: AtomicUsize,
     sink: Option<Arc<dyn HistorySink>>,
     events: RouterEvents,
+    /// How many times `credit` ran.
+    #[cfg(test)]
+    pub(crate) credit_runs: AtomicUsize,
 }
 
 impl LiveState {
@@ -390,6 +419,8 @@ impl LiveState {
             viewers: AtomicUsize::new(0),
             sink,
             events: RouterEvents::default(),
+            #[cfg(test)]
+            credit_runs: AtomicUsize::new(0),
         }
     }
 
@@ -421,6 +452,11 @@ impl LiveState {
     /// Dashboard live feeds open now.
     pub fn viewers(&self) -> usize {
         self.viewers.load(Ordering::Relaxed)
+    }
+
+    /// True when no request is in flight.
+    pub fn idle(&self) -> bool {
+        lock(&self.inner).active.is_empty()
     }
 
     pub fn viewer(self: &Arc<Self>) -> Viewer {
@@ -506,6 +542,8 @@ impl LiveState {
     /// the model rows and the lane totals. The router's own reading wins; a request is counted
     /// once.
     pub fn credit(&self, sessions: &[Session]) {
+        #[cfg(test)]
+        self.credit_runs.fetch_add(1, Ordering::Relaxed);
         let credits = self.apply_credits(sessions);
         if let Some(sink) = self.sink.as_ref().filter(|_| !credits.is_empty()) {
             sink.credited(credits);
@@ -595,48 +633,23 @@ impl LiveState {
         credits
     }
 
+    /// The live part is copied under the mutex; the rows derived from it and the inputs are
+    /// put together after it is released.
     pub fn snapshot(&self, now_ms: u64, inputs: &SnapshotInputs) -> Snapshot {
-        let mut inner = lock(&self.inner);
-        let cutoff = now_ms.saturating_sub(ERROR_WINDOW_MS);
-        while inner.error_times.front().is_some_and(|at| *at <= cutoff) {
-            inner.error_times.pop_front();
-        }
-        let now_second = now_ms / 1000;
-        let per_second = (0..SECONDS as u64)
-            .map(|back| {
-                let Some(second) = (now_second + back).checked_sub(SECONDS as u64) else {
-                    return 0;
-                };
-                let slot = inner.buckets[(second % SECONDS as u64) as usize];
-                if slot.0 == second { slot.1 } else { 0 }
-            })
-            .collect();
-        let mut in_flight: Vec<InFlightRow> = inner
-            .active
-            .iter()
-            .map(|(id, active)| InFlightRow {
-                id: *id,
-                started_ms: active.started_ms,
-                last_byte_ms: active.last_byte.get(),
-                session: active.session.clone(),
-                model: active.model.clone(),
-                lane: active.lane.clone(),
-                agent: None,
-            })
-            .collect();
+        let LiveCopy {
+            per_second,
+            mut in_flight,
+            recent,
+            mut lanes,
+            plan,
+            buckets,
+            models,
+            errors_5m,
+            last_error,
+        } = self.copy_live(now_ms, &inputs.lanes);
         in_flight.sort_by_key(|row| row.id);
-        let recent: Vec<RecentRow> = inner.recent.iter().cloned().collect();
-        let mut lanes: Vec<LaneRow> = inputs
-            .lanes
-            .iter()
-            .map(|meta| lane_row(meta, inner.lanes.get(&meta.id)))
-            .collect();
         recent_counts::mark_lanes(&mut lanes, &recent, now_ms);
         let recent_counts = recent_counts::count(&recent, now_ms);
-        for series in inner.models.values_mut() {
-            series.prune(now_ms);
-        }
-        inner.models.retain(|_, series| !series.is_empty());
         let (events, path) = self.events.view();
         Snapshot {
             version: inputs.version.clone(),
@@ -657,23 +670,74 @@ impl LiveState {
                 events,
                 path,
             },
-            plan: inner.plan,
-            buckets: stats::buckets(&inner.models, now_ms),
-            models: stats::model_rows(&inner.models, now_ms),
+            plan,
+            buckets,
+            models,
             per_second,
-            errors_5m: inner.error_times.len() as u32,
-            last_error: inner.last_error.clone(),
+            errors_5m,
+            last_error,
             lanes,
             recent,
             recent_counts,
             in_flight,
             jobs: inputs.jobs.clone(),
-            sessions: inputs.sessions.clone(),
-            worktrees: inputs.worktrees.clone(),
+            machine: Arc::clone(&inputs.machine),
             plugins: inputs.plugins.clone(),
             harnesses: inputs.harnesses.clone(),
             hosts: inputs.hosts.clone(),
-            providers: provider_views(&inputs.quota, inner.plan),
+            providers: provider_views(&inputs.quota, plan),
+        }
+    }
+
+    /// Everything a snapshot reads from the live state, copied under one hold of the mutex.
+    fn copy_live(&self, now_ms: u64, lane_metas: &[LaneMeta]) -> LiveCopy {
+        let cutoff = now_ms.saturating_sub(ERROR_WINDOW_MS);
+        let now_second = now_ms / 1000;
+        let mut inner = lock(&self.inner);
+        while inner.error_times.front().is_some_and(|at| *at <= cutoff) {
+            inner.error_times.pop_front();
+        }
+        let per_second = (0..SECONDS as u64)
+            .map(|back| {
+                let Some(second) = (now_second + back).checked_sub(SECONDS as u64) else {
+                    return 0;
+                };
+                let slot = inner.buckets[(second % SECONDS as u64) as usize];
+                if slot.0 == second { slot.1 } else { 0 }
+            })
+            .collect();
+        let in_flight = inner
+            .active
+            .iter()
+            .map(|(id, active)| InFlightRow {
+                id: *id,
+                started_ms: active.started_ms,
+                last_byte_ms: active.last_byte.get(),
+                session: active.session.clone(),
+                model: active.model.clone(),
+                lane: active.lane.clone(),
+                agent: None,
+            })
+            .collect();
+        let recent = inner.recent.iter().cloned().collect();
+        let lanes = lane_metas
+            .iter()
+            .map(|meta| lane_row(meta, inner.lanes.get(&meta.id)))
+            .collect();
+        for series in inner.models.values_mut() {
+            series.prune(now_ms);
+        }
+        inner.models.retain(|_, series| !series.is_empty());
+        LiveCopy {
+            per_second,
+            in_flight,
+            recent,
+            lanes,
+            plan: inner.plan,
+            buckets: stats::buckets(&inner.models, now_ms),
+            models: stats::model_rows(&inner.models, now_ms),
+            errors_5m: inner.error_times.len() as u32,
+            last_error: inner.last_error.clone(),
         }
     }
 

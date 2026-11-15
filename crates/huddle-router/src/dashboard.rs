@@ -6,7 +6,7 @@
 
 use std::collections::BTreeMap;
 use std::collections::VecDeque;
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
 use http_body_util::BodyExt;
@@ -22,6 +22,7 @@ use crate::dispatch::now_ms;
 use crate::history_cache::{CacheKey, HistoryCache, newest_signature};
 use crate::history_view::{self, Query, Refusal};
 use crate::join;
+pub use crate::live::Machine;
 use crate::live::{
     JobRow, LaneMeta, LiveState, ProcessUsage, Snapshot, SnapshotInputs, Supervision, Wiring,
     WiringState,
@@ -30,7 +31,7 @@ use crate::quota::QuotaFetcher;
 use crate::server::{RespBody, full_body, json_answer};
 use huddle_catalog::providers::providers;
 use huddle_history::{GroupBy, History};
-use huddle_sessions::{Session, Worktree};
+use huddle_sessions::Worktree;
 
 pub const PAGE_PATH: &str = "/";
 pub const STATE_PATH: &str = "/huddle-router/state";
@@ -106,8 +107,9 @@ pub struct DashboardInputs {
     pub process: Arc<dyn Fn() -> ProcessUsage + Send + Sync>,
     /// The supervising parent and its worker: one small file read.
     pub supervision: Arc<dyn Fn() -> Option<Supervision> + Send + Sync>,
-    /// Claude Code's sessions and the projects' worktrees. Asked only while a page is open.
-    pub sessions: Arc<dyn Fn() -> Machine + Send + Sync>,
+    /// Claude Code's sessions and the projects' worktrees: the cached reading itself, the same
+    /// handle until the next reading lands. Asked only while a page is open.
+    pub sessions: Arc<dyn Fn() -> Arc<Machine> + Send + Sync>,
     /// The plugin page: `{state, rows, checks}`. Asked only while a page is open.
     pub plugins: Arc<dyn Fn() -> serde_json::Value + Send + Sync>,
     /// The harness page: `{state, rows}`. Asked only while a page is open.
@@ -118,13 +120,6 @@ pub struct DashboardInputs {
     pub keep_days: Arc<dyn Fn() -> u64 + Send + Sync>,
     /// How often an idle feed sends its keep-alive comment: `PING_EVERY` unless a test sets it.
     pub ping_every: Duration,
-}
-
-/// What the session logs and git say about the machine.
-#[derive(Debug, Clone, Default)]
-pub struct Machine {
-    pub sessions: Vec<Session>,
-    pub worktrees: Vec<Worktree>,
 }
 
 /// A page that has no reading yet.
@@ -145,7 +140,10 @@ impl Default for DashboardInputs {
             wiring_state: Arc::new(WiringState::default),
             process: Arc::new(ProcessUsage::default),
             supervision: Arc::new(|| None),
-            sessions: Arc::new(Machine::default),
+            sessions: Arc::new({
+                let none = Arc::new(Machine::default());
+                move || Arc::clone(&none)
+            }),
             plugins: Arc::new(checking),
             harnesses: Arc::new(checking),
             history: Arc::new(|| None),
@@ -170,6 +168,46 @@ pub struct Dashboard {
     feeds: Mutex<VecDeque<oneshot::Sender<()>>>,
     /// The finished history answers every tab shares.
     history_cache: Arc<HistoryCache>,
+    /// The last sessions reading and its joined copy for snapshots.
+    reading: Mutex<Reading>,
+    /// The one snapshot builder every open feed reads from, while a feed is open.
+    hub: Mutex<Option<Arc<Hub>>>,
+    /// How many snapshots were built.
+    #[cfg(test)]
+    builds: std::sync::atomic::AtomicUsize,
+}
+
+/// A sessions reading as it came from the cache, and the copy snapshots carry: joined once,
+/// without the request ids.
+#[derive(Default)]
+struct Reading {
+    source: Arc<Machine>,
+    view: Arc<Machine>,
+}
+
+/// One built snapshot as a feed sends it.
+#[derive(Clone)]
+struct Event {
+    text: Bytes,
+    /// No request was in flight when it was built.
+    idle: bool,
+}
+
+/// The latest event of each form, slim and full. The builder serializes only the forms a feed
+/// reads.
+struct Hub {
+    full: watch::Sender<Event>,
+    slim: watch::Sender<Event>,
+}
+
+impl Hub {
+    fn form(&self, slim: bool) -> &watch::Sender<Event> {
+        if slim { &self.slim } else { &self.full }
+    }
+
+    fn unread(&self) -> bool {
+        self.full.receiver_count() == 0 && self.slim.receiver_count() == 0
+    }
 }
 
 impl Dashboard {
@@ -186,6 +224,10 @@ impl Dashboard {
             drain: None,
             feeds: Mutex::new(VecDeque::new()),
             history_cache: Arc::default(),
+            reading: Mutex::default(),
+            hub: Mutex::new(None),
+            #[cfg(test)]
+            builds: std::sync::atomic::AtomicUsize::new(0),
         }
     }
 
@@ -239,7 +281,9 @@ impl Dashboard {
     /// The snapshot without its recent rows, for a page that does not show them. Every other field,
     /// the counts derived from the rows included, is the full answer's.
     pub fn state_slim_answer(&self) -> Response<RespBody> {
-        let mut response = json_answer(StatusCode::OK, slim_json(self.snapshot()));
+        let mut snapshot = self.snapshot();
+        snapshot.recent.clear();
+        let mut response = json_answer(StatusCode::OK, slim_json(&snapshot));
         response
             .headers_mut()
             .insert(CACHE_CONTROL, HeaderValue::from_static("no-store"));
@@ -333,6 +377,8 @@ impl Dashboard {
         evicted
     }
 
+    /// One feed: its own snapshot at once, then each event the hub publishes, and a keep-alive
+    /// comment while nothing is in flight.
     async fn feed(
         self: Arc<Self>,
         tx: mpsc::Sender<Result<Frame<Bytes>, crate::server::BodyCut>>,
@@ -340,63 +386,154 @@ impl Dashboard {
         mut evicted: oneshot::Receiver<()>,
     ) {
         let _viewer = self.live.viewer();
-        let mut changes = self.live.subscribe();
-        let mut last_sent = Instant::now();
+        let mut events = self.join_hub(slim);
         let snapshot = self.snapshot();
         let mut idle = snapshot.in_flight.is_empty();
-        if !send(&tx, event_of(snapshot, slim), &mut evicted).await {
+        if !send(&tx, event_text(snapshot, slim), &mut evicted).await {
             return;
         }
-        // After a push for a change, one more follows once the second it landed in has ended: the
-        // per-second series counts whole seconds only.
-        let mut settle: Option<Instant> = None;
+        let mut last_sent = Instant::now();
         loop {
-            let (wake, settling) = match settle {
-                Some(at) => (at, true),
-                None => (
-                    last_sent
-                        + if idle {
-                            self.inputs.ping_every
-                        } else {
-                            BUSY_EVERY
-                        },
-                    false,
-                ),
-            };
-            let moved = tokio::select! {
-                changed = changes.changed() => {
+            let ping = idle.then(|| last_sent + self.inputs.ping_every);
+            let event = tokio::select! {
+                changed = events.changed() => {
                     if changed.is_err() {
                         return;
                     }
-                    true
+                    Some(events.borrow_and_update().clone())
                 }
-                _ = sleep_until(wake) => false,
+                () = sleep_until_some(ping) => None,
                 _ = tx.closed() => return,
                 _ = &mut evicted => return,
                 () = drained(self.drain.clone()) => return,
             };
-            if moved {
-                // Changes that land during the gap fold into the one snapshot that follows it.
-                sleep_until(last_sent + MIN_GAP).await;
-                changes.borrow_and_update();
-            } else if idle && !settling {
-                if !send(&tx, ": ping\n\n".to_owned(), &mut evicted).await {
-                    return;
+            let text = match event {
+                Some(event) => {
+                    idle = event.idle;
+                    event.text
                 }
-                last_sent = Instant::now();
-                continue;
-            }
-            let snapshot = self.snapshot();
-            idle = snapshot.in_flight.is_empty();
-            if !send(&tx, event_of(snapshot, slim), &mut evicted).await {
+                None => Bytes::from_static(b": ping\n\n"),
+            };
+            if !send(&tx, text, &mut evicted).await {
                 return;
             }
             last_sent = Instant::now();
+        }
+    }
+
+    /// Subscribes a feed to the hub's form, starting the hub and its builder when none runs.
+    fn join_hub(self: &Arc<Self>, slim: bool) -> watch::Receiver<Event> {
+        let mut slot = self.lock_hub();
+        if let Some(hub) = slot.as_ref() {
+            return hub.form(slim).subscribe();
+        }
+        let empty = || {
+            watch::channel(Event {
+                text: Bytes::new(),
+                idle: true,
+            })
+            .0
+        };
+        let hub = Arc::new(Hub {
+            full: empty(),
+            slim: empty(),
+        });
+        let events = hub.form(slim).subscribe();
+        // Subscribed before the feed builds its own first snapshot, so no change after that
+        // snapshot is lost.
+        let changes = self.live.subscribe();
+        *slot = Some(Arc::clone(&hub));
+        tokio::spawn(Arc::clone(self).build(hub, changes));
+        events
+    }
+
+    fn lock_hub(&self) -> MutexGuard<'_, Option<Arc<Hub>>> {
+        self.hub.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// The hub's builder: at most four snapshots a second while the live state changes, one
+    /// every `BUSY_EVERY` while a request is in flight, each built once for every feed. It ends
+    /// when the last feed leaves or the drain starts.
+    async fn build(self: Arc<Self>, hub: Arc<Hub>, mut changes: watch::Receiver<u64>) {
+        let mut last_built = Instant::now();
+        let mut idle = self.live.idle();
+        // After a push for a change, one more follows once the second it landed in has ended: the
+        // per-second series counts whole seconds only.
+        let mut settle: Option<Instant> = None;
+        loop {
+            let wake = settle.or_else(|| (!idle).then(|| last_built + BUSY_EVERY));
+            let moved = tokio::select! {
+                changed = changes.changed() => {
+                    if changed.is_err() {
+                        break;
+                    }
+                    true
+                }
+                () = sleep_until_some(wake) => false,
+                () = async { hub.full.closed().await; hub.slim.closed().await } => {
+                    if self.leave_hub(&hub, false) {
+                        return;
+                    }
+                    continue;
+                }
+                () = drained(self.drain.clone()) => break,
+            };
+            if moved {
+                // Changes that land during the gap fold into the one snapshot that follows it.
+                sleep_until(last_built + MIN_GAP).await;
+                changes.borrow_and_update();
+            }
+            let mut snapshot = self.snapshot();
+            idle = snapshot.in_flight.is_empty();
+            if hub.full.receiver_count() > 0 {
+                let text = event_line(&serde_json::to_string(&snapshot).unwrap_or_default());
+                hub.full.send_replace(Event { text, idle });
+            }
+            if hub.slim.receiver_count() > 0 {
+                snapshot.recent.clear();
+                hub.slim.send_replace(Event {
+                    text: event_line(&slim_json(&snapshot)),
+                    idle,
+                });
+            }
+            last_built = Instant::now();
             settle = moved.then(|| {
                 let to_next_second = 1000 - now_ms() % 1000 + SETTLE_SLACK_MS;
-                last_sent + MIN_GAP.max(Duration::from_millis(to_next_second))
+                last_built + MIN_GAP.max(Duration::from_millis(to_next_second))
             });
         }
+        self.leave_hub(&hub, true);
+    }
+
+    /// Takes the hub down, when `always` or when no feed reads it; false when a feed joined
+    /// meanwhile. Feeds join under the same lock, so none joins a hub that is going.
+    fn leave_hub(&self, hub: &Arc<Hub>, always: bool) -> bool {
+        let mut slot = self.lock_hub();
+        if !always && !hub.unread() {
+            return false;
+        }
+        if slot
+            .as_ref()
+            .is_some_and(|current| Arc::ptr_eq(current, hub))
+        {
+            *slot = None;
+        }
+        true
+    }
+
+    /// The latest sessions reading, joined. A new reading is credited to the live state once,
+    /// and joined once; every snapshot until the next reading shares the joined copy.
+    fn machine(&self) -> Arc<Machine> {
+        let latest = (self.inputs.sessions)();
+        let mut reading = self.reading.lock().unwrap_or_else(PoisonError::into_inner);
+        if !Arc::ptr_eq(&reading.source, &latest) {
+            self.live.credit(&latest.sessions);
+            let mut view = Machine::clone(&latest);
+            join::reading(&mut view);
+            reading.view = Arc::new(view);
+            reading.source = latest;
+        }
+        Arc::clone(&reading.view)
     }
 
     fn snapshot(&self) -> Snapshot {
@@ -457,14 +594,14 @@ impl Dashboard {
             }
         }
         if watched {
-            let machine = (self.inputs.sessions)();
             inputs.process = (self.inputs.process)();
-            inputs.sessions = machine.sessions;
-            inputs.worktrees = machine.worktrees;
+            inputs.machine = self.machine();
             inputs.plugins = (self.inputs.plugins)();
             inputs.harnesses = (self.inputs.harnesses)();
         }
-        self.live.credit(&inputs.sessions);
+        #[cfg(test)]
+        self.builds
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let mut snapshot = self.live.snapshot(now_ms(), &inputs);
         join::apply(&mut snapshot);
         snapshot
@@ -499,16 +636,15 @@ fn plain(status: StatusCode, reason: &str) -> Response<RespBody> {
     response
 }
 
-/// The snapshot without its recent rows, as JSON. Every other field, the counts derived from the
-/// rows included, is the full snapshot's.
-fn slim_json(mut snapshot: Snapshot) -> String {
-    snapshot.recent.clear();
+/// A snapshot whose recent rows are cleared, as JSON without the `recent` field. Every other
+/// field, the counts derived from the rows included, is the full snapshot's.
+fn slim_json(snapshot: &Snapshot) -> String {
     let json = serde_json::to_string(&snapshot).unwrap_or_default();
     // The emptied rows serialize as `"recent":[]` between two fields; a quote inside a value is
     // escaped, so the raw text appears once.
     match json.matches(",\"recent\":[]").count() {
         1 => json.replacen(",\"recent\":[]", "", 1),
-        _ => serde_json::to_value(&snapshot)
+        _ => serde_json::to_value(snapshot)
             .map(|mut value| {
                 if let Some(object) = value.as_object_mut() {
                     object.remove("recent");
@@ -520,23 +656,37 @@ fn slim_json(mut snapshot: Snapshot) -> String {
 }
 
 /// One snapshot as a server-sent event.
-fn event_of(snapshot: Snapshot, slim: bool) -> String {
+fn event_text(mut snapshot: Snapshot, slim: bool) -> Bytes {
     let json = if slim {
-        slim_json(snapshot)
+        snapshot.recent.clear();
+        slim_json(&snapshot)
     } else {
         serde_json::to_string(&snapshot).unwrap_or_default()
     };
-    format!("event: snapshot\ndata: {json}\n\n")
+    event_line(&json)
+}
+
+/// One snapshot's JSON as a server-sent event.
+fn event_line(json: &str) -> Bytes {
+    Bytes::from(format!("event: snapshot\ndata: {json}\n\n"))
+}
+
+/// Resolves at `at`; never when there is none.
+async fn sleep_until_some(at: Option<Instant>) {
+    match at {
+        Some(at) => sleep_until(at).await,
+        None => std::future::pending().await,
+    }
 }
 
 /// Sends one frame; false when the client is gone.
 async fn send(
     tx: &mpsc::Sender<Result<Frame<Bytes>, crate::server::BodyCut>>,
-    text: String,
+    text: Bytes,
     evicted: &mut oneshot::Receiver<()>,
 ) -> bool {
     tokio::select! {
-        sent = tx.send(Ok(Frame::data(Bytes::from(text)))) => sent.is_ok(),
+        sent = tx.send(Ok(Frame::data(text))) => sent.is_ok(),
         _ = evicted => false,
     }
 }
@@ -628,5 +778,169 @@ mod served_page_tests {
             "bun build failed: {}",
             String::from_utf8_lossy(&out.stderr)
         );
+    }
+}
+
+#[cfg(test)]
+mod l24_tests {
+    use std::sync::Arc;
+    use std::sync::atomic::Ordering;
+    use std::time::Duration;
+
+    use http_body_util::BodyExt;
+    use huddle_sessions::{RequestTag, Session, SessionState, Usage};
+    use hyper::body::Bytes;
+
+    use super::{Dashboard, DashboardInputs, Machine};
+    use crate::dispatch::now_ms;
+    use crate::live::{Finish, LiveState, RequestStart};
+    use crate::server::RespBody;
+
+    fn session(id: &str, request: &str) -> Session {
+        Session {
+            id: id.into(),
+            title: String::new(),
+            project: None,
+            repo: None,
+            worktree: None,
+            cwd: Some("/p/huddle".into()),
+            branch: None,
+            model: None,
+            state: SessionState::YourTurn,
+            started_ms: None,
+            last_ms: None,
+            state_since_ms: None,
+            open_tasks: 0,
+            question_tool: None,
+            context_tokens: None,
+            context_limit: 200_000,
+            cache_ttl_ms: 300_000,
+            last_request_ms: None,
+            agents: Vec::new(),
+            request_ids: vec![RequestTag {
+                request_id: request.into(),
+                agent_id: "agent-x".into(),
+                usage: Usage {
+                    input: 10,
+                    cache_read: 200,
+                    cache_write: 30,
+                    output: 70,
+                },
+                stop: None,
+            }],
+        }
+    }
+
+    /// A dashboard whose sessions closure answers one reading every time.
+    fn rig() -> (Arc<Dashboard>, Arc<LiveState>) {
+        let live = Arc::new(LiveState::new(now_ms()));
+        let machine = Arc::new(Machine {
+            sessions: vec![session("s1", "req_A")],
+            worktrees: Vec::new(),
+        });
+        let inputs = DashboardInputs {
+            sessions: Arc::new(move || Arc::clone(&machine)),
+            ..DashboardInputs::default()
+        };
+        let dashboard = Dashboard::new(Arc::clone(&live), inputs, Arc::new(Vec::new));
+        (Arc::new(dashboard), live)
+    }
+
+    /// The next `snapshot` event's bytes, skipping keep-alive comments.
+    async fn next_event(body: &mut RespBody) -> Bytes {
+        loop {
+            let frame = tokio::time::timeout(Duration::from_secs(10), body.frame())
+                .await
+                .expect("an event within 10 s")
+                .expect("the feed is open")
+                .expect("a frame");
+            if let Ok(data) = frame.into_data()
+                && data.starts_with(b"event: snapshot")
+            {
+                return data;
+            }
+        }
+    }
+
+    /// Starts and finishes one request, which moves the live state twice.
+    fn request(live: &LiveState, upstream: &str) {
+        let id = live.start(RequestStart {
+            session: Some("s1".into()),
+            model: "claude-opus-5-5".into(),
+            lane: "anthropic".into(),
+            now_ms: now_ms(),
+        });
+        live.finish(
+            id,
+            Finish {
+                status: 200,
+                upstream_id: Some(upstream.into()),
+                now_ms: now_ms(),
+                ..Finish::default()
+            },
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn l24_credit_runs_once_per_sessions_reading() {
+        let (dashboard, live) = rig();
+        let mut feeds: Vec<RespBody> = (0..5)
+            .map(|i| dashboard.live_answer(i % 2 == 0).into_body())
+            .collect();
+        for feed in &mut feeds {
+            next_event(feed).await;
+        }
+        for n in 0..10 {
+            request(&live, &format!("req_{n}"));
+            tokio::time::sleep(Duration::from_millis(30)).await;
+        }
+        for feed in &mut feeds {
+            next_event(feed).await;
+        }
+        assert_eq!(live.credit_runs.load(Ordering::Relaxed), 1);
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn l24_feeds_share_one_snapshot_per_change() {
+        let (dashboard, live) = rig();
+        let mut feeds: Vec<RespBody> = (0..5)
+            .map(|_| dashboard.live_answer(false).into_body())
+            .collect();
+        for feed in &mut feeds {
+            next_event(feed).await;
+        }
+        // Past the gap after any earlier build, so the change is built once at once.
+        tokio::time::sleep(Duration::from_millis(1_200)).await;
+        let before = dashboard.builds.load(Ordering::Relaxed);
+        live.note_event(now_ms(), "l24 one change");
+        let mut events = Vec::new();
+        for feed in &mut feeds {
+            events.push(next_event(feed).await);
+        }
+        let built = dashboard.builds.load(Ordering::Relaxed) - before;
+        assert_eq!(built, 1, "one build for five feeds");
+        assert!(events.iter().all(|event| *event == events[0]));
+    }
+
+    #[test]
+    fn l24_a_snapshot_holds_the_machine_without_a_deep_clone() {
+        let live = Arc::new(LiveState::new(now_ms()));
+        let machine = Arc::new(Machine {
+            sessions: vec![session("s1", "req_A")],
+            worktrees: Vec::new(),
+        });
+        let inputs = crate::live::SnapshotInputs {
+            machine: Arc::clone(&machine),
+            ..crate::live::SnapshotInputs::default()
+        };
+        let first = live.snapshot(now_ms(), &inputs);
+        let second = live.snapshot(now_ms(), &inputs);
+        assert_eq!(Arc::strong_count(&machine), 4);
+        assert!(Arc::ptr_eq(&first.machine, &second.machine));
+        // The page still reads `sessions` and `worktrees` at the top level.
+        let json = serde_json::to_value(&first).expect("json");
+        assert_eq!(json["sessions"][0]["id"], "s1");
+        assert_eq!(json["worktrees"], serde_json::json!([]));
+        assert!(json.get("machine").is_none());
     }
 }

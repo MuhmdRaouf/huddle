@@ -1,39 +1,57 @@
 //! The join between what the router saw and what Claude Code's session logs say: a session
 //! with a request in flight is working, a worktree names the session in it, and a plugin row
 //! gains its lane's numbers. Requests are credited earlier, by `LiveState::credit`. Pure: the
-//! snapshot goes in, the same snapshot comes out joined.
+//! reading or the snapshot goes in, the same one comes out joined.
+
+use std::sync::Arc;
 
 use huddle_sessions::SessionState;
 
-use crate::live::Snapshot;
+use crate::live::{Machine, Snapshot};
 
-/// Joins requests, sessions, worktrees and plugin rows in place.
+/// Joins what a sessions reading says on its own, once per reading: each worktree names the
+/// session in it, and the request ids, which the page never receives, are dropped.
+pub fn reading(machine: &mut Machine) {
+    for session in &mut machine.sessions {
+        session.request_ids = Vec::new();
+    }
+    name_worktree_users(machine);
+}
+
+/// Joins requests, sessions and plugin rows in place. The shared reading is copied only when
+/// a session in it has a request in flight.
 pub fn apply(snapshot: &mut Snapshot) {
     mark_working(snapshot);
-    name_worktree_users(snapshot);
     credit_plugins(snapshot);
 }
 
 fn mark_working(snapshot: &mut Snapshot) {
-    for session in &mut snapshot.sessions {
-        let busy = snapshot
+    let busy = |id: &str| {
+        snapshot
             .in_flight
             .iter()
-            .any(|row| row.session.as_deref() == Some(session.id.as_str()));
-        if busy {
+            .any(|row| row.session.as_deref() == Some(id))
+    };
+    if !snapshot.machine.sessions.iter().any(|s| busy(&s.id)) {
+        return;
+    }
+    let mut machine = Machine::clone(&snapshot.machine);
+    for session in &mut machine.sessions {
+        if busy(&session.id) {
             session.state = SessionState::Working;
             session.state_since_ms = None;
         }
     }
+    snapshot.machine = Arc::new(machine);
 }
 
 /// A worktree whose path is a session's `cwd` is used by that session.
-fn name_worktree_users(snapshot: &mut Snapshot) {
-    for tree in &mut snapshot.worktrees {
+fn name_worktree_users(machine: &mut Machine) {
+    for tree in &mut machine.worktrees {
         if tree.used_by.is_some() {
             continue;
         }
-        let user = snapshot
+        let user = machine
             .sessions
             .iter()
             .find(|session| session.cwd.as_deref() == Some(tree.path.as_str()));
@@ -78,7 +96,7 @@ fn credit_plugins(snapshot: &mut Snapshot) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::live::{InFlightRow, LaneLast, LaneRow, LiveState, SnapshotInputs};
+    use crate::live::{InFlightRow, LaneLast, LaneRow, LiveState, Machine, SnapshotInputs};
     use huddle_sessions::{Session, Worktree, WorktreeKind};
     use serde_json::json;
 
@@ -130,15 +148,20 @@ mod tests {
 
     fn snapshot() -> Snapshot {
         let live = LiveState::new(0);
-        let mut snapshot = live.snapshot(0, &SnapshotInputs::default());
-        snapshot.sessions = vec![session("s1", "/p/huddle")];
-        snapshot
+        let inputs = SnapshotInputs {
+            machine: Arc::new(Machine {
+                sessions: vec![session("s1", "/p/huddle"), session("s2", "/p/other")],
+                worktrees: Vec::new(),
+            }),
+            ..SnapshotInputs::default()
+        };
+        live.snapshot(0, &inputs)
     }
 
     #[test]
     fn a_session_with_a_request_in_flight_is_working() {
         let mut snap = snapshot();
-        snap.sessions.push(session("s2", "/p/other"));
+        let reading = Arc::clone(&snap.machine);
         snap.in_flight = vec![InFlightRow {
             id: 1,
             started_ms: 0,
@@ -149,14 +172,23 @@ mod tests {
             agent: None,
         }];
         apply(&mut snap);
-        assert_eq!(snap.sessions[0].state, SessionState::Working);
-        assert_eq!(snap.sessions[0].state_since_ms, None);
-        assert_eq!(snap.sessions[1].state, SessionState::YourTurn);
+        assert_eq!(snap.machine.sessions[0].state, SessionState::Working);
+        assert_eq!(snap.machine.sessions[0].state_since_ms, None);
+        assert_eq!(snap.machine.sessions[1].state, SessionState::YourTurn);
+        // The shared reading keeps what the log says.
+        assert_eq!(reading.sessions[0].state, SessionState::YourTurn);
+    }
+
+    #[test]
+    fn with_nothing_in_flight_the_snapshot_keeps_the_shared_reading() {
+        let mut snap = snapshot();
+        let reading = Arc::clone(&snap.machine);
+        apply(&mut snap);
+        assert!(Arc::ptr_eq(&reading, &snap.machine));
     }
 
     #[test]
     fn a_worktree_at_a_sessions_cwd_names_it() {
-        let mut snap = snapshot();
         let tree = |path: &str| Worktree {
             path: path.into(),
             project: "huddle".into(),
@@ -168,13 +200,16 @@ mod tests {
             changes: None,
             last_commit_ms: None,
         };
-        snap.worktrees = vec![tree("/p/huddle"), tree("/p/idle")];
-        apply(&mut snap);
+        let mut machine = Machine {
+            sessions: vec![session("s1", "/p/huddle")],
+            worktrees: vec![tree("/p/huddle"), tree("/p/idle")],
+        };
+        reading(&mut machine);
         assert_eq!(
-            snap.worktrees[0].used_by.as_deref(),
+            machine.worktrees[0].used_by.as_deref(),
             Some("s1 · Fix the thing")
         );
-        assert_eq!(snap.worktrees[1].used_by, None);
+        assert_eq!(machine.worktrees[1].used_by, None);
     }
 
     #[test]

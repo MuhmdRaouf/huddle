@@ -127,7 +127,7 @@ pub fn start(version: String, env: Env, paths: Paths, port: u16) -> DashboardInp
         connections: Arc::new(|| 0),
         process: Arc::new(move || *process.latest()),
         supervision: Arc::new(move || read_supervision(&record_paths)),
-        sessions: Arc::new(move || sessions.latest().as_ref().clone()),
+        sessions: Arc::new(move || sessions.latest()),
         plugins: Arc::new(move || json_of(&*plugin_checks.latest())),
         harnesses: Arc::new(move || json_of(&*harness_checks.latest())),
         // The daemon points this at the database file once it knows the state folder.
