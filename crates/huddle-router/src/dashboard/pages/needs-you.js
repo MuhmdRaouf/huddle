@@ -16,7 +16,7 @@ function attnItems(){const it=[];
  SESS.filter(s=>(s.state==='working'||s.state==='background')&&s.ctx!=null&&s.ctx>=90).forEach(s=>it.push({g:'context',sev:1,k:'bad',tag:`Context ${Math.round(s.ctx)}%`,t:`${s.name} is close to compaction`,why:'Wrap up or start a fresh session.',since:null,act:openBtn(s)}));
  return it.sort((a,b)=>a.sev-b.sev||(a.since||0)-(b.since||0))}
 const unsetProviders=()=>provRows().filter(x=>x.status[1]==='Not set up').length;
-const attnRow=a=>`<div class="attn-row"><span class="tag ${a.k}">${esc(a.tag)}</span><div class="what"><div class="t">${esc(a.t)}</div><div class="m">${esc(a.why)}${a.since!=null?esc(' · for '+since(a.since)):''}</div></div>${a.act}</div>`;
+const attnRow=a=>`<div class="attn-row"><span class="tag ${a.k}">${esc(a.tag)}</span><div class="what"><div class="t">${esc(a.t)}</div><div class="m">${esc(a.why)}${a.since!=null?' · for '+tspan(a.since,'d'):''}</div></div>${a.act}</div>`;
 const needsCount=()=>attnItems().length;
 PAGES['needs-you']={title:'Needs you',body:()=>
  head('Needs you','Only what you can answer or fix.',reg('needs-n',()=>`<span class="note">${needsCount()} items</span>`))+

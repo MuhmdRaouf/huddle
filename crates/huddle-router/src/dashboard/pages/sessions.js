@@ -1,12 +1,12 @@
 const SESS_STATES=[['needs_you','Needs you'],['working','Working'],['background','Background'],['your_turn','Your turn'],['done','Done'],['idle','Idle']];
 const skey=s=>SESS_STATES.some(x=>x[0]===s.state)?s.state:'idle';
-function sessPill(s){const k=skey(s),w=since(s.waitingSince),t=w==='—'?'':' '+w;
- if(k==='needs_you')return `<span class="pill warn"><span class="dot warn pulse"></span>Needs you${esc(t)}</span>`;
+function sessPill(s){const k=skey(s);
+ if(k==='needs_you')return `<span class="pill warn"><span class="dot warn pulse"></span><span>Needs you ${tspan(s.waitingSince,'d',1)}</span></span>`;
  if(k==='working')return pill('acc','Working');
  if(k==='background')return pill('acc','Background'+(s.openTasks?' '+s.openTasks:''));
- if(k==='your_turn')return pill('warn','Your turn'+t);
+ if(k==='your_turn')return `<span class="pill warn">${ic('alert')}<span>Your turn ${tspan(s.waitingSince,'d',1)}</span></span>`;
  if(k==='done')return pill('ok','Done');
- return `<span class="pill off">${ic('minus')}${esc(['Idle',since(lastT(s))].filter(x=>x!=='—').join(' '))}</span>`}
+ return `<span class="pill off">${ic('minus')}<span>Idle ${tspan(lastT(s),'d',1)}</span></span>`}
 function sessCache(s){const l=cacheLeft(s);return `<div>${cacheCell(s)}</div>${l!=null&&l<=0&&s.ctxTok?`<div class="cs">Next message re-reads ${fmt(s.ctxTok)} tokens</div>`:''}`}
 /* the shared range columns, hidden on a phone */
 const HC=histCols(s=>hOf(HT.ses,s.id)),hideOnPhone=(c,cls)=>Object.create(c,{sm:{value:1},cls:{value:cls||''}});
@@ -19,7 +19,7 @@ const SESS_TBL_COLS=[
  hideOnPhone(HC[0]),
  {k:'errors',label:'Errors',num:1,v:s=>n0((hOf(HT.ses,s.id)||HZERO).err),h:s=>hCell(hOf(HT.ses,s.id),t=>t.err?`<span class="badc">${fmt(t.err)}</span>`:'<span class="faint">0</span>'),sm:1},
  hideOnPhone(HC[2],'tight'),
- {k:'last',label:'Last activity',num:1,v:s=>-(lastT(s)||0),h:s=>`<span class="muted">${ago(lastT(s))}</span>`,sm:1}
+ {k:'last',label:'Last activity',num:1,v:s=>-(lastT(s)||0),h:s=>`<span class="muted">${tspan(lastT(s),'a')}</span>`,sm:1}
 ];
 F.sessgrp='flat';
 const sessTable=rows=>table('sess',SESS_TBL_COLS,rows,{row:s=>'session:'+s.id,sort:{k:'state',d:1},stack:1,empty:'No sessions match'});

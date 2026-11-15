@@ -9,5 +9,5 @@ PAGES.projects={title:'Projects',body:()=>head('Projects',`One row per git repos
   {k:'jobs',label:'Jobs',num:1,v:p=>p.jobs.length,h:p=>p.jobs.length||'<span class="faint">0</span>',sm:1},
   ...histCols(p=>hOf(HT.prj,p.name)),
   {k:'top',label:'Top model',v:p=>histTop(hOf(HT.prj,p.name))||'',h:p=>hCell(hOf(HT.prj,p.name),t=>t.n?modelTag(histTop(t)):NA),sm:1},
-  {k:'last',label:'Last activity',num:1,v:p=>-(p.last||0),h:p=>`<span class="muted">${p.last?ago(p.last):'—'}</span>`}
+  {k:'last',label:'Last activity',num:1,v:p=>-(p.last||0),h:p=>`<span class="muted">${tspan(p.last,'a')}</span>`}
  ],projects().filter(p=>qmatch('proj',p.name+' '+tilde(p.path))),{row:p=>'project:'+p.name,sort:{k:'last',d:1},stack:1,empty:'No projects yet'}))}</div>`};

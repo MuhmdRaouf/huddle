@@ -10,7 +10,7 @@ const AG_COLS=[
  {k:'session',label:'Session',v:a=>a.s.project,h:a=>`<div>${esc(a.s.project)}</div><div class="cs">${esc(a.s.sid)}</div>`,sm:1},
  {k:'model',label:'Model',v:a=>a.model,h:a=>modelTag(a.model)},
  {k:'state',label:'State',v:a=>({running:0,waiting:1,done:2,idle:3})[agentState(a)],h:agentStatePill},
- {k:'dur',label:'Ran for',num:1,v:a=>a.start==null?0:agentEnd(a)-a.start,h:a=>`<span class="mono">${a.start==null?'—':dur(agentEnd(a)-a.start)}</span>`},
+ {k:'dur',label:'Ran for',num:1,v:a=>a.start==null?0:agentEnd(a)-a.start,h:a=>`<span class="mono">${a.start==null?'—':agentState(a)==='running'?tspan(a.start,'d'):dur(agentEnd(a)-a.start)}</span>`},
  {k:'req',label:'Requests',num:1,v:a=>aReq(a).length,h:a=>aReq(a).length,sm:1},
  {k:'tok',label:'Tokens in / out',num:1,v:a=>tokInOf(aReq(a))+tokOutOf(aReq(a)),h:a=>`${fmt(tokInOf(aReq(a)))} <span class="faint">/</span> ${fmt(tokOutOf(aReq(a)))}`,sm:1},
  {k:'wt',label:'Worktree',v:a=>a.wt||'',h:a=>wtName(a.wt),sm:1}

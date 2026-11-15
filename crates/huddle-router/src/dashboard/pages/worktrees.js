@@ -9,7 +9,7 @@ const WT_COLS=[
  {k:'by',label:'Used by',v:w=>w.by||'',h:w=>w.stale?pill('warn','No session · '+dur(NOW-w.commit).split(' ')[0]):w.by?`<span class="mono muted">${esc(w.by)}</span>`:NA},
  {k:'head',label:'HEAD',v:w=>w.head,h:w=>cid(w.head),sm:1},
  {k:'ch',label:'Uncommitted',num:1,v:w=>w.changes==null?-1:w.changes,h:changesCell},
- {k:'commit',label:'Last commit',num:1,v:w=>-(w.commit||0),h:w=>`<span class="muted">${ago(w.commit)}</span>`,sm:1},
+ {k:'commit',label:'Last commit',num:1,v:w=>-(w.commit||0),h:w=>`<span class="muted">${tspan(w.commit,'a')}</span>`,sm:1},
  {k:'rm',label:'Remove with',h:wtRemove,sm:1}
 ];
 const wtTable=rows=>table('wt',WT_COLS,rows,{sort:{k:'branch',d:1},stack:1,empty:'No worktrees match'});

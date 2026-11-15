@@ -2713,3 +2713,198 @@ fn l37_the_panel_stacks_at_phone_width() {
     }
     assert!(css.contains("grid-template-columns:280px 190px"));
 }
+
+/// The 2 s clock tick: the script between the `tk:start` and `tk:end` markers.
+fn tick_block() -> String {
+    PAGE.split("/* tk:start */")
+        .nth(1)
+        .and_then(|s| s.split("/* tk:end */").next())
+        .expect("the tick sits between tk:start and tk:end")
+        .to_string()
+}
+
+/// Runs the tick in bun on a fake clock. The block receives the formatters, `paint` and the
+/// document as arguments, so `build` and the regions are not in its scope at all: a tick that
+/// rebuilt a region would throw. `body` sees `make()` returning `{tick, tickArm, setBuilt, els,
+/// paints, clock, ago, dur, clockOf}` and a shared fake clock advanced with `clock.advance(ms)`.
+fn run_tick_script(body: &str) -> Value {
+    use std::io::Write;
+    use std::process::Stdio;
+    let block = serde_json::to_string(&tick_block()).expect("block");
+    let script = format!(
+        "const BLOCK={block};\n\
+         const clk={{t:1794614400000,timers:[],advance(ms){{const end=this.t+ms;for(;;){{let next=null;for(const x of this.timers)if(x.on&&(next===null||x.at<next.at))next=x;\n\
+          if(!next||next.at>end)break;this.t=next.at;next.at+=next.ms;next.fn()}}this.t=end}}}};\n\
+         Date.now=()=>clk.t;\n\
+         let arms=0;\n\
+         const agoS=t=>{{const d=clk.t-t;if(d<4e3)return 'now';if(d<6e4)return Math.floor(d/1e3)+'s ago';if(d<36e5)return Math.floor(d/6e4)+'m ago';return Math.floor(d/864e5)+'d ago'}};\n\
+         const durS=d=>{{d=Math.max(0,d);if(d<6e4)return Math.floor(d/1e3)+'s';if(d<36e5)return Math.floor(d/6e4)+'m '+String(Math.floor(d%6e4/1e3)).padStart(2,'0')+'s';return Math.floor(d/36e5)+'h '+Math.floor(d%36e5/6e4)+'m'}};\n\
+         const clockS=t=>{{const d=new Date(t),p=n=>String(n).padStart(2,'0');return p(d.getUTCHours())+':'+p(d.getUTCMinutes())+':'+p(d.getUTCSeconds())}};\n\
+         function make(){{\n\
+          const els={{clock:{{textContent:''}},marked:[]}};const paints={{n:0}};const listeners={{}};\n\
+          const doc={{visibilityState:'visible',getElementById:id=>id==='clock'?els.clock:null,\n\
+           querySelectorAll:s=>s==='[data-t]'?els.marked:[],addEventListener:(t,f)=>{{listeners[t]=f}}}};\n\
+          const made=new Function('ago','dur','clock','SEC','OFFSET','NOW','BUILT_AT','paint','document','setInterval','clearInterval',\n\
+           BLOCK+';return {{tick,tickArm,setBuilt:v=>{{BUILT_AT=v}}}}')(\n\
+           agoS,durS,clockS,1000,0,clk.t,0,()=>{{paints.n++}},doc,\n\
+           (fn,ms)=>{{arms++;const x={{fn,ms,at:clk.t+ms,on:true}};clk.timers.push(x);return x}},\n\
+           h=>{{if(h)h.on=false}});\n\
+          return {{tick:made.tick,tickArm:made.tickArm,setBuilt:made.setBuilt,els,paints,doc,listeners,clock:clk,ago:agoS,dur:durS,clockOf:clockS}};\n\
+         }}\n\
+         (async()=>{{{body}}})();"
+    );
+    let mut child = bun()
+        .args(["run", "-"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("start bun");
+    child
+        .stdin
+        .take()
+        .expect("bun stdin")
+        .write_all(script.as_bytes())
+        .expect("write script");
+    let out = child.wait_with_output().expect("bun");
+    assert!(
+        out.status.success(),
+        "bun failed: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    serde_json::from_slice(&out.stdout).expect("json out")
+}
+
+#[test]
+fn l31_a_tick_does_not_rebuild_regions_with_no_new_data() {
+    let block = tick_block();
+    for call in ["build(", "update("] {
+        assert!(
+            !block.contains(call),
+            "the tick never calls {call}: the name is not even in its scope"
+        );
+    }
+    let v = run_tick_script(
+        "const m=make();\n\
+         const t0=m.clock.t;m.setBuilt(t0-60000);\n\
+         m.els.clock.textContent='clock-initial';\n\
+         m.els.marked=[{dataset:{t:String(t0-30000),f:'a'},textContent:'x'},\n\
+          {dataset:{t:String(t0-90000),f:'d'},textContent:'x'},\n\
+          {dataset:{t:String(t0+45000),f:'r'},textContent:'x'}];\n\
+         const before=m.els.clock.textContent;\n\
+         const v0=m.els.marked.map(x=>x.textContent);\n\
+         m.clock.advance(2000);\n\
+         const v1=m.els.marked.map(x=>x.textContent);\n\
+         m.clock.advance(18000);\n\
+         const v10=m.els.marked.map(x=>x.textContent);\n\
+         console.log(JSON.stringify({before,clock:m.els.clock.textContent,v0,v1,v10,\n\
+          expected:[m.ago(t0-30000),m.dur(m.clock.t-(t0-90000)),m.dur((t0+45000)-m.clock.t)],\n\
+          paints:m.paints.n,clockExpected:m.clockOf(m.clock.t)}));",
+    );
+    assert_eq!(v["paints"], 0, "10 ticks repaint no region");
+    assert_eq!(v["v0"].as_array().unwrap().len(), 3);
+    assert_ne!(v["before"], v["clock"], "the clock text moves");
+    assert_eq!(v["clock"], v["clockExpected"]);
+    let v0: Vec<&str> = v["v0"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|x| x.as_str().unwrap())
+        .collect();
+    let v1: Vec<&str> = v["v1"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|x| x.as_str().unwrap())
+        .collect();
+    let v10: Vec<&str> = v["v10"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|x| x.as_str().unwrap())
+        .collect();
+    let expected: Vec<&str> = v["expected"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|x| x.as_str().unwrap())
+        .collect();
+    for i in 0..3 {
+        assert_eq!(v0[i], "x", "tick {i} never ran on an unmarked span");
+        assert_ne!(
+            v1[i], v0[i],
+            "the first tick moved the text: {}",
+            expected[i]
+        );
+        assert_ne!(v1[i], v10[i], "the time text advanced: {}", expected[i]);
+        assert_eq!(v10[i], expected[i], "the tick re-renders the text");
+    }
+}
+
+#[test]
+fn l31_a_snapshot_inside_the_last_2_seconds_skips_the_tick() {
+    let v = run_tick_script(
+        "const m=make();\n\
+         const t0=m.clock.t;\n\
+         m.els.clock.textContent='c0';\n\
+         m.els.marked=[{dataset:{t:String(t0-30000),f:'a'},textContent:'a0'}];\n\
+         m.setBuilt(t0-500);\n\
+         m.tick();\n\
+         const skipped=[m.els.clock.textContent,m.els.marked[0].textContent,m.paints.n];\n\
+         m.setBuilt(t0-2500);\n\
+         m.tick();\n\
+         const ran=[m.els.clock.textContent,m.els.marked[0].textContent,m.paints.n];\n\
+         console.log(JSON.stringify({skipped,ran}));",
+    );
+    assert_eq!(
+        v["skipped"],
+        serde_json::json!(["c0", "a0", 0]),
+        "a snapshot 0.5 s ago skips the tick"
+    );
+    assert_eq!(
+        v["ran"][0], "00:00:00",
+        "outside the window the clock moves"
+    );
+    assert_eq!(v["ran"][1], "30s ago", "and the time texts move");
+    assert_eq!(
+        v["ran"][2], v["skipped"][2],
+        "a tick that only moves texts never repaints"
+    );
+}
+
+#[test]
+fn l31_a_hidden_tab_runs_no_timer() {
+    let v = run_tick_script(
+        "const m=make();\n\
+         const t0=m.clock.t;m.setBuilt(t0-60000);\n\
+         m.clock.advance(2000);\n\
+         const armed=m.els.clock.textContent;\n\
+         m.doc.visibilityState='hidden';m.listeners.visibilitychange();\n\
+         const hiddenAt=m.els.clock.textContent;m.clock.advance(60000);\n\
+         const hidden=m.els.clock.textContent;\n\
+         m.doc.visibilityState='visible';m.listeners.visibilitychange();\n\
+         m.clock.advance(2000);\n\
+         const back=m.els.clock.textContent;\n\
+         m.doc.visibilityState='hidden';const directAt=m.els.clock.textContent;m.tick();\n\
+         const direct=m.els.clock.textContent;\n\
+         m.doc.visibilityState='visible';\n\
+         const armCalls=arms;m.tickArm(true);m.tickArm(true);\n\
+         console.log(JSON.stringify({armed,hiddenAt,hidden,back,directAt,direct,armCalls,armsAfter:arms}));",
+    );
+    assert_ne!(v["armed"], "", "the interval is armed");
+    assert_eq!(v["hidden"], v["hiddenAt"], "a hidden tab holds no ticks");
+    assert_ne!(v["back"], v["hidden"], "a tab that shows again ticks");
+    assert_eq!(v["direct"], v["directAt"], "the tick skips a hidden tab");
+    assert_eq!(
+        v["armsAfter"], v["armCalls"],
+        "tickArm(true) never arms a second interval"
+    );
+    assert!(
+        PAGE.contains("tickArm(document.visibilityState==='visible')"),
+        "the page arms and disarms the tick with the tab's visibility"
+    );
+    assert!(
+        !PAGE.contains("update(SNAP),2000"),
+        "the old full repaint interval is gone"
+    );
+}

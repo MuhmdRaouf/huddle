@@ -10,7 +10,7 @@ function supervisionCard(){const u=RT.sup;if(!u)return `<p class="muted pad">No 
 function phasesCard(){return `<dl class="kv">${PHASES.map(p=>`<dt>${p[1]}</dt><dd>${n0(RT.phases[p[0]])} <span class="muted">${p[2]}</span></dd>`).join('')}</dl><div class="legendrow">Counted since the router started.</div>`}
 PAGES.router={title:'Router',body:()=>head('Router','The local proxy every Claude Code request passes through. It checks the traffic to Anthropic with the local CA, to route each request by its model. Everything else passes through untouched.',cmd('huddle router status'))+
  `<div class="card kpis">${reg('rk',()=>{const o=overhead(),r=rateNow();return kpiGrid([
-  {k:'Status',v:LOST?'Down':'Up',d:SNAP.pid!=null?'pid '+esc(SNAP.pid):'—'},{k:'Uptime',v:upCell()},{k:'CPU',v:RT.cpu!=null?RT.cpu.toFixed(1):'—',small:RT.cpu!=null?'%':'',d:`includes the dashboard's own cost`},
+  {k:'Status',v:LOST?'Down':'Up',d:SNAP.pid!=null?'pid '+esc(SNAP.pid):'—'},{k:'Uptime',v:tspan(SNAP.started_ms,'d')},{k:'CPU',v:RT.cpu!=null?RT.cpu.toFixed(1):'—',small:RT.cpu!=null?'%':'',d:`includes the dashboard's own cost`},
   {k:'Memory',v:RT.rss!=null?(RT.rss/1e6).toFixed(1):'—',small:RT.rss!=null?'MB':'',d:'resident'},
   {k:'Requests',v:rate(r),small:r!=null?'/s':'',d:'average over the last minute'},{k:'Router overhead',v:o.p50!=null?o.p50+' / '+o.p95:'—',small:o.p50!=null?'ms p50 / p95':'',d:'time spent in the router, last 15 min'},
   {k:'In flight',v:stats().flights.length,small:'streams',d:`${RT.conns!=null?RT.conns:'—'} open connections`},{k:'Live viewers',v:RT.viewers!=null?RT.viewers:'—',small:RT.viewers!=null?'page'+(RT.viewers===1?'':'s'):'',d:'the feed sleeps with none'}])})}</div>`+

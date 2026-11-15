@@ -10,7 +10,7 @@ PAGES.jobs={title:'Jobs',body:()=>head('Delegated jobs',`Tasks handed to another
   {k:'task',label:'Task',v:j=>j.task,h:j=>`<div class="ct fw4">${esc(j.task)}</div><div class="cs">${esc(j.repo)}</div>${j.why?`<div class="err-small">${esc(j.why)}</div>`:''}`},
   {k:'state',label:'Outcome',v:jobRank,h:outcomePill},
   {k:'review',label:'Review',v:j=>j.state==='awaiting_review'?0:1,h:reviewPill,sm:1},
-  {k:'dur',label:'Ran for',num:1,v:j=>j.started==null?0:(j.end||NOW)-j.started,h:j=>`<span class="mono">${j.started==null?'—':dur((j.end||NOW)-j.started)}</span><div class="cs">started ${ago(j.started)}</div>`},
+  {k:'dur',label:'Ran for',num:1,v:j=>j.started==null?0:(j.end||NOW)-j.started,h:j=>`<span class="mono">${j.started==null?'—':j.end==null?tspan(j.started,'d'):dur(j.end-j.started)}</span><div class="cs">started ${tspan(j.started,'a')}</div>`},
   {k:'diff',label:'Changes',num:1,v:j=>n0(j.add)+n0(j.del),h:j=>j.files?`<span class="mono"><span class="okc">+${n0(j.add)}</span> <span class="badc">−${n0(j.del)}</span></span><div class="cs">${j.files} file${j.files===1?'':'s'}</div>`:NA,sm:1},
   {k:'next',label:'Next step',h:j=>j.state==='awaiting_review'?stwCmd(`/huddle:result ${j.id} --diff`):j.state==='running'?stwCmd(`/huddle:status ${j.id}`):j.state==='dead'||j.state==='failed'?stwCmd(`/huddle:cancel ${j.id}`):NA}
  ],jobsInRange(),{sort:{k:'state',d:1},stack:1,empty:'No delegated jobs in this range'}))}</div>`};

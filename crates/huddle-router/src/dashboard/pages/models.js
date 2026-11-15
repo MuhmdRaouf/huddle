@@ -21,6 +21,6 @@ const modelCols=()=>[
  {k:'cost',label:'API price',num:1,v:x=>x.cost||0,h:modelPrice},
  {k:'per1m',label:'Cost per 1M total tokens',num:1,v:x=>perMillion(x)||0,h:modelPer1M},
  ...(liveRange()?[{k:'sess',label:'Sessions',num:1,v:x=>x.sess||0,h:x=>x.sess==null?'—':x.sess},
-  {k:'last',label:'Last used',num:1,v:x=>-(x.last||0),h:x=>`<span class="muted">${x.last?ago(x.last):'—'}</span>`}]:[])];
+  {k:'last',label:'Last used',num:1,v:x=>-(x.last||0),h:x=>`<span class="muted">${tspan(x.last,'a')}</span>`}]:[])];
 PAGES.models={title:'Models',after:loadModels,body:()=>head('Models',`Every model seen in ${rangeText()}, with latency, cache use, errors and API price.`)+reg('rstat',rangeStatus)+reg('mstat',modelStat)+
  `<div class="card t">${reg('models',()=>table('models',modelCols(),modelPriced(),{stack:1,sort:{k:'n',d:-1},empty:rangeEmpty()}))}<div class="legendrow"><span>API price is what the same tokens cost at list prices, not what a plan charges. A model with no list price says so.</span></div></div>${reg('prices',priceNote)}`};

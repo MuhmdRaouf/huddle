@@ -48,8 +48,8 @@ const errCols=[
  {k:'lane',label:'Provider',v:g=>g.lane,h:g=>`<b class="fw5">${esc(provName(g.lane))}</b><div class="cs">${g.models.map(esc).join(', ')}</div>`},
  {k:'cause',label:'Cause',v:g=>causeName(g.code,g.reason),h:g=>`<div class="ct">${esc(causeName(g.code,g.reason))}</div><div class="cs">${g.code===499?pill('off','499'):g.code===429?pill('warn','429'):pill('bad',String(g.code))}</div>`},
  {k:'n',label:'Count',num:1,v:g=>g.n,h:g=>`<b>${g.n.toLocaleString('en-US')}</b>`},
- {k:'first',label:'First seen',num:1,v:g=>-g.first,h:g=>`<span class="muted">${liveRange()?ago(g.first):when(g.first)}</span>`,sm:1},
- {k:'last',label:'Last seen',num:1,v:g=>-g.last,h:g=>`<span class="muted">${liveRange()?ago(g.last):when(g.last)}</span>`},
+ {k:'first',label:'First seen',num:1,v:g=>-g.first,h:g=>`<span class="muted">${liveRange()?tspan(g.first,'a'):when(g.first)}</span>`,sm:1},
+ {k:'last',label:'Last seen',num:1,v:g=>-g.last,h:g=>`<span class="muted">${liveRange()?tspan(g.last,'a'):when(g.last)}</span>`},
  {k:'sess',label:'Sessions hit (newest 500)',num:1,v:g=>g.sessions||0,h:g=>g.sessions==null?NA:g.sessions,sm:1},
  {k:'fix',label:'Fix',h:g=>{const f=fixText(g);return `${f.head?`<div class="warnc">${esc(f.head)}</div>`:''}<div class="cs cw fixt">${esc(f.tail)}</div>`}}
 ];

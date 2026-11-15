@@ -97,7 +97,7 @@ const SESS_COLS=[
  {k:'ctx',label:'Context',num:1,v:s=>s.ctx==null?-1:s.ctx,h:ctxCell},
  {k:'cache',label:'Prompt cache',v:s=>{const l=cacheLeft(s);return l==null?-1e12:l},h:cacheCell,sm:1},
  {k:'req',label:'Requests',num:1,v:s=>sCount(s).n,h:s=>{const c=sCount(s);return `<div>${c.n}</div><div class="cs">${fmt(c.tin)} in · ${fmt(c.tout)} out</div>`},sm:1},
- {k:'last',label:'Last activity',num:1,v:s=>-(lastT(s)||0),h:s=>`<span class="muted">${ago(lastT(s))}</span>`},
+ {k:'last',label:'Last activity',num:1,v:s=>-(lastT(s)||0),h:s=>`<span class="muted">${tspan(lastT(s),'a')}</span>`},
  ...histCols(s=>hOf(HT.ses,s.id))
 ];
 function quotaBit(id){const q=quotaOf(id);if(!q)return '';

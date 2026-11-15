@@ -23,7 +23,7 @@ const sum=a=>a.reduce((x,y)=>x+y,0);
 const pct=(a,p)=>{if(!a.length)return null;const s=a.slice().sort((x,y)=>x-y);return s[Math.min(s.length-1,Math.floor(p*s.length))]};
 const wavg=(rows,val,w)=>{const t=sum(rows.map(w));return t?sum(rows.map(r=>val(r)*w(r)))/t:null};
 const tilde=p=>typeof p==='string'&&p?p.replace(/^\/(?:Users|home)\/[^\/]+/,'~'):'—';
-let SNAP={},OFFSET=0,NOW=Date.now(),LOST=false;
+let SNAP={},OFFSET=0,NOW=Date.now(),LOST=false,BUILT_AT=0;
 function ago(t){if(num(t)==null)return '—';const d=Math.max(0,NOW-t);if(d<4e3)return 'now';if(d<MIN)return Math.floor(d/1e3)+'s ago';if(d<HR)return Math.floor(d/MIN)+'m ago';if(d<DAY)return Math.floor(d/HR)+'h '+Math.floor(d%HR/MIN)+'m ago';return Math.floor(d/DAY)+'d ago'}
 function dur(d){if(num(d)==null)return '—';d=Math.max(0,d);if(d<MIN)return Math.floor(d/1e3)+'s';if(d<HR)return Math.floor(d/MIN)+'m '+String(Math.floor(d%MIN/1e3)).padStart(2,'0')+'s';if(d<DAY)return Math.floor(d/HR)+'h '+Math.floor(d%HR/MIN)+'m';return Math.floor(d/DAY)+'d '+Math.floor(d%DAY/HR)+'h'}
 const since=t=>num(t)==null?'—':dur(NOW-t);
@@ -52,6 +52,9 @@ const startOfDay=t=>{const d=zd(t);return zmake(d.getUTCFullYear(),d.getUTCMonth
 /* tz:end */
 const msf=v=>num(v)==null?'—':v>=1e4?(v/1e3).toFixed(1)+' s':Math.round(v)+' ms';
 const mb=b=>num(b)==null?'—':(b/1e6).toFixed(1)+' MB';
+/* a relative time the 2 s tick re-renders in place: a an age, d an elapsed span, r a remaining one;
+   plain drops the dash where the caller renders a bare label */
+const tspan=(t,f,plain)=>num(t)==null?(plain?'':'—'):`<span data-t="${t}" data-f="${f}">${f==='a'?ago(t):f==='r'?dur(t-NOW):dur(NOW-t)}</span>`;
 
 /* ---------- icons ---------- */
 const ICONS={
@@ -158,7 +161,7 @@ function buildLanes(){
    models:MODELS.filter(m=>m.lane===l.id).map(m=>m.id)}});
 }
 function build(s){
- SNAP=s&&typeof s==='object'?s:{};ST=null;NOW=Date.now()+OFFSET;
+ SNAP=s&&typeof s==='object'?s:{};ST=null;const t0=Date.now();NOW=t0+OFFSET;BUILT_AT=t0;
  PS=arr(SNAP.per_second).map(n0);buildSessions();buildRequests();buildModels();buildLanes();
  const p=SNAP.plan&&typeof SNAP.plan==='object'?SNAP.plan:null;
  PLAN=p&&(num(p.five_hour_pct)!=null||num(p.week_pct)!=null)?{h5:num(p.five_hour_pct),h5r:num(p.five_hour_reset_ms),wk:num(p.week_pct),wkr:num(p.week_reset_ms)}:null;
@@ -217,11 +220,11 @@ const meter=(p,k)=>`<div class="meter"><i class="${k||''}" data-css="width:${Mat
 function spark(v,color,cls){const n=v.length;if(n<2)return '';const max=Math.max(1e-9,...v);const d=v.map((x,i)=>(i?'L':'M')+(i/(n-1)*100).toFixed(2)+' '+(26-x/max*22).toFixed(2)).join(' ');
  return `<svg class="${cls||'sp'}" viewBox="0 0 100 28" preserveAspectRatio="none" aria-hidden="true"><path d="${d} L100 28 L0 28Z" fill="${color}" fill-opacity=".12"/><path d="${d}" fill="none" stroke="${color}" stroke-width="1.5" vector-effect="non-scaling-stroke" stroke-linejoin="round"/></svg>`}
 function deltaH(cur,prev,goodUp){if(!prev&&!cur)return '';if(!prev)return `<span class="delta flat" title="last 5 min vs the 5 min before">new</span>`;const p=Math.round((cur-prev)/prev*100);if(Math.abs(p)<2)return `<span class="delta flat" title="last 5 min vs the 5 min before">±0%</span>`;const good=(p>0)===goodUp;return `<span class="delta ${goodUp==null?'flat':good?'up':'down'}" title="last 5 min vs the 5 min before">${p>0?'↑':'↓'} ${Math.abs(p)}%</span>`}
-function statePill(s){const st=sstate(s);if(st==='waiting')return `<span class="pill warn"><span class="dot warn pulse"></span>${esc(['Waiting',since(s.waitingSince)].filter(x=>x!=='—').join(' '))}</span>`;if(st==='working')return pill('acc','Working');return `<span class="pill off">${ic('minus')}${esc(['Idle',since(lastT(s))].filter(x=>x!=='—').join(' '))}</span>`}
+function statePill(s){const st=sstate(s);if(st==='waiting')return `<span class="pill warn"><span class="dot warn pulse"></span><span>Waiting ${tspan(s.waitingSince,'d',1)}</span></span>`;if(st==='working')return pill('acc','Working');return `<span class="pill off">${ic('minus')}<span>Idle ${tspan(lastT(s),'d',1)}</span></span>`}
 function agentPill(a){if(a.state==='running')return pill('acc','Running');if(a.state==='waiting')return `<span class="pill warn"><span class="dot warn"></span>Waiting on you</span>`;if(a.state==='done')return pill('ok','Done');return pill('off','Idle')}
 function reqStatus(r){if(r.status==null)return pill('acc','Streaming');if(r.status===200)return pill('ok','200');if(r.status===499)return pill('off','499 cancelled');if(r.status===429)return pill('warn','429');return pill('bad',String(r.status))}
 function ctxCell(s){if(s.ctx==null)return NA;const c=Math.round(s.ctx);return `<div class="fill"><span class="mono">${c}%</span>${meter(c,c>=90?'max':c>=80?'hi':'')}</div>`}
-function cacheCell(s){const l=cacheLeft(s);if(l==null)return NA;if(l<=0)return pill('off','Cold');if(l<60e3)return pill('warn','Cools in '+dur(l));return pill('ok','Warm · '+dur(l))}
+function cacheCell(s){const l=cacheLeft(s);if(l==null)return NA;if(l<=0)return pill('off','Cold');const end=s.lastReq+s.ttl;return l<60e3?`<span class="pill warn">${ic('alert')}<span>Cools in ${tspan(end,'r')}</span></span>`:`<span class="pill ok">${ic('check')}<span>Warm · ${tspan(end,'r')}</span></span>`}
 function agentsCell(s){const subs=s.agents.slice(1);if(!subs.length)return NA;const run=subs.filter(a=>a.state==='running').length;return `${subs.length}${run?` <span class="muted">· ${run} running</span>`:''}<span class="dots">${subs.map(a=>`<i class="${esc(a.state)}" title="${esc(a.desc)}"></i>`).join('')}</span>`}
 const wtName=p=>p?`<span class="mono">${esc(String(p).split('/').pop())}</span>`:'<span class="faint">session checkout</span>';
 const who=r=>r.s?`<div>${esc(r.s.project||r.s.name)} <span class="mono faint">${esc(r.s.sid)}</span></div><div class="cs sans">${r.a?esc(r.a.type==='main'?'main':r.a.desc||r.a.type):'—'}</div>`:NA;
@@ -543,6 +546,25 @@ function paint(){refresh();shell();if(page==='overview')drawChart();if(DR)render
 let first=true;
 function update(s){build(s);loadOvCost();if(first){first=false;render()}else paint()}
 function onSnapshot(s){HAVE_RECENT=Array.isArray(s&&s.recent);const n=num(s&&s.now_ms);if(n!=null)OFFSET=n-Date.now();LOST=false;update(s)}
+/* tk:start */
+/* the 2 s tick moves only the clock and the relative times the marked spans hold: no build, no
+   region render. A snapshot inside the last 2 s already painted them, a hidden tab holds no timer,
+   and an expired remaining time gets one repaint so the cell can change its pill */
+const TFUNC={a:t=>ago(t),d:t=>dur(NOW-t),r:t=>dur(t-NOW)};
+function tick(){if(document.visibilityState!=='visible'||Date.now()-BUILT_AT<2*SEC)return;
+ NOW=Date.now()+OFFSET;
+ const c=document.getElementById('clock');if(c)c.textContent=clock(NOW);
+ let settle=false;
+ for(const el of document.querySelectorAll('[data-t]')){const f=TFUNC[el.dataset.f];if(!f)continue;
+  const t=+el.dataset.t;
+  if(el.dataset.f==='r'&&t-NOW<=0){settle=true;continue}
+  el.textContent=f(t)}
+ if(settle)paint()}
+let TICKH=null;
+function tickArm(on){if(on){if(TICKH==null)TICKH=setInterval(tick,2*SEC)}else if(TICKH!=null){clearInterval(TICKH);TICKH=null}}
+document.addEventListener('visibilitychange',()=>tickArm(document.visibilityState==='visible'));
+tickArm(true);
+/* tk:end */
 /* a page that shows the rows asks for them at once when the last answer had none */
 function needRecent(){if(RF.refit(wantRecent()!==STREAM_FULL))return;if(wantRecent()&&!HAVE_RECENT)getState()}
 /* the pages that list the recent rows, and the pages that count them per agent or per request, poll the full snapshot; an open sheet needs them too */
