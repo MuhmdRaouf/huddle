@@ -122,10 +122,10 @@ The router serves the MCP tools at `/mcp` on its own port, answering only `127.0
 
 The loopback alone lets any local process call every tool, `huddle_run` included, so `/mcp` also needs a token: 32 random bytes from `/dev/urandom` as hex in `mcp-token` in the state folder, mode 0600. The router checks Host and Origin first, then compares `Authorization: Bearer <token>` in constant time, and answers a missing or wrong token with the same 401 and one JSON-RPC error. It reads the file on each request, so setup, uninstall or a replaced file never leave it holding an old token. Claude Code gets the header from the plugin's `headersHelper` (`huddle mcp headers`), which runs for a plugin's server with no trust prompt; the token never goes in `settings.json`, a URL or a log. OAuth discovery paths (`/.well-known/`) are answered on the loopback with a 404, so the probe a client sends after a 401 is never forwarded upstream.
 
-## D17: The plugin declares both MCP servers
+## D17: The plugin declares one MCP server, over HTTP
 
-`plugin/.mcp.json` declares `huddle` (stdio: `huddle mcp` from the installed binary) and `huddle-http` (the router's `http://127.0.0.1:4835/mcp`), both on by default, so the two can be compared in use before one is dropped. They serve the same tools from one library, and an e2e calls every tool on both and requires the same answers.
+`plugin/.mcp.json` declares `huddle`, the router's `http://127.0.0.1:4835/mcp`. A stdio server would start one `huddle mcp` process per Claude session (about 4 MB each, idle) and put a second copy of the 11 tool schemas in the model's context, so the plugin ships none. `huddle mcp` stays in the binary for clients that start a process, and an e2e calls every tool on both transports and requires the same answers.
 
-- stdio works with the router down and starts nothing: it reads the disk, and asks the router for live data when it answers. HTTP needs the router, and the router is the one process that already holds the history and the quota.
-- Turning one off is a client setting (`/mcp`, then disable), not a file edit.
-- The stdio line finds the binary the way the session hook does: `HUDDLE_DATA_HOME`, else `XDG_DATA_HOME/huddle`, else `~/.local/share/huddle`. It reads the variables inside `sh`, because Claude Code expands `${...}` in the file before the shell sees it.
+- The tools need the router up: it is the one process that already holds the history and the quota.
+- The server is named `huddle`, so tool names read `mcp__plugin_huddle_huddle__huddle_run`.
+- The `headersHelper` finds the binary the way the session hook does: `HUDDLE_DATA_HOME`, else `XDG_DATA_HOME/huddle`, else `~/.local/share/huddle`. It reads the variables inside `sh`, because Claude Code expands `${...}` in the file before the shell sees it.

@@ -224,16 +224,16 @@ fn h3_plugin_config_gets_its_header_from_the_helper() {
         .unwrap(),
     )
     .unwrap();
-    let helper_line = mcp["mcpServers"]["huddle-http"]["headersHelper"]
+    let helper_line = mcp["mcpServers"]["huddle"]["headersHelper"]
         .as_str()
-        .expect("huddle-http has a headersHelper");
+        .expect("huddle has a headersHelper");
     assert!(
         !helper_line.contains("${"),
         "Claude Code expands ${{...}} before sh sees it: {helper_line}"
     );
 
-    // The installed binary lives under the data home; the helper finds it the way the stdio
-    // line does.
+    // The installed binary lives under the data home; the helper finds it the way the session
+    // hook does.
     let data = daemon.home.root().join(".local/share/huddle");
     fs::create_dir_all(data.join("bin")).unwrap();
     std::os::unix::fs::symlink(env!("CARGO_BIN_EXE_huddle"), data.join("bin/huddle")).unwrap();
@@ -277,9 +277,9 @@ fn h3_an_old_binary_under_the_helper_says_to_update() {
         .unwrap(),
     )
     .unwrap();
-    let helper_line = mcp["mcpServers"]["huddle-http"]["headersHelper"]
+    let helper_line = mcp["mcpServers"]["huddle"]["headersHelper"]
         .as_str()
-        .expect("huddle-http has a headersHelper");
+        .expect("huddle has a headersHelper");
     let bin = home.root().join(".local/share/huddle/bin");
     fs::create_dir_all(&bin).unwrap();
     let old = bin.join("huddle");

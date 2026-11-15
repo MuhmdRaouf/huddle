@@ -6,8 +6,6 @@ use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
 
 use e2e_support::{Daemon, raw_exchange};
-use huddle_testkit::script::write_executable;
-use huddle_testkit::temp_home::TempHome;
 use serde_json::{Map, Value, json};
 
 fn plugin_dir() -> PathBuf {
@@ -20,84 +18,31 @@ fn mcp_json() -> Value {
 }
 
 #[test]
-fn m6_the_plugin_declares_both_servers() {
-    let servers = &mcp_json()["mcpServers"];
-    let mut names: Vec<&str> = servers
+fn l18_the_plugin_ships_the_http_mcp_server_only() {
+    let servers = mcp_json()["mcpServers"]
         .as_object()
         .expect("mcpServers")
-        .keys()
-        .map(String::as_str)
-        .collect();
-    names.sort_unstable();
-    assert_eq!(names, ["huddle", "huddle-http"]);
+        .clone();
+    assert_eq!(servers.keys().collect::<Vec<_>>(), ["huddle"]);
 
-    let http = &servers["huddle-http"];
-    assert_eq!(http["type"], "http");
-
-    let stdio = &servers["huddle"];
-    assert_eq!(stdio["command"], "sh");
+    let server = &servers["huddle"];
+    assert_eq!(server["type"], "http");
     assert!(
-        stdio["type"].is_null() || stdio["type"] == "stdio",
-        "the huddle server is stdio"
+        server["url"]
+            .as_str()
+            .is_some_and(|url| url.starts_with("http://127.0.0.1:") && url.ends_with("/mcp")),
+        "the router url: {server}"
     );
-}
-
-/// The stdio line runs the installed binary with `mcp`, from the data home the hooks use.
-#[test]
-fn m6_the_stdio_line_runs_the_installed_binary() {
-    let stdio = &mcp_json()["mcpServers"]["huddle"];
-    let args: Vec<&str> = stdio["args"]
-        .as_array()
-        .expect("args")
-        .iter()
-        .map(|arg| arg.as_str().expect("string"))
-        .collect();
-    assert_eq!(args[0], "-c");
     assert!(
-        !args[1].contains("${"),
-        "Claude Code expands ${{...}} before sh sees it: {}",
-        args[1]
+        server["headersHelper"]
+            .as_str()
+            .is_some_and(|helper| helper.contains("mcp headers")),
+        "a headersHelper"
     );
-    for (key, home_rel) in [
-        ("HUDDLE_DATA_HOME", ""),
-        ("XDG_DATA_HOME", "huddle"),
-        ("HOME", ".local/share/huddle"),
-    ] {
-        let home = TempHome::new();
-        let mut data = home.root().to_path_buf();
-        data.push(format!("data-{key}"));
-        if !home_rel.is_empty() {
-            data.push(home_rel);
-        }
-        fs::create_dir_all(data.join("bin")).unwrap();
-        write_executable(&data.join("bin/huddle"), "#!/bin/sh\necho \"ran $*\"\n").unwrap();
-        let mut command = Command::new("sh");
-        command.args(&args).env_clear().env("PATH", "/usr/bin:/bin");
-        match key {
-            "HOME" => {
-                // HOME/.local/share/huddle
-                let base = data.parent().unwrap().parent().unwrap().parent().unwrap();
-                command.env("HOME", base);
-            }
-            "XDG_DATA_HOME" => {
-                command.env("XDG_DATA_HOME", data.parent().unwrap());
-                command.env("HOME", "/nonexistent");
-            }
-            _ => {
-                command.env("HUDDLE_DATA_HOME", &data);
-                command
-                    .env("XDG_DATA_HOME", "/nonexistent")
-                    .env("HOME", "/nonexistent");
-            }
-        }
-        let out = command.output().unwrap();
-        assert_eq!(
-            String::from_utf8_lossy(&out.stdout).trim(),
-            "ran mcp",
-            "{key}: {}",
-            String::from_utf8_lossy(&out.stderr)
-        );
-    }
+    assert!(
+        server.get("command").is_none(),
+        "no server spawns a process"
+    );
 }
 
 fn raw_post(port: u16, auth: &str, session: Option<&str>, body: &Value) -> (Option<String>, Value) {
@@ -389,7 +334,7 @@ fn parts(url: &str) -> (String, u16, String) {
 
 #[test]
 fn t3_mcp_http_url_follows_the_router_port() {
-    let url = mcp_json()["mcpServers"]["huddle-http"]["url"]
+    let url = mcp_json()["mcpServers"]["huddle"]["url"]
         .as_str()
         .expect("a url")
         .to_string();
