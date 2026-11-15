@@ -38,6 +38,16 @@ pub enum Step {
     ReadAllThenClose,
     /// Reads this many body bytes, then resets the connection (SO_LINGER 0).
     ReadThenReset(usize),
+    /// Reads the whole body in 64 KiB reads and keeps none of it (the request records an empty
+    /// body), then runs the inner step. Memory stays flat for a body with a `content-length`; a
+    /// chunked body is kept.
+    Drain(Box<Step>),
+    /// Answers right after the request head, before any body byte is read, then keeps the
+    /// socket open without ever reading it.
+    AnswerThenIgnore {
+        status: u16,
+        body: Vec<u8>,
+    },
 }
 
 impl Step {
@@ -116,6 +126,19 @@ impl Step {
     /// Answers `101 Switching Protocols`, then echoes every byte.
     pub fn upgrade_echo() -> Step {
         Step::UpgradeEcho
+    }
+
+    /// Drains the body without keeping it, then runs `then`.
+    pub fn drain_then(then: Step) -> Step {
+        Step::Drain(Box::new(then))
+    }
+
+    /// Answers `status` before reading the body and then never reads the socket again.
+    pub fn answer_then_ignore(status: u16, body: impl AsRef<[u8]>) -> Step {
+        Step::AnswerThenIgnore {
+            status,
+            body: body.as_ref().to_vec(),
+        }
     }
 }
 
@@ -339,14 +362,21 @@ fn serve<S: Read + Write>(mut stream: S, inner: &Inner, conn: usize, fd: RawFd) 
             Step::ReadThenReset(limit) => Some(limit),
             _ => None,
         };
-        read_body(
-            &mut stream,
-            &mut pending,
-            &mut request,
-            head_end,
-            limit,
-            inner,
-        );
+        if matches!(step, Step::AnswerThenIgnore { .. }) {
+            request.complete = false;
+            request.raw = std::mem::take(&mut pending);
+        } else {
+            let keep = !matches!(step, Step::Drain(_));
+            read_body(
+                &mut stream,
+                &mut pending,
+                &mut request,
+                head_end,
+                limit,
+                keep,
+                inner,
+            );
+        }
         let client_close = request
             .header("connection")
             .is_some_and(|value| value.eq_ignore_ascii_case("close"));
@@ -358,7 +388,7 @@ fn serve<S: Read + Write>(mut stream: S, inner: &Inner, conn: usize, fd: RawFd) 
             requests.push(request);
             requests.len() - 1
         };
-        let keep_open = match run_step(&mut stream, &step, fd) {
+        let keep_open = match run_step(&mut stream, &step, fd, &inner.stop) {
             Ok(keep_open) => keep_open,
             Err(_) => {
                 inner
@@ -424,6 +454,7 @@ fn read_body<S: Read>(
     request: &mut Recorded,
     head_end: usize,
     limit: Option<usize>,
+    keep: bool,
     inner: &Inner,
 ) {
     let chunked = request
@@ -447,21 +478,33 @@ fn read_body<S: Read>(
             pending.len().saturating_sub(head_end).min(wanted),
             Ordering::SeqCst,
         );
-        while pending.len() < head_end + wanted {
+        let mut seen = pending.len().saturating_sub(head_end).min(wanted);
+        if !keep {
+            pending.truncate(head_end);
+        }
+        while head_end + seen < head_end + wanted {
             let mut chunk = [0u8; 65536];
             match stream.read(&mut chunk) {
                 Ok(0) | Err(_) => break,
                 Ok(count) => {
                     request.first_body_byte_at.get_or_insert_with(Instant::now);
-                    pending.extend_from_slice(&chunk[..count]);
+                    if keep {
+                        pending.extend_from_slice(&chunk[..count]);
+                    }
+                    seen += count;
                     inner.received_bytes.fetch_add(count, Ordering::SeqCst);
                 }
             }
         }
-        let end = (head_end + wanted).min(pending.len());
-        request.body = pending[head_end..end].to_vec();
-        request.complete = end == head_end + announced;
-        end
+        if keep {
+            let end = (head_end + wanted).min(pending.len());
+            request.body = pending[head_end..end].to_vec();
+            request.complete = end == head_end + announced;
+            end
+        } else {
+            request.complete = seen == announced;
+            head_end
+        }
     };
     request.raw = pending.drain(..end).collect();
 }
@@ -514,8 +557,21 @@ fn more<S: Read>(stream: &mut S, pending: &mut Vec<u8>) -> Option<()> {
 
 // Answers whether the connection stays open for the next request; an Err means the peer closed
 // while the fake was writing.
-fn run_step<S: Read + Write>(stream: &mut S, step: &Step, fd: RawFd) -> io::Result<bool> {
+fn run_step<S: Read + Write>(
+    stream: &mut S,
+    step: &Step,
+    fd: RawFd,
+    stop: &AtomicBool,
+) -> io::Result<bool> {
     match step {
+        Step::Drain(then) => run_step(stream, then, fd, stop),
+        Step::AnswerThenIgnore { status, body } => {
+            write_head(stream, *status, &[], Some(body.len()))?;
+            stream.write_all(body)?;
+            stream.flush()?;
+            ignore_socket(stop);
+            Ok(false)
+        }
         Step::Answer {
             status,
             headers,
@@ -590,6 +646,14 @@ fn sse_headers() -> Vec<(String, String)> {
 fn hold<S: Read>(stream: &mut S) {
     let mut chunk = [0u8; 4096];
     while matches!(stream.read(&mut chunk), Ok(count) if count > 0) {}
+}
+
+// Holds the socket without reading it, for up to 30 s or until the server stops.
+fn ignore_socket(stop: &AtomicBool) {
+    let until = Instant::now() + Duration::from_secs(30);
+    while Instant::now() < until && !stop.load(Ordering::SeqCst) {
+        thread::sleep(Duration::from_millis(100));
+    }
 }
 
 fn reset(fd: RawFd) {
