@@ -213,6 +213,11 @@ struct StreamState {
     taken: u64,
     /// Live holds, readers included.
     holds: usize,
+    /// The route will start no reader again: the body is abandoned once the last hold ends.
+    settled: bool,
+    /// Nobody will read the body again: nothing is held, and each later chunk is dropped as it
+    /// arrives.
+    abandoned: bool,
 }
 
 impl StreamState {
@@ -230,6 +235,13 @@ impl StreamState {
         let held = self.chunks.drain(..offset).count();
         self.first += held + 1;
         self.chunks.pop_front()
+    }
+
+    /// Drops every held chunk and keeps none from now on; the chunks are returned so they are
+    /// freed after the lock is released.
+    fn abandon(&mut self) -> VecDeque<Bytes> {
+        self.abandoned = true;
+        std::mem::take(&mut self.chunks)
     }
 
     /// The bytes past the prefix that no reader has taken yet.
@@ -271,6 +283,8 @@ impl StreamedBody {
                 failed: false,
                 taken: 0,
                 holds: 0,
+                settled: false,
+                abandoned: false,
             }),
             notify: Notify::new(),
             room: Notify::new(),
@@ -283,10 +297,15 @@ impl StreamedBody {
 
     /// Adds the next chunk, then waits while the unsent bytes past the prefix exceed the
     /// window, so the client is read no faster than the upstream takes the body and TCP slows
-    /// the client down. A body nobody holds never waits: no reader can come to make room.
+    /// the client down. A body nobody holds never waits: no reader can come to make room. An
+    /// abandoned body only counts the chunk and drops it.
     pub async fn push(&self, chunk: Bytes) {
         {
             let mut state = self.lock();
+            if state.abandoned {
+                state.filled += chunk.len() as u64;
+                return;
+            }
             if state.filled < self.prefix {
                 state.in_prefix += 1;
             }
@@ -298,7 +317,11 @@ impl StreamedBody {
             let mut room = std::pin::pin!(self.room.notified());
             {
                 let state = self.lock();
-                if state.failed || state.holds == 0 || state.unsent(self.prefix) <= self.window {
+                if state.failed
+                    || state.abandoned
+                    || state.holds == 0
+                    || state.unsent(self.prefix) <= self.window
+                {
                     return;
                 }
                 room.as_mut().enable();
@@ -314,6 +337,19 @@ impl StreamedBody {
         self.lock().holds += 1;
         BodyHold {
             stream: Arc::clone(self),
+            settles: false,
+        }
+    }
+
+    /// The route's hold on a relayed body. When it ends the route starts no reader again, so
+    /// once the last reader also ends the body is abandoned. A body read whole never takes one:
+    /// it still needs `take_whole`.
+    #[must_use = "the hold ends when it is dropped"]
+    pub fn route_hold(self: &Arc<Self>) -> BodyHold {
+        self.lock().holds += 1;
+        BodyHold {
+            stream: Arc::clone(self),
+            settles: true,
         }
     }
 
@@ -326,11 +362,27 @@ impl StreamedBody {
         }
     }
 
-    fn release(&self) {
-        {
+    fn release(&self, settles: bool) {
+        let dropped = {
             let mut state = self.lock();
             state.holds = state.holds.saturating_sub(1);
-        }
+            state.settled |= settles;
+            if state.settled && state.holds == 0 && !state.abandoned {
+                state.abandon()
+            } else {
+                VecDeque::new()
+            }
+        };
+        drop(dropped);
+        self.room.notify_waiters();
+    }
+
+    /// Nobody will read the body again: what it holds is freed, a waiting `push` returns, every
+    /// later chunk is dropped as it arrives, and a reader gets `NotReplayable`.
+    pub fn abandon(&self) {
+        let dropped = self.lock().abandon();
+        drop(dropped);
+        self.notify.notify_waiters();
         self.room.notify_waiters();
     }
 
@@ -351,7 +403,8 @@ impl StreamedBody {
 
     /// True while every chunk is still held, so a new attempt can read the body from byte 0.
     pub fn replayable(&self) -> bool {
-        self.lock().first == 0
+        let state = self.lock();
+        state.first == 0 && !state.abandoned
     }
 
     pub fn filled(&self) -> u64 {
@@ -368,10 +421,10 @@ impl StreamedBody {
 
     /// Moves the chunks out once the body is whole: one chunk is returned as it is, several are
     /// joined once, and the stream retains nothing afterwards. A body still filling, or one that
-    /// dropped a chunk, stays as it is.
+    /// dropped a chunk or was abandoned, stays as it is.
     pub fn take_whole(&self) -> Option<Bytes> {
         let mut state = self.lock();
-        if state.filled != self.total || state.first != 0 {
+        if state.filled != self.total || state.first != 0 || state.abandoned {
             return None;
         }
         let mut chunks = std::mem::take(&mut state.chunks);
@@ -386,9 +439,8 @@ impl StreamedBody {
         Some(Bytes::from(whole))
     }
 
-    /// The bytes the chunk list holds right now.
-    #[cfg(test)]
-    fn retained_bytes(&self) -> u64 {
+    /// The bytes the body holds right now.
+    pub fn retained_bytes(&self) -> u64 {
         self.lock()
             .chunks
             .iter()
@@ -404,7 +456,7 @@ impl StreamedBody {
             let mut wait = std::pin::pin!(self.notify.notified());
             {
                 let mut state = self.lock();
-                if *index < state.first {
+                if *index < state.first || state.abandoned {
                     return NextChunk::NotReplayable;
                 }
                 if let Some(chunk) = state.hand_out(*index) {
@@ -436,11 +488,13 @@ impl StreamedBody {
 /// Keeps a streamed body's filler waiting for room while it lives.
 pub struct BodyHold {
     stream: Arc<StreamedBody>,
+    /// Ending this hold says the route starts no reader again.
+    settles: bool,
 }
 
 impl Drop for BodyHold {
     fn drop(&mut self) {
-        self.stream.release();
+        self.stream.release(self.settles);
     }
 }
 
@@ -1814,6 +1868,80 @@ mod tests {
         assert!(
             poll_once(fourth.as_mut()).is_ready(),
             "the retry passed the furthest byte"
+        );
+    }
+
+    #[tokio::test]
+    async fn l36_an_abandoned_body_keeps_nothing() {
+        let stream = StreamedBody::new(20 * MIB);
+        for _ in 0..16 {
+            stream.push(chunk()).await;
+        }
+        assert_eq!(stream.retained_bytes(), MIB);
+        stream.abandon();
+        assert_eq!(stream.retained_bytes(), 0, "the abandon frees what is held");
+        for n in 0..19 * 16 {
+            let mut push = std::pin::pin!(stream.push(chunk()));
+            assert!(poll_once(push.as_mut()).is_ready(), "push {n} waits");
+            assert_eq!(stream.retained_bytes(), 0, "push {n} kept its chunk");
+        }
+        assert!(stream.is_whole(), "the filler still sees the body end");
+        assert_eq!(stream.take_whole(), None);
+        assert!(!stream.replayable());
+        let mut late = stream.reader();
+        assert!(matches!(late.next_chunk().await, NextChunk::NotReplayable));
+    }
+
+    #[tokio::test]
+    async fn l36_abandon_releases_a_waiting_push() {
+        let stream = StreamedBody::with_limits(4 * KIB64 as u64, KIB64 as u64, KIB64 as u64);
+        let _routing = stream.hold();
+        let mut reader = stream.reader();
+        stream.push(chunk()).await;
+        stream.push(chunk()).await;
+        let mut third = std::pin::pin!(stream.push(chunk()));
+        assert!(poll_once(third.as_mut()).is_pending(), "the window is full");
+        stream.abandon();
+        assert!(
+            poll_once(third.as_mut()).is_ready(),
+            "an abandoned body never waits"
+        );
+        assert_eq!(stream.retained_bytes(), 0);
+        assert!(matches!(
+            reader.next_chunk().await,
+            NextChunk::NotReplayable
+        ));
+    }
+
+    #[tokio::test]
+    async fn l36_the_route_settling_abandons_once_the_last_reader_ends() {
+        let stream = StreamedBody::with_limits(8 * KIB64 as u64, KIB64 as u64, KIB64 as u64);
+        let routing = stream.route_hold();
+        let mut reader = stream.reader();
+        stream.push(chunk()).await;
+        stream.push(chunk()).await;
+        drop(routing);
+        assert!(
+            stream.retained_bytes() > 0,
+            "a live reader still reads the body"
+        );
+        assert!(matches!(reader.next_chunk().await, NextChunk::Chunk(_)));
+        drop(reader);
+        assert_eq!(stream.retained_bytes(), 0, "nobody reads the body again");
+        stream.push(chunk()).await;
+        assert_eq!(stream.retained_bytes(), 0);
+    }
+
+    #[tokio::test]
+    async fn l36_a_body_without_a_route_hold_is_kept_whole() {
+        let stream = StreamedBody::with_limits(4 * KIB64 as u64, KIB64 as u64, KIB64 as u64);
+        drop(stream.reader());
+        for _ in 0..4 {
+            stream.push(chunk()).await;
+        }
+        assert_eq!(
+            stream.take_whole().map(|whole| whole.len()),
+            Some(4 * KIB64)
         );
     }
 }

@@ -173,7 +173,8 @@ impl AnthropicPath {
         }
         // The rest of the body fills the stream while the answer is already being relayed; the
         // hold keeps the filler at the upstream's pace until the route is done with the body.
-        let _routing = stream.hold();
+        // Once the route and every reader are done, the rest of the upload is read and dropped.
+        let _routing = stream.route_hold();
         tokio::spawn(fill(body, Arc::clone(&stream)));
         match route {
             Route::Anthropic => {

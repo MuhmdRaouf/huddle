@@ -7,7 +7,8 @@ use huddle_router::anthropic::{AnthropicPath, STREAM_HEAD_BYTES};
 use huddle_router::connect::{ConnectCtx, Decrypt, TunnelTracker, connect_handler};
 use huddle_router::server::{BODY_LIMIT, Handler, ServerLimits, bind, full_body, serve};
 use huddle_router::upstream::{
-    IDLE_TIMEOUT, RequestBody, UpstreamClient, UpstreamConfig, UpstreamRequest, forward_headers,
+    IDLE_TIMEOUT, REPLAY_PREFIX, RequestBody, SEND_WINDOW, StreamedBody, UpstreamClient,
+    UpstreamConfig, UpstreamRequest, forward_headers,
 };
 use huddle_testkit::fake_upstream::{FakeUpstream, Step};
 use huddle_testkit::temp_home::TempHome;
@@ -28,6 +29,7 @@ struct Rig {
     upstream: FakeUpstream,
     whole_calls: Arc<Mutex<Vec<Vec<u8>>>>,
     streamed_calls: Arc<Mutex<Vec<(String, u64)>>>,
+    streams: Arc<Mutex<Vec<Arc<StreamedBody>>>>,
     _home: TempHome,
 }
 
@@ -53,6 +55,16 @@ async fn rig(
     idle: Duration,
     limit: u64,
 ) -> Rig {
+    rig_with_lane(plan, idle, limit, None).await
+}
+
+/// The rig, with the stub lane sending to `lane` instead of the fake upstream.
+async fn rig_with_lane(
+    plan: impl Fn(usize, usize) -> Step + Send + Sync + 'static,
+    idle: Duration,
+    limit: u64,
+    lane: Option<String>,
+) -> Rig {
     let home = TempHome::new();
     let dir = home.root().join(".local/share/huddle/ca");
     let ca = load_or_create(&dir, SystemTime::now()).expect("ca");
@@ -65,9 +77,11 @@ async fn rig(
     let streamed_calls: Arc<Mutex<Vec<(String, u64)>>> = Arc::default();
     let streamed_sink = streamed_calls.clone();
     let route_client = client.clone();
-    let lane_url: Uri = format!("{}/v1/messages", upstream.url())
+    let lane_url: Uri = format!("{}/v1/messages", lane.unwrap_or_else(|| upstream.url()))
         .parse()
         .expect("lane url");
+    let streams: Arc<Mutex<Vec<Arc<StreamedBody>>>> = Arc::default();
+    let stream_sink = streams.clone();
     // The stub lane relays the body to the fake upstream the way a lane does, so a body past the
     // send window drains at the upstream's pace instead of stalling the filler.
     let streamed_route: huddle_router::anthropic::StreamedRoute =
@@ -75,6 +89,7 @@ async fn rig(
             let sink = streamed_sink.clone();
             let client = route_client.clone();
             let url = lane_url.clone();
+            stream_sink.lock().unwrap().push(Arc::clone(&stream));
             Box::pin(async move {
                 sink.lock().unwrap().push((model, stream.filled()));
                 let len = stream.len();
@@ -84,12 +99,16 @@ async fn rig(
                     url,
                     body: RequestBody::Streamed(stream),
                 };
+                let mut status = hyper::StatusCode::OK;
                 if let Ok(answer) = client.send(request).await {
+                    status = answer.status;
                     let conn = answer.conn;
                     let _ = answer.body.collect().await;
                     conn.finish();
                 }
-                Response::new(full_body("streamed-route"))
+                let mut response = Response::new(full_body("streamed-route"));
+                *response.status_mut() = status;
+                response
             })
         });
     let whole_calls: Arc<Mutex<Vec<Vec<u8>>>> = Arc::default();
@@ -138,11 +157,12 @@ async fn rig(
         upstream,
         whole_calls,
         streamed_calls,
+        streams,
         _home: home,
     }
 }
 
-async fn tls_session(rig: &Rig) -> impl AsyncRead + AsyncWrite + Unpin {
+async fn tls_session(rig: &Rig) -> impl AsyncRead + AsyncWrite + Unpin + use<> {
     let mut tcp = TcpStream::connect(("127.0.0.1", rig.port))
         .await
         .expect("connect");
@@ -389,4 +409,105 @@ async fn l5_the_stub_lane_drains_a_body_past_the_send_window() {
     let seen = rig.upstream.requests();
     assert_eq!(seen.len(), 1);
     assert!(seen[0].body == body, "the lane relayed the whole body");
+}
+
+/// A plain HTTP upstream that answers 400 as soon as a request head is in and closes, the way an
+/// upstream refuses a request early; it reads nothing past the head.
+async fn early_refusal() -> String {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind");
+    let addr = listener.local_addr().expect("addr");
+    tokio::spawn(async move {
+        while let Ok((mut socket, _)) = listener.accept().await {
+            tokio::spawn(async move {
+                let mut head = Vec::new();
+                let mut byte = [0u8; 1];
+                while !head.ends_with(b"\r\n\r\n") {
+                    if socket.read_exact(&mut byte).await.is_err() {
+                        return;
+                    }
+                    head.push(byte[0]);
+                }
+                let answer = "HTTP/1.1 400 Bad Request\r\nContent-Length: 11\r\nConnection: close\r\n\r\nbad request";
+                let _ = socket.write_all(answer.as_bytes()).await;
+                let _ = socket.shutdown().await;
+                // Drains what is in flight so the close is a FIN, not a reset.
+                let mut sink = vec![0u8; 64 * 1024];
+                let deadline = tokio::time::Instant::now() + Duration::from_millis(200);
+                while let Ok(Ok(read)) =
+                    tokio::time::timeout_at(deadline, socket.read(&mut sink)).await
+                {
+                    if read == 0 {
+                        break;
+                    }
+                }
+            });
+        }
+    });
+    format!("http://{addr}")
+}
+
+#[tokio::test]
+async fn l36_fast_4xx_does_not_buffer_the_upload() {
+    let lane = early_refusal().await;
+    let rig = rig_with_lane(
+        |_, _| Step::answer(200, "ok"),
+        IDLE_TIMEOUT,
+        BODY_LIMIT,
+        Some(lane),
+    )
+    .await;
+    let body = message("glm-5.3-flash", 20 * 1024 * 1024);
+    let (read_half, mut write_half) = tokio::io::split(tls_session(&rig).await);
+    let answer = tokio::spawn(read_to_end(read_half));
+    write_half
+        .write_all(&post_head(body.len()).into_bytes())
+        .await
+        .expect("head");
+    // A push that waits has already added its frame, so the body holds one frame more until it
+    // returns.
+    let limit = REPLAY_PREFIX + SEND_WINDOW + 64 * 1024;
+    let mut most = 0;
+    for part in body.chunks(256 * 1024) {
+        write_half.write_all(part).await.expect("body");
+        if let Some(stream) = rig.streams.lock().unwrap().first() {
+            most = most.max(stream.retained_bytes());
+        }
+    }
+    write_half.flush().await.expect("flush");
+    let stream = rig
+        .streams
+        .lock()
+        .unwrap()
+        .first()
+        .cloned()
+        .expect("relayed");
+    wait_for(Duration::from_secs(10), || stream.is_whole()).await;
+    most = most.max(stream.retained_bytes());
+    let resp = answer.await.expect("answer");
+    assert!(resp.starts_with("HTTP/1.1 400"), "{resp}");
+    assert!(most <= limit, "held {most} bytes of an upload nobody reads");
+}
+
+#[tokio::test]
+async fn l36_whole_body_path_is_untouched() {
+    let rig = rig(|_, _| Step::answer(200, "ok"), IDLE_TIMEOUT, BODY_LIMIT).await;
+    // The model comes after the first 64 KiB, so the route reads the body whole first.
+    let padding = "x".repeat(3 * 1024 * 1024);
+    let body = format!(
+        r#"{{"messages":[{{"role":"user","content":"{padding}"}}],"model":"claude-sonnet-5-5"}}"#
+    )
+    .into_bytes();
+    let mut tls = tls_session(&rig).await;
+    tls.write_all(&post_head(body.len()).into_bytes())
+        .await
+        .expect("head");
+    tls.write_all(&body).await.expect("body");
+    tls.flush().await.expect("flush");
+    let resp = read_to_end(tls).await;
+    assert!(resp.contains("whole-route"), "{resp}");
+    let calls = rig.whole_calls.lock().unwrap();
+    assert_eq!(calls.len(), 1);
+    assert!(calls[0] == body, "the whole route got the full body");
 }
