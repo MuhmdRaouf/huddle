@@ -257,17 +257,30 @@ impl StreamedBody {
         self.total == 0
     }
 
-    /// Concatenates every chunk once the body is whole.
-    pub fn whole_bytes(&self) -> Option<Bytes> {
-        let state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
+    /// Moves the chunks out once the body is whole: one chunk is returned as it is, several are
+    /// joined once, and the stream retains nothing afterwards. A body still filling stays as it is.
+    pub fn take_whole(&self) -> Option<Bytes> {
+        let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
         if state.filled != self.total {
             return None;
         }
-        let mut whole = Vec::with_capacity(state.filled as usize);
-        for chunk in &state.chunks {
+        let mut chunks = std::mem::take(&mut state.chunks);
+        drop(state);
+        if chunks.len() == 1 {
+            return chunks.pop();
+        }
+        let mut whole = Vec::with_capacity(self.total as usize);
+        for chunk in &chunks {
             whole.extend_from_slice(chunk);
         }
         Some(Bytes::from(whole))
+    }
+
+    /// The bytes the chunk list holds right now.
+    #[cfg(test)]
+    fn retained_bytes(&self) -> u64 {
+        let state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
+        state.chunks.iter().map(|chunk| chunk.len() as u64).sum()
     }
 
     /// The next chunk in order, waiting while the body is still filling. The lock is never held
@@ -1395,4 +1408,37 @@ fn silent_phase(handed: &Handed) -> Phase {
 
 fn elapsed_ms(since: Instant) -> u64 {
     since.elapsed().as_millis() as u64
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn l1_take_whole_moves_the_chunks_out() {
+        let stream = StreamedBody::new(9);
+        for part in ["abc", "def", "ghi"] {
+            stream.push(Bytes::from(part));
+        }
+        assert_eq!(stream.take_whole(), Some(Bytes::from("abcdefghi")));
+        assert_eq!(stream.retained_bytes(), 0);
+    }
+
+    #[test]
+    fn l1_one_chunk_take_whole_is_not_copied() {
+        let stream = StreamedBody::new(4);
+        let chunk = Bytes::from("body");
+        let pointer = chunk.as_ptr();
+        stream.push(chunk);
+        let whole = stream.take_whole();
+        assert_eq!(whole.as_ref().map(|bytes| bytes.as_ptr()), Some(pointer));
+    }
+
+    #[test]
+    fn l1_take_whole_of_an_unfinished_body_keeps_it() {
+        let stream = StreamedBody::new(6);
+        stream.push(Bytes::from("abc"));
+        assert_eq!(stream.take_whole(), None);
+        assert_eq!(stream.retained_bytes(), 3);
+    }
 }

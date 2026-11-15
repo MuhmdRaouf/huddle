@@ -151,10 +151,14 @@ impl AnthropicPath {
             && ((self.is_anthropic)(&model) || (self.lane_streams)(&model));
         if !relays {
             return match fill(body, Arc::clone(&stream)).await {
-                Ok(()) => match stream.whole_bytes() {
-                    Some(whole) => (self.whole_route)(parts, whole).await,
-                    None => cut_response(),
-                },
+                Ok(()) => {
+                    let whole = stream.take_whole();
+                    drop(stream);
+                    match whole {
+                        Some(whole) => (self.whole_route)(parts, whole).await,
+                        None => cut_response(),
+                    }
+                }
                 Err(answer) => answer,
             };
         }
