@@ -149,7 +149,7 @@ async fn a_streamed_body_goes_upstream_before_its_last_byte_arrives() {
     let last = Bytes::from(vec![b'y'; 64 * 1024]);
     let total = first.len() + last.len();
     let body = StreamedBody::new(total as u64);
-    body.push(first.clone());
+    body.push(first.clone()).await;
     let sending = tokio::spawn({
         let body = Arc::clone(&body);
         async move {
@@ -169,7 +169,7 @@ async fn a_streamed_body_goes_upstream_before_its_last_byte_arrives() {
         upstream.received_bytes() < total,
         "the last chunk was not pushed yet"
     );
-    body.push(last);
+    body.push(last).await;
     let response = sending.await.expect("the task");
     assert_eq!(response.status(), StatusCode::OK);
     assert_eq!(upstream.requests()[0].body.len(), total);

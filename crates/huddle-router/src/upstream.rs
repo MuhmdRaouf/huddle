@@ -189,53 +189,127 @@ pub(crate) enum NextChunk {
     Failed,
 }
 
+/// The bytes of a streamed body kept from byte 0 for a retry.
+pub const REPLAY_PREFIX: u64 = 1024 * 1024;
+/// How far past the replay prefix the client may run ahead of the upstream before `push` waits.
+pub const SEND_WINDOW: u64 = 256 * 1024;
+
 struct StreamState {
     chunks: Vec<Bytes>,
     filled: u64,
     failed: bool,
+    /// The furthest byte any reader has taken.
+    taken: u64,
+    /// Live holds, readers included.
+    holds: usize,
+}
+
+impl StreamState {
+    /// The bytes past the prefix that no reader has taken yet.
+    fn unsent(&self, prefix: u64) -> u64 {
+        self.filled.saturating_sub(self.taken.max(prefix))
+    }
 }
 
 /// A body filled while it is being relayed; every attempt reads it from byte 0.
 pub struct StreamedBody {
     total: u64,
+    prefix: u64,
+    window: u64,
     state: Mutex<StreamState>,
+    /// Wakes readers when a chunk arrives or the body fails.
     notify: Notify,
+    /// Wakes the filler when a reader takes a chunk or a hold ends.
+    room: Notify,
 }
 
 impl StreamedBody {
     pub fn new(len: u64) -> Arc<StreamedBody> {
+        StreamedBody::with_limits(len, REPLAY_PREFIX, SEND_WINDOW)
+    }
+
+    /// A body whose filler waits once more than `window` bytes past the first `prefix` bytes
+    /// are ahead of every reader.
+    pub fn with_limits(len: u64, prefix: u64, window: u64) -> Arc<StreamedBody> {
         Arc::new(StreamedBody {
             total: len,
+            prefix,
+            window,
             state: Mutex::new(StreamState {
                 chunks: Vec::new(),
                 filled: 0,
                 failed: false,
+                taken: 0,
+                holds: 0,
             }),
             notify: Notify::new(),
+            room: Notify::new(),
         })
     }
 
-    pub fn push(&self, chunk: Bytes) {
-        let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
-        state.filled += chunk.len() as u64;
-        state.chunks.push(chunk);
-        drop(state);
+    fn lock(&self) -> MutexGuard<'_, StreamState> {
+        self.state.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// Adds the next chunk, then waits while the unsent bytes past the prefix exceed the
+    /// window, so the client is read no faster than the upstream takes the body and TCP slows
+    /// the client down. A body nobody holds never waits: no reader can come to make room.
+    pub async fn push(&self, chunk: Bytes) {
+        {
+            let mut state = self.lock();
+            state.filled += chunk.len() as u64;
+            state.chunks.push(chunk);
+        }
         self.notify.notify_waiters();
+        loop {
+            let mut room = std::pin::pin!(self.room.notified());
+            {
+                let state = self.lock();
+                if state.failed || state.holds == 0 || state.unsent(self.prefix) <= self.window {
+                    return;
+                }
+                room.as_mut().enable();
+            }
+            room.await;
+        }
+    }
+
+    /// Keeps `push` waiting for room while the body may still be read: the route takes one
+    /// before any reader exists and drops it once it is done with the body.
+    #[must_use = "the hold ends when it is dropped"]
+    pub fn hold(self: &Arc<Self>) -> BodyHold {
+        self.lock().holds += 1;
+        BodyHold {
+            stream: Arc::clone(self),
+        }
+    }
+
+    /// One attempt's read of the body from byte 0; it holds the body while it lives.
+    pub(crate) fn reader(self: &Arc<Self>) -> BodyReader {
+        BodyReader {
+            hold: self.hold(),
+            index: 0,
+            at: 0,
+        }
+    }
+
+    fn release(&self) {
+        {
+            let mut state = self.lock();
+            state.holds = state.holds.saturating_sub(1);
+        }
+        self.room.notify_waiters();
     }
 
     /// The client stopped short; the body will never be whole.
     pub fn fail(&self) {
-        let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
-        state.failed = true;
-        drop(state);
+        self.lock().failed = true;
         self.notify.notify_waiters();
+        self.room.notify_waiters();
     }
 
     pub fn client_failed(&self) -> bool {
-        self.state
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .failed
+        self.lock().failed
     }
 
     pub fn is_whole(&self) -> bool {
@@ -243,10 +317,7 @@ impl StreamedBody {
     }
 
     pub fn filled(&self) -> u64 {
-        self.state
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .filled
+        self.lock().filled
     }
 
     pub fn len(&self) -> u64 {
@@ -260,7 +331,7 @@ impl StreamedBody {
     /// Moves the chunks out once the body is whole: one chunk is returned as it is, several are
     /// joined once, and the stream retains nothing afterwards. A body still filling stays as it is.
     pub fn take_whole(&self) -> Option<Bytes> {
-        let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
+        let mut state = self.lock();
         if state.filled != self.total {
             return None;
         }
@@ -279,20 +350,33 @@ impl StreamedBody {
     /// The bytes the chunk list holds right now.
     #[cfg(test)]
     fn retained_bytes(&self) -> u64 {
-        let state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
-        state.chunks.iter().map(|chunk| chunk.len() as u64).sum()
+        self.lock()
+            .chunks
+            .iter()
+            .map(|chunk| chunk.len() as u64)
+            .sum()
     }
 
-    /// The next chunk in order, waiting while the body is still filling. The lock is never held
+    /// The chunk at `index`, waiting while the body is still filling; `at` is the reader's byte
+    /// position. Taking a chunk past every other reader wakes the filler. The lock is never held
     /// across the wait.
-    pub(crate) async fn next_chunk(&self, index: &mut usize) -> NextChunk {
+    async fn next_chunk(&self, index: &mut usize, at: &mut u64) -> NextChunk {
         loop {
             let mut wait = std::pin::pin!(self.notify.notified());
             {
-                let state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
+                let mut state = self.lock();
                 if *index < state.chunks.len() {
                     let chunk = state.chunks[*index].clone();
                     *index += 1;
+                    *at += chunk.len() as u64;
+                    let ahead = *at > state.taken;
+                    if ahead {
+                        state.taken = *at;
+                    }
+                    drop(state);
+                    if ahead {
+                        self.room.notify_waiters();
+                    }
                     return NextChunk::Chunk(chunk);
                 }
                 if state.filled == self.total {
@@ -305,6 +389,34 @@ impl StreamedBody {
             }
             wait.await;
         }
+    }
+}
+
+/// Keeps a streamed body's filler waiting for room while it lives.
+pub struct BodyHold {
+    stream: Arc<StreamedBody>,
+}
+
+impl Drop for BodyHold {
+    fn drop(&mut self) {
+        self.stream.release();
+    }
+}
+
+/// Reads a streamed body in order from byte 0.
+pub(crate) struct BodyReader {
+    hold: BodyHold,
+    index: usize,
+    at: u64,
+}
+
+impl BodyReader {
+    /// The next chunk in order, waiting while the body is still filling.
+    pub(crate) async fn next_chunk(&mut self) -> NextChunk {
+        self.hold
+            .stream
+            .next_chunk(&mut self.index, &mut self.at)
+            .await
     }
 }
 
@@ -1277,9 +1389,9 @@ async fn pump(body: RequestBody, frames: mpsc::Sender<Result<Bytes, BodyDropped>
             }
         }
         RequestBody::Streamed(stream) => {
-            let mut index = 0;
+            let mut reader = stream.reader();
             loop {
-                match stream.next_chunk(&mut index).await {
+                match reader.next_chunk().await {
                     NextChunk::Chunk(chunk) => {
                         if frames.send(Ok(chunk)).await.is_err() {
                             return;
@@ -1414,31 +1526,84 @@ fn elapsed_ms(since: Instant) -> u64 {
 mod tests {
     use super::*;
 
-    #[test]
-    fn l1_take_whole_moves_the_chunks_out() {
+    #[tokio::test]
+    async fn l1_take_whole_moves_the_chunks_out() {
         let stream = StreamedBody::new(9);
         for part in ["abc", "def", "ghi"] {
-            stream.push(Bytes::from(part));
+            stream.push(Bytes::from(part)).await;
         }
         assert_eq!(stream.take_whole(), Some(Bytes::from("abcdefghi")));
         assert_eq!(stream.retained_bytes(), 0);
     }
 
-    #[test]
-    fn l1_one_chunk_take_whole_is_not_copied() {
+    #[tokio::test]
+    async fn l1_one_chunk_take_whole_is_not_copied() {
         let stream = StreamedBody::new(4);
         let chunk = Bytes::from("body");
         let pointer = chunk.as_ptr();
-        stream.push(chunk);
+        stream.push(chunk).await;
         let whole = stream.take_whole();
         assert_eq!(whole.as_ref().map(|bytes| bytes.as_ptr()), Some(pointer));
     }
 
-    #[test]
-    fn l1_take_whole_of_an_unfinished_body_keeps_it() {
+    #[tokio::test]
+    async fn l1_take_whole_of_an_unfinished_body_keeps_it() {
         let stream = StreamedBody::new(6);
-        stream.push(Bytes::from("abc"));
+        stream.push(Bytes::from("abc")).await;
         assert_eq!(stream.take_whole(), None);
         assert_eq!(stream.retained_bytes(), 3);
+    }
+
+    const KIB64: usize = 64 * 1024;
+
+    fn chunk() -> Bytes {
+        Bytes::from(vec![b'x'; KIB64])
+    }
+
+    /// One poll with a waker that does nothing: the test re-polls by hand.
+    fn poll_once<F: Future>(future: Pin<&mut F>) -> Poll<F::Output> {
+        future.poll(&mut Context::from_waker(std::task::Waker::noop()))
+    }
+
+    #[tokio::test]
+    async fn l3_push_waits_while_the_window_is_full() {
+        let stream = StreamedBody::with_limits(4 * KIB64 as u64, KIB64 as u64, KIB64 as u64);
+        let _routing = stream.hold();
+        stream.push(chunk()).await;
+        stream.push(chunk()).await;
+        let mut third = std::pin::pin!(stream.push(chunk()));
+        assert!(poll_once(third.as_mut()).is_pending(), "the window is full");
+        let mut reader = stream.reader();
+        assert!(matches!(reader.next_chunk().await, NextChunk::Chunk(_)));
+        assert!(
+            poll_once(third.as_mut()).is_pending(),
+            "a chunk inside the prefix makes no room"
+        );
+        assert!(matches!(reader.next_chunk().await, NextChunk::Chunk(_)));
+        assert!(
+            poll_once(third.as_mut()).is_ready(),
+            "one chunk past the prefix was taken"
+        );
+    }
+
+    #[tokio::test]
+    async fn l3_a_dropped_reader_releases_a_waiting_push() {
+        let stream = StreamedBody::with_limits(3 * KIB64 as u64, KIB64 as u64, KIB64 as u64);
+        let routing = stream.hold();
+        let reader = stream.reader();
+        stream.push(chunk()).await;
+        stream.push(chunk()).await;
+        let mut third = std::pin::pin!(stream.push(chunk()));
+        assert!(poll_once(third.as_mut()).is_pending(), "the window is full");
+        drop(routing);
+        assert!(
+            poll_once(third.as_mut()).is_pending(),
+            "a live reader can still make room"
+        );
+        drop(reader);
+        assert!(
+            poll_once(third.as_mut()).is_ready(),
+            "nobody can read the body any more"
+        );
     }
 }

@@ -162,7 +162,9 @@ impl AnthropicPath {
                 Err(answer) => answer,
             };
         }
-        // The rest of the body fills the stream while the answer is already being relayed.
+        // The rest of the body fills the stream while the answer is already being relayed; the
+        // hold keeps the filler at the upstream's pace until the route is done with the body.
+        let _routing = stream.hold();
         tokio::spawn(fill(body, Arc::clone(&stream)));
         if (self.is_anthropic)(&model) {
             let events = RequestEvents::from_parts(&parts);
@@ -365,7 +367,7 @@ async fn read_head(
         let Some(data) = frame.data_ref() else {
             continue;
         };
-        stream.push(data.clone());
+        stream.push(data.clone()).await;
         let room = STREAM_HEAD_BYTES - head.len();
         if room > 0 {
             head.extend_from_slice(&data[..data.len().min(room)]);
@@ -374,13 +376,15 @@ async fn read_head(
     Ok(head)
 }
 
-/// Reads the rest of the body into the stream: every frame pushed unchanged, in order. A
-/// client that stops short, or a frame that fails, marks the stream failed; the relay ends
-/// with no answer.
+/// Reads the rest of the body into the stream: every frame pushed unchanged, in order, each
+/// push waiting while the stream's send window is full. A client that stops short, or a frame
+/// that fails, marks the stream failed; the relay ends with no answer.
 // The err side is the whole answer; the 128-byte move only happens on a failure path.
 #[allow(clippy::result_large_err)]
-async fn fill(body: Incoming, stream: Arc<StreamedBody>) -> Result<(), Response<RespBody>> {
-    let mut body = body;
+async fn fill<B>(mut body: B, stream: Arc<StreamedBody>) -> Result<(), Response<RespBody>>
+where
+    B: Body<Data = Bytes> + Unpin,
+{
     while !stream.is_whole() {
         let Some(Ok(frame)) = body.frame().await else {
             return Err(cut_client(&stream));
@@ -388,7 +392,7 @@ async fn fill(body: Incoming, stream: Arc<StreamedBody>) -> Result<(), Response<
         let Some(data) = frame.data_ref() else {
             continue;
         };
-        stream.push(data.clone());
+        stream.push(data.clone()).await;
     }
     Ok(())
 }
@@ -829,4 +833,65 @@ fn unreachable_answer() -> Response<RespBody> {
         "api_error",
         "huddle-router router: anthropic unreachable",
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::upstream::NextChunk;
+    use std::convert::Infallible;
+
+    const KIB64: usize = 64 * 1024;
+
+    /// A client body fed from a channel; dropping the sender stops it short.
+    struct ClientBody(mpsc::UnboundedReceiver<Bytes>);
+
+    impl Body for ClientBody {
+        type Data = Bytes;
+        type Error = Infallible;
+
+        fn poll_frame(
+            self: Pin<&mut Self>,
+            cx: &mut Context<'_>,
+        ) -> Poll<Option<Result<Frame<Bytes>, Infallible>>> {
+            self.get_mut()
+                .0
+                .poll_recv(cx)
+                .map(|chunk| chunk.map(|chunk| Ok(Frame::data(chunk))))
+        }
+    }
+
+    fn poll_once<F: Future>(future: Pin<&mut F>) -> Poll<F::Output> {
+        future.poll(&mut Context::from_waker(std::task::Waker::noop()))
+    }
+
+    #[tokio::test]
+    async fn l3_a_client_that_stops_while_push_waits_still_ends_the_request() {
+        let stream = StreamedBody::with_limits(5 * KIB64 as u64, KIB64 as u64, KIB64 as u64);
+        let _routing = stream.hold();
+        let (client, frames) = mpsc::unbounded_channel();
+        for _ in 0..4 {
+            client
+                .send(Bytes::from(vec![b'x'; KIB64]))
+                .expect("the channel");
+        }
+        let mut filling = std::pin::pin!(fill(ClientBody(frames), Arc::clone(&stream)));
+        assert!(poll_once(filling.as_mut()).is_pending());
+        assert_eq!(stream.filled(), 3 * KIB64 as u64, "the third push waits");
+        drop(client);
+        let mut reader = stream.reader();
+        let mut ended = None;
+        for _ in 0..5 {
+            assert!(matches!(reader.next_chunk().await, NextChunk::Chunk(_)));
+            if let Poll::Ready(result) = poll_once(filling.as_mut()) {
+                ended = Some(result);
+                break;
+            }
+        }
+        let Some(Err(answer)) = ended else {
+            panic!("fill ends with the cut answer");
+        };
+        assert_eq!(answer.status(), StatusCode::INTERNAL_SERVER_ERROR);
+        assert!(stream.client_failed());
+    }
 }

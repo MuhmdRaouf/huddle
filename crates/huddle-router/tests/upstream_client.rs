@@ -139,11 +139,11 @@ async fn a_large_body_is_handed_over_in_small_frames_and_arrives_whole() {
 async fn a_streamed_body_is_read_from_its_first_byte() {
     let upstream = FakeUpstream::start(|_, _| Step::answer(200, "ok")).await;
     let streamed = StreamedBody::new(6);
-    streamed.push(Bytes::from_static(b"ab"));
+    streamed.push(Bytes::from_static(b"ab")).await;
     let filler = streamed.clone();
     tokio::spawn(async move {
         tokio::time::sleep(Duration::from_millis(30)).await;
-        filler.push(Bytes::from_static(b"cdef"));
+        filler.push(Bytes::from_static(b"cdef")).await;
     });
     let c = client(RootCertStore::empty());
     let url = format!("{}/v1/messages", upstream.url());

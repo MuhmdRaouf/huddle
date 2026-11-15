@@ -50,13 +50,13 @@ fn big_bytes() -> Bytes {
     Bytes::from(vec![b'p'; BIG])
 }
 
-fn big_stream() -> Arc<StreamedBody> {
+async fn big_stream() -> Arc<StreamedBody> {
     let s = StreamedBody::new(BIG as u64);
     let data = big_bytes();
     let mut at = 0;
     while at < BIG {
         let end = (at + 64 * 1024).min(BIG);
-        s.push(data.slice(at..end));
+        s.push(data.slice(at..end)).await;
         at = end;
     }
     s
@@ -132,7 +132,7 @@ async fn a_streamed_body_that_was_handed_over_is_not_sent_twice() {
     let err = c
         .send(request(
             &url,
-            RequestBody::Streamed(big_stream()),
+            RequestBody::Streamed(big_stream().await),
             BIG as u64,
         ))
         .await
@@ -185,7 +185,7 @@ async fn a_streamed_body_replays_from_byte_zero_on_the_fresh_connection() {
     let answer = c
         .send(request(
             &url,
-            RequestBody::Streamed(big_stream()),
+            RequestBody::Streamed(big_stream().await),
             BIG as u64,
         ))
         .await
