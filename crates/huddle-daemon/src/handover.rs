@@ -27,9 +27,6 @@ pub const HANDOVER_SOCKET: &str = "handover.sock";
 /// How long one takeover connection's question and its answer may take, on both sides.
 pub const ANSWER_WAIT: Duration = Duration::from_secs(5);
 
-/// How often the accept loop wakes to check the stop flag: a takeover waits at most this long.
-const ACCEPT_POLL: Duration = Duration::from_millis(200);
-
 /// Where the daemon's handover lines go.
 pub type Logger = Arc<dyn Fn(String) + Send + Sync>;
 
@@ -59,11 +56,14 @@ impl HandoverListener {
             return;
         };
         server.stop.store(true, Ordering::SeqCst);
+        // The wake dials the socket file before the remove takes it; a handover that already
+        // completed woke the loop in `retire`, and a second dial could reach another daemon.
         if server
             .retired
             .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
             .is_ok()
         {
+            wake(&server.path);
             let _ = fs::remove_file(&server.path);
         }
         if let Ok(mut slot) = self.accept_thread.lock()
@@ -94,9 +94,6 @@ pub fn serve_handover(
         Ok(unix) => unix,
         Err(source) => return cannot_serve(source, log),
     };
-    if let Err(source) = unix.set_nonblocking(true) {
-        return cannot_serve(source, log);
-    }
     if let Err(source) = fs::set_permissions(&path, Permissions::from_mode(0o600)) {
         (log)(format!("huddle-router: handover socket: {source}"));
     }
@@ -140,16 +137,21 @@ fn accept_loop(server: Arc<HandoverServer>, unix: UnixListener) {
                 let server = Arc::clone(&server);
                 thread::spawn(move || answer(&server, stream));
             }
-            Err(source) if source.kind() == io::ErrorKind::WouldBlock => thread::sleep(ACCEPT_POLL),
             Err(source) if source.kind() == io::ErrorKind::Interrupted => {}
             Err(_) => return,
         }
     }
 }
 
+/// One no-op connection ends the listener's blocked `accept`, so the loop never wakes for
+/// anything but work or its own shutdown.
+fn wake(path: &Path) {
+    let _ = UnixStream::connect(path);
+}
+
 fn answer(server: &HandoverServer, stream: UnixStream) {
-    // The accepted stream inherits the listener's non-blocking flag, and a read or write timeout
-    // needs a blocking socket to wait on.
+    // A read or write timeout waits on a blocking socket, so the flag is set here rather than
+    // taken from the listener.
     let _ = stream.set_nonblocking(false);
     let _ = stream.set_read_timeout(Some(ANSWER_WAIT));
     let _ = stream.set_write_timeout(Some(ANSWER_WAIT));
@@ -206,6 +208,9 @@ fn retire(server: &HandoverServer, pid: u32) {
         return;
     }
     server.stop.store(true, Ordering::SeqCst);
+    // The wake dials the socket file while it still exists: a blocked accept ends on this
+    // connection instead of a timer.
+    wake(&server.path);
     let _ = fs::remove_file(&server.path);
     let _ = server.handed.send(pid);
 }
@@ -461,7 +466,7 @@ mod tests {
         os::unix::net::UnixStream,
         sync::Mutex,
         thread,
-        time::Duration,
+        time::{Duration, Instant},
     };
     use tokio::sync::mpsc;
 
@@ -737,5 +742,28 @@ mod tests {
             "{store:?}"
         );
         handover.stop();
+    }
+
+    #[test]
+    fn l21_stop_ends_a_blocked_accept_loop_promptly() {
+        let home = TempHome::new();
+        let run_dir = home.root().join("run");
+        let (tcp, port) = listener();
+        let (handed, _seen) = mpsc::unbounded_channel();
+        let handover = serve_handover(&run_dir, port, &tcp, handed, no_log());
+        // A question that is no takeover wakes the accept loop once and leaves the daemon
+        // serving; from here on the loop sits in its accept until `stop` itself ends it.
+        let stream = UnixStream::connect(run_dir.join(HANDOVER_SOCKET)).expect("connect");
+        (&stream).write_all(b"not a takeover\n").expect("write");
+        let mut text = String::new();
+        let _ = (&stream).read_to_string(&mut text);
+        thread::sleep(Duration::from_millis(5));
+        let started = Instant::now();
+        handover.stop();
+        assert!(
+            started.elapsed() < Duration::from_millis(120),
+            "stop took {:?} to end a blocked accept loop",
+            started.elapsed()
+        );
     }
 }
