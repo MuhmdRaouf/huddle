@@ -396,8 +396,10 @@ const hOf=(m,k)=>m?m[k]||HZERO:null;
 const hCell=(t,f)=>t?f(t):HT.err?NA:checking();
 const sheetKey=()=>DR&&(DR.k==='session'||DR.k==='project')?DR:null;
 const wantTotals=()=>page==='sessions'||page==='projects'||!!sheetKey();
+/* the sessions the pages list, so the answer holds those and not every session of the range */
+const sessionIds=()=>{const ids=SESS.map(s=>s.id);if(DR&&DR.k==='session'&&!ids.includes(DR.id))ids.push(DR.id);return ids.length?'sessions='+ids.map(encodeURIComponent).join(',')+'&':''};
 function loadTotals(){if(!wantTotals())return;const q=sheetKey(),key=q&&q.key;
- Promise.all([hget(HQ+'totals&by=session&models=0&'+rangeQuery()),hget(HQ+'totals&by=project&'+rangeQuery()),q?hget(HQ+'buckets&'+rangeQuery()+'&'+q.k+'='+encodeURIComponent(q.id)):null,q&&q.k==='session'?hget(HQ+'totals&by=session&session='+encodeURIComponent(q.id)+'&'+rangeQuery()):null]).then(([s,p,t,m])=>{
+ Promise.all([hget(HQ+'totals&by=session&models=0&'+sessionIds()+rangeQuery()),hget(HQ+'totals&by=project&'+rangeQuery()),q?hget(HQ+'buckets&'+rangeQuery()+'&'+q.k+'='+encodeURIComponent(q.id)):null,q&&q.k==='session'?hget(HQ+'totals&by=session&session='+encodeURIComponent(q.id)+'&'+rangeQuery()):null]).then(([s,p,t,m])=>{
   HT.ses=hmap(s);HT.prj=hmap(p);HT.meta=s;if(t)HT.trend[key]=t;if(m)HT.mod[key]=arr(arr(m.totals)[0]&&m.totals[0].models);HT.err=false;paint()},()=>{HT.err=true;paint()})}
 const costCell=t=>costText(t.cost_usd,t.priced);
 const histCols=get=>[

@@ -10,7 +10,7 @@ use huddle_catalog::prices::{
     CLAUDE_PRICES_RETRIEVED, PRICES_RETRIEVED, TokenCounts, cost_usd, is_api_equivalent, price_of,
 };
 use huddle_history::{
-    Filter, GroupBy, History, HistoryError, Page, Range, Row, StatusClass, Total,
+    Filter, GroupBy, History, HistoryError, Narrow, Page, Range, Row, StatusClass, Total,
 };
 use serde_json::{Value, json};
 
@@ -99,8 +99,8 @@ impl Window {
 pub struct TotalsShape {
     /// Each row's per-model split; `models=0` leaves it out.
     pub models: bool,
-    /// Only the row with this key.
-    pub only: Option<String>,
+    /// The sessions or projects the totals keep, filtered in SQL.
+    pub narrow: Narrow,
     /// Minutes east of UTC; only day keys use it.
     pub tz_offset_min: i32,
 }
@@ -212,6 +212,26 @@ fn window_of(
     Ok(window)
 }
 
+/// The rows a totals question keeps: `session=<id>` or `sessions=<id>,<id>` when grouped by
+/// session, `project=<name>` when grouped by project.
+fn narrow_of<'a>(by: GroupBy, get: &impl Fn(&str) -> Option<&'a str>) -> Narrow {
+    let mut narrow = Narrow::default();
+    match by {
+        GroupBy::Session => {
+            narrow.sessions.extend(get("session").map(str::to_owned));
+            narrow.sessions.extend(
+                get("sessions")
+                    .into_iter()
+                    .flat_map(|ids| ids.split(','))
+                    .map(str::to_owned),
+            );
+        }
+        GroupBy::Project => narrow.projects.extend(get("project").map(str::to_owned)),
+        _ => {}
+    }
+    narrow
+}
+
 /// Parses `query` (the part after `?`) at time `now_ms`.
 pub fn parse(query: &str, now_ms: u64, keep_days: u64) -> Result<Query, Refusal> {
     let pairs = pairs(query);
@@ -257,9 +277,7 @@ pub fn parse(query: &str, now_ms: u64, keep_days: u64) -> Result<Query, Refusal>
             };
             let shape = TotalsShape {
                 models: get("models") != Some("0"),
-                only: get("session")
-                    .filter(|_| by == GroupBy::Session)
-                    .map(str::to_owned),
+                narrow: narrow_of(by, &get),
                 tz_offset_min,
             };
             Ok(Query::Totals(window, by, shape))
@@ -405,11 +423,10 @@ pub fn answer(
             let totals = if *by == GroupBy::Day {
                 history.totals_in(window.range(), *by, shape.tz_offset_min)?
             } else {
-                history.totals_with_aliases(window.range(), *by, aliases)?
+                history.totals_with_aliases(window.range(), *by, aliases, &shape.narrow)?
             };
             let rows: Vec<Value> = totals
                 .iter()
-                .filter(|t| shape.only.as_ref().is_none_or(|key| *key == t.key))
                 .map(|t| {
                     let cost: f64 = t
                         .models

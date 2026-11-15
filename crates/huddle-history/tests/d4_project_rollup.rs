@@ -3,7 +3,7 @@ mod common;
 use std::collections::BTreeMap;
 
 use common::*;
-use huddle_history::{GroupBy, Row};
+use huddle_history::{GroupBy, Narrow, Row};
 use huddle_testkit::temp_home::TempHome;
 
 fn in_project(at_ms: u64, model: &str, project: &str) -> Row {
@@ -30,7 +30,7 @@ fn d4_history_totals_roll_old_folder_names_into_their_repo() {
     let aliases = BTreeMap::from([("dv2-d5".to_string(), "huddle".to_string())]);
 
     let totals = history
-        .totals_with_aliases(all(), GroupBy::Project, &aliases)
+        .totals_with_aliases(all(), GroupBy::Project, &aliases, &Narrow::default())
         .expect("totals");
     let keys: Vec<&str> = totals.iter().map(|t| t.key.as_str()).collect();
     assert_eq!(keys, ["huddle", "notes"]);
@@ -47,7 +47,7 @@ fn d4_history_totals_roll_old_folder_names_into_their_repo() {
     assert_eq!(models, [("a", 2), ("b", 1)]);
 
     let by_lane = history
-        .totals_with_aliases(all(), GroupBy::Lane, &aliases)
+        .totals_with_aliases(all(), GroupBy::Lane, &aliases, &Narrow::default())
         .expect("lane totals");
     assert_eq!(by_lane.len(), 1, "aliases touch only project keys");
 }

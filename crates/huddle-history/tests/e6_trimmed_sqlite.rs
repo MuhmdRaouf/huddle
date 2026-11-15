@@ -3,7 +3,7 @@ mod common;
 use std::collections::BTreeMap;
 
 use common::*;
-use huddle_history::{Credit, Filter, GroupBy, History, Range, Row, StatusClass};
+use huddle_history::{Credit, Filter, GroupBy, History, Narrow, Range, Row, StatusClass};
 use huddle_testkit::temp_home::TempHome;
 use rusqlite::Connection;
 
@@ -139,7 +139,7 @@ fn e6_history_queries_run_on_the_trimmed_sqlite() {
 
     let aliases = BTreeMap::from([("p1".to_string(), "p0".to_string())]);
     let merged = read
-        .totals_with_aliases(all(), GroupBy::Project, &aliases)
+        .totals_with_aliases(all(), GroupBy::Project, &aliases, &Narrow::default())
         .expect("aliases");
     assert_eq!(merged.len(), 1);
 

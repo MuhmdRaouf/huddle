@@ -56,6 +56,44 @@ impl GroupBy {
     }
 }
 
+/// Rows a totals query keeps, decided in SQL. An empty list keeps every row; the empty name
+/// stands for a row with no session or no project.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Narrow {
+    pub sessions: Vec<String>,
+    pub projects: Vec<String>,
+}
+
+impl Narrow {
+    /// The `AND` clauses for this filter, numbering its parameters from `?first`.
+    fn clause(&self, first: usize) -> (String, Vec<Value>) {
+        let mut sql = String::new();
+        let mut args = Vec::new();
+        for (column, names) in [("session", &self.sessions), ("project", &self.projects)] {
+            if names.is_empty() {
+                continue;
+            }
+            let marks: Vec<String> = names
+                .iter()
+                .filter(|name| !name.is_empty())
+                .map(|name| {
+                    args.push(Value::Text(name.clone()));
+                    format!("?{}", first + args.len() - 1)
+                })
+                .collect();
+            let mut tests = Vec::new();
+            if !marks.is_empty() {
+                tests.push(format!("{column} IN ({})", marks.join(",")));
+            }
+            if names.iter().any(String::is_empty) {
+                tests.push(format!("COALESCE({column}, '') = ''"));
+            }
+            sql.push_str(&format!(" AND ({})", tests.join(" OR ")));
+        }
+        (sql, args)
+    }
+}
+
 /// Token sums for one model, so a caller can price them.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ModelUsage {
@@ -298,9 +336,21 @@ impl History {
         by: GroupBy,
         tz_offset_min: i32,
     ) -> Result<Vec<Total>, HistoryError> {
+        self.totals_narrow(range, by, tz_offset_min, &Narrow::default())
+    }
+
+    /// `totals_in` over the rows `narrow` keeps; the filter is part of the SQL, so rows it
+    /// drops are never read.
+    pub fn totals_narrow(
+        &self,
+        range: Range,
+        by: GroupBy,
+        tz_offset_min: i32,
+        narrow: &Narrow,
+    ) -> Result<Vec<Total>, HistoryError> {
         let offset_ms = offset_ms(tz_offset_min);
         let parts = self.sliced_in(range, 1, 0, |history, slice| {
-            history.totals_part(slice, by, offset_ms)
+            history.totals_part(slice, by, offset_ms, narrow)
         })?;
         let mut merged: BTreeMap<String, BTreeMap<String, Sums>> = BTreeMap::new();
         let mut ttft: HashMap<String, Vec<u64>> = HashMap::new();
@@ -364,18 +414,25 @@ impl History {
         range: Range,
         by: GroupBy,
         offset_ms: i64,
+        narrow: &Narrow,
     ) -> Result<TotalsPart, HistoryError> {
+        let (kept, extra) = narrow.clause(3);
+        let mut args = vec![
+            Value::Integer(to_db(range.from_ms)),
+            Value::Integer(to_db(range.to_ms)),
+        ];
+        args.extend(extra);
         let mut stmt = self.conn.prepare(&format!(
             "SELECT {key}, model, at_ms, {IS_ERROR}, tokens_in, cache_read, cache_write, tokens_out,
                     ttft_ms
-             FROM requests WHERE at_ms >= ?1 AND at_ms < ?2",
+             FROM requests WHERE at_ms >= ?1 AND at_ms < ?2{kept}",
             key = by.key_column(offset_ms)
         ))?;
         let mut keys = Interner::default();
         let mut models = Interner::default();
         let mut sums: HashMap<(usize, usize), Sums> = HashMap::new();
         let mut times: HashMap<usize, Vec<u64>> = HashMap::new();
-        let mut rows = stmt.query([to_db(range.from_ms), to_db(range.to_ms)])?;
+        let mut rows = stmt.query(params_from_iter(&args))?;
         while let Some(r) = rows.next()? {
             let key = keys.id(&text_at(r, 0)?);
             let model = models.id(&text_at(r, 1)?);
@@ -447,11 +504,23 @@ impl History {
         range: Range,
         by: GroupBy,
         aliases: &BTreeMap<String, String>,
+        narrow: &Narrow,
     ) -> Result<Vec<Total>, HistoryError> {
-        let totals = self.totals(range, by)?;
         if by != GroupBy::Project || aliases.is_empty() {
-            return Ok(totals);
+            return self.totals_narrow(range, by, 0, narrow);
         }
+        // A project asked for by its repository name also holds the rows of every alias of it.
+        let mut projects = narrow.projects.clone();
+        for (folder, repo) in aliases {
+            if narrow.projects.contains(repo) {
+                projects.push(folder.clone());
+            }
+        }
+        let narrow = Narrow {
+            sessions: narrow.sessions.clone(),
+            projects,
+        };
+        let totals = self.totals_narrow(range, by, 0, &narrow)?;
         let mut merged: BTreeMap<String, Total> = BTreeMap::new();
         for mut total in totals {
             if let Some(repo) = aliases.get(&total.key) {

@@ -481,6 +481,35 @@ async fn k3_one_session_answers_with_its_models() {
     assert_eq!(rows[0]["models"][0]["model"], "claude-opus-5-5");
 }
 
+#[tokio::test]
+async fn l27_the_sessions_list_keeps_only_the_named_ids() {
+    let rig = rig(true).await;
+    let v = json(&rig, "view=totals&by=session&range=30d&sessions=s2,gone").await;
+    let keys: Vec<&str> = v["totals"]
+        .as_array()
+        .expect("totals")
+        .iter()
+        .filter_map(|r| r["key"].as_str())
+        .collect();
+    assert_eq!(keys, vec!["s2"]);
+}
+
+#[tokio::test]
+async fn l27_one_project_totals_answer_only_that_project() {
+    let rig = rig(true).await;
+    let v = json(
+        &rig,
+        "view=totals&by=project&range=30d&project=%2Fwork%2Fa%20b",
+    )
+    .await;
+    let rows = v["totals"].as_array().expect("totals");
+    assert_eq!(rows.len(), 1);
+    assert_eq!(
+        (rows[0]["key"].as_str(), rows[0]["n"].as_u64()),
+        (Some("/work/a b"), Some(1))
+    );
+}
+
 const DAY: u64 = 86_400_000;
 
 /// A rig whose only row is one request at 23:30 UTC on a day three days back; also the

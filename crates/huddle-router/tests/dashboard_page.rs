@@ -224,7 +224,7 @@ fn t8_remembers_the_range_and_shows_a_failed_fetch_without_dropping_data() {
 #[test]
 fn t9_fetches_30_day_totals_by_session_and_project_and_a_trend_per_sheet() {
     assert!(PAGE.contains("/huddle-router/history?view="));
-    assert!(PAGE.contains("totals&by=session&models=0&'+rangeQuery()"));
+    assert!(PAGE.contains("totals&by=session&models=0&'+sessionIds()+rangeQuery()"));
     assert!(PAGE.contains("totals&by=project&'+rangeQuery()"));
     assert!(PAGE.contains("buckets&'+rangeQuery()+'&'+q.k+'='+encodeURIComponent(q.id)"));
     assert!(PAGE.contains("function loadTotals(){if(!wantTotals())return"));
@@ -1904,7 +1904,7 @@ fn j3_errors_label_says_newest_500() {
 
 #[test]
 fn k3_sessions_page_asks_slim_and_sheet_asks_full() {
-    assert!(PAGE.contains("totals&by=session&models=0&'+rangeQuery()"));
+    assert!(PAGE.contains("totals&by=session&models=0&'+sessionIds()+rangeQuery()"));
     assert!(PAGE.contains("totals&by=session&session='+encodeURIComponent(q.id)+'&'+rangeQuery()"));
 }
 
@@ -2440,4 +2440,17 @@ fn k5_page_wires_the_stream_to_the_picker() {
     assert!(PAGE.contains("/huddle-router/live"));
     assert!(PAGE.contains("Realtime is on"));
     assert!(PAGE.contains("aria-disabled"));
+}
+
+#[test]
+fn l27_the_sessions_page_asks_for_its_listed_ids_only() {
+    let core = include_str!("../src/dashboard/core.js");
+    assert!(
+        core.contains("'totals&by=session&models=0&'+sessionIds()+rangeQuery()"),
+        "the session totals call names the listed ids"
+    );
+    assert!(
+        core.contains("'sessions='+ids.map(encodeURIComponent).join(',')"),
+        "ids are joined into one sessions list"
+    );
 }
