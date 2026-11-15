@@ -1,9 +1,7 @@
-//! Scans of the request table that add rows into maps in memory, one slice of the time range per
-//! thread.
+//! Scans of the request table that add rows into maps in memory on the calling thread.
 
 use std::borrow::Cow;
 use std::collections::HashMap;
-use std::thread;
 
 use rusqlite::Row as SqlRow;
 use rusqlite::types::ValueRef;
@@ -12,12 +10,6 @@ use crate::error::HistoryError;
 use crate::history::History;
 use crate::query::{count, opt_count};
 use crate::row::Range;
-
-/// The most slices one scan splits into.
-const MAX_SLICES: usize = 4;
-
-/// A range shorter than this is scanned on the calling thread.
-const SLICE_FROM_MS: u64 = 6 * 3_600_000;
 
 /// A text column borrowed from the row, an integer (a day number) as its decimal text.
 pub(crate) fn text_at<'r>(r: &'r SqlRow<'_>, i: usize) -> rusqlite::Result<Cow<'r, str>> {
@@ -105,75 +97,64 @@ impl Sums {
     }
 }
 
-/// Cuts `range` into up to `parts` consecutive slices whose inner boundaries sit on the grid of
-/// `align_ms` shifted by `offset_ms` (a zone east of UTC is positive), so a bucket aligned to
-/// that grid never straddles two slices.
-fn cut(range: Range, align_ms: u64, offset_ms: i64, parts: u64) -> Vec<Range> {
-    let step = range.to_ms.saturating_sub(range.from_ms) / parts.max(1);
-    let align = align_ms as i64;
-    let mut edges = vec![range.from_ms];
-    for i in 1..parts {
-        let at = (range.from_ms + i * step) as i64 + offset_ms;
-        let edge = (at.div_euclid(align) * align - offset_ms).max(0) as u64;
-        if edge > edges.last().copied().unwrap_or(0) && edge < range.to_ms {
-            edges.push(edge);
-        }
-    }
-    edges.push(range.to_ms);
-    edges
-        .windows(2)
-        .map(|w| Range {
-            from_ms: w[0],
-            to_ms: w[1],
-        })
-        .collect()
-}
-
 impl History {
-    /// Runs `work` over slices of `range`, each on its own thread and read connection, and
-    /// returns the results in slice order. A short range, or a handle with no file, runs whole
-    /// on this thread.
-    pub(crate) fn sliced<T: Send>(
+    /// Runs `work` over `range` on this handle's one read connection and returns its result as
+    /// the single slice. No thread and no connection is created: a call's memory is its own
+    /// maps and one connection's page cache. The grid arguments are the callers' bucket
+    /// alignment, which one whole scan has no use for.
+    pub(crate) fn sliced<T>(
         &self,
         range: Range,
         align_ms: u64,
-        work: impl Fn(&History, Range) -> Result<T, HistoryError> + Sync,
+        work: impl Fn(&History, Range) -> Result<T, HistoryError>,
     ) -> Result<Vec<T>, HistoryError> {
         self.sliced_in(range, align_ms, 0, work)
     }
 
-    /// `sliced`, with the slice edges on the grid of `align_ms` shifted by `offset_ms`.
-    pub(crate) fn sliced_in<T: Send>(
+    /// `sliced`, with the bucket grid shifted by `offset_ms`.
+    pub(crate) fn sliced_in<T>(
         &self,
         range: Range,
-        align_ms: u64,
-        offset_ms: i64,
-        work: impl Fn(&History, Range) -> Result<T, HistoryError> + Sync,
+        _align_ms: u64,
+        _offset_ms: i64,
+        work: impl Fn(&History, Range) -> Result<T, HistoryError>,
     ) -> Result<Vec<T>, HistoryError> {
-        let parts = thread::available_parallelism()
-            .map(|n| n.get())
-            .unwrap_or(1)
-            .min(MAX_SLICES) as u64;
-        let long = range.to_ms.saturating_sub(range.from_ms) >= SLICE_FROM_MS;
-        if !long || parts < 2 {
-            return work(self, range).map(|one| vec![one]);
-        }
-        let slices = cut(range, align_ms.max(1), offset_ms, parts);
-        thread::scope(|scope| {
-            let work = &work;
-            let path = &self.path;
-            let jobs: Vec<_> = slices
-                .into_iter()
-                .map(|slice| {
-                    scope.spawn(move || {
-                        let reader = History::open_read(path)?;
-                        work(&reader, slice)
-                    })
-                })
-                .collect();
-            jobs.into_iter()
-                .map(|job| job.join().unwrap_or(Err(HistoryError::Worker)))
-                .collect()
-        })
+        work(self, range).map(|one| vec![one])
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Mutex;
+    use std::thread;
+
+    use huddle_testkit::temp_home::TempHome;
+
+    use crate::history::History;
+    use crate::row::Range;
+
+    const DAY: u64 = 86_400_000;
+
+    #[test]
+    fn l26_a_history_call_spawns_no_threads() {
+        let home = TempHome::new();
+        let history = History::open(&home.root().join("scratch/history/huddle.db")).expect("open");
+        let seen = Mutex::new(Vec::new());
+        let range = Range {
+            from_ms: 0,
+            to_ms: 90 * DAY,
+        };
+        let parts = history
+            .sliced_in(range, DAY, 0, |_, slice| {
+                seen.lock().expect("lock").push(thread::current().id());
+                Ok(slice)
+            })
+            .expect("sliced");
+        let seen = seen.into_inner().expect("lock");
+        assert!(!parts.is_empty());
+        assert!(
+            seen.iter().all(|id| *id == thread::current().id()),
+            "a slice ran on another thread: {seen:?}"
+        );
     }
 }

@@ -1,6 +1,6 @@
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use rusqlite::{Connection, OpenFlags, params};
 
@@ -28,10 +28,13 @@ pub fn missing_usage_sql() -> String {
 pub(crate) const UNKNOWN_USAGE: &str =
     "tokens_in IS NULL AND cache_read IS NULL AND cache_write IS NULL AND tokens_out IS NULL";
 
+/// The page cache of a read connection, in KiB: a scan streams its rows once, so a big cache only
+/// adds resident memory per concurrent call.
+const READ_CACHE_KIB: i64 = 512;
+
 /// The request history in one SQLite file.
 pub struct History {
     pub(crate) conn: Connection,
-    pub(crate) path: PathBuf,
 }
 
 pub(crate) fn to_db(value: u64) -> i64 {
@@ -59,10 +62,7 @@ impl History {
         // high-water mark on disk.
         conn.pragma_update(None, "journal_size_limit", 4_194_304)?;
         schema::migrate(&conn)?;
-        Ok(History {
-            conn,
-            path: path.to_path_buf(),
-        })
+        Ok(History { conn })
     }
 
     /// Opens the file for writing only when it exists: no folder, file or schema is created, and
@@ -73,10 +73,7 @@ impl History {
             OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_NO_MUTEX,
         )?;
         conn.busy_timeout(std::time::Duration::from_secs(5))?;
-        Ok(History {
-            conn,
-            path: path.to_path_buf(),
-        })
+        Ok(History { conn })
     }
 
     /// Opens an existing file for reading only. Nothing is created, migrated or changed, and a
@@ -88,10 +85,8 @@ impl History {
             OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
         )?;
         conn.busy_timeout(std::time::Duration::from_secs(5))?;
-        Ok(History {
-            conn,
-            path: path.to_path_buf(),
-        })
+        conn.pragma_update(None, "cache_size", -READ_CACHE_KIB)?;
+        Ok(History { conn })
     }
 
     /// Inserts the rows in one transaction.
