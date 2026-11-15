@@ -7,11 +7,16 @@ use std::hash::{BuildHasher, Hasher};
 use std::io;
 use std::net::TcpListener;
 use std::path::{Path, PathBuf};
-use std::time::{Duration, SystemTime};
+use std::thread;
+use std::time::{Duration, Instant, SystemTime};
 
 const FIRST_PORT: u16 = 20000;
 const LAST_PORT: u16 = 29999;
 const STALE_AFTER: Duration = Duration::from_secs(3600);
+// A leased port can stay busy for a moment after the socket that last held it closed, longer on a
+// loaded machine: the lease holder waits this long for it before it gives the port up.
+const BIND_WAIT: Duration = Duration::from_secs(2);
+const BIND_RETRY: Duration = Duration::from_millis(20);
 /// Directory of the port leases, under the temp directory. The guard does not count it as a leak.
 pub const LEASE_DIR: &str = "huddle-port-leases";
 /// The variable that names the lease folder. The suite guard sets it to a folder outside its
@@ -52,11 +57,28 @@ pub fn free_in(dir: &Path, first: u16, last: u16) -> io::Result<u16> {
     let start = (RandomState::new().build_hasher().finish() % u64::from(span)) as u32;
     for offset in 0..span {
         let port = first + ((start + offset) % span) as u16;
-        if take_lease(dir, port)? && TcpListener::bind(("127.0.0.1", port)).is_ok() {
-            return Ok(port);
+        if take_lease(dir, port)? {
+            if binds_within(port, BIND_WAIT) {
+                return Ok(port);
+            }
+            let _ = fs::remove_file(dir.join(port.to_string()));
         }
     }
     Err(io::Error::other(format!("no free port in {first}-{last}")))
+}
+
+// Answers whether the port could be bound before `within` ran out. Only a port in use is retried.
+fn binds_within(port: u16, within: Duration) -> bool {
+    let deadline = Instant::now() + within;
+    loop {
+        match TcpListener::bind(("127.0.0.1", port)) {
+            Ok(_) => return true,
+            Err(err) if err.kind() == io::ErrorKind::AddrInUse && Instant::now() < deadline => {
+                thread::sleep(BIND_RETRY);
+            }
+            Err(_) => return false,
+        }
+    }
 }
 
 // Answers whether the caller holds `port` now.

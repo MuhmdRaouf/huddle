@@ -210,6 +210,51 @@ fn parallel_takers_of_one_stale_lease_never_both_win() {
     }
 }
 
+// Binds `port` the way a test's own server would. The port was bound and closed by the lease a
+// moment ago, and macOS can refuse the next bind for a short while, so this retries for 2 s.
+fn hold(port: u16) -> std::net::TcpListener {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+    loop {
+        match std::net::TcpListener::bind(("127.0.0.1", port)) {
+            Ok(listener) => return listener,
+            Err(err) if std::time::Instant::now() < deadline => {
+                assert_eq!(err.kind(), std::io::ErrorKind::AddrInUse, "{err}");
+                thread::sleep(std::time::Duration::from_millis(20));
+            }
+            Err(err) => panic!("bind {port}: {err}"),
+        }
+    }
+}
+
+#[test]
+fn t8_a_leased_port_still_busy_for_a_moment_is_waited_for() {
+    let home = TempHome::new();
+    let dir = home.root().join("leases");
+    let port = ports::free_port();
+    let busy = hold(port);
+    let release = thread::spawn(move || {
+        thread::sleep(std::time::Duration::from_millis(300));
+        drop(busy);
+    });
+    assert_eq!(ports::free_in(&dir, port, port).unwrap(), port);
+    release.join().unwrap();
+}
+
+#[test]
+fn t8_a_port_busy_past_the_wait_is_given_up_and_its_lease_released() {
+    let home = TempHome::new();
+    let dir = home.root().join("leases");
+    let port = ports::free_port();
+    let busy = hold(port);
+    assert!(ports::free_in(&dir, port, port).is_err());
+    assert!(
+        !dir.join(port.to_string()).exists(),
+        "the lease is released"
+    );
+    drop(busy);
+    assert_eq!(ports::free_in(&dir, port, port).unwrap(), port);
+}
+
 /// A `sh -c` stand-in in a process group of its own. Stopping the shell leaves the `sleep` it
 /// forked running, so the group is killed when the stand-in drops, whatever the test asserted.
 struct Fake(std::process::Child);
