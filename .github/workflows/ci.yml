@@ -216,7 +216,7 @@ jobs:
           key: rust-${{ runner.os }}-test-${{ steps.toolchain.outputs.cachekey }}-${{ matrix.runner }}-${{ hashFiles('Cargo.lock', 'crates/**/*.rs') }}
           restore-keys: rust-${{ runner.os }}-test-${{ steps.toolchain.outputs.cachekey }}-${{ matrix.runner }}-
       - name: Tests (nothing left in TMPDIR, no process left running)
-        run: cargo run -q -p huddle-testkit --bin huddle-test-guard -- --workspace --locked
+        run: cargo run -q -p huddle-testkit --bin huddle-test-guard -- --workspace --locked -- --test-threads=8
 
   # The timing gates: release build only, alone on their runner so no other load competes with the timings. The router
   # overhead gate, and the history gate (every view answers in 300 ms on a 90-day, million-row database).
