@@ -180,7 +180,7 @@ function build(s){
 }
 const JOB_ENDED=['completed','failed','accepted','cancelled'],ACTIVE_STATES=['needs_you','working','background'];
 /* live jobs, plus finished ones that ended inside the global time range */
-function jobsInRange(){const to=HIST.range==='custom'?HIST.to:NOW,from=HIST.range==='custom'?HIST.from:NOW-RANGE_MIN[HIST.range]*6e4;
+function jobsInRange(){const{from,to}=curRange(NOW);
  return JOBS.concat(JOBS_DONE.filter(j=>{const e=j.end||j.started||0;return e>=from&&e<=to}))}
 /* one project per git repository: its sessions, worktrees and jobs roll up under the repo key */
 function projects(){
@@ -260,11 +260,11 @@ const FLAT='Claude plan usage is flat-rate; this is what the same tokens cost on
 const HIST={range:'15m',from:0,to:0,keep:90,picking:false,bk:null,tot:null,ser:null,err:false},HCOLOR={};
 try{const r=localStorage.getItem('huddle-range');if(r==='custom'){const c=JSON.parse(localStorage.getItem('huddle-range-custom')||'null');if(c&&c.from<c.to){HIST.range='custom';HIST.from=c.from;HIST.to=c.to}}else if(RANGES.some(x=>x[0]===r))HIST.range=r}catch(e){}
 const liveRange=()=>HIST.range==='15m';
-/* Only pages that read the router's live memory say a restart clears them; the rest read disk or settings. */
+/* only pages reading live memory say a restart clears them */
 const readsMemory=()=>({overview:liveRange(),models:liveRange(),usage:liveRange(),sessions:true,agents:true,requests:HS.mode==='live',errors:liveRange()})[page]===true;
 const rangeShort=()=>HIST.range==='custom'?'custom':RANGES.find(x=>x[0]===HIST.range)[1];
 const rangeText=()=>HIST.range==='custom'?when(HIST.from)+' to '+when(HIST.to):RANGES.find(x=>x[0]===HIST.range)[2];
-/* the time button's text: the quick range's long label, capitalised, or the custom from and to */
+/* the time button's text: the long label, capitalised, or custom from and to */
 const rangeButtonText=()=>{const t=rangeText();return HIST.range==='custom'?t:t[0].toUpperCase()+t.slice(1)};
 function rangeQuery(){return (HIST.range==='custom'?'from='+HIST.from+'&to='+HIST.to:'range='+HIST.range)+'&'+tzQuery()}
 /* rs:end */
@@ -341,16 +341,21 @@ function menuKeys(e){
  else if(k.length===1&&!e.metaKey&&!e.ctrlKey&&!e.altKey){eat();menuType(k.toLowerCase())}}
 document.addEventListener('keydown',menuKeys,true);
 document.addEventListener('mousemove',e=>{const o=MENU&&e.target.closest&&e.target.closest('[data-mk]');if(o&&MENU.list.contains(o)){const i=MENU.rows.indexOf(o);if(i!==MENU.i&&!o.dataset.off)menuActive(i)}});
-/* the one time picker: a button in the top bar opens a panel with an absolute From and To and the quick ranges */
+/* the one time picker: the top-bar button opens the range panel */
 /* rp:start */
 const earliest=()=>Date.now()-HIST.keep*864e5;
-/* the own date and time picker for an absolute range: two fields, one month grid, hour and minute menus */
+/* « » shift the range by its length, zoom-out doubles it; clamped to kept history and now */
+const curRange=n=>HIST.range==='custom'?HIST:{from:(n||Date.now())-RANGE_MIN[HIST.range]*6e4,to:n||Date.now()};
+const shiftedRange=(dir,z)=>{const c=curRange(),l=c.to-c.from,m=z?Math.round((c.from+c.to)/2):dir<0?c.from-l:c.to,f=Math.max(z?m-l:m,earliest()),t=Math.min(z?m+l:f+l,Date.now());return f<t?{from:f,to:t}:null};
+const zoomedRange=()=>shiftedRange(0,1);
+/* the own absolute picker: two fields, a month grid, hour and minute menus */
 const DT={from:0,to:0,act:'from',y:0,m:0},MONTHS=['January','February','March','April','May','June','July','August','September','October','November','December'];
 function dtView(){const d=zd(DT[DT.act]);DT.y=d.getUTCFullYear();DT.m=d.getUTCMonth()}
 function initPick(){const f=HIST.range==='custom'?HIST.from:Date.now()-864e5,t=HIST.range==='custom'?HIST.to:Date.now();DT.from=Math.max(f,earliest());DT.to=t;DT.act='from';dtView()}
 const dtSet=(f,fn)=>{const d=zd(DT[f]);fn(d);DT[f]=zmake(d.getUTCFullYear(),d.getUTCMonth(),d.getUTCDate(),d.getUTCHours(),d.getUTCMinutes())};
-MENUS.dth={label:'Hour',opts:()=>Array.from({length:24},(_,i)=>({k:String(i),t:p2(i)})),cur:()=>String(zd(DT[DT.act]).getUTCHours()),pick:k=>{dtSet(DT.act,d=>d.setUTCHours(+k));redrawPick('#mb-dth')}};
-MENUS.dtm={label:'Minute',opts:()=>Array.from({length:60},(_,i)=>({k:String(i),t:p2(i)})),cur:()=>String(zd(DT[DT.act]).getUTCMinutes()),pick:k=>{dtSet(DT.act,d=>d.setUTCMinutes(+k));redrawPick('#mb-dtm')}};
+const dtMenu=(id,label,n,get,set)=>MENUS[id]={label,opts:()=>Array.from({length:n},(_,i)=>({k:String(i),t:p2(i)})),cur:()=>String(get(zd(DT[DT.act]))),pick:k=>{dtSet(DT.act,d=>set(d,+k));redrawPick('#mb-'+id)}};
+dtMenu('dth','Hour',24,d=>d.getUTCHours(),(d,k)=>d.setUTCHours(k));
+dtMenu('dtm','Minute',60,d=>d.getUTCMinutes(),(d,k)=>d.setUTCMinutes(k));
 function calHtml(){const lead=(new Date(Date.UTC(DT.y,DT.m,1)).getUTCDay()+6)%7,days=new Date(Date.UTC(DT.y,DT.m+1,0)).getUTCDate(),cur=startOfDay(DT[DT.act]),lo=startOfDay(earliest()),hi=Date.now();
  let g='';for(let i=0;i<lead;i++)g+='<span></span>';
  for(let d=1;d<=days;d++){const s=zmake(DT.y,DT.m,d),off=s<lo||s>hi;g+=`<button type="button" class="day${s===cur?' sel':''}" data-day="${d}" aria-pressed="${s===cur}"${off?' disabled':''}>${d}</button>`}
@@ -365,7 +370,9 @@ const recentHtml=()=>{const rows=recentRanges();return rows.length?`<div class="
 const tzZoneName=()=>{try{return Intl.DateTimeFormat().resolvedOptions().timeZone||''}catch(e){return ''}};
 const tzFootHtml=()=>{const z=tzZoneName();return `<div class="tzfoot" id="tzfoot"><button class="rq tfb" data-tz="local" aria-pressed="${!TZ.utc}">${esc(tzLocal())}</button><button class="rq tfb" data-tz="utc" aria-pressed="${TZ.utc}">UTC</button>${z?`<span class="tfz">${esc(z)}</span>`:''}</div>`};
 function rangeBar(){
- const btn=`<div class="pmenu"><button type="button" class="mbtn" id="mb-range" data-rtoggle aria-haspopup="dialog" aria-expanded="${HIST.picking}" aria-controls="rpanel" aria-label="Time range: ${esc(rangeButtonText())}"><span class="mval">${esc(rangeButtonText())}</span>${CHEVRON}</button></div>`;
+ const c=curRange(),bt=esc(rangeButtonText()),back=c.from<=earliest(),fwd=c.to>=Date.now()-1e3,
+ rs=(id,lab,tx,off)=>`<button type="button" class="rfnow${off?' off':''}" id="${id}" aria-label="${lab}" title="${lab}"${off?' disabled aria-disabled=true':''}>${tx}</button>`;
+ const btn=rs('rshl','Shift range back','«',back)+`<div class="pmenu"><button type="button" class="mbtn" id="mb-range" data-rtoggle aria-haspopup="dialog" aria-expanded="${HIST.picking}" aria-controls="rpanel" aria-label="Time range: ${bt}"><span class="mval">${bt}</span>${CHEVRON}</button></div>`+rs('rshr','Shift range forward','»',fwd)+rs('rzoom','Zoom out','−',back&&fwd);
  const pop=HIST.picking?`<div class="rangepop" id="rpanel" role="dialog" aria-label="Time range"><div class="rleft"><b class="rh">Absolute time range</b><div class="dtfs">${dtField('from','rfrom','From')}${dtField('to','rto','To')}</div><div class="cal">${calHtml()}</div><div class="dtime"><span>Time</span>${menuHtml('dth','sm')}<span>:</span>${menuHtml('dtm','sm')}</div><div class="rerr" id="rerr" role="alert"></div>${recentHtml()}<div class="racts"><button id="rapply">Apply</button></div></div><div class="rright" role="group" aria-label="Quick ranges">${quickHtml()}</div>${tzFootHtml()}</div>`:'';
  return btn+pop}
 function redrawPick(focus){const err=($('#rerr')||{}).textContent;renderRangeBar();if(err)setHtml($('#rerr'),esc(err));const n=focus&&$(focus);if(n)n.focus()}
@@ -374,7 +381,7 @@ function pickClick(e){
  const c=e.target.closest('[data-cal]');if(c){const d=new Date(Date.UTC(DT.y,DT.m+ +c.dataset.cal,1));DT.y=d.getUTCFullYear();DT.m=d.getUTCMonth();redrawPick('[data-cal="'+c.dataset.cal+'"]');return true}
  const d=e.target.closest('[data-day]');if(d){dtSet(DT.act,x=>x.setUTCFullYear(DT.y,DT.m,+d.dataset.day));DT[DT.act]=Math.min(DT[DT.act],Date.now());redrawPick('[data-day="'+d.dataset.day+'"]');return true}
  return false}
-/* arrows move across the month grid; Escape closes the panel and returns focus to the button */
+/* arrows move across the month grid; Escape closes and refocuses the button */
 document.addEventListener('keydown',e=>{
  if(!HIST.picking||MENU)return;const day=e.target.closest&&e.target.closest('[data-day]');
  if(e.key==='Escape'&&e.target.closest&&e.target.closest('#rpanel')){e.preventDefault();e.stopPropagation();closeRangePanel();return}
@@ -386,10 +393,11 @@ document.addEventListener('keydown',e=>{
 function renderRangeBar(){const el=$('#rangebar');if(el){menuDrop();setHtml(el,rangeBar());const pop=$('#rpanel');if(pop&&pop.getBoundingClientRect().right>innerWidth-8)pop.classList.add('right')}}
 function closeRangePanel(){HIST.picking=false;renderRangeBar();const b=$('#mb-range');if(b)b.focus()}
 function openRangePanel(){HIST.picking=true;initPick();renderRangeBar();const n=$('#rfrom');if(n)n.focus()}
-/* a click that belongs to the time picker: the button toggles the panel, a quick range applies, Apply sends the absolute range, a click outside closes the panel */
+/* time-picker clicks: the button toggles the panel, a quick range applies, Apply sends the range, outside closes */
 function rangeClick(e){
  const t=e.target;if(!t||!t.closest)return false;
  if(t.closest('#rapply')){applyCustom();return true}
+ const s=t.closest('#rshl,#rshr,#rzoom');if(s){const r=s.id==='rzoom'?zoomedRange():shiftedRange(s.id==='rshl'?-1:1);if(!r)return true;HIST.range='custom';Object.assign(HIST,r);applyRange();const b=$('#'+s.id);b&&!b.disabled?b.focus():closeRangePanel();return true}
  const rr=t.closest('[data-rr]');if(rr){const r=recentRanges()[+rr.dataset.rr];if(r){DT.from=r.from;DT.to=r.to;applyCustom()}return true}
  const zb=t.closest('[data-tz]');if(zb){setTz(zb.dataset.tz==='utc');return true}
  const q=t.closest('[data-rq]');if(q){if(q.disabled)return true;if(q.dataset.rq===HIST.range){closeRangePanel();return true}setRange(q.dataset.rq);return true}
@@ -628,7 +636,7 @@ let HMODE=0;
 const RF_SLACK=50;
 /* a range of 7 days or more changes slowly and costs the most to read: its panels refresh every RF_LONG */
 const RANGE_LONG_MS=7*864e5;
-const histFloor=()=>(HIST.range==='custom'?HIST.to-HIST.from:RANGE_MIN[HIST.range]*6e4)>=RANGE_LONG_MS?RF_LONG:RF_FLOOR;
+const histFloor=()=>curRange().to-curRange().from>=RANGE_LONG_MS?RF_LONG:RF_FLOOR;
 const rfFresh=at=>{const age=Date.now()-at;return HMODE===2?false:HMODE===1?age<histFloor()-RF_SLACK:age<RF.histMs()};
 const pageLoaders=()=>({models:[loadModels],usage:[loadUsage],providers:[loadProviders],errors:[loadProviders,loadErrors],overview:[loadOvCost],requests:[loadReqCost,()=>{if(HS.mode==='history')hsearch()}]}[page]||[]);
 function refreshHistory(manual){HMODE=manual?2:1;try{loadHistory();loadTotals();pageLoaders().forEach(f=>f())}finally{HMODE=0}}

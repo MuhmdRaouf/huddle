@@ -389,27 +389,24 @@ td.empty{text-align:center;color:var(--faint);padding:28px 14px}
   table.fold td.empty::before{content:none}
 }
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
-.rangebar{position:relative}
-/* the range picker, refresh-now and the refresh picker read as one control */
+.rangebar,.refbar{position:relative}
+/* the range and refresh controls read as one group */
 .ctlgroup{display:flex;align-items:center}
-.refbar{position:relative}
 .refbar .mlist{max-height:none}
 .ctlgroup .mbtn{border-radius:0}
-.ctlgroup .rangebar .mbtn{border-radius:8px 0 0 8px}
 .ctlgroup .refbar .mbtn{min-width:62px;white-space:nowrap;margin-left:-1px;border-radius:0 8px 8px 0}
 .rfnow{display:inline-flex;align-items:center;justify-content:center;width:32px;height:30px;margin-left:-1px;padding:0;border:1px solid var(--line);border-radius:0;background:var(--surface);color:var(--muted);cursor:pointer}
-.rfnow:hover{color:var(--text);border-color:var(--faint);position:relative;z-index:1}
-.rfnow:focus-visible{position:relative;z-index:1}
+.rfnow:hover{color:var(--text);border-color:var(--faint)}
 .rfnow.off,.rfnow.off:hover{color:var(--faint);border-color:var(--line);background:var(--page);cursor:not-allowed}
+#rshl{border-radius:8px 0 0 8px}
 .rfnow svg.i{width:15px;height:15px}
 .rfnow.spin svg{animation:rfspin .5s ease-out}
 @keyframes rfspin{to{transform:rotate(360deg)}}
-.ctlgroup .mbtn:hover,.ctlgroup .mbtn[aria-expanded="true"]{position:relative;z-index:1}
+.rfnow:hover,.rfnow:focus-visible,.ctlgroup .mbtn:hover,.ctlgroup .mbtn[aria-expanded=true]{position:relative;z-index:1}
 .ctlgroup .mval{white-space:nowrap}
 @media (max-width:700px){.ctlgroup .rangebar .mbtn{min-width:0}.ctlgroup .refbar .mbtn{min-width:0;padding-left:8px}}
-/* on a phone the refresh label shrinks first, with an ellipsis; the buttons stay whole */
+/* on a phone the refresh label shrinks first */
 @media (max-width:600px){.refbar .mval{min-width:0;overflow:hidden;text-overflow:ellipsis;max-width:12ch}.refbar,.rfnow,.rangebar,.mchev{flex:none}}
-@media (prefers-reduced-motion:reduce){.rfnow.spin svg{animation:none}}
 .ctlgroup .rangebar .mval{max-width:30ch;overflow:hidden;text-overflow:ellipsis}
 .rangepop{position:absolute;left:0;top:38px;z-index:30;display:grid;grid-template-columns:280px 190px;border:1px solid var(--line);border-radius:10px;background:var(--surface);box-shadow:0 8px 30px rgb(0 0 0/.18)}
 /* hang from the right corner when the open panel would clip */
@@ -452,8 +449,7 @@ td.empty{text-align:center;color:var(--faint);padding:28px 14px}
 .day:hover:not(:disabled){background:var(--subtle)}.day.sel{background:var(--accent);color:var(--surface);font-weight:600}.day:disabled{color:var(--faint);cursor:not-allowed;opacity:.55}
 .dtime{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--muted)}.dtime .mbtn{min-width:64px}
 @media (max-width:700px){.rangepop,.rangepop.right{position:fixed;top:60px;left:0;right:0;grid-template-columns:minmax(0,1fr);max-height:calc(100vh - 70px);overflow-y:auto;overflow-x:hidden;border-radius:0 0 10px 10px}.rright{border-left:0;border-top:1px solid var(--line)}.rangepop .dtfs{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}}
-@media (max-width:600px){.ctlgroup .rangebar .mval{max-width:14ch}.dtime .pmenu .mlist{min-width:100%}}
-@media (prefers-reduced-motion:reduce){.mlist,.mchev{transition:none}}
+@media (max-width:600px){.ctlgroup .rangebar .mval{max-width:11ch}.dtime .pmenu .mlist{min-width:100%}}
 .qw{font-size:12.5px;white-space:nowrap}.qw span:first-child{color:var(--muted)}
 a.lnk{color:var(--accent);text-decoration:underline;text-underline-offset:2px;white-space:nowrap}
 .cs.cw{white-space:normal;max-width:170px}

@@ -2501,7 +2501,7 @@ fn run_picker_script(body: &str) -> Value {
            render(){{log.push('render')}},loadHistory(){{log.push('history')}},CH:{{focus:null,metric:'req'}},HT:{{}},DR:null,HS:{{mode:'live'}},page:'overview',\n\
            hget:()=>new Promise(()=>{{}})}};\n\
           const names=Object.keys(stubs);\n\
-          const api=new Function(...names,CODE+';return {{HIST,RANGES,RANGE_MIN,DT,earliest,rangeButtonText,rangeText,rangeQuery,rangeBar,renderRangeBar,setRange,applyCustom,initPick,rangeClick,recentRanges,renderTzBar}}')(...names.map(n=>stubs[n]));\n\
+          const api=new Function(...names,CODE+';return {{HIST,RANGES,RANGE_MIN,DT,earliest,rangeButtonText,rangeText,rangeQuery,rangeBar,renderRangeBar,setRange,applyCustom,initPick,rangeClick,recentRanges,renderTzBar,shiftedRange,zoomedRange}}')(...names.map(n=>stubs[n]));\n\
           els['#rangebar']={{html:''}};els['#mb-range']={{focus(){{log.push('focus mb-range')}}}};els['#rfrom']={{focus(){{log.push('focus rfrom')}}}};els['#rerr']={{textContent:'',html:''}};\n\
           return Object.assign(api,{{els,keys,log,saved:savedKeys}})}}\n\
          (async()=>{{{body}}})();"
@@ -3133,5 +3133,248 @@ fn l38_the_panel_flips_to_the_right_edge_when_it_would_clip() {
         render.contains("getBoundingClientRect().right>innerWidth-8")
             && render.contains("classList.add('right')"),
         "renderRangeBar flips the panel when it would pass the right edge: {render}"
+    );
+}
+
+/// T: 2026-11-14T12:00:00Z, the fixed `Date.now` the shift tests run at.
+const L39_T: i64 = 1_794_657_600_000;
+const L39_HOUR: i64 = 3_600_000;
+const L39_DAY: i64 = 86_400_000;
+
+#[test]
+fn l39_shift_back_moves_a_quick_range_by_its_own_length() {
+    let v = run_picker_script(
+        "const m=make('local');const T=Date.UTC(2026,10,14,12,0);Date.now=()=>T;\n\
+         m.HIST.range='24h';\n\
+         const r=m.shiftedRange(-1);\n\
+         m.rangeClick({target:{closest:s=>s.includes('#rshl')?{id:'rshl'}:null}});\n\
+         console.log(JSON.stringify({r,range:m.HIST.range,from:m.HIST.from,to:m.HIST.to,\n\
+          query:m.rangeQuery(),stored:m.saved['huddle-range'],\n\
+          custom:JSON.parse(m.saved['huddle-range-custom']??'null'),recent:m.saved['huddle-range-recent']??null,\n\
+          bar:m.els['#rangebar'].html.includes('id=\"rshl\"')}));",
+    );
+    let from = L39_T - 48 * L39_HOUR;
+    let to = L39_T - 24 * L39_HOUR;
+    assert_eq!(
+        v["r"],
+        serde_json::json!({"from": from, "to": to}),
+        "« moves a 24h range back by its own length"
+    );
+    assert_eq!(v["range"], "custom", "the shift makes the range custom");
+    assert_eq!(v["from"], from);
+    assert_eq!(v["to"], to);
+    assert_eq!(
+        v["query"],
+        format!("from={from}&to={to}&tz_offset_min=120"),
+        "the shift applies as the same custom query"
+    );
+    assert_eq!(v["stored"], "custom");
+    assert_eq!(v["custom"], serde_json::json!({"from": from, "to": to}));
+    assert_eq!(v["bar"], true, "the re-rendered bar holds the buttons");
+}
+
+#[test]
+fn l39_shift_forward_is_off_when_the_range_ends_at_now() {
+    let v = run_picker_script(
+        "const m=make('local');const T=Date.UTC(2026,10,14,12,0);Date.now=()=>T;\n\
+         const tag=(h,id)=>{const x=h.match(new RegExp('<button[^>]*id=\"'+id+'\"[^>]*>'));return x?x[0]:''};\n\
+         const states={};\n\
+         for(const [k] of m.RANGES){m.HIST.range=k;m.renderRangeBar();const h=m.els['#rangebar'].html;\n\
+          states[k]={shr:tag(h,'rshr').includes('disabled'),shl:tag(h,'rshl').includes('disabled')}}\n\
+         m.HIST.range='custom';m.HIST.from=T-4*3600e3;m.HIST.to=T-2*3600e3;m.renderRangeBar();\n\
+         const earlierOff=tag(m.els['#rangebar'].html,'rshr').includes('disabled');\n\
+         m.els['#rshr']={disabled:true,focus(){m.log.push('focus rshr')}};\n\
+         m.rangeClick({target:{closest:s=>s.includes('#rshr')?{id:'rshr'}:null}});\n\
+         const stopped={from:m.HIST.from,to:m.HIST.to,focus:m.log[m.log.length-1]};\n\
+         m.HIST.from=T-6*3600e3;m.HIST.to=T-4*3600e3;m.els['#rshr'].disabled=false;\n\
+         m.rangeClick({target:{closest:s=>s.includes('#rshr')?{id:'rshr'}:null}});\n\
+         const kept={from:m.HIST.from,to:m.HIST.to,focus:m.log[m.log.length-1]};\n\
+         m.HIST.from=T-2*3600e3;m.HIST.to=T;\n\
+         m.rangeClick({target:{closest:s=>s.includes('#rshr')?{id:'rshr'}:null}});\n\
+         const refused=m.HIST.from===T-2*3600e3&&m.HIST.to===T;\n\
+         console.log(JSON.stringify({states,earlierOff,stopped,kept,refused}));",
+    );
+    for key in ["15m", "1h", "24h", "7d", "30d", "90d"] {
+        assert_eq!(
+            v["states"][key]["shr"], true,
+            "{key}: » is off while the range ends at now"
+        );
+        assert_eq!(
+            v["states"][key]["shl"],
+            key == "90d",
+            "{key}: « is on until the range starts at the kept history"
+        );
+    }
+    assert_eq!(
+        v["earlierOff"], false,
+        "an earlier custom range shifts forward"
+    );
+    assert_eq!(
+        v["stopped"],
+        serde_json::json!({"from": L39_T-2*L39_HOUR, "to": L39_T, "focus": "focus mb-range"}),
+        "the shift stops at now and focus moves to the time button once » is off"
+    );
+    assert_eq!(
+        v["kept"],
+        serde_json::json!({"from": L39_T-4*L39_HOUR, "to": L39_T-2*L39_HOUR, "focus": "focus rshr"}),
+        "focus stays on » while it stays usable"
+    );
+    assert_eq!(
+        v["refused"], true,
+        "a range already ending at now shifts nowhere"
+    );
+}
+
+#[test]
+fn l39_shift_back_stops_at_the_earliest_kept_history() {
+    let v = run_picker_script(
+        "const m=make('local');const T=Date.UTC(2026,10,14,12,0);Date.now=()=>T;\n\
+         const tag=(h,id)=>{const x=h.match(new RegExp('<button[^>]*id=\"'+id+'\"[^>]*>'));return x?x[0]:''};\n\
+         m.HIST.keep=7;m.HIST.range='7d';\n\
+         m.renderRangeBar();\n\
+         const quickBtn=tag(m.els['#rangebar'].html,'rshl').includes('disabled');\n\
+         m.HIST.range='custom';m.HIST.from=T-5*864e5;m.HIST.to=T-864e5;\n\
+         const partial=m.shiftedRange(-1);\n\
+         console.log(JSON.stringify({quickBtn,partial}));",
+    );
+    assert_eq!(
+        v["quickBtn"], true,
+        "a 7d range with 7 kept days renders « disabled"
+    );
+    assert_eq!(
+        v["partial"],
+        serde_json::json!({"from": L39_T-7*L39_DAY, "to": L39_T-3*L39_DAY}),
+        "the shift stops at earliest() and keeps its length"
+    );
+}
+
+#[test]
+fn l39_zoom_out_doubles_the_range_around_its_centre() {
+    let v = run_picker_script(
+        "const m=make('local');const T=Date.UTC(2026,10,14,12,0);Date.now=()=>T;\n\
+         const tag=(h,id)=>{const x=h.match(new RegExp('<button[^>]*id=\"'+id+'\"[^>]*>'));return x?x[0]:''};\n\
+         m.HIST.range='24h';\n\
+         const quick=m.zoomedRange();\n\
+         m.HIST.range='custom';m.HIST.from=T-3*3600e3;m.HIST.to=T-3600e3;\n\
+         const past=m.zoomedRange();\n\
+         m.HIST.from=T-1001;m.HIST.to=T;\n\
+         const rounded=m.zoomedRange();\n\
+         m.HIST.keep=7;m.HIST.from=T-7*864e5;m.HIST.to=T;m.renderRangeBar();\n\
+         const allOff=tag(m.els['#rangebar'].html,'rzoom').includes('disabled');\n\
+         console.log(JSON.stringify({quick,past,rounded,allOff}));",
+    );
+    assert_eq!(
+        v["quick"],
+        serde_json::json!({"from": L39_T-36*L39_HOUR, "to": L39_T}),
+        "a range touching now doubles back and stays at now"
+    );
+    assert_eq!(
+        v["past"],
+        serde_json::json!({"from": L39_T-4*L39_HOUR, "to": L39_T})
+    );
+    assert_eq!(
+        v["rounded"],
+        serde_json::json!({"from": L39_T-1501, "to": L39_T}),
+        "a half-millisecond centre rounds to whole milliseconds"
+    );
+    assert_eq!(
+        v["allOff"], true,
+        "a range covering all kept history disables zoom out"
+    );
+}
+
+#[test]
+fn l39_a_shifted_range_survives_a_reload() {
+    let v = run_picker_script(
+        "const m=make('local');const T=Date.UTC(2026,10,14,12,0);Date.now=()=>T;\n\
+         m.HIST.range='24h';\n\
+         m.rangeClick({target:{closest:s=>s.includes('#rshl')?{id:'rshl'}:null}});\n\
+         const savedRange=m.saved['huddle-range'],savedCustom=m.saved['huddle-range-custom'];\n\
+         const m2=make('local',{'huddle-range':savedRange,'huddle-range-custom':savedCustom});\n\
+         console.log(JSON.stringify({savedRange,range:m2.HIST.range,from:m2.HIST.from,to:m2.HIST.to,\n\
+          match:m2.HIST.from===m.HIST.from&&m2.HIST.to===m.HIST.to}));",
+    );
+    assert_eq!(
+        v["savedRange"], "custom",
+        "the store holds huddle-range=custom"
+    );
+    assert_eq!(v["range"], "custom");
+    assert_eq!(v["from"], L39_T - 48 * L39_HOUR);
+    assert_eq!(v["to"], L39_T - 24 * L39_HOUR);
+    assert_eq!(v["match"], true, "loading the store gives the same HIST");
+}
+
+#[test]
+fn l39_a_shift_adds_nothing_to_recent_ranges() {
+    let v = run_picker_script(
+        "const m=make('local');const T=Date.UTC(2026,10,14,12,0);Date.now=()=>T;\n\
+         m.HIST.range='24h';\n\
+         m.rangeClick({target:{closest:s=>s.includes('#rshl')?{id:'rshl'}:null}});\n\
+         const afterShift=m.saved['huddle-range-recent']??null;\n\
+         m.initPick();m.DT.from=T-3*3600e3;m.DT.to=T-2*3600e3;m.applyCustom();\n\
+         const afterApply=JSON.parse(m.saved['huddle-range-recent']??'null');\n\
+         console.log(JSON.stringify({afterShift,afterApply}));",
+    );
+    assert_eq!(
+        v["afterShift"],
+        serde_json::value::Value::Null,
+        "a shift stores no recent range"
+    );
+    assert_eq!(
+        v["afterApply"],
+        serde_json::json!([{"from": L39_T-3*L39_HOUR, "to": L39_T-2*L39_HOUR}]),
+        "a plain Apply still does"
+    );
+}
+
+#[test]
+fn l39_the_buttons_are_labelled_and_stay_in_the_bar() {
+    for label in ["Shift range back", "Shift range forward", "Zoom out"] {
+        assert!(PAGE.contains(&format!("'{label}'")), "{label} is labelled");
+    }
+    assert!(
+        PAGE.contains("aria-label=\"${lab}\" title=\"${lab}\""),
+        "the buttons carry the label as both aria-label and title"
+    );
+    let pos = |s: &str| PAGE.find(s).unwrap_or_else(|| panic!("missing {s}"));
+    assert!(
+        pos("rs('rshl'") < pos("id=\"mb-range\"")
+            && pos("id=\"mb-range\"") < pos("rs('rshr'")
+            && pos("rs('rshr'") < pos("rs('rzoom'"),
+        "the buttons sit around the time button"
+    );
+    let css = include_str!("../src/dashboard/style.css");
+    assert!(
+        css.contains("#rshl{border-radius:8px 0 0 8px}"),
+        "the first button rounds the group's left edge"
+    );
+    assert!(
+        css.contains(".rfnow.off,.rfnow.off:hover{"),
+        "a disabled shift button reads inert like the refresh button"
+    );
+    assert!(
+        css.contains(".refbar,.rfnow,.rangebar,.mchev{flex:none}"),
+        "the buttons keep their size on a phone"
+    );
+    assert!(
+        css.contains(".ctlgroup .rangebar .mval{max-width:11ch}"),
+        "the time label shrinks first at phone width"
+    );
+    let v = run_picker_script(
+        "const m=make('local');m.HIST.picking=true;m.renderRangeBar();const h=m.els['#rangebar'].html;\n\
+         const labels=['Shift range back','Shift range forward','Zoom out'].map(l=>h.includes('aria-label=\"'+l+'\"'));\n\
+         const order=['id=\"rshl\"','id=\"mb-range\"','id=\"rshr\"','id=\"rzoom\"'].map(s=>h.indexOf(s));\n\
+         console.log(JSON.stringify({labels,order}));",
+    );
+    assert_eq!(v["labels"], serde_json::json!([true, true, true]));
+    let order: Vec<i64> = v["order"]
+        .as_array()
+        .expect("order")
+        .iter()
+        .map(|x| x.as_i64().expect("position"))
+        .collect();
+    assert!(
+        order.iter().all(|p| *p >= 0) && order.windows(2).all(|w| w[0] < w[1]),
+        "the bar renders «, the time button, » and zoom out in order: {order:?}"
     );
 }
