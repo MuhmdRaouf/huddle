@@ -255,3 +255,78 @@ async fn e1_a_request_that_ends_inside_the_limit_completes_on_the_old_router() {
     })
     .await;
 }
+
+fn logged(lines: &Lines, needle: &str) -> Option<String> {
+    lines
+        .lock()
+        .expect("lines")
+        .iter()
+        .find(|line| line.contains(needle))
+        .cloned()
+}
+
+#[tokio::test]
+async fn l19_a_drain_logs_its_counts_at_the_start() {
+    let home = TempHome::new();
+    let port = free_port();
+    let upstream_port = upstream(None).await;
+    let (handover, stuck) = handover_after(&home, port, upstream_port, "300", || async {
+        message_request(port).await
+    })
+    .await;
+    wait_for(&handover.old_lines, "drain starts").await;
+    let line = logged(&handover.old_lines, "drain starts").expect("start line");
+    assert_eq!(
+        line,
+        "huddle-router: drain starts; 0 tunnels and 1 connections open"
+    );
+    drop(stuck);
+    let _ = tokio::time::timeout(Duration::from_secs(5), handover.old).await;
+    finish(Handover {
+        old: tokio::spawn(async { Ok(ServeOutcome::Stopped) }),
+        ..handover
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn l19_a_drain_that_hits_the_limit_names_what_stayed_open() {
+    let home = TempHome::new();
+    let port = free_port();
+    let upstream_port = upstream(None).await;
+    let (handover, _stuck) = handover_after(&home, port, upstream_port, "300", || async {
+        message_request(port).await
+    })
+    .await;
+    wait_for(&handover.old_lines, "drain limit reached").await;
+    let line = logged(&handover.old_lines, "drain limit reached").expect("end line");
+    assert_eq!(
+        line,
+        "huddle-router: drain limit reached; open requests cut; 0 tunnels and 1 connections still open"
+    );
+    let _ = tokio::time::timeout(Duration::from_secs(5), handover.old).await;
+    finish(Handover {
+        old: tokio::spawn(async { Ok(ServeOutcome::Stopped) }),
+        ..handover
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn l19_a_drain_with_nothing_open_logs_how_long_it_took() {
+    let home = TempHome::new();
+    let port = free_port();
+    let upstream_port = upstream(Some(Duration::ZERO)).await;
+    let (handover, _) = handover_after(&home, port, upstream_port, "600000", || async {}).await;
+    wait_for(&handover.old_lines, "drained in").await;
+    let line = logged(&handover.old_lines, "drained in").expect("end line");
+    assert!(
+        line.starts_with("huddle-router: drained in ") && line.ends_with(" ms"),
+        "{line}"
+    );
+    finish(Handover {
+        old: tokio::spawn(async { Ok(ServeOutcome::Stopped) }),
+        ..handover
+    })
+    .await;
+}

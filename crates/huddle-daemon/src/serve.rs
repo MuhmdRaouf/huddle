@@ -50,18 +50,49 @@ pub fn drain_limit(env: &Env) -> Duration {
         .map_or(DRAIN_BUDGET, Duration::from_millis)
 }
 
+/// How a drain of both trackers ended, with what was still open when the limit hit.
+struct DrainReport {
+    outcome: DrainOutcome,
+    tunnels_open: usize,
+    connections_open: usize,
+}
+
+/// Drains one tracker and answers how many entries it still held when `limit` ran out (zero
+/// when it finished in time). The count is read before the drain closes what is left.
+async fn drain_counted(tracker: &TunnelTracker, limit: Duration) -> (DrainOutcome, usize) {
+    let deadline = tokio::time::sleep(limit);
+    let drain = tracker.drain(limit);
+    tokio::pin!(deadline, drain);
+    tokio::select! {
+        biased;
+        _ = &mut deadline => {
+            let open = tracker.count();
+            ((&mut drain).await, open)
+        }
+        outcome = &mut drain => (outcome, 0),
+    }
+}
+
 /// Drains every tunnel and every connection together: idle ones close at once, a request in
 /// flight finishes, and whatever is left at `limit` is cut.
 async fn drain_all(
     tunnels: &TunnelTracker,
     connections: &TunnelTracker,
     limit: Duration,
-) -> DrainOutcome {
-    let (tunnels, connections) = tokio::join!(tunnels.drain(limit), connections.drain(limit));
-    if tunnels == DrainOutcome::TimedOut || connections == DrainOutcome::TimedOut {
+) -> DrainReport {
+    let ((tunnels, tunnels_open), (connections, connections_open)) = tokio::join!(
+        drain_counted(tunnels, limit),
+        drain_counted(connections, limit)
+    );
+    let outcome = if tunnels == DrainOutcome::TimedOut || connections == DrainOutcome::TimedOut {
         DrainOutcome::TimedOut
     } else {
         DrainOutcome::Finished
+    };
+    DrainReport {
+        outcome,
+        tunnels_open,
+        connections_open,
     }
 }
 
@@ -513,10 +544,24 @@ async fn engine(
                     handover.stop();
                 }
                 // A signal ends the drain at once: the daemon is going anyway.
+                log(format!(
+                    "huddle-router: drain starts; {} tunnels and {} connections open",
+                    tunnels.count(),
+                    connections.count()
+                ));
+                let drain_started = Instant::now();
                 tokio::select! {
                     drained = drain_all(&tunnels, &connections, drain_limit(&cleaned)) => {
-                        if drained == DrainOutcome::TimedOut {
-                            log("huddle-router: drain limit reached; open requests cut".to_owned());
+                        if drained.outcome == DrainOutcome::TimedOut {
+                            log(format!(
+                                "huddle-router: drain limit reached; open requests cut; {} tunnels and {} connections still open",
+                                drained.tunnels_open, drained.connections_open
+                            ));
+                        } else {
+                            log(format!(
+                                "huddle-router: drained in {} ms",
+                                drain_started.elapsed().as_millis()
+                            ));
                         }
                     }
                     _ = stop_fired(&mut stop) => {}
