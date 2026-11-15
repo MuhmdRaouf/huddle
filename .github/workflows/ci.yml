@@ -175,7 +175,8 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: dtolnay/rust-toolchain@9522411a9bce8484da960823fc2f46e52f981f71 # 1.100.0
+      - id: toolchain
+        uses: dtolnay/rust-toolchain@9522411a9bce8484da960823fc2f46e52f981f71 # 1.100.0
         with:
           components: clippy
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -184,8 +185,8 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: rust-${{ runner.os }}-clippy-${{ hashFiles('Cargo.lock', 'crates/**/*.rs') }}
-          restore-keys: rust-${{ runner.os }}-clippy-
+          key: rust-${{ runner.os }}-clippy-${{ steps.toolchain.outputs.cachekey }}-${{ hashFiles('Cargo.lock', 'crates/**/*.rs') }}
+          restore-keys: rust-${{ runner.os }}-clippy-${{ steps.toolchain.outputs.cachekey }}-
       - run: cargo clippy --workspace --all-targets --locked -- -D warnings
 
   rust-test:
@@ -204,15 +205,16 @@ jobs:
         with:
           bun-version: 1.4.4
       - run: bun install --frozen-lockfile
-      - uses: dtolnay/rust-toolchain@9522411a9bce8484da960823fc2f46e52f981f71 # 1.100.0
+      - id: toolchain
+        uses: dtolnay/rust-toolchain@9522411a9bce8484da960823fc2f46e52f981f71 # 1.100.0
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: rust-${{ runner.os }}-test-${{ matrix.runner }}-${{ hashFiles('Cargo.lock', 'crates/**/*.rs') }}
-          restore-keys: rust-${{ runner.os }}-test-${{ matrix.runner }}-
+          key: rust-${{ runner.os }}-test-${{ steps.toolchain.outputs.cachekey }}-${{ matrix.runner }}-${{ hashFiles('Cargo.lock', 'crates/**/*.rs') }}
+          restore-keys: rust-${{ runner.os }}-test-${{ steps.toolchain.outputs.cachekey }}-${{ matrix.runner }}-
       - name: Tests (nothing left in TMPDIR, no process left running)
         run: cargo run -q -p huddle-testkit --bin huddle-test-guard -- --workspace --locked
 
@@ -255,7 +257,8 @@ jobs:
       ASSET: ${{ matrix.asset }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: dtolnay/rust-toolchain@9522411a9bce8484da960823fc2f46e52f981f71 # 1.100.0
+      - id: toolchain
+        uses: dtolnay/rust-toolchain@9522411a9bce8484da960823fc2f46e52f981f71 # 1.100.0
         with:
           targets: ${{ matrix.target }}
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -264,8 +267,8 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: rust-${{ runner.os }}-cross-${{ matrix.target }}-${{ hashFiles('Cargo.lock', 'crates/**/*.rs') }}
-          restore-keys: rust-${{ runner.os }}-cross-${{ matrix.target }}-
+          key: rust-${{ runner.os }}-cross-${{ steps.toolchain.outputs.cachekey }}-${{ matrix.target }}-${{ hashFiles('Cargo.lock', 'crates/**/*.rs') }}
+          restore-keys: rust-${{ runner.os }}-cross-${{ steps.toolchain.outputs.cachekey }}-${{ matrix.target }}-
       - name: The musl C compiler ring builds with
         if: runner.os == 'Linux'
         run: |
