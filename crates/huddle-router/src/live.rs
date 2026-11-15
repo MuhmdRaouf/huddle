@@ -2,7 +2,7 @@
 //! The core takes every timestamp as a parameter and does no I/O.
 
 use std::collections::{BTreeMap, HashMap, VecDeque};
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use huddle_catalog::providers::provider_by_id;
@@ -287,10 +287,31 @@ pub struct ProviderView {
     pub console_url: Option<&'static str>,
 }
 
+/// The time of a request's latest answer byte. The request's tap holds one handle and the
+/// live state's in-flight row holds the other, so a frame moves the time without the live lock.
+#[derive(Clone, Debug)]
+pub struct ByteClock(Arc<AtomicU64>);
+
+impl ByteClock {
+    fn new(now_ms: u64) -> Self {
+        Self(Arc::new(AtomicU64::new(now_ms)))
+    }
+
+    /// Any answer frame after the first: only the last byte time moves, and no change is
+    /// announced.
+    pub fn byte(&self, now_ms: u64) {
+        self.0.store(now_ms, Ordering::Relaxed);
+    }
+
+    fn get(&self) -> u64 {
+        self.0.load(Ordering::Relaxed)
+    }
+}
+
 struct Active {
     started_ms: u64,
     first_byte_ms: Option<u64>,
-    last_byte_ms: u64,
+    last_byte: ByteClock,
     session: Option<String>,
     model: String,
     lane: String,
@@ -432,7 +453,7 @@ impl LiveState {
                 Active {
                     started_ms: request.now_ms,
                     first_byte_ms: None,
-                    last_byte_ms: request.now_ms,
+                    last_byte: ByteClock::new(request.now_ms),
                     session: request.session,
                     model: request.model,
                     lane: request.lane,
@@ -444,18 +465,17 @@ impl LiveState {
         id
     }
 
-    /// The first response byte: sets the request's time to first byte and its last byte time.
-    pub fn first_byte(&self, id: u64, now_ms: u64) {
+    /// The first response byte: sets the request's time to first byte and its last byte time,
+    /// and returns the clock the request's later frames move. `None` when the request is gone.
+    pub fn first_byte(&self, id: u64, now_ms: u64) -> Option<ByteClock> {
         let mut inner = lock(&self.inner);
-        let Some(active) = inner.active.get_mut(&id) else {
-            return;
-        };
+        let active = inner.active.get_mut(&id)?;
+        active.last_byte.byte(now_ms);
+        let clock = active.last_byte.clone();
         if active.first_byte_ms.is_some() {
-            active.last_byte_ms = now_ms;
-            return;
+            return Some(clock);
         }
         active.first_byte_ms = Some(now_ms);
-        active.last_byte_ms = now_ms;
         let ttft = now_ms.saturating_sub(active.started_ms);
         let lane = active.lane.clone();
         let ttfts = &mut inner.lanes.entry(lane).or_default().ttfts;
@@ -463,13 +483,7 @@ impl LiveState {
         if ttfts.len() > TTFT_SAMPLES {
             ttfts.pop_front();
         }
-    }
-
-    /// Any later byte: only the last byte time moves, and no change is announced.
-    pub fn byte(&self, id: u64, now_ms: u64) {
-        if let Some(active) = lock(&self.inner).active.get_mut(&id) {
-            active.last_byte_ms = now_ms;
-        }
+        Some(clock)
     }
 
     /// Ends a request: it leaves the in-flight set and enters the ring and the lane counters.
@@ -603,7 +617,7 @@ impl LiveState {
             .map(|(id, active)| InFlightRow {
                 id: *id,
                 started_ms: active.started_ms,
-                last_byte_ms: active.last_byte_ms,
+                last_byte_ms: active.last_byte.get(),
                 session: active.session.clone(),
                 model: active.model.clone(),
                 lane: active.lane.clone(),
@@ -1012,8 +1026,8 @@ mod tests {
         assert_eq!(during.in_flight[0].last_byte_ms, T0 + 1000);
         assert!(during.recent.is_empty());
 
-        live.first_byte(id, T0 + 1300);
-        live.byte(id, T0 + 1800);
+        let clock = live.first_byte(id, T0 + 1300).expect("request is live");
+        clock.byte(T0 + 1800);
         let streaming = live.snapshot(T0 + 2000, &inputs(&["zai"]));
         assert_eq!(streaming.in_flight[0].last_byte_ms, T0 + 1800);
 
@@ -1258,14 +1272,46 @@ mod tests {
     }
 
     #[test]
+    fn l13_a_later_frame_does_not_take_the_live_mutex() {
+        let live = LiveState::new(T0);
+        let id = begin(&live, "zai", "glm-5.3", T0);
+        let clock = live.first_byte(id, T0 + 1).expect("request is live");
+        let held = lock(&live.inner);
+        let (done_tx, done_rx) = std::sync::mpsc::channel();
+        let worker = std::thread::spawn(move || {
+            for n in 0..1000 {
+                clock.byte(T0 + 2 + n);
+            }
+            let _ = done_tx.send(());
+        });
+        let finished = done_rx.recv_timeout(std::time::Duration::from_secs(5));
+        drop(held);
+        assert!(finished.is_ok(), "byte blocked on the live mutex");
+        assert!(worker.join().is_ok());
+    }
+
+    #[test]
+    fn l13_the_snapshot_shows_the_latest_byte_time() {
+        let live = LiveState::new(T0);
+        let id = begin(&live, "zai", "glm-5.3", T0);
+        let clock = live.first_byte(id, T0 + 10).expect("request is live");
+        for n in 1..=5 {
+            clock.byte(T0 + 10 + n * 100);
+        }
+        let row = &live.snapshot(T0 + 900, &inputs(&["zai"])).in_flight[0];
+        assert_eq!(row.last_byte_ms, T0 + 510);
+        assert!(live.first_byte(id + 1, T0).is_none());
+    }
+
+    #[test]
     fn subscribers_hear_start_and_finish_but_not_bytes() {
         let live = LiveState::new(T0);
         let mut rx = live.subscribe();
         assert!(!rx.has_changed().expect("sender alive"));
         let id = begin(&live, "zai", "glm-5.3", T0);
         assert_eq!(*rx.borrow_and_update(), 1);
-        live.first_byte(id, T0 + 5);
-        live.byte(id, T0 + 6);
+        let clock = live.first_byte(id, T0 + 5).expect("request is live");
+        clock.byte(T0 + 6);
         assert!(!rx.has_changed().expect("sender alive"));
         live.finish(id, end(200, None, T0 + 10));
         assert_eq!(*rx.borrow_and_update(), 2);

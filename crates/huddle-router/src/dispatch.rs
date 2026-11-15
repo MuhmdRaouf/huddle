@@ -14,7 +14,7 @@ use crate::crashlog::is_event;
 use crate::dashboard::{Dashboard, DashboardInputs, HISTORY_PATH, LIVE_PATH, STATE_PATH};
 use crate::keycache::sources_for;
 use crate::lane::{Lane, LaneError, Logger};
-use crate::live::{Finish, HistorySink, LiveState, RequestStart};
+use crate::live::{ByteClock, Finish, HistorySink, LiveState, RequestStart};
 use crate::mcp_http::{self, McpGuard, with_mcp};
 pub use crate::probe::ProbeTiming;
 use crate::probe::{self, ProbeHandle, ProbeTarget};
@@ -656,6 +656,7 @@ impl RequestEvents {
         Some(Box::new(LiveTap {
             state: Arc::clone(&live.state),
             id,
+            clock: None,
             seen: false,
             inner,
         }))
@@ -696,17 +697,19 @@ impl RequestEvents {
 struct LiveTap {
     state: Arc<LiveState>,
     id: u64,
+    /// Set by the first frame; every later frame moves it without the live lock.
+    clock: Option<ByteClock>,
     seen: bool,
     inner: Option<Box<dyn AnswerTap>>,
 }
 
 impl AnswerTap for LiveTap {
     fn chunk(&mut self, chunk: &Bytes) {
-        if self.seen {
-            self.state.byte(self.id, now_ms());
-        } else {
+        if let Some(clock) = &self.clock {
+            clock.byte(now_ms());
+        } else if !self.seen {
             self.seen = true;
-            self.state.first_byte(self.id, now_ms());
+            self.clock = self.state.first_byte(self.id, now_ms());
         }
         if let Some(inner) = &mut self.inner {
             inner.chunk(chunk);
