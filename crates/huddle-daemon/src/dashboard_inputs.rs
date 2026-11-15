@@ -7,7 +7,7 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use huddle_catalog::providers::providers;
 use huddle_config::env::Env;
@@ -23,11 +23,12 @@ use tokio::runtime::Handle;
 use crate::checks::harnesses::{self};
 use crate::checks::plugins::{self, PluginsReport};
 use crate::history_upkeep;
+use crate::key_presence::{self, KeyPresence};
 use crate::read_cache::{Cache, Read};
 use crate::rss::read_usage;
 use crate::start::read_record;
 
-/// How long the wiring, key and job reading is kept.
+/// How long the wiring and job reading is kept.
 const WINDOW: Duration = Duration::from_secs(10);
 /// How long the session and worktree reading is kept.
 const SESSIONS_WINDOW: Duration = Duration::from_secs(5);
@@ -60,9 +61,18 @@ struct Reading {
 /// has a key answer and no job, session or check shows. Called inside the runtime.
 pub fn start(version: String, env: Env, paths: Paths, port: u16) -> DashboardInputs {
     let runtime = Handle::current();
+    // The key reading and the plugin checks share one answer per 60 s.
+    let presence = Arc::new(KeyPresence::new(
+        {
+            let (env, paths) = (env.clone(), paths.clone());
+            move || read_keys(&env, &*platform_default(&paths))
+        },
+        Instant::now,
+        key_presence::WINDOW,
+    ));
     let reading: Read<Reading> = {
-        let (env, paths) = (env.clone(), paths.clone());
-        Arc::new(move || read_all(&env, &paths, port))
+        let (paths, presence) = (paths.clone(), Arc::clone(&presence));
+        Arc::new(move || read_all(&paths, port, &presence))
     };
     let cache = Cache::new(reading, WINDOW, runtime.clone());
     let sessions = Cache::new(
@@ -80,8 +90,8 @@ pub fn start(version: String, env: Env, paths: Paths, port: u16) -> DashboardInp
     );
     let plugin_checks = Cache::new(
         Arc::new({
-            let (env, paths, version) = (env.clone(), paths.clone(), version.clone());
-            move || read_plugins(&env, &paths, &version, port)
+            let (paths, version) = (paths.clone(), version.clone());
+            move || read_plugins(&paths, &version, port, &presence)
         }),
         PLUGINS_WINDOW,
         runtime.clone(),
@@ -140,12 +150,12 @@ fn json_of<T: serde::Serialize>(report: &T) -> serde_json::Value {
     serde_json::to_value(report).unwrap_or_default()
 }
 
-fn read_all(env: &Env, paths: &Paths, port: u16) -> Reading {
+fn read_all(paths: &Paths, port: u16, presence: &KeyPresence) -> Reading {
     let wiring = read_wiring(paths, port);
     Reading {
         wiring_state: wiring_state_of(wiring),
         wiring,
-        keys: read_keys(env, paths),
+        keys: presence.get(),
         jobs: jobs_overview(paths, now_ms())
             .into_iter()
             .map(|row| JobRow {
@@ -174,8 +184,7 @@ fn jobs_overview(paths: &Paths, now: u64) -> Vec<huddle_jobs::overview::JobRow> 
 }
 
 /// Yes or no per provider: the key itself is never held.
-fn read_keys(env: &Env, paths: &Paths) -> HashMap<&'static str, bool> {
-    let store = platform_default(paths);
+fn read_keys(env: &Env, store: &dyn Keystore) -> HashMap<&'static str, bool> {
     providers()
         .iter()
         .map(|provider| {
@@ -183,7 +192,7 @@ fn read_keys(env: &Env, paths: &Paths) -> HashMap<&'static str, bool> {
                 .key_env
                 .iter()
                 .any(|name| env.get(name).is_some_and(|v| !v.trim().is_empty()));
-            (provider.id, env_key || store_has_key(&*store, provider.id))
+            (provider.id, env_key || store_has_key(store, provider.id))
         })
         .collect()
 }
@@ -200,21 +209,21 @@ fn read_machine(paths: &Paths) -> Machine {
     }
 }
 
-/// The wiring and keys are read afresh: the plugin checks must not depend on which cache lands
-/// first.
-fn read_plugins(env: &Env, paths: &Paths, version: &str, port: u16) -> PluginsReport {
+/// The wiring is read afresh and the keys come from the shared answer: the plugin checks must
+/// not depend on which cache lands first.
+fn read_plugins(paths: &Paths, version: &str, port: u16, presence: &KeyPresence) -> PluginsReport {
     plugins::read(
         paths,
         version,
         port,
         read_wiring(paths, port),
-        &read_keys(env, paths),
+        &presence.get(),
     )
 }
 
-/// Yes or no only: the key is dropped as soon as it is found.
+/// Yes or no, asked without reading the key where the store can.
 fn store_has_key(store: &dyn Keystore, provider: &str) -> bool {
-    matches!(store.get(provider), Ok(Some(_)))
+    matches!(store.has(provider), Ok(true))
 }
 
 fn read_wiring(paths: &Paths, port: u16) -> Wiring {
@@ -250,6 +259,45 @@ fn names_router(url: &str, port: u16) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use huddle_keystore::port::{KeystoreError, SecretString};
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    /// Counts `has` calls; `get` is never expected.
+    struct Counting(Arc<AtomicUsize>);
+
+    impl Keystore for Counting {
+        fn get(&self, _: &str) -> Result<Option<SecretString>, KeystoreError> {
+            Ok(None)
+        }
+        fn has(&self, _: &str) -> Result<bool, KeystoreError> {
+            self.0.fetch_add(1, Ordering::SeqCst);
+            Ok(true)
+        }
+        fn set(&self, _: &str, _: &SecretString) -> Result<(), KeystoreError> {
+            Ok(())
+        }
+        fn delete(&self, _: &str) -> Result<(), KeystoreError> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn l20_a_plugins_pass_reads_each_provider_once() {
+        let asks = Arc::new(AtomicUsize::new(0));
+        let presence = KeyPresence::new(
+            {
+                let store = Counting(Arc::clone(&asks));
+                move || read_keys(&Env::with(&[]), &store)
+            },
+            Instant::now,
+            key_presence::WINDOW,
+        );
+        // The wiring read and the plugin checks both ask inside one window.
+        let (first, second) = (presence.get(), presence.get());
+        assert_eq!(first, second);
+        assert_eq!(first.len(), providers().len());
+        assert_eq!(asks.load(Ordering::SeqCst), providers().len());
+    }
 
     #[test]
     fn a_finished_read_is_ok_only_with_the_proxy_and_the_ca() {

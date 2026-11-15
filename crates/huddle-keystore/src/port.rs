@@ -123,6 +123,11 @@ impl std::error::Error for KeystoreError {
 /// One provider's key: read it, write it, remove it.
 pub trait Keystore: Send + Sync {
     fn get(&self, provider: &str) -> Result<Option<SecretString>, KeystoreError>;
+    /// True when a usable key is stored. A store with a cheaper way to know than reading the key
+    /// overrides this; the default reads it and drops it at once.
+    fn has(&self, provider: &str) -> Result<bool, KeystoreError> {
+        Ok(self.get(provider)?.is_some())
+    }
     fn set(&self, provider: &str, key: &SecretString) -> Result<(), KeystoreError>;
     fn delete(&self, provider: &str) -> Result<(), KeystoreError>;
 }
@@ -265,6 +270,15 @@ impl Keystore for Layered {
             return Ok(Some(key));
         }
         self.file.get(provider)
+    }
+
+    fn has(&self, provider: &str) -> Result<bool, KeystoreError> {
+        if let Some(os) = &self.os
+            && let Ok(true) = os.has(provider)
+        {
+            return Ok(true);
+        }
+        self.file.has(provider)
     }
 
     fn set(&self, provider: &str, key: &SecretString) -> Result<(), KeystoreError> {

@@ -24,21 +24,23 @@ impl MacosStore {
         MacosStore { runner }
     }
 
+    /// The lookup command with the given extra flags; `-w` makes it print the key.
+    fn find(&self, provider: &str, extra: &[&str]) -> RunResult {
+        let service = service_name(provider);
+        let mut args = vec![
+            "find-generic-password",
+            "-s",
+            service.as_str(),
+            "-a",
+            ACCOUNT,
+        ];
+        args.extend_from_slice(extra);
+        self.runner.run(SECURITY, &args, None)
+    }
+
     /// The read command; the write's read-back uses the same one.
     fn read(&self, provider: &str) -> RunResult {
-        let service = service_name(provider);
-        self.runner.run(
-            SECURITY,
-            &[
-                "find-generic-password",
-                "-s",
-                service.as_str(),
-                "-a",
-                ACCOUNT,
-                "-w",
-            ],
-            None,
-        )
+        self.find(provider, &["-w"])
     }
 }
 
@@ -79,6 +81,12 @@ impl Keystore for MacosStore {
         } else {
             Ok(Some(SecretString::new(value.to_string())))
         }
+    }
+
+    /// Attributes only: without `-w` or `-g` the tool never prints the key, so the key never
+    /// enters this process.
+    fn has(&self, provider: &str) -> Result<bool, KeystoreError> {
+        Ok(self.find(provider, &[]).exited(0))
     }
 
     fn set(&self, provider: &str, key: &SecretString) -> Result<(), KeystoreError> {
@@ -200,6 +208,29 @@ mod tests {
                 "-w"
             ]
         );
+    }
+
+    #[test]
+    fn l20_presence_is_asked_without_the_key_value() {
+        let fake = Fake::answering(vec![ok(
+            "keychain: \"/x/login.keychain-db\"\nattributes:\n",
+        )]);
+        assert!(store(&fake).has("zai").expect("has"));
+        let calls = fake.calls();
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].0, "/usr/bin/security");
+        assert_eq!(
+            calls[0].1,
+            vec![
+                "find-generic-password",
+                "-s",
+                "zai-plugin-cc",
+                "-a",
+                "api-key"
+            ]
+        );
+        let fake = Fake::answering(vec![failed(44)]);
+        assert!(!store(&fake).has("zai").expect("has"));
     }
 
     #[test]

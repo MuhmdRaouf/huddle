@@ -3,6 +3,7 @@ pub mod dashboard_inputs;
 pub mod handover;
 pub mod history_sink;
 pub mod history_upkeep;
+pub mod key_presence;
 pub mod nochain;
 pub mod output;
 pub mod read_cache;
