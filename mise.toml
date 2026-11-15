@@ -49,13 +49,61 @@ run = [
 ]
 
 [tasks."rust:check"]
-description = "Rust gates: format, lint and the test suite"
+description = "Rust gates: format, lint and the test suites (unit, then e2e)"
 dir = "{{config_root}}"
 run = [
   "cargo fmt --all --check",
   "cargo clippy --workspace --all-targets --locked -- -D warnings",
-  "cargo run -q -p huddle-testkit --bin huddle-test-guard -- --workspace --locked -- --test-threads=8",
+  "mise run test:unit",
+  "mise run test:e2e",
 ]
+
+# The unit suite: every crate's lib and bin tests, plus every integration test target outside
+# package huddle that release/e2e-tests does not claim for the e2e suite.
+[tasks."test:unit"]
+description = "The unit suite only: lib and bin tests of every crate plus the integration targets the e2e suite does not own"
+dir = "{{config_root}}"
+run = '''
+# A `--test <name>` flag selects that target in every package the selection covers, so
+# `--workspace` never shares a command with the per-target flags: the lib and bin tests run
+# on their own, then the unit integration targets run with only their packages selected.
+# eval: keep the argument list splitting under whatever shell mise picks for task scripts
+eval "cargo run -q -p huddle-testkit --bin huddle-test-guard -- --workspace --lib --bins --locked --no-fail-fast -- --test-threads=8" || exit $?
+args=""
+for tests_dir in crates/*/tests; do
+  [ -d "$tests_dir" ] || continue
+  pkg=${tests_dir#crates/}
+  pkg=${pkg%/tests}
+  [ "$pkg" = huddle ] && continue
+  for test_file in "$tests_dir"/*.rs; do
+    [ -f "$test_file" ] || continue
+    target=$(basename "$test_file" .rs)
+    grep -Fxq "$pkg $target" release/e2e-tests && continue
+    args="$args -p $pkg --test $target"
+  done
+done
+# eval: keep the argument list splitting under whatever shell mise picks for task scripts
+eval "cargo run -q -p huddle-testkit --bin huddle-test-guard -- $args --locked --no-fail-fast -- --test-threads=8" || exit $?
+'''
+
+# The e2e suite: every integration test target of package huddle starts the real binary, plus
+# the targets release/e2e-tests claims for it.
+[tasks."test:e2e"]
+description = "The e2e suite only: every integration test target of package huddle plus the targets release/e2e-tests names"
+dir = "{{config_root}}"
+run = '''
+args="-p huddle"
+for test_file in crates/huddle/tests/*.rs; do
+  [ -f "$test_file" ] || continue
+  args="$args --test $(basename "$test_file" .rs)"
+done
+while read -r pkg target; do
+  case $pkg in ''|\#*) continue ;; esac
+  args="$args -p $pkg --test $target"
+done < release/e2e-tests
+# eval: keep the argument list splitting under whatever shell mise picks for task scripts
+eval "cargo run -q -p huddle-testkit --bin huddle-test-guard -- $args --locked --no-fail-fast -- --test-threads=8" || exit $?
+'''
 
 [tasks."dashboard:check"]
 description = "Parse the joined dashboard script and fail on a syntax error or a duplicate top-level name (DASHBOARD_PAGE=<file> checks another page)"

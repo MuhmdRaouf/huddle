@@ -17,6 +17,8 @@ mise run setup                                  # pinned tools, the dev dependen
 mise run dashboard:check                        # parse the joined dashboard script; fails on a syntax error or a duplicate top-level name
 mise run pins:check                             # every tool pin is exact; workflows, Dockerfile and hooks match mise.toml and package.json
 mise run check                                  # every gate: lint, fmt, clippy, tests
+mise run test:unit                              # the unit suite only: everything the e2e suite does not run
+mise run test:e2e                               # the e2e suite only: tests that start the real binary or a server
 mise run docker:check                           # every gate inside the docker toolchain image
 mise run docker:build                           # both static linux binaries, size-checked, in docker
 cargo test --workspace                          # the whole suite

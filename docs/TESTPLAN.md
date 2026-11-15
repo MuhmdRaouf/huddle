@@ -1,7 +1,12 @@
 # Test plan
 
 Run everything from the repo root: `mise run check`. It runs the lint hooks, the format and
-clippy gates and the guarded test suite over the whole workspace.
+clippy gates and then the guarded test suites, unit first and e2e second. `mise run test:unit`
+runs every crate's lib and bin tests and every integration test target the e2e suite does not
+own. `mise run test:e2e` runs every integration test target of package `huddle` (each starts the
+real binary) plus the targets `release/e2e-tests` names. Both suites go through
+`huddle-test-guard`, which fails on anything a run leaves in its temporary directory.
+`cargo test --workspace` still runs everything at once.
 
 Every user-facing path of the tree, beside the test that proves it. Each entry names
 `<file>:<test function>`. Every test runs on temp homes, leased ports and in-process fakes, never

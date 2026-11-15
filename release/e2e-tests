@@ -1,0 +1,10 @@
+# release/e2e-tests — the test targets outside package huddle that belong in the e2e suite,
+# one `<package> <target>` per line. Every integration test target of package huddle is e2e
+# without being listed here. The guard test l45_unit_and_e2e_sets_cover_every_test_target
+# fails when a listed target does not exist or names a huddle target, so the two mise tasks
+# test:unit and test:e2e together run every test target exactly once.
+#
+# A target belongs here when it starts a process or a server and takes over 10 s (ticket L45,
+# table in .agents/tickets/light-router-0.0.9/L45-times.md).
+huddle-router k5_realtime_stream
+huddle-testkit script
