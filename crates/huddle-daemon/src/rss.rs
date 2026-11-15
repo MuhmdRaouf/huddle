@@ -1,10 +1,9 @@
 //! The daemon's memory ceiling: a daemon whose resident size passes the ceiling hands itself
-//! over to a fresh copy of its own binary. The decision is pure, the reading is `ps`, and the
-//! spawn itself belongs to the serve loop.
+//! over to a fresh copy of its own binary. The decision is pure, the reading is the kernel's own
+//! accounting of the process (no child process), and the spawn itself belongs to the serve loop.
 
 use std::fmt;
-use std::io;
-use std::process::Command;
+use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 use huddle_config::env::Env;
@@ -18,17 +17,14 @@ pub const DEFAULT_INTERVAL: Duration = Duration::from_secs(30);
 
 #[derive(Debug)]
 pub enum RssError {
-    /// `ps` did not run at all.
-    Spawn(io::Error),
-    /// `ps` ran but printed no rss reading.
-    Parse(String),
+    /// The kernel refused or did not answer the reading.
+    Read(String),
 }
 
 impl fmt::Display for RssError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            RssError::Spawn(source) => write!(f, "ps did not run ({source})"),
-            RssError::Parse(message) => f.write_str(message),
+            RssError::Read(message) => f.write_str(message),
         }
     }
 }
@@ -59,57 +55,141 @@ pub fn interval_of(env: &Env) -> Duration {
     DEFAULT_INTERVAL
 }
 
-/// Reads `ps`'s rss column into bytes: `ps` reports KiB, one line per match, and the first
-/// non-empty line wins.
-pub fn parse_rss(out: &str) -> Result<u64, RssError> {
-    for line in out.split('\n') {
-        let Some(field) = line.split_whitespace().next() else {
-            continue;
-        };
-        let Ok(kib) = field.parse::<u64>() else {
-            return Err(RssError::Parse(format!("ps printed {line:?}, not an rss")));
-        };
-        return Ok(kib << 10);
+/// One reading of a process: its memory footprint and the CPU time it has used so far.
+struct Sample {
+    footprint: u64,
+    cpu_ns: u64,
+}
+
+/// A CPU reading and when it was taken.
+struct CpuMark {
+    at: Instant,
+    cpu_ns: u64,
+}
+
+/// The previous CPU reading and the pid it belongs to: the next reading's interval starts there.
+static LAST_CPU: Mutex<Option<(u32, CpuMark)>> = Mutex::new(None);
+
+/// CPU time used between two readings over the wall time between them, as a percent of one core.
+/// The first reading has no interval and shows nothing.
+fn cpu_percent(prev: Option<&CpuMark>, now: &CpuMark) -> Option<f64> {
+    let prev = prev?;
+    let wall = now.at.checked_duration_since(prev.at)?.as_nanos();
+    if wall == 0 {
+        return None;
     }
-    Err(RssError::Parse("ps printed no rss".to_string()))
+    let cpu = now.cpu_ns.saturating_sub(prev.cpu_ns);
+    Some(cpu as f64 * 100.0 / wall as f64)
 }
 
-/// Reads one process's resident size in bytes with `ps -o rss= -p <pid>`. Blocking: run it off
-/// the runtime.
-pub fn read_rss(pid: u32) -> Result<u64, RssError> {
-    let out = Command::new("ps")
-        .args(["-o", "rss=", "-p", &pid.to_string()])
-        .output()
-        .map_err(RssError::Spawn)?;
-    parse_rss(&String::from_utf8_lossy(&out.stdout))
-}
-
-/// Reads `ps -o pcpu=,rss=` into percent and bytes: the first non-empty line wins.
-pub fn parse_usage(out: &str) -> Result<ProcessUsage, RssError> {
-    let Some(line) = out.lines().find(|line| !line.trim().is_empty()) else {
-        return Err(RssError::Parse("ps printed no usage".to_string()));
-    };
-    let mut fields = line.split_whitespace();
-    let (Some(cpu), Some(kib)) = (fields.next(), fields.next()) else {
-        return Err(RssError::Parse(format!("ps printed {line:?}, not a usage")));
-    };
-    match (cpu.parse::<f64>(), kib.parse::<u64>()) {
-        (Ok(cpu), Ok(kib)) => Ok(ProcessUsage {
-            cpu_pct: Some(cpu),
-            rss_bytes: Some(kib << 10),
-        }),
-        _ => Err(RssError::Parse(format!("ps printed {line:?}, not a usage"))),
+/// On macOS the footprint is `ri_phys_footprint`: resident plus compressed and swapped pages, the
+/// number Activity Monitor shows.
+// `libc` marks the timebase deprecated in favour of the `mach2` crate; the one call does not
+// justify a dependency.
+#[cfg(target_os = "macos")]
+#[allow(deprecated)]
+fn sample(pid: u32) -> Result<Sample, RssError> {
+    let pid = libc::c_int::try_from(pid).map_err(|_| RssError::Read(format!("pid {pid}")))?;
+    let mut info = std::mem::MaybeUninit::<libc::rusage_info_v2>::uninit();
+    // SAFETY: the buffer is a `rusage_info_v2`, the layout flavor 2 fills.
+    let status =
+        unsafe { libc::proc_pid_rusage(pid, libc::RUSAGE_INFO_V2, info.as_mut_ptr().cast()) };
+    if status != 0 {
+        return Err(RssError::Read(format!(
+            "proc_pid_rusage failed ({})",
+            std::io::Error::last_os_error()
+        )));
     }
+    // SAFETY: the call succeeded, so the kernel filled the whole struct.
+    let info = unsafe { info.assume_init() };
+    let mut base = libc::mach_timebase_info { numer: 0, denom: 0 };
+    // SAFETY: `base` is a valid out-pointer.
+    if unsafe { libc::mach_timebase_info(&mut base) } != 0 || base.denom == 0 {
+        return Err(RssError::Read("mach_timebase_info failed".to_string()));
+    }
+    let ticks = info.ri_user_time.saturating_add(info.ri_system_time);
+    let cpu_ns = (u128::from(ticks) * u128::from(base.numer) / u128::from(base.denom)) as u64;
+    Ok(Sample {
+        footprint: info.ri_phys_footprint,
+        cpu_ns,
+    })
 }
 
-/// Reads one process's CPU percent and resident size with `ps -o pcpu=,rss= -p <pid>`.
+/// On Linux the footprint is the resident set from `/proc/<pid>/statm`, and the CPU time is the
+/// user and system ticks of `/proc/<pid>/stat`.
+#[cfg(target_os = "linux")]
+fn sample(pid: u32) -> Result<Sample, RssError> {
+    let read = |name: &str| {
+        std::fs::read_to_string(format!("/proc/{pid}/{name}"))
+            .map_err(|error| RssError::Read(format!("/proc/{pid}/{name}: {error}")))
+    };
+    let bad = |name: &str| RssError::Read(format!("/proc/{pid}/{name} is not a reading"));
+    let statm = read("statm")?;
+    let pages = statm
+        .split_whitespace()
+        .nth(1)
+        .and_then(|field| field.parse::<u64>().ok())
+        .ok_or_else(|| bad("statm"))?;
+    let stat = read("stat")?;
+    // The command name may hold spaces and parentheses: the fields start after the last `)`.
+    let after = stat
+        .rsplit_once(')')
+        .map(|(_, rest)| rest)
+        .ok_or_else(|| bad("stat"))?;
+    let mut fields = after.split_whitespace().skip(11);
+    let ticks = match (fields.next(), fields.next()) {
+        (Some(user), Some(system)) => user
+            .parse::<u64>()
+            .ok()
+            .zip(system.parse::<u64>().ok())
+            .map(|(user, system)| user + system),
+        _ => None,
+    }
+    .ok_or_else(|| bad("stat"))?;
+    // SAFETY: `sysconf` reads no memory of ours.
+    let (page, hz) = unsafe {
+        (
+            libc::sysconf(libc::_SC_PAGESIZE),
+            libc::sysconf(libc::_SC_CLK_TCK),
+        )
+    };
+    if page <= 0 || hz <= 0 {
+        return Err(RssError::Read("sysconf failed".to_string()));
+    }
+    Ok(Sample {
+        footprint: pages * page as u64,
+        cpu_ns: ticks * 1_000_000_000 / hz as u64,
+    })
+}
+
+/// Reads one process's memory footprint in bytes from the kernel, with no child process.
 /// Blocking: run it off the runtime.
+pub fn read_rss(pid: u32) -> Result<u64, RssError> {
+    sample(pid).map(|sample| sample.footprint)
+}
+
+/// Reads one process's CPU percent since the previous reading and its memory footprint, with no
+/// child process. The first reading of a process has no CPU number. Blocking: run it off the
+/// runtime.
 pub fn read_usage(pid: u32) -> Result<ProcessUsage, RssError> {
-    let out = Command::new("ps")
-        .args(["-o", "pcpu=,rss=", "-p", &pid.to_string()])
-        .output()
-        .map_err(RssError::Spawn)?;
-    parse_usage(&String::from_utf8_lossy(&out.stdout))
+    let reading = sample(pid)?;
+    let now = CpuMark {
+        at: Instant::now(),
+        cpu_ns: reading.cpu_ns,
+    };
+    let mut last = LAST_CPU
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let prev = last
+        .as_ref()
+        .filter(|(was, _)| *was == pid)
+        .map(|(_, mark)| mark);
+    let cpu_pct = cpu_percent(prev, &now);
+    *last = Some((pid, now));
+    Ok(ProcessUsage {
+        cpu_pct,
+        rss_bytes: Some(reading.footprint),
+    })
 }
 
 /// What one check decided.
@@ -181,22 +261,83 @@ mod tests {
     use super::*;
     use huddle_config::env::Env;
 
-    #[test]
-    fn ps_cpu_and_rss_columns_parse_into_percent_and_bytes() {
-        let usage = parse_usage("  0.4  18848\n").expect("parse");
-        assert_eq!(
-            (usage.cpu_pct, usage.rss_bytes),
-            (Some(0.4), Some(18848 << 10))
-        );
-        assert!(parse_usage("\n").is_err());
-        assert!(parse_usage("x 5\n").is_err());
-        assert!(parse_usage("0.1\n").is_err());
+    #[cfg(target_os = "macos")]
+    fn child_count() -> usize {
+        let pid = std::process::id() as libc::pid_t;
+        let mut pids = [0 as libc::pid_t; 256];
+        let bytes = std::mem::size_of_val(&pids) as libc::c_int;
+        // SAFETY: the buffer is `bytes` long.
+        let got = unsafe {
+            libc::proc_listchildpids(pid, pids.as_mut_ptr().cast::<libc::c_void>(), bytes)
+        };
+        got.max(0) as usize
+    }
+
+    #[cfg(target_os = "linux")]
+    fn child_count() -> usize {
+        let Ok(tasks) = std::fs::read_dir("/proc/self/task") else {
+            return 0;
+        };
+        tasks
+            .flatten()
+            .filter_map(|task| std::fs::read_to_string(task.path().join("children")).ok())
+            .map(|children| children.split_whitespace().count())
+            .sum()
     }
 
     #[test]
-    fn the_running_process_has_a_usage_reading() {
-        let usage = read_usage(std::process::id()).expect("ps");
-        assert!(usage.rss_bytes.is_some_and(|bytes| bytes > 0));
+    fn l7_footprint_reading_grows_with_a_held_allocation() {
+        let pid = std::process::id();
+        let before = read_rss(pid).expect("footprint");
+        let mut held = vec![0u8; 64 << 20];
+        for page in held.chunks_mut(4096) {
+            page[0] = 1;
+        }
+        let after = read_rss(pid).expect("footprint");
+        assert!(held.iter().step_by(4096).all(|byte| *byte == 1));
+        assert!(
+            after >= before + (48 << 20),
+            "rose from {before} to {after}"
+        );
+    }
+
+    #[test]
+    fn l7_no_ps_child_is_spawned() {
+        let pid = std::process::id();
+        let before = child_count();
+        for _ in 0..10 {
+            read_rss(pid).expect("footprint");
+            read_usage(pid).expect("usage");
+        }
+        assert_eq!(child_count(), before);
+    }
+
+    #[test]
+    fn l7_usage_reading_reports_cpu_and_memory_without_ps() {
+        let pid = std::process::id();
+        let first = read_usage(pid).expect("usage");
+        assert!(first.rss_bytes.is_some_and(|bytes| bytes > 0));
+        let spin = Instant::now();
+        while spin.elapsed() < Duration::from_millis(150) {
+            std::hint::black_box(0u64.wrapping_add(1));
+        }
+        let second = read_usage(pid).expect("usage");
+        assert!(second.cpu_pct.is_some_and(|pct| pct > 0.0));
+    }
+
+    #[test]
+    fn cpu_percent_is_cpu_time_over_wall_time() {
+        let t0 = Instant::now();
+        let prev = CpuMark {
+            at: t0,
+            cpu_ns: 1_000_000_000,
+        };
+        let now = CpuMark {
+            at: t0 + Duration::from_secs(2),
+            cpu_ns: 2_000_000_000,
+        };
+        assert_eq!(cpu_percent(None, &now), None);
+        assert_eq!(cpu_percent(Some(&prev), &now), Some(50.0));
     }
 
     #[test]
@@ -227,25 +368,6 @@ mod tests {
             interval_of(&Env::with(&[("HUDDLE_ROUTER_RSS_INTERVAL_MS", "-1")])),
             Duration::from_secs(30)
         );
-    }
-
-    #[test]
-    fn parse_reads_the_first_rss_line_in_kib() {
-        assert_eq!(parse_rss("  1024\n").expect("parse"), 1 << 20);
-        assert_eq!(parse_rss("\n  10\n  20\n").expect("parse"), 10 << 10);
-        assert_eq!(
-            parse_rss("   \n").expect_err("empty").to_string(),
-            "ps printed no rss"
-        );
-        assert_eq!(
-            parse_rss("nope\n").expect_err("nope").to_string(),
-            "ps printed \"nope\", not an rss"
-        );
-    }
-
-    #[test]
-    fn read_rss_reads_this_process() {
-        assert!(read_rss(std::process::id()).expect("rss") > 0);
     }
 
     #[test]

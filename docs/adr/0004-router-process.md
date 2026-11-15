@@ -23,7 +23,7 @@ Status: accepted, 2026-10-25. It sets D2 and D10 in [DECISIONS.md](../DECISIONS.
 - The router's record (`~/.local/state/huddle/run/router.toml`) names its pid, port and build. It
   lands before the first health answer, so a router seen healthy always has a pid to show.
 - A stop sends no signal when the record names no live daemon on the recorded port.
-- The RSS ceiling (1 GiB by default, `HUDDLE_ROUTER_RSS_CEILING_MB`, checked every 30 s) hands the
+- The RSS ceiling (1 GiB by default, `HUDDLE_ROUTER_RSS_CEILING_MB`, checked every 30 s, read from the kernel as the memory footprint, not by forking `ps`) hands the
   listening socket to a fresh copy of the binary the same way.
 
 ## Consequences

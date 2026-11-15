@@ -774,11 +774,12 @@ fn the_router_card_the_checks_and_the_hosts_fill_while_a_page_is_open() {
     let daemon = fixture_with(&anthropic, &zai);
     let _viewer = Live::open(daemon.port);
 
-    let snapshot = wait_for("plugin checks and a process sample", || {
+    let snapshot = wait_for("plugin checks and two process samples", || {
         let snapshot = state(daemon.port);
         let ready = snapshot["plugins"]["state"] == "ready"
             && snapshot["wiring"]["state"] != "checking"
-            && snapshot["router"]["rss_bytes"].is_u64();
+            && snapshot["router"]["rss_bytes"].is_u64()
+            && snapshot["router"]["cpu_pct"].is_f64();
         ready.then_some(snapshot)
     });
 
