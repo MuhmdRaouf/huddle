@@ -439,7 +439,8 @@ impl StreamedBody {
         Some(Bytes::from(whole))
     }
 
-    /// The bytes the body holds right now.
+    /// The bytes the body holds right now. Read by the footprint tests only.
+    #[doc(hidden)]
     pub fn retained_bytes(&self) -> u64 {
         self.lock()
             .chunks
@@ -703,11 +704,13 @@ fn lock_pools(
     pools.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
-/// Returns a connection to its host pool, dropping the host's idle connections past `ttl` and the
-/// oldest ones beyond the limits.
+/// Returns a connection to its host pool, dropping every host's idle connections past `ttl` and
+/// the oldest ones beyond the limits.
 fn push_idle(pools: &mut HashMap<String, HostPool>, key: String, conn: IdleConn, ttl: Duration) {
+    for pool in pools.values_mut() {
+        pool.idle.retain(|idle| idle.returned_at.elapsed() <= ttl);
+    }
     let host = pools.entry(key).or_insert_with(HostPool::new);
-    host.idle.retain(|idle| idle.returned_at.elapsed() <= ttl);
     host.idle.push(conn);
     host.idle.sort_by_key(|conn| conn.returned_at);
     while host.idle.len() > MAX_IDLE_PER_HOST {
@@ -1370,7 +1373,10 @@ impl UpstreamClient {
             // A builder that already failed on the method or the uri has no header slot.
             None => return Err(dial_failure(FailureCode::EUpstream)),
         };
-        let pumping = tokio::spawn(pump(req.body.clone(), frames));
+        // The reader exists before the task does: an early answer cannot abandon the body
+        // before the pump holds it.
+        let source = pump_source(&req.body);
+        let pumping = tokio::spawn(pump(source, frames));
         let mut sender = sender;
         let exchange = async {
             if streamed {
@@ -1491,11 +1497,25 @@ impl ConnGuard {
     }
 }
 
+/// What the pump reads: the whole bytes, or the reader of a streamed body.
+enum PumpSource {
+    Whole(Bytes),
+    Streamed(BodyReader),
+}
+
+/// Takes the pump's source on the caller's task, so a streamed body is held before the pump runs.
+fn pump_source(body: &RequestBody) -> PumpSource {
+    match body {
+        RequestBody::Whole(bytes) => PumpSource::Whole(bytes.clone()),
+        RequestBody::Streamed(stream) => PumpSource::Streamed(stream.reader()),
+    }
+}
+
 /// Feeds the wire body from the request body: a whole body in fixed slices without copying, a
 /// streamed body in the order it fills. Channel capacity 1 keeps the pace the socket sets.
-async fn pump(body: RequestBody, frames: mpsc::Sender<Result<Bytes, BodyDropped>>) {
-    match body {
-        RequestBody::Whole(bytes) => {
+async fn pump(source: PumpSource, frames: mpsc::Sender<Result<Bytes, BodyDropped>>) {
+    match source {
+        PumpSource::Whole(bytes) => {
             let mut offset = 0;
             while offset < bytes.len() {
                 let end = (offset + FRAME).min(bytes.len());
@@ -1505,23 +1525,20 @@ async fn pump(body: RequestBody, frames: mpsc::Sender<Result<Bytes, BodyDropped>
                 offset = end;
             }
         }
-        RequestBody::Streamed(stream) => {
-            let mut reader = stream.reader();
-            loop {
-                match reader.next_chunk().await {
-                    NextChunk::Chunk(chunk) => {
-                        if frames.send(Ok(chunk)).await.is_err() {
-                            return;
-                        }
-                    }
-                    NextChunk::End => return,
-                    NextChunk::Failed | NextChunk::NotReplayable => {
-                        let _ = frames.send(Err(BodyDropped)).await;
+        PumpSource::Streamed(mut reader) => loop {
+            match reader.next_chunk().await {
+                NextChunk::Chunk(chunk) => {
+                    if frames.send(Ok(chunk)).await.is_err() {
                         return;
                     }
                 }
+                NextChunk::End => return,
+                NextChunk::Failed | NextChunk::NotReplayable => {
+                    let _ = frames.send(Err(BodyDropped)).await;
+                    return;
+                }
             }
-        }
+        },
     }
 }
 
@@ -1587,6 +1604,7 @@ fn classify_io(err: &io::Error) -> FailureCode {
 }
 
 /// An attempt that ended before a byte of the body left: never handed over, never closed early.
+/// Failures start non-replayable; `drive` is the only place that sets the flag.
 fn dial_failure(code: FailureCode) -> AttemptFailure {
     AttemptFailure {
         code,
@@ -1594,14 +1612,14 @@ fn dial_failure(code: FailureCode) -> AttemptFailure {
         reused: false,
         handed_over: false,
         closed_early: false,
-        replayable: true,
+        replayable: false,
     }
 }
 
 /// The attempt verdict for a transport error: the socket went away when hyper says the message
 /// was incomplete or canceled, or the code is a reset or a broken pipe. A timeout, a refused
-/// connection and a certificate failure are never a closed socket. `drive` weighs `replayable`
-/// once the attempt's pump has ended.
+/// connection and a certificate failure are never a closed socket. the failure starts
+/// non-replayable and `drive` sets `replayable` once the attempt's pump has ended.
 fn hyper_failure(err: &HyperError, dial: &Dial, reused: bool, handed: &Handed) -> AttemptFailure {
     let code = classify(err);
     AttemptFailure {
@@ -1613,12 +1631,12 @@ fn hyper_failure(err: &HyperError, dial: &Dial, reused: bool, handed: &Handed) -
             || err.is_canceled()
             || code == FailureCode::EConnReset
             || code == FailureCode::EPipe,
-        replayable: true,
+        replayable: false,
     }
 }
 
-/// Silence is never a closed socket: no retry rides on a timeout. `drive` weighs `replayable`
-/// once the attempt's pump has ended.
+/// Silence is never a closed socket: no retry rides on a timeout. the failure starts
+/// non-replayable and `drive` sets `replayable` once the attempt's pump has ended.
 fn timeout_failure(dial: &Dial, reused: bool, handed: &Handed) -> AttemptFailure {
     AttemptFailure {
         code: FailureCode::ETimedOut,
@@ -1626,7 +1644,7 @@ fn timeout_failure(dial: &Dial, reused: bool, handed: &Handed) -> AttemptFailure
         reused,
         handed_over: handed.is_marked(),
         closed_early: false,
-        replayable: true,
+        replayable: false,
     }
 }
 
@@ -1693,6 +1711,37 @@ mod tests {
     /// One poll with a waker that does nothing: the test re-polls by hand.
     fn poll_once<F: Future>(future: Pin<&mut F>) -> Poll<F::Output> {
         future.poll(&mut Context::from_waker(std::task::Waker::noop()))
+    }
+
+    #[tokio::test]
+    async fn l41_the_pump_source_holds_the_body_before_the_pump_runs() {
+        let stream = StreamedBody::with_limits(8 * KIB64 as u64, KIB64 as u64, KIB64 as u64);
+        let routing = stream.route_hold();
+        let source = pump_source(&RequestBody::Streamed(Arc::clone(&stream)));
+        stream.push(chunk()).await;
+        stream.push(chunk()).await;
+        drop(routing);
+        assert!(
+            stream.retained_bytes() > 0,
+            "a live reader still reads the body"
+        );
+        drop(source);
+        assert_eq!(stream.retained_bytes(), 0);
+    }
+
+    #[test]
+    fn l41_a_whole_body_source_takes_no_hold() {
+        let bytes = Bytes::from_static(b"{}");
+        let pointer = bytes.as_ptr();
+        match pump_source(&RequestBody::Whole(bytes)) {
+            PumpSource::Whole(same) => assert_eq!(same.as_ptr(), pointer),
+            PumpSource::Streamed(_) => panic!("a whole body has no reader"),
+        }
+    }
+
+    #[test]
+    fn l41_a_dial_failure_is_not_replayable_until_drive_says_so() {
+        assert!(!dial_failure(FailureCode::EUpstream).replayable);
     }
 
     #[tokio::test]
@@ -1994,8 +2043,34 @@ mod pool_tests {
         first.finish();
         assert_eq!(pooled(&client), 1);
         tokio::time::sleep(Duration::from_millis(120)).await;
+        let mark = std::time::Instant::now();
         second.finish();
         assert_eq!(pooled(&client), 1, "the expired socket left the pool");
+        assert!(
+            lock_pools(&client.pool)
+                .values()
+                .flat_map(|host| host.idle.iter())
+                .all(|idle| idle.returned_at >= mark),
+            "the socket that stays is the later one"
+        );
+    }
+
+    #[tokio::test]
+    async fn l41_a_return_sweeps_every_host() {
+        let quiet = FakeUpstream::start(|_, _| Step::answer(200, "ok")).await;
+        let busy = FakeUpstream::start(|_, _| Step::answer(200, "ok")).await;
+        let client = client(Duration::from_millis(50));
+        let quiet_conn =
+            drain(answer(&client, &format!("{}/v1/messages", quiet.url())).await).await;
+        let busy_conn = drain(answer(&client, &format!("{}/v1/messages", busy.url())).await).await;
+        quiet_conn.finish();
+        tokio::time::sleep(Duration::from_millis(120)).await;
+        busy_conn.finish();
+        assert_eq!(
+            pooled(&client),
+            1,
+            "the quiet host's expired socket left the pool"
+        );
     }
 
     #[tokio::test]
@@ -2007,9 +2082,23 @@ mod pool_tests {
         for _ in 0..40 {
             held.push(drain(answer(&client, &url).await).await);
         }
-        for conn in held {
+        let mut mark = None;
+        for (index, conn) in held.into_iter().enumerate() {
+            if index == 24 {
+                mark = Some(std::time::Instant::now());
+            }
             conn.finish();
+            tokio::time::sleep(Duration::from_millis(2)).await;
         }
-        assert_eq!(pooled(&client), 16);
+        let mark = mark.expect("mark");
+        let pools = lock_pools(&client.pool);
+        assert_eq!(idle_total(&pools), 16);
+        assert!(
+            pools
+                .values()
+                .flat_map(|host| host.idle.iter())
+                .all(|idle| idle.returned_at >= mark),
+            "the freshest 16 stay"
+        );
     }
 }

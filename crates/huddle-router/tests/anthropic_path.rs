@@ -236,6 +236,7 @@ async fn the_upstream_reads_the_first_bytes_before_the_client_sends_the_last() {
     );
 
     tls.write_all(&body[half..]).await.expect("second half");
+    tls.flush().await.expect("flush");
     let resp = read_to_end(tls).await;
     assert!(resp.starts_with("HTTP/1.1 200"), "{resp}");
     let seen = rig.upstream.requests();
@@ -259,6 +260,7 @@ async fn a_body_inside_the_first_64_kib_is_read_whole() {
         .await
         .expect("head");
     tls.write_all(&body).await.expect("body");
+    tls.flush().await.expect("flush");
     let resp = read_to_end(tls).await;
     assert!(resp.contains("whole-route"), "{resp}");
     assert_eq!(
@@ -292,6 +294,7 @@ async fn a_lane_that_needs_no_edit_gets_the_body_as_it_arrives() {
         );
     }
     tls.write_all(&body[half..]).await.expect("second half");
+    tls.flush().await.expect("flush");
     let resp = read_to_end(tls).await;
     assert!(resp.contains("streamed-route"), "{resp}");
     assert!(
@@ -318,6 +321,7 @@ async fn a_lane_that_edits_bodies_is_read_whole_before_anything_goes_upstream() 
     );
     assert!(rig.whole_calls.lock().unwrap().is_empty());
     tls.write_all(&body[half..]).await.expect("second half");
+    tls.flush().await.expect("flush");
     let resp = read_to_end(tls).await;
     assert!(resp.contains("whole-route"), "{resp}");
     assert_eq!(rig.whole_calls.lock().unwrap()[0], body);
@@ -332,6 +336,7 @@ async fn a_client_that_stops_short_ends_the_call_without_a_retry() {
         .await
         .expect("head");
     tls.write_all(&body[..body.len() / 2]).await.expect("half");
+    tls.flush().await.expect("flush");
     wait_for(Duration::from_secs(5), || rig.upstream.received_bytes() > 0).await;
     drop(tls);
     tokio::time::sleep(Duration::from_millis(200)).await;
@@ -354,6 +359,7 @@ async fn a_body_over_the_limit_is_413_with_nothing_sent() {
         .await
         .expect("head");
     let _ = tls.write_all(&body).await;
+    let _ = tls.flush().await;
     let resp = read_to_end(tls).await;
     assert!(resp.starts_with("HTTP/1.1 413"), "{resp}");
     assert_eq!(rig.upstream.connections(), 0);
@@ -376,6 +382,7 @@ async fn the_silence_budget_does_not_count_the_clients_upload() {
     tls.write_all(&body[..half]).await.expect("first half");
     tokio::time::sleep(Duration::from_millis(400)).await;
     tls.write_all(&body[half..]).await.expect("second half");
+    tls.flush().await.expect("flush");
     let resp = read_to_end(tls).await;
     assert!(
         resp.starts_with("HTTP/1.1 200"),
@@ -404,6 +411,7 @@ async fn l5_the_stub_lane_drains_a_body_past_the_send_window() {
         .await
         .expect("head");
     tls.write_all(&body).await.expect("body");
+    tls.flush().await.expect("flush");
     let resp = read_to_end(tls).await;
     assert!(resp.contains("streamed-route"), "{resp}");
     let seen = rig.upstream.requests();

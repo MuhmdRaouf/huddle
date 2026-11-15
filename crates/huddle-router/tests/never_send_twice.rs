@@ -1,7 +1,7 @@
 //! Never send twice: a reused socket is retried once, and only before the whole body reached the
 //! transport.
 //!
-//! Six tests push an 8 MiB body through one fake upstream each. They hold `HEAVY` while they run,
+//! The tests that push an 8 MiB body through one fake upstream each hold `HEAVY` while they run,
 //! so at most one big body is in flight at a time; several concurrent drains starve a fake's
 //! read loop past its read timeout, and the request it then records is incomplete through no
 //! fault of the client.
