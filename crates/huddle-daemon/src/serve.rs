@@ -8,7 +8,7 @@ use std::io;
 use std::net::TcpListener;
 use std::os::fd::FromRawFd;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, OnceLock, RwLock};
+use std::sync::{Arc, Mutex, OnceLock, RwLock};
 use std::time::{Duration, Instant};
 
 use huddle_catalog::providers::provider_ids;
@@ -402,7 +402,7 @@ async fn engine(
 
     // The baseline is taken before the first read: a provider enabled while the daemon starts
     // changes the file after this snapshot, so the first tick swaps instead of missing it.
-    let mut providers_watch = ProvidersWatch::new(config_dir.clone(), provider_ids().to_vec());
+    let providers_watch = ProvidersWatch::new(config_dir.clone(), provider_ids().to_vec());
     let initial_enabled = match read_enabled(&config_dir, &provider_ids()) {
         Ok(names) => names,
         Err(error) => {
@@ -413,6 +413,9 @@ async fn engine(
 
     let mut hosts_watch = DashboardHostsWatch::new(dashboard_hosts::config_path(&paths));
     let dashboard_hosts_now = Arc::new(RwLock::new(hosts_watch.tick(&*log)));
+    // Every later poll stats and reads files, so the watches live where a blocking thread can
+    // take them; the loop below only applies their answer.
+    let reload_watches = Arc::new(Mutex::new((providers_watch, hosts_watch)));
 
     let executable = executable_resolved();
     let mut dashboard =
@@ -586,9 +589,27 @@ async fn engine(
                 break;
             }
             _ = reload_timer.tick() => {
-                let hosts = hosts_watch.tick(&*log);
+                let (hosts, action) = match tokio::task::spawn_blocking({
+                    let watches = Arc::clone(&reload_watches);
+                    let log = Arc::clone(&log);
+                    move || {
+                        let mut watches = watches.lock().unwrap_or_else(|e| e.into_inner());
+                        let (providers, hosts) = &mut *watches;
+                        let hosts = hosts.tick(&*log);
+                        let action = providers.tick(&*log);
+                        (hosts, action)
+                    }
+                })
+                .await
+                {
+                    Ok(answer) => answer,
+                    Err(error) => {
+                        log(format!("huddle-router: reload poll: {error}"));
+                        (Vec::new(), ReloadAction::Keep)
+                    }
+                };
                 *dashboard_hosts_now.write().unwrap_or_else(|e| e.into_inner()) = hosts;
-                if let ReloadAction::Swap(names) = providers_watch.tick(&*log) {
+                if let ReloadAction::Swap(names) = action {
                     router.reload(&names);
                     log(format!("huddle-router: now serving {}", names.join(", ")));
                 }
