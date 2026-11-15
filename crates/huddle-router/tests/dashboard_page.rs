@@ -2036,13 +2036,14 @@ fn k1_switch_reaches_every_view_and_refetches() {
         set.contains("tzSet(") && set.contains("applyRange()") && set.contains("renderTzBar()"),
         "switching saves, re-renders the open page and re-fetches: {set}"
     );
+    assert!(!PAGE.contains("tzbar"), "the control has left the header");
     assert!(
-        PAGE.contains("id=\"tzbar\""),
-        "the control sits in the header"
+        PAGE.contains("id=\"tzfoot\""),
+        "the control sits in the time panel's footer"
     );
     assert!(
-        PAGE.contains("MENUS.tz="),
-        "the control is the page's own menu"
+        PAGE.contains("data-tz=") && !PAGE.contains("MENUS.tz="),
+        "the control is two buttons in the footer"
     );
     for native in [
         "toLocaleDateString",
@@ -2471,7 +2472,8 @@ fn marked_block(start: &str, end: &str) -> String {
 
 /// Runs the time-picker code in bun in the machine zone UTC+2, with a stub page around it.
 /// `body` sees `make(zone, saved)` where `zone` is `local` or `utc` and `saved` holds the stored
-/// `huddle-range` and `huddle-range-custom` values. `make` returns the picker's functions plus
+/// `huddle-range` and `huddle-range-custom` values; an optional third `raw` storage replaces the
+/// in-memory store, for a store that throws. `make` returns the picker's functions plus
 /// `els` (the stub elements by selector), `keys` (the document's keydown handlers), `saved` (what
 /// was stored) and `log` (focus and render calls).
 fn run_picker_script(body: &str) -> Value {
@@ -2488,9 +2490,9 @@ fn run_picker_script(body: &str) -> Value {
         "const CODE={code};\n\
          const num=v=>typeof v==='number'&&isFinite(v)?v:null;\n\
          const esc=s=>String(s==null?'':s).replace(/[&<>\"']/g,c=>({{'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',\"'\":'&#39;'}}[c]));\n\
-         function make(zone,saved){{\n\
+         function make(zone,saved,raw){{\n\
           const mem=Object.assign({{'huddle-tz':zone}},saved||{{}});const savedKeys={{}};\n\
-          const localStorage={{getItem:k=>k in mem?mem[k]:null,setItem:(k,v)=>{{savedKeys[k]=v;mem[k]=v}}}};\n\
+          const localStorage=raw||{{getItem:k=>k in mem?mem[k]:null,setItem:(k,v)=>{{savedKeys[k]=v;mem[k]=v}}}};\n\
           const els={{}},keys=[],log=[];\n\
           const $=s=>els[s]||null,$$=()=>[];\n\
           const document={{addEventListener:(t,f)=>{{if(t==='keydown')keys.push(f)}}}};\n\
@@ -2499,7 +2501,7 @@ fn run_picker_script(body: &str) -> Value {
            render(){{log.push('render')}},loadHistory(){{log.push('history')}},CH:{{focus:null,metric:'req'}},HT:{{}},DR:null,HS:{{mode:'live'}},page:'overview',\n\
            hget:()=>new Promise(()=>{{}})}};\n\
           const names=Object.keys(stubs);\n\
-          const api=new Function(...names,CODE+';return {{HIST,RANGES,RANGE_MIN,DT,earliest,rangeButtonText,rangeText,rangeQuery,rangeBar,renderRangeBar,setRange,applyCustom,initPick,rangeClick}}')(...names.map(n=>stubs[n]));\n\
+          const api=new Function(...names,CODE+';return {{HIST,RANGES,RANGE_MIN,DT,earliest,rangeButtonText,rangeText,rangeQuery,rangeBar,renderRangeBar,setRange,applyCustom,initPick,rangeClick,recentRanges,renderTzBar}}')(...names.map(n=>stubs[n]));\n\
           els['#rangebar']={{html:''}};els['#mb-range']={{focus(){{log.push('focus mb-range')}}}};els['#rfrom']={{focus(){{log.push('focus rfrom')}}}};els['#rerr']={{textContent:'',html:''}};\n\
           return Object.assign(api,{{els,keys,log,saved:savedKeys}})}}\n\
          (async()=>{{{body}}})();"
@@ -2906,5 +2908,230 @@ fn l31_a_hidden_tab_runs_no_timer() {
     assert!(
         !PAGE.contains("update(SNAP),2000"),
         "the old full repaint interval is gone"
+    );
+}
+
+#[test]
+fn l38_applying_a_custom_range_remembers_it() {
+    let v = run_picker_script(
+        "const m=make('local');const now=Date.now();const h=3600e3;\n\
+         const a={from:now-3*h,to:now-h},b={from:now-5*h,to:now-4*h};\n\
+         m.initPick();m.DT.from=a.from;m.DT.to=a.to;m.applyCustom();\n\
+         const one=JSON.parse(m.saved['huddle-range-recent']);\n\
+         m.initPick();m.DT.from=b.from;m.DT.to=b.to;m.applyCustom();\n\
+         const two=JSON.parse(m.saved['huddle-range-recent']);\n\
+         m.initPick();m.DT.from=a.from;m.DT.to=a.to;m.applyCustom();\n\
+         const three=JSON.parse(m.saved['huddle-range-recent']);\n\
+         console.log(JSON.stringify({one,two,three,a,b}));",
+    );
+    assert_eq!(v["one"], serde_json::json!([v["a"]]));
+    assert_eq!(
+        v["two"],
+        serde_json::json!([v["b"], v["a"]]),
+        "the newest range comes first"
+    );
+    assert_eq!(
+        v["three"],
+        serde_json::json!([v["a"], v["b"]]),
+        "a repeat moves to the front without a duplicate"
+    );
+}
+
+#[test]
+fn l38_only_four_recent_ranges_are_kept() {
+    let v = run_picker_script(
+        "const m=make('local');const now=Date.now();const h=3600e3;\n\
+         const spans=[[2,1],[3,2],[4,3],[5,4],[6,5]].map(([f,t])=>({from:now-f*h,to:now-t*h}));\n\
+         spans.forEach(s=>{m.initPick();m.DT.from=s.from;m.DT.to=s.to;m.applyCustom()});\n\
+         const kept=JSON.parse(m.saved['huddle-range-recent']);\n\
+         console.log(JSON.stringify({kept,expected:[spans[4],spans[3],spans[2],spans[1]]}));",
+    );
+    assert_eq!(
+        v["kept"], v["expected"],
+        "five applies leave the four newest, oldest gone"
+    );
+}
+
+#[test]
+fn l38_a_failed_apply_and_a_quick_range_add_nothing() {
+    let v = run_picker_script(
+        "const m=make('local');const now=Date.now();const h=3600e3;\n\
+         m.initPick();m.DT.from=now-3*h;m.DT.to=now-h;m.applyCustom();\n\
+         const before=JSON.parse(m.saved['huddle-range-recent']);\n\
+         m.initPick();m.DT.from=now-1000;m.DT.to=now-5000;m.applyCustom();\n\
+         m.DT.from=m.earliest()-864e5;m.DT.to=now;m.applyCustom();\n\
+         m.setRange('24h');\n\
+         console.log(JSON.stringify({before,after:JSON.parse(m.saved['huddle-range-recent']),range:m.HIST.range}));",
+    );
+    assert_eq!(
+        v["after"], v["before"],
+        "From after To, From before earliest and a quick range add nothing"
+    );
+    assert_eq!(v["range"], "24h");
+}
+
+#[test]
+fn l38_a_recent_range_applies_on_click() {
+    let v = run_picker_script(
+        "const from=Date.UTC(2026,10,14,8,0),to=Date.UTC(2026,10,14,10,0),oldFrom=Date.now()-200*864e5,oldTo=oldFrom+3600e3;\n\
+         const m=make('utc',{'huddle-range-recent':JSON.stringify([{from:from,to:to},{from:oldFrom,to:oldTo}])});\n\
+         m.HIST.picking=true;m.renderRangeBar();const html=m.els['#rangebar'].html;\n\
+         const listed=html.includes('Recently used absolute ranges')&&html.includes('14 Nov 08:00 to 14 Nov 10:00');\n\
+         const click=i=>m.rangeClick({target:{closest:s=>s==='[data-rr]'?{dataset:{rr:String(i)}}:null}});\n\
+         click(0);\n\
+         const applied={range:m.HIST.range,from:m.HIST.from,to:m.HIST.to,query:m.rangeQuery(),stored:JSON.parse(m.saved['huddle-range-recent']),picking:m.HIST.picking};\n\
+         m.HIST.picking=true;m.renderRangeBar();m.els['#rerr'].html='';click(1);\n\
+         const rejected={err:m.els['#rerr'].html,range:m.HIST.range,from:m.HIST.from,to:m.HIST.to,stored:JSON.parse(m.saved['huddle-range-recent'])};\n\
+         console.log(JSON.stringify({listed,applied,rejected,from,to,oldFrom,oldTo}));",
+    );
+    assert_eq!(v["listed"], true, "the panel lists the stored ranges");
+    let applied = &v["applied"];
+    assert_eq!(applied["range"], "custom");
+    assert_eq!(applied["from"], v["from"]);
+    assert_eq!(applied["to"], v["to"]);
+    let query = format!("from={}&to={}&tz_offset_min=0", v["from"], v["to"]);
+    assert_eq!(
+        applied["query"],
+        query.as_str(),
+        "the same query shape as Apply"
+    );
+    assert_eq!(
+        applied["stored"],
+        serde_json::json!([
+            {"from": v["from"], "to": v["to"]},
+            {"from": v["oldFrom"], "to": v["oldTo"]}
+        ])
+    );
+    let rejected = &v["rejected"];
+    assert!(
+        rejected["err"]
+            .as_str()
+            .expect("error line")
+            .contains("keeps 90 days"),
+        "a row older than the kept history shows the error"
+    );
+    assert_eq!(rejected["range"], "custom", "the old row applies nothing");
+    assert_eq!(rejected["from"], v["from"]);
+    assert_eq!(rejected["to"], v["to"]);
+    assert_eq!(
+        rejected["stored"], applied["stored"],
+        "the store is untouched"
+    );
+}
+
+#[test]
+fn l38_a_blocked_or_bad_store_is_an_empty_list() {
+    let v = run_picker_script(
+        "const blocked=make('local',null,{getItem:()=>{throw new Error('blocked')},setItem:()=>{throw new Error('blocked')}});\n\
+         const bad=make('local',{'huddle-range-recent':'not json'});\n\
+         const empty=make('local',{'huddle-range-recent':null});\n\
+         const clean=m=>{m.HIST.picking=true;m.renderRangeBar();return !m.els['#rangebar'].html.includes('Recently used absolute ranges')};\n\
+         const rows={blocked:clean(blocked),bad:clean(bad),empty:clean(empty)};\n\
+         blocked.initPick();blocked.DT.from=Date.now()-3600e3;blocked.DT.to=Date.now()-1800e3;\n\
+         let threw='no';try{blocked.applyCustom()}catch(e){threw='yes'}\n\
+         console.log(JSON.stringify({rows,lists:{blocked:blocked.recentRanges(),bad:bad.recentRanges(),empty:empty.recentRanges()},threw,range:blocked.HIST.range,query:blocked.rangeQuery()}));",
+    );
+    assert_eq!(
+        v["rows"],
+        serde_json::json!({"blocked":true,"bad":true,"empty":true}),
+        "no rows render from any bad store"
+    );
+    assert_eq!(v["lists"]["blocked"], serde_json::json!([]));
+    assert_eq!(v["lists"]["bad"], serde_json::json!([]));
+    assert_eq!(v["lists"]["empty"], serde_json::json!([]));
+    assert_eq!(v["threw"], "no", "a throwing store does not stop Apply");
+    assert_eq!(v["range"], "custom");
+    let query = v["query"].as_str().expect("query");
+    assert!(
+        query.starts_with("from=")
+            && query.contains("&to=")
+            && query.ends_with("&tz_offset_min=120"),
+        "{query}"
+    );
+}
+
+#[test]
+fn l38_the_zone_lives_in_the_panel_footer() {
+    assert!(!PAGE.contains("tzbar"), "the header switch is gone");
+    assert!(
+        PAGE.contains("id=\"tzfoot\""),
+        "the footer lives in the panel"
+    );
+    let v = run_picker_script(
+        "const out={};\n\
+         for(const zone of ['local','utc']){const m=make(zone);\n\
+          m.HIST.picking=true;m.renderRangeBar();const html=m.els['#rangebar'].html;\n\
+          const name=Intl.DateTimeFormat().resolvedOptions().timeZone||'';\n\
+          out[zone]={hasLocal:html.includes('Local (UTC+2)'),hasUTC:html.includes('>UTC</button>'),\n\
+           localOn:html.includes('data-tz=\"local\" aria-pressed=\"true\"'),utcOn:html.includes('data-tz=\"utc\" aria-pressed=\"true\"'),\n\
+           zone:name,zoneShown:name?html.includes(name):null};\n\
+          m.rangeClick({target:{closest:s=>s==='[data-tz]'?{dataset:{tz:zone==='local'?'utc':'local'}}:null}});\n\
+          out[zone].stored=m.saved['huddle-tz'];out[zone].query=m.rangeQuery();out[zone].picking=m.HIST.picking}\n\
+         const shut=make('local');let bootThrew='no';try{shut.renderTzBar()}catch(e){bootThrew='yes'}\n\
+         out.boot={bootThrew,html:shut.els['#rangebar'].html};\n\
+         console.log(JSON.stringify(out));",
+    );
+    for zone in ["local", "utc"] {
+        let side = &v[zone];
+        assert_eq!(
+            side["hasLocal"], true,
+            "{zone}: the Local button shows the zone and offset"
+        );
+        assert_eq!(side["hasUTC"], true, "{zone}: the UTC button shows");
+        assert_eq!(
+            side["localOn"],
+            zone == "local",
+            "{zone}: the current zone is pressed"
+        );
+        assert_eq!(
+            side["utcOn"],
+            zone == "utc",
+            "{zone}: the other zone is not pressed"
+        );
+        if side["zone"].as_str().is_some_and(|z| !z.is_empty()) {
+            assert_eq!(
+                side["zoneShown"], true,
+                "{zone}: the browser zone name shows"
+            );
+        }
+        assert_eq!(
+            side["picking"], false,
+            "{zone}: choosing re-renders and closes like Apply"
+        );
+    }
+    assert_eq!(v["local"]["stored"], "utc");
+    assert_eq!(
+        v["local"]["query"], "range=15m&tz_offset_min=0",
+        "choosing UTC refetches at offset 0"
+    );
+    assert_eq!(v["utc"]["stored"], "local");
+    assert_eq!(v["utc"]["query"], "range=15m&tz_offset_min=120");
+    assert_eq!(
+        v["boot"]["bootThrew"], "no",
+        "renderTzBar with the panel shut is a no-op"
+    );
+    assert_eq!(v["boot"]["html"], "");
+}
+
+#[test]
+fn l38_the_panel_flips_to_the_right_edge_when_it_would_clip() {
+    let css = include_str!("../src/dashboard/style.css");
+    assert!(
+        css.contains(".rangepop.right{left:auto;right:0}"),
+        "the panel hangs from the button's right corner"
+    );
+    assert!(
+        css.contains(".rangepop,.rangepop.right{position:fixed"),
+        "the phone rule keeps the full-width panel"
+    );
+    let render = PAGE
+        .split("function renderRangeBar(){")
+        .nth(1)
+        .and_then(|s| s.split('}').next())
+        .expect("renderRangeBar");
+    assert!(
+        render.contains("getBoundingClientRect().right>innerWidth-8")
+            && render.contains("classList.add('right')"),
+        "renderRangeBar flips the panel when it would pass the right edge: {render}"
     );
 }

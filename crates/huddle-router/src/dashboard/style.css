@@ -389,9 +389,7 @@ td.empty{text-align:center;color:var(--faint);padding:28px 14px}
   table.fold td.empty::before{content:none}
 }
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
-.rangebar,.tzbar{position:relative}
-.tzbar .mbtn{min-width:132px}
-@media (max-width:700px){.tzbar .mbtn{min-width:0}}
+.rangebar{position:relative}
 /* the range picker, refresh-now and the refresh picker read as one control */
 .ctlgroup{display:flex;align-items:center}
 .refbar{position:relative}
@@ -407,13 +405,15 @@ td.empty{text-align:center;color:var(--faint);padding:28px 14px}
 .rfnow.spin svg{animation:rfspin .5s ease-out}
 @keyframes rfspin{to{transform:rotate(360deg)}}
 .ctlgroup .mbtn:hover,.ctlgroup .mbtn[aria-expanded="true"]{position:relative;z-index:1}
-.ctlgroup .mval,.tzbar .mval{white-space:nowrap}
+.ctlgroup .mval{white-space:nowrap}
 @media (max-width:700px){.ctlgroup .rangebar .mbtn{min-width:0}.ctlgroup .refbar .mbtn{min-width:0;padding-left:8px}}
-/* on a phone the time zone label shrinks first, then the refresh label, each with an ellipsis; the buttons stay whole */
-@media (max-width:600px){.tzbar,.tzbar .pmenu{min-width:0;max-width:100%}.tzbar .pmenu{display:block}.tzbar .mbtn{max-width:100%}.tzbar .mval,.refbar .mval{min-width:0;overflow:hidden;text-overflow:ellipsis}.refbar .mval{max-width:12ch}.refbar,.rfnow,.rangebar,.mchev{flex:none}}
+/* on a phone the refresh label shrinks first, with an ellipsis; the buttons stay whole */
+@media (max-width:600px){.refbar .mval{min-width:0;overflow:hidden;text-overflow:ellipsis;max-width:12ch}.refbar,.rfnow,.rangebar,.mchev{flex:none}}
 @media (prefers-reduced-motion:reduce){.rfnow.spin svg{animation:none}}
 .ctlgroup .rangebar .mval{max-width:30ch;overflow:hidden;text-overflow:ellipsis}
 .rangepop{position:absolute;left:0;top:38px;z-index:30;display:grid;grid-template-columns:280px 190px;border:1px solid var(--line);border-radius:10px;background:var(--surface);box-shadow:0 8px 30px rgb(0 0 0/.18)}
+/* hang from the right corner when the open panel would clip */
+.rangepop.right{left:auto;right:0}
 .rleft{display:grid;gap:10px;padding:14px;min-width:0;align-content:start}
 .rleft .rh{font-size:13px;font-weight:600}
 .rright{display:grid;align-content:start;gap:2px;padding:8px;border-left:1px solid var(--line)}
@@ -422,6 +422,12 @@ td.empty{text-align:center;color:var(--faint);padding:28px 14px}
 
 .rangepop .rerr{font-size:12.5px;color:var(--bad);min-height:0}.rangepop .rerr:empty{display:none}
 .racts{display:flex;gap:8px}.racts button{border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--text);padding:5px 14px;font:13px var(--sans);cursor:pointer}.racts #rapply{border-color:var(--accent);font-weight:500}
+.rrecent{display:grid;gap:2px;min-width:0}
+.rrecent .rh{font-size:11.5px;font-weight:600;color:var(--muted)}
+.rrecent .rq{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tzfoot{grid-column:1/-1;display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:10px 14px;border-top:1px solid var(--line-soft)}
+.tfb[aria-pressed="true"]{background:var(--subtle);font-weight:600;box-shadow:inset 2px 0 0 var(--accent)}
+.tfz{margin-left:auto;font-size:11.5px;color:var(--faint);font-family:var(--mono);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 /* the page's own menu */
 .pmenu{position:relative;display:inline-block}
 .mbtn{display:inline-flex;align-items:center;justify-content:space-between;gap:8px;min-width:120px;height:30px;padding:5px 8px 5px 10px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--text);font:13px var(--sans);cursor:pointer;text-align:left}
@@ -445,7 +451,7 @@ td.empty{text-align:center;color:var(--faint);padding:28px 14px}
 .day{height:28px;border:0;border-radius:7px;background:transparent;color:var(--text);font:13px var(--sans);font-variant-numeric:tabular-nums;cursor:pointer}
 .day:hover:not(:disabled){background:var(--subtle)}.day.sel{background:var(--accent);color:var(--surface);font-weight:600}.day:disabled{color:var(--faint);cursor:not-allowed;opacity:.55}
 .dtime{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--muted)}.dtime .mbtn{min-width:64px}
-@media (max-width:700px){.rangepop{position:fixed;top:60px;left:0;right:0;grid-template-columns:minmax(0,1fr);max-height:calc(100vh - 70px);overflow-y:auto;overflow-x:hidden;border-radius:0 0 10px 10px}.rright{border-left:0;border-top:1px solid var(--line)}.rangepop .dtfs{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}}
+@media (max-width:700px){.rangepop,.rangepop.right{position:fixed;top:60px;left:0;right:0;grid-template-columns:minmax(0,1fr);max-height:calc(100vh - 70px);overflow-y:auto;overflow-x:hidden;border-radius:0 0 10px 10px}.rright{border-left:0;border-top:1px solid var(--line)}.rangepop .dtfs{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}}
 @media (max-width:600px){.ctlgroup .rangebar .mval{max-width:14ch}.dtime .pmenu .mlist{min-width:100%}}
 @media (prefers-reduced-motion:reduce){.mlist,.mchev{transition:none}}
 .qw{font-size:12.5px;white-space:nowrap}.qw span:first-child{color:var(--muted)}

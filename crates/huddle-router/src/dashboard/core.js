@@ -357,9 +357,16 @@ function calHtml(){const lead=(new Date(Date.UTC(DT.y,DT.m,1)).getUTCDay()+6)%7,
  return `<div class="calhead"><button type="button" class="calnav" data-cal="-1" aria-label="Previous month">${ic('chev','flip')}</button><b aria-live="polite">${MONTHS[DT.m]} ${DT.y}</b><button type="button" class="calnav" data-cal="1" aria-label="Next month">${ic('chev')}</button></div><div class="calgrid">${['Mo','Tu','We','Th','Fr','Sa','Su'].map(x=>`<i>${x}</i>`).join('')}${g}</div>`}
 const dtField=(f,id,l)=>`<button type="button" class="dtf" id="${id}" data-dtf="${f}" aria-pressed="${DT.act===f}"><span class="dtl">${l}</span><span>${esc(dtText(DT[f]))}</span></button>`;
 const quickHtml=()=>RANGES.map(([k,,l])=>`<button type="button" class="rq" data-rq="${k}"${HIST.range===k?' aria-current="true"':''}${RANGE_MIN[k]/1440>HIST.keep?' disabled':''}>${esc(l[0].toUpperCase()+l.slice(1))}</button>`).join('');
+/* the last four applied custom ranges, newest first; a bad store reads as none */
+const recentRanges=()=>{try{const v=JSON.parse(localStorage.getItem('huddle-range-recent'));return Array.isArray(v)?v.slice(0,4):[]}catch(e){return []}};
+const rememberRange=(f,t)=>{try{const list=recentRanges().filter(x=>x.from!==f||x.to!==t);list.unshift({from:f,to:t});localStorage.setItem('huddle-range-recent',JSON.stringify(list.slice(0,4)))}catch(e){}};
+const recentHtml=()=>{const rows=recentRanges();return rows.length?`<div class="rrecent"><b class="rh">Recently used absolute ranges</b>${rows.map((r,i)=>`<button class="rq" data-rr="${i}">${esc(when(r.from)+' to '+when(r.to))}</button>`).join('')}</div>`:''};
+/* the panel footer: the zone switch and the browser zone */
+const tzZoneName=()=>{try{return Intl.DateTimeFormat().resolvedOptions().timeZone||''}catch(e){return ''}};
+const tzFootHtml=()=>{const z=tzZoneName();return `<div class="tzfoot" id="tzfoot"><button class="rq tfb" data-tz="local" aria-pressed="${!TZ.utc}">${esc(tzLocal())}</button><button class="rq tfb" data-tz="utc" aria-pressed="${TZ.utc}">UTC</button>${z?`<span class="tfz">${esc(z)}</span>`:''}</div>`};
 function rangeBar(){
  const btn=`<div class="pmenu"><button type="button" class="mbtn" id="mb-range" data-rtoggle aria-haspopup="dialog" aria-expanded="${HIST.picking}" aria-controls="rpanel" aria-label="Time range: ${esc(rangeButtonText())}"><span class="mval">${esc(rangeButtonText())}</span>${CHEVRON}</button></div>`;
- const pop=HIST.picking?`<div class="rangepop" id="rpanel" role="dialog" aria-label="Time range"><div class="rleft"><b class="rh">Absolute time range</b><div class="dtfs">${dtField('from','rfrom','From')}${dtField('to','rto','To')}</div><div class="cal">${calHtml()}</div><div class="dtime"><span>Time</span>${menuHtml('dth','sm')}<span>:</span>${menuHtml('dtm','sm')}</div><div class="rerr" id="rerr" role="alert"></div><div class="racts"><button id="rapply">Apply</button></div></div><div class="rright" role="group" aria-label="Quick ranges">${quickHtml()}</div></div>`:'';
+ const pop=HIST.picking?`<div class="rangepop" id="rpanel" role="dialog" aria-label="Time range"><div class="rleft"><b class="rh">Absolute time range</b><div class="dtfs">${dtField('from','rfrom','From')}${dtField('to','rto','To')}</div><div class="cal">${calHtml()}</div><div class="dtime"><span>Time</span>${menuHtml('dth','sm')}<span>:</span>${menuHtml('dtm','sm')}</div><div class="rerr" id="rerr" role="alert"></div>${recentHtml()}<div class="racts"><button id="rapply">Apply</button></div></div><div class="rright" role="group" aria-label="Quick ranges">${quickHtml()}</div>${tzFootHtml()}</div>`:'';
  return btn+pop}
 function redrawPick(focus){const err=($('#rerr')||{}).textContent;renderRangeBar();if(err)setHtml($('#rerr'),esc(err));const n=focus&&$(focus);if(n)n.focus()}
 function pickClick(e){
@@ -376,20 +383,21 @@ document.addEventListener('keydown',e=>{
  const d=new Date(Date.UTC(DT.y,DT.m,+day.dataset.day+step));
  if(d.getUTCFullYear()!==DT.y||d.getUTCMonth()!==DT.m){DT.y=d.getUTCFullYear();DT.m=d.getUTCMonth();redrawPick();const n=$('[data-day="'+d.getUTCDate()+'"]');if(n&&!n.disabled)n.focus();return}
  const n=$('[data-day="'+d.getUTCDate()+'"]');if(n&&!n.disabled)n.focus()},true);
-function renderRangeBar(){const el=$('#rangebar');if(el){menuDrop();setHtml(el,rangeBar())}}
+function renderRangeBar(){const el=$('#rangebar');if(el){menuDrop();setHtml(el,rangeBar());const pop=$('#rpanel');if(pop&&pop.getBoundingClientRect().right>innerWidth-8)pop.classList.add('right')}}
 function closeRangePanel(){HIST.picking=false;renderRangeBar();const b=$('#mb-range');if(b)b.focus()}
 function openRangePanel(){HIST.picking=true;initPick();renderRangeBar();const n=$('#rfrom');if(n)n.focus()}
 /* a click that belongs to the time picker: the button toggles the panel, a quick range applies, Apply sends the absolute range, a click outside closes the panel */
 function rangeClick(e){
  const t=e.target;if(!t||!t.closest)return false;
  if(t.closest('#rapply')){applyCustom();return true}
+ const rr=t.closest('[data-rr]');if(rr){const r=recentRanges()[+rr.dataset.rr];if(r){DT.from=r.from;DT.to=r.to;applyCustom()}return true}
+ const zb=t.closest('[data-tz]');if(zb){setTz(zb.dataset.tz==='utc');return true}
  const q=t.closest('[data-rq]');if(q){if(q.disabled)return true;if(q.dataset.rq===HIST.range){closeRangePanel();return true}setRange(q.dataset.rq);return true}
  if(t.closest('[data-rtoggle]')){HIST.picking?closeRangePanel():openRangePanel();return true}
  if(HIST.picking&&!t.closest('#rpanel')){closeRangePanel();return true}
  return false}
-/* the zone switch: Local (the browser's zone) or UTC; the choice reaches every time and every day bucket */
-MENUS.tz={label:'Time zone',opts:()=>[{k:'local',t:tzLocal()},{k:'utc',t:'UTC'}],cur:()=>TZ.utc?'utc':'local',pick:k=>setTz(k==='utc')};
-function renderTzBar(){const el=$('#tzbar');if(el){menuDrop();setHtml(el,menuHtml('tz'))}}
+/* the footer zone switch redraws only while the panel is open; boot's call is a no-op otherwise */
+function renderTzBar(){const el=$('#tzfoot');if(el)setHtml(el,tzFootHtml())}
 function setTz(utc){if(utc===TZ.utc)return;tzSet(utc);renderTzBar();applyRange();if(DR)renderDrawer(true)}
 function applyRange(){HIST.bk=HIST.tot=HIST.ser=null;HIST.err=false;HIST.picking=false;CH.focus=null;if(liveRange()&&CH.metric==='cost')CH.metric='req';
  HT.ses=HT.prj=HT.meta=null;HT.trend={};HT.mod={};
@@ -399,7 +407,7 @@ function setRange(k){if(!RANGES.some(r=>r[0]===k))return;HIST.range=k;applyRange
 function applyCustom(){const f=DT.from,t=Math.min(DT.to,Date.now()),err=m=>{setHtml($('#rerr'),esc(m))};
  if(!(f<t))return err('Pick a start that is before the end.');
  if(f<earliest())return err(`huddle keeps ${HIST.keep} days of history. Pick a start inside it.`);
- HIST.range='custom';HIST.from=f;HIST.to=t;applyRange()}
+ HIST.range='custom';HIST.from=f;HIST.to=t;rememberRange(f,t);applyRange()}
 /* rp:end */
 function loadMeta(){hget('/huddle-router/history?view=meta').then(d=>{const k=num(d.keep_days);if(k>0){HIST.keep=k;if(!HIST.picking)renderRangeBar()}},()=>{})}
 const pricesLine=d=>d?`<div class="legendrow">Estimated from list prices. Prices retrieved ${esc(d.prices_retrieved)}; Claude prices retrieved ${esc(d.claude_prices_retrieved)}.</div>`:'';
