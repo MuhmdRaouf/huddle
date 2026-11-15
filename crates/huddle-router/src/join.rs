@@ -64,7 +64,7 @@ fn name_worktree_users(machine: &mut Machine) {
 
 /// Each plugin row gains `working` (its lane's last answer was a 200; null before any request)
 /// and `requests` (the lane's count).
-fn credit_plugins(snapshot: &mut Snapshot) {
+pub fn credit_plugins(snapshot: &mut Snapshot) {
     let Some(rows) = snapshot
         .plugins
         .get_mut("rows")

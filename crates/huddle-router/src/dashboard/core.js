@@ -1,8 +1,8 @@
 const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
-/* Every string from the snapshot passes through esc before it reaches markup; setHtml is the one place markup is written. */
+/* Every snapshot string passes through esc; setHtml is the one place markup is written. */
 const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 function setHtml(el,html){el.innerHTML=html;el.querySelectorAll('[data-css]').forEach(n=>{n.style.cssText=n.dataset.css})}
-/* A region is written only when its markup changed; a focused control comes back by id or data key. */
+/* A region is written only when its markup changed; a focused control returns by id or data key. */
 const LASTHTML=new WeakMap(), FOCUS_KEYS=['data-copy','data-sort','data-open','data-seg','data-metric','data-focus','data-q','data-hf','data-hp','data-close'];
 function focusSelector(el){if(el.id)return '#'+CSS.escape(el.id);for(const a of FOCUS_KEYS){const v=el.getAttribute(a);if(v!==null)return `[${a}="${CSS.escape(v)}"]`}return null}
 function patch(el,html){if(LASTHTML.get(el)===html)return false;
@@ -97,17 +97,20 @@ const ERRDEF={
 };
 const errDef=(c,reason)=>ERRDEF[c]||['Status '+c,reason||'',reason||'The provider answered with status '+c+'.',true];
 
+/* a stream snapshot takes the sessions and worktrees of the last `machine` event */
+let MACH=null;
 function buildSessions(){
+ const busy=new Set(arr(SNAP.in_flight).map(x=>x.session));
  SESS=arr(SNAP.sessions).map(x=>{
-  const tok=num(x.context_tokens),lim=num(x.context_limit);
-  const o={id:String(x.id||''),title:x.title||'',project:x.project||'',repo:x.repo||'',worktree:x.worktree||'',cwd:x.cwd||'',branch:x.branch||'',model:x.model||'',state:x.state||'idle',started:num(x.started_ms),last:num(x.last_ms),waitingSince:num(x.state_since_ms),openTasks:num(x.open_tasks),questionTool:x.question_tool||'',ctxTok:tok,ctxLim:lim,ctx:tok!=null&&lim?tok/lim*100:null,ttl:num(x.cache_ttl_ms),lastReq:num(x.last_request_ms)};
+  const tok=num(x.context_tokens),lim=num(x.context_limit),w=busy.has(x.id);
+  const o={id:String(x.id||''),title:x.title||'',project:x.project||'',repo:x.repo||'',worktree:x.worktree||'',cwd:x.cwd||'',branch:x.branch||'',model:x.model||'',state:w?'working':x.state||'idle',started:num(x.started_ms),last:num(x.last_ms),waitingSince:w?null:num(x.state_since_ms),openTasks:num(x.open_tasks),questionTool:x.question_tool||'',ctxTok:tok,ctxLim:lim,ctx:tok!=null&&lim?tok/lim*100:null,ttl:num(x.cache_ttl_ms),lastReq:num(x.last_request_ms)};
   o.sid=o.id.slice(0,8);o.name=o.title||o.project||o.sid||'Session';
   let ag=arr(x.agents).map(a=>({id:String(a.id||''),type:a.type||'',desc:a.description||'',model:a.model||'',state:a.state||'idle',start:num(a.started_ms),end:num(a.ended_ms),wt:a.worktree||null,s:o}));
   let m=ag.find(a=>a.id==='main');ag=ag.filter(a=>a!==m);
   if(!m)m={id:'main',type:'main',desc:'',model:o.model,state:'idle',start:o.started,end:null,wt:null,s:o};
   m.desc=o.name;if(!m.model)m.model=o.model;
   o.agents=[m].concat(ag);
-  /* open background tasks are one row each session: the session log carries a count, not the tasks */
+  /* open background tasks are one row a session: the log carries a count */
   o.bg=o.openTasks>0?[{id:'tasks',type:'background',desc:o.openTasks+(o.openTasks===1?' background task':' background tasks'),model:o.model,state:'running',start:null,end:null,wt:null,s:o}]:[];
   return o});
  AGENTS=SESS.flatMap(s=>s.agents.concat(s.bg));
@@ -198,7 +201,7 @@ function projects(){
 }
 
 const FAIL_RATE=0.2;
-/* Live facts decide the status, in this order: quota, error rate, wiring. A provider with traffic is never Not set up. */
+/* Live facts decide the status: quota, error rate, wiring. A provider with traffic is never Not set up. */
 function provStatus(x){
  if(x.quotaOut)return ['bad','Out of quota'];
  if(x.id==='anthropic'&&RT.path.state==='failing')return ['bad','Failing'];
@@ -393,7 +396,7 @@ document.addEventListener('keydown',e=>{
 function renderRangeBar(){const el=$('#rangebar');if(el){menuDrop();setHtml(el,rangeBar());const pop=$('#rpanel');if(pop&&pop.getBoundingClientRect().right>innerWidth-8)pop.classList.add('right')}}
 function closeRangePanel(){HIST.picking=false;renderRangeBar();const b=$('#mb-range');if(b)b.focus()}
 function openRangePanel(){HIST.picking=true;initPick();renderRangeBar();const n=$('#rfrom');if(n)n.focus()}
-/* time-picker clicks: the button toggles the panel, a quick range applies, Apply sends the range, outside closes */
+/* time-picker clicks: the button toggles, a quick range applies, Apply sends, outside closes */
 function rangeClick(e){
  const t=e.target;if(!t||!t.closest)return false;
  if(t.closest('#rapply')){applyCustom();return true}
@@ -561,7 +564,7 @@ window.addEventListener('resize',()=>{if(page==='overview')drawChart()});
 function paint(){refresh();shell();if(page==='overview')drawChart();if(DR)renderDrawer(true)}
 let first=true;
 function update(s){build(s);loadOvCost();if(first){first=false;render()}else paint()}
-function onSnapshot(s){HAVE_RECENT=Array.isArray(s&&s.recent);const n=num(s&&s.now_ms);if(n!=null)OFFSET=n-Date.now();LOST=false;update(s)}
+function onSnapshot(s){if(s&&MACH&&!s.sessions)Object.assign(s,MACH);HAVE_RECENT=Array.isArray(s&&s.recent);const n=num(s&&s.now_ms);if(n!=null)OFFSET=n-Date.now();LOST=false;update(s)}
 /* tk:start */
 /* the 2 s tick moves only the clock and the relative times the marked spans hold: no build, no
    region render. A snapshot inside the last 2 s already painted them, a hidden tab holds no timer,
@@ -583,7 +586,7 @@ tickArm(true);
 /* tk:end */
 /* a page that shows the rows asks for them at once when the last answer had none */
 function needRecent(){if(RF.refit(wantRecent()!==STREAM_FULL))return;if(wantRecent()&&!HAVE_RECENT)getState()}
-/* the pages that list the recent rows, and the pages that count them per agent or per request, poll the full snapshot; an open sheet needs them too */
+/* pages that list or count the recent rows, and an open sheet, poll the full snapshot */
 const RECENT_PAGES=['requests','errors','agents','router'];
 const wantRecent=()=>RECENT_PAGES.includes(page)||!!DR;
 function stateUrl(){return '/huddle-router/state'+(wantRecent()?'':'?recent=0')}
@@ -626,23 +629,23 @@ function rfMake(env){
   nowDisabled:live,nowTitle:()=>live()?'Realtime is on':'Refresh now',
   label:()=>choice().t+(live()&&down?' (reconnecting)':''),
   histMs:()=>choice().ms?Math.max(choice().ms,floor()):Infinity,
-  /* reopens the stream when the form it carries (slim or full) is not the one the open page needs */
+  /* reopens the stream when its form (slim or full) is not the one the page needs */
   refit(differs){if(!differs||!live()||hidden||!stream)return false;connect();return true},
   set(k){if(!RF_CHOICES.some(c=>c.k===k))return;key=k;try{env.store.setItem(RF_STORE,k)}catch(e){}arm();told()},
   visibility(visible){if(!visible){hidden=true;disarm();return}if(!hidden)return;hidden=false;if(key!=='off')all(false);arm()}}}
 /* rf:end */
-/* HMODE: 0 a page opens or repaints, 1 the history timer, 2 refresh now. A panel loaded less than its own age ago is not loaded again. */
+/* HMODE: 0 a page opens or repaints, 1 the history timer, 2 refresh now; a panel younger than its age is not reloaded */
 let HMODE=0;
 const RF_SLACK=50;
-/* a range of 7 days or more changes slowly and costs the most to read: its panels refresh every RF_LONG */
+/* a range of 7 days or more is slow and costly to read: its panels refresh every RF_LONG */
 const RANGE_LONG_MS=7*864e5;
 const histFloor=()=>curRange().to-curRange().from>=RANGE_LONG_MS?RF_LONG:RF_FLOOR;
 const rfFresh=at=>{const age=Date.now()-at;return HMODE===2?false:HMODE===1?age<histFloor()-RF_SLACK:age<RF.histMs()};
 const pageLoaders=()=>({models:[loadModels],usage:[loadUsage],providers:[loadProviders],errors:[loadProviders,loadErrors],overview:[loadOvCost],requests:[loadReqCost,()=>{if(HS.mode==='history')hsearch()}]}[page]||[]);
 function refreshHistory(manual){HMODE=manual?2:1;try{loadHistory();loadTotals();pageLoaders().forEach(f=>f())}finally{HMODE=0}}
-/* the event stream carries the same form as /state: the slim one unless the open page shows the rows */
+/* the stream is slim unless the open page shows the rows */
 function openStream(cb){STREAM_FULL=wantRecent();const es=new EventSource('/huddle-router/live'+(STREAM_FULL?'':'?recent=0'));
- es.onopen=cb.ok;es.onerror=cb.fail;es.addEventListener('snapshot',e=>{try{onSnapshot(JSON.parse(e.data))}catch(x){}});return es}
+ es.onopen=cb.ok;es.onerror=cb.fail;es.addEventListener('machine',e=>{try{MACH=JSON.parse(e.data)}catch(x){}});es.addEventListener('snapshot',e=>{try{onSnapshot(JSON.parse(e.data))}catch(x){}});return es}
 const RF=rfMake({open:openStream,later:(f,ms)=>setTimeout(f,ms),changed:()=>{menuLabel('refresh');renderRefNow()},store:{getItem:k=>localStorage.getItem(k),setItem:(k,v)=>localStorage.setItem(k,v)},visible:()=>document.visibilityState!=='hidden',every:(f,ms)=>setInterval(f,ms),cancel:clearInterval,state:getState,history:refreshHistory,floor:histFloor});
 MENUS.refresh={label:'Refresh interval',opts:()=>RF.choices().map(c=>({k:c.k,t:c.k===RF.key()?RF.label():c.t})),cur:()=>RF.key(),pick:k=>RF.set(k)};
 function renderRefNow(){const b=$('#refnow');if(!b)return;const off=RF.nowDisabled();b.classList.toggle('off',off);if(off)b.setAttribute('aria-disabled','true');else b.removeAttribute('aria-disabled');b.title=RF.nowTitle()}
@@ -672,7 +675,7 @@ function quotaBody(x,q){
  if(q.kind==='balance'&&q.balance)return `<span class="mono">${num(q.balance.amount)==null?'—':q.balance.amount.toFixed(2)} ${esc(q.balance.currency||'')}</span>${un}`;
  if(arr(q.windows).length)return arr(q.windows).map(quotaLine).join('')+un;
  return '<span class="faint">quota unknown</span>'}
-/* the provider a model belongs to: the live row's lane, else the lane whose model pattern claims it */
+/* a model's provider: the live row's lane, else the lane whose pattern claims it */
 const laneName=id=>id==='anthropic'?'Claude':(LANES.find(l=>l.id===id)||{}).name||PNAME[id]||(id==='other'?'Other':id);
 function laneOfModel(id){const m=MODELS.find(x=>x.id===id);if(m&&m.lane)return m.lane;
  const l=LANES.find(l=>typeof l.match==='string'&&(l.match.endsWith('*')?id.startsWith(l.match.slice(0,-1)):l.match===id));

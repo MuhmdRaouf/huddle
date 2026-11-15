@@ -3378,3 +3378,64 @@ fn l39_the_buttons_are_labelled_and_stay_in_the_bar() {
         "the bar renders «, the time button, » and zoom out in order: {order:?}"
     );
 }
+
+/// Runs the page's session mapping and its snapshot entry point in bun. `body` sees
+/// `run(snapshot)`, which returns the sessions and worktrees the page ends up with.
+fn run_machine_script(body: &str) -> Value {
+    use std::io::Write;
+    use std::process::Stdio;
+    let build = serde_json::to_string(page_between(
+        "function buildSessions(){",
+        "function buildRequests(){",
+    ))
+    .expect("block");
+    let entry = serde_json::to_string(page_between("function onSnapshot(s){", "\n")).expect("line");
+    let script = format!(
+        "const num=v=>typeof v==='number'&&isFinite(v)?v:null,arr=v=>Array.isArray(v)?v:[];\n\
+         let SNAP={{}},SESS=[],AGENTS=[],MACH=null,HAVE_RECENT=false,OFFSET=0,LOST=false,seen=null;\n\
+         const update=s=>{{SNAP=s;buildSessions();seen={{sessions:SESS.map(s=>[s.id,s.state,s.waitingSince]),worktrees:SNAP.worktrees}}}};\n\
+         eval({build}+{entry}+';globalThis.onSnapshot=onSnapshot;globalThis.buildSessions=buildSessions');\n\
+         const run=s=>{{onSnapshot(s);return seen}};\n\
+         (async()=>{{{body}}})();"
+    );
+    let mut child = bun()
+        .args(["run", "-"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("start bun");
+    child
+        .stdin
+        .take()
+        .expect("bun stdin")
+        .write_all(script.as_bytes())
+        .expect("write script");
+    let out = child.wait_with_output().expect("bun");
+    assert!(
+        out.status.success(),
+        "bun failed: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    serde_json::from_slice(&out.stdout).expect("json out")
+}
+
+#[test]
+fn l30_the_page_renders_the_same_from_machine_and_snapshot_events() {
+    let v = run_machine_script(
+        "const sessions=[{id:'s1',state:'your_turn',state_since_ms:5},{id:'s2',state:'needs_you',state_since_ms:9}];\n\
+         const worktrees=[{path:'/w'}];\n\
+         const inFlight=[{id:1,session:'s1'}];\n\
+         const full=run({now_ms:1,in_flight:inFlight,sessions,worktrees});\n\
+         MACH={sessions,worktrees};\n\
+         const stream=run({now_ms:1,in_flight:inFlight});\n\
+         const idle=run({now_ms:2,in_flight:[]});\n\
+         console.log(JSON.stringify({same:JSON.stringify(full)===JSON.stringify(stream),s1:stream.sessions[0],idle:idle.sessions[0]}));",
+    );
+    assert_eq!(
+        v["same"], true,
+        "a stream snapshot and a /state snapshot build the same page"
+    );
+    assert_eq!(v["s1"], serde_json::json!(["s1", "working", null]));
+    assert_eq!(v["idle"], serde_json::json!(["s1", "your_turn", 5]));
+}

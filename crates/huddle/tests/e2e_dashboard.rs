@@ -108,7 +108,10 @@ impl Live {
         Live { reader }
     }
 
+    /// The next snapshot, joined as the page joins it: the sessions and worktrees of the latest
+    /// `machine` event are added to it.
     fn next_snapshot(&mut self) -> Value {
+        let mut machine = Value::Null;
         let mut event = String::new();
         loop {
             let mut line = String::new();
@@ -118,8 +121,19 @@ impl Live {
             if let Some(name) = line.strip_prefix("event: ") {
                 event = name.to_string();
             } else if let Some(data) = line.strip_prefix("data: ") {
+                let json: Value = serde_json::from_str(data).expect("event json");
+                if event == "machine" {
+                    machine = json;
+                    continue;
+                }
                 assert_eq!(event, "snapshot");
-                return serde_json::from_str(data).expect("snapshot json");
+                let mut snapshot = json;
+                if let (Some(object), Some(fields)) =
+                    (snapshot.as_object_mut(), machine.as_object())
+                {
+                    object.extend(fields.clone());
+                }
+                return snapshot;
             }
         }
     }

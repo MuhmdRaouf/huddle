@@ -253,6 +253,44 @@ pub struct InFlightRow {
     pub agent: Option<String>,
 }
 
+/// The recent rows of a snapshot. A withheld list leaves the `recent` field out of the JSON,
+/// as the slim form does; the counts derived from the rows stay.
+#[derive(Debug, Clone, PartialEq, Default, serde::Serialize)]
+#[serde(transparent)]
+pub struct Recent {
+    rows: Vec<RecentRow>,
+    #[serde(skip)]
+    withheld: bool,
+}
+
+impl Recent {
+    pub fn withhold(&mut self) {
+        self.rows = Vec::new();
+        self.withheld = true;
+    }
+
+    fn is_withheld(&self) -> bool {
+        self.withheld
+    }
+}
+
+impl From<Vec<RecentRow>> for Recent {
+    fn from(rows: Vec<RecentRow>) -> Self {
+        Recent {
+            rows,
+            withheld: false,
+        }
+    }
+}
+
+impl std::ops::Deref for Recent {
+    type Target = Vec<RecentRow>;
+
+    fn deref(&self) -> &Vec<RecentRow> {
+        &self.rows
+    }
+}
+
 /// The dashboard's JSON: `GET /huddle-router/state` and each `snapshot` event.
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]
 pub struct Snapshot {
@@ -275,7 +313,8 @@ pub struct Snapshot {
     pub errors_5m: u32,
     pub last_error: Option<LastError>,
     pub lanes: Vec<LaneRow>,
-    pub recent: Vec<RecentRow>,
+    #[serde(skip_serializing_if = "Recent::is_withheld")]
+    pub recent: Recent,
     /// What pages derive from `recent`, present with or without the rows.
     pub recent_counts: RecentCounts,
     pub in_flight: Vec<InFlightRow>,
@@ -297,6 +336,16 @@ pub struct Snapshot {
 pub struct MachineView {
     pub reading: Arc<Machine>,
     pub working: Vec<String>,
+    /// A live feed sends the reading in a `machine` event; a withheld view writes no fields.
+    withheld: bool,
+}
+
+impl MachineView {
+    /// Leaves `sessions` and `worktrees` out of the JSON and returns the reading they came from.
+    pub fn withhold(&mut self) -> Arc<Machine> {
+        self.withheld = true;
+        Arc::clone(&self.reading)
+    }
 }
 
 /// One session a snapshot writes: the reading's session as it is, or a copy of it marked
@@ -318,6 +367,9 @@ impl serde::Serialize for SessionView<'_> {
 impl serde::Serialize for MachineView {
     fn serialize<S: serde::Serializer>(&self, out: S) -> Result<S::Ok, S::Error> {
         use serde::ser::SerializeMap;
+        if self.withheld {
+            return out.serialize_map(Some(0))?.end();
+        }
         let sessions: Vec<SessionView> = self
             .reading
             .sessions
@@ -766,13 +818,14 @@ impl LiveState {
             errors_5m,
             last_error,
             lanes,
-            recent,
+            recent: Recent::from(recent),
             recent_counts,
             in_flight,
             jobs: inputs.jobs.clone(),
             machine: MachineView {
                 reading: Arc::clone(&inputs.machine),
                 working: Vec::new(),
+                withheld: false,
             },
             plugins: inputs.plugins.clone(),
             harnesses: inputs.harnesses.clone(),
@@ -1912,7 +1965,7 @@ mod tests {
         live.finish(id, end(200, None, T0 + 10));
         live.credit(&[logged("s1", "agent-x", "req_A")]);
         let snapshot = live.snapshot(T0 + 5_000, &inputs(&["anthropic"]));
-        for row in &snapshot.recent {
+        for row in &snapshot.recent.rows {
             assert_eq!((row.agent.as_deref(), row.tokens_in), (None, None));
         }
         assert_eq!(snapshot.lanes[0].tokens_in, 0);

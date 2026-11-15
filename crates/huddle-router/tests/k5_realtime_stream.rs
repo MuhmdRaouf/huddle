@@ -71,11 +71,12 @@ async fn rig_with(anthropic: FakeUpstream, dashboard: DashboardInputs) -> Rig {
 }
 
 /// An open `GET` of the live path that yields one frame per call: a snapshot's JSON, or `None`
-/// for a keep-alive comment.
+/// for a keep-alive comment. A `machine` event is kept in `machines` and not yielded.
 struct Feed {
     stream: TcpStream,
     buf: String,
     head: String,
+    machines: Vec<Value>,
 }
 
 impl Feed {
@@ -91,6 +92,7 @@ impl Feed {
             stream,
             buf: String::new(),
             head: String::new(),
+            machines: Vec::new(),
         };
         while !feed.buf.contains("\r\n\r\n") {
             if !feed.fill().await {
@@ -123,7 +125,12 @@ impl Feed {
                 let frame: String = self.buf.drain(..at + 2).collect();
                 let frame = frame.trim();
                 if let Some(data) = frame.lines().find_map(|l| l.strip_prefix("data: ")) {
-                    return Some(Some(serde_json::from_str(data).expect("json")));
+                    let json = serde_json::from_str(data).expect("json");
+                    if frame.lines().any(|l| l == "event: machine") {
+                        self.machines.push(json);
+                        continue;
+                    }
+                    return Some(Some(json));
                 }
                 if frame.contains(": ping") {
                     return Some(None);
@@ -291,11 +298,21 @@ async fn k5_stream_carries_only_state_fields() {
     }
     assert!(!slim_seen.is_empty() && !full_seen.is_empty());
     let state_keys = keys(&at_state);
+    // The sessions and worktrees ride in `machine` events; a snapshot event carries the rest.
     let slim_keys: Vec<String> = state_keys
         .iter()
-        .filter(|k| *k != "recent")
+        .filter(|k| !["recent", "sessions", "worktrees"].contains(&k.as_str()))
         .cloned()
         .collect();
+    let full_keys: Vec<String> = state_keys
+        .iter()
+        .filter(|k| !["sessions", "worktrees"].contains(&k.as_str()))
+        .cloned()
+        .collect();
+    for feed in [&slim, &full] {
+        assert_eq!(feed.machines.len(), 1, "one reading, one machine event");
+        assert_eq!(keys(&feed.machines[0]), ["sessions", "worktrees"]);
+    }
     for event in &slim_seen {
         assert_eq!(
             keys(event),
@@ -306,8 +323,8 @@ async fn k5_stream_carries_only_state_fields() {
     for event in &full_seen {
         assert_eq!(
             keys(event),
-            state_keys,
-            "the full form has every /state field"
+            full_keys,
+            "the full form has every /state field but the machine's"
         );
     }
     for event in slim_seen.iter().chain(full_seen.iter()) {
