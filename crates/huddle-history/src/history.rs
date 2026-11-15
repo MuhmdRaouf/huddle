@@ -55,6 +55,9 @@ impl History {
         )?;
         conn.busy_timeout(std::time::Duration::from_secs(5))?;
         conn.pragma_update_and_check(None, "journal_mode", "WAL", |_| Ok(()))?;
+        // The WAL shrinks back to this cap after a checkpoint instead of keeping its
+        // high-water mark on disk.
+        conn.pragma_update(None, "journal_size_limit", 4_194_304)?;
         schema::migrate(&conn)?;
         Ok(History {
             conn,
@@ -192,5 +195,74 @@ impl History {
         Ok(self
             .conn
             .execute("DELETE FROM requests WHERE at_ms < ?1", [to_db(cutoff)])?)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use huddle_testkit::temp_home::TempHome;
+
+    const WAL_CAP: u64 = 4_194_304;
+
+    /// Rows with fat session and project strings, so one transaction pushes the WAL
+    /// past the 4 MiB cap and past the 1000-page auto-checkpoint.
+    fn fat_rows(count: u64) -> Vec<Row> {
+        (0..count)
+            .map(|i| Row {
+                at_ms: 1_000 + i,
+                session: Some(format!("sess-{i:06}-{}", "x".repeat(150))),
+                project: Some(format!("proj-{i:06}-{}", "y".repeat(120))),
+                model: "glm-5.3".to_string(),
+                lane: "zai".to_string(),
+                status: 200,
+                dur_ms: 100,
+                ..Row::default()
+            })
+            .collect()
+    }
+
+    #[test]
+    fn l22_the_pragma_reads_back_4194304() {
+        let home = TempHome::new();
+        let history = History::open(&home.root().join("history/huddle.db")).expect("open");
+        let limit: i64 = history
+            .conn
+            .query_row("PRAGMA journal_size_limit", [], |r| r.get(0))
+            .expect("pragma");
+        assert_eq!(limit, WAL_CAP as i64);
+    }
+
+    #[test]
+    fn l22_the_wal_file_shrinks_to_the_cap_after_a_checkpoint() {
+        let home = TempHome::new();
+        let path = home.root().join("history/huddle.db");
+        let mut history = History::open(&path).expect("open");
+        let wal = path.with_file_name("huddle.db-wal");
+
+        history.insert(&fat_rows(50_000)).expect("big insert");
+        let grown = fs::metadata(&wal).expect("wal").len();
+        assert!(
+            grown > WAL_CAP,
+            "precondition: the WAL grew past the cap, was {grown}"
+        );
+
+        history
+            .insert(&[Row {
+                at_ms: 2_000,
+                model: "glm-5.3".to_string(),
+                lane: "zai".to_string(),
+                status: 200,
+                dur_ms: 100,
+                ..Row::default()
+            }])
+            .expect("one more write");
+
+        let shrunk = fs::metadata(&wal).expect("wal").len();
+        assert!(
+            shrunk <= WAL_CAP,
+            "the WAL is at most 4 MiB after the checkpoint, was {shrunk}"
+        );
     }
 }
