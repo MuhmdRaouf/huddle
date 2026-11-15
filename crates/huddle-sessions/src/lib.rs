@@ -16,7 +16,7 @@ mod worktrees;
 pub use model::{
     Agent, AgentState, Limits, RequestTag, Session, SessionState, Usage, Worktree, WorktreeKind,
 };
-pub use scan::scan;
+pub use scan::{SessionScanner, scan};
 pub use time::parse_iso_ms;
 pub use usage_for::{LogUsage, UsageReader, usage_for};
 pub use worktrees::worktrees;

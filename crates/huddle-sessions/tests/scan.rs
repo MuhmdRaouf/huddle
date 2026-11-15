@@ -5,7 +5,9 @@ use std::io;
 use std::path::Path;
 use std::time::{Duration, UNIX_EPOCH};
 
-use huddle_sessions::{AgentState, Limits, Session, SessionState, parse_iso_ms, scan};
+use huddle_sessions::{
+    AgentState, Limits, Session, SessionScanner, SessionState, parse_iso_ms, scan,
+};
 use huddle_testkit::temp_home::TempHome;
 
 const HOUR_MS: u64 = 3_600_000;
@@ -310,4 +312,78 @@ fn q2_a_request_tag_carries_its_stop_reason() {
     let tags = &by_id(&sessions, "s-tool").request_ids;
     let main = tags.iter().find(|t| t.request_id == "req_t1").expect("tag");
     assert_eq!(main.stop.as_deref(), Some("tool_use"));
+}
+
+#[test]
+fn l23_an_unchanged_log_is_not_parsed_again() {
+    let home = TempHome::new();
+    let claude = claude_dir(&home);
+    let mut scanner = SessionScanner::default();
+    let first = scanner.scan(&claude, now_ms(), Limits::default());
+    let after_first = scanner.bytes_read();
+    assert!(after_first > 0, "the first scan reads the logs");
+    let second = scanner.scan(&claude, now_ms(), Limits::default());
+    assert_eq!(scanner.bytes_read(), after_first, "scan 2 read bytes");
+    assert_eq!(second, first);
+}
+
+fn assistant_line(at: &str, request: &str, stop: &str) -> String {
+    format!(
+        r#"{{"type":"assistant","timestamp":"{at}","cwd":"/Users/x/huddle","gitBranch":"main","requestId":"{request}","message":{{"model":"claude-opus-5-5","stop_reason":"{stop}","usage":{{"input_tokens":3,"cache_creation_input_tokens":0,"cache_read_input_tokens":10,"output_tokens":5}}}}}}"#
+    ) + "\n"
+}
+
+#[test]
+fn l23_appended_lines_give_the_sessions_a_full_scan_gives() {
+    let home = TempHome::new();
+    let claude = claude_dir(&home);
+    let log = claude.join("projects/-Users-x-huddle/s-waiting.jsonl");
+    let mut scanner = SessionScanner::default();
+    scanner.scan(&claude, now_ms(), Limits::default());
+    let before = scanner.bytes_read();
+    let appended = assistant_line("2026-11-11T11:55:00.000Z", "req_new", "end_turn");
+    let mut file = File::options().append(true).open(&log).expect("open");
+    io::Write::write_all(&mut file, appended.as_bytes()).expect("append");
+    drop(file);
+    set_age(&log, 60_000);
+    let incremental = scanner.scan(&claude, now_ms(), Limits::default());
+    assert_eq!(scanner.bytes_read() - before, appended.len() as u64);
+    let full = scan(&claude, now_ms(), Limits::default());
+    assert_eq!(incremental, full);
+    let tags = &by_id(&incremental, "s-waiting").request_ids;
+    assert!(tags.iter().any(|t| t.request_id == "req_new"));
+}
+
+#[test]
+fn l23_a_tail_is_read_once() {
+    let home = TempHome::new();
+    let claude = home.root().join("claude-big");
+    let project = claude.join("projects/-Users-x-big");
+    fs::create_dir_all(&project).expect("project dir");
+    let log = project.join("s-big.jsonl");
+    let first = assistant_line("2026-11-11T10:00:00.000Z", "req_0", "tool_use");
+    let mut text = first.clone();
+    for i in 1..200 {
+        text += &assistant_line("2026-11-11T11:00:00.000Z", &format!("req_{i}"), "tool_use");
+    }
+    fs::write(&log, &text).expect("write log");
+    set_age(&log, 60_000);
+    let limits = Limits {
+        tail_bytes: 4096,
+        ..Limits::default()
+    };
+    let mut scanner = SessionScanner::default();
+    let sessions = scanner.scan(&claude, now_ms(), limits);
+    assert_eq!(
+        scanner.bytes_read(),
+        4096 + first.len() as u64,
+        "the tail once, and the head only to its first timestamp"
+    );
+    let s = by_id(&sessions, "s-big");
+    assert_eq!(s.started_ms, parse_iso_ms("2026-11-11T10:00:00.000Z"));
+    assert_eq!(
+        s.request_ids.last().map(|t| t.request_id.as_str()),
+        Some("req_199")
+    );
+    assert!(s.request_ids.len() < 200, "only the tail is parsed");
 }

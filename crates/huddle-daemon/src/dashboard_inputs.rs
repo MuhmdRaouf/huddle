@@ -6,7 +6,7 @@
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
 use huddle_catalog::providers::providers;
@@ -17,7 +17,7 @@ use huddle_jobs::overview::{finished, overview};
 use huddle_keystore::port::{Keystore, platform_default};
 use huddle_router::dashboard::{DashboardInputs, Machine};
 use huddle_router::live::{JobRow, Supervision, Wiring, WiringState};
-use huddle_sessions::{Limits, scan, worktrees};
+use huddle_sessions::{Limits, SessionScanner, worktrees};
 use tokio::runtime::Handle;
 
 use crate::checks::harnesses::{self};
@@ -78,7 +78,12 @@ pub fn start(version: String, env: Env, paths: Paths, port: u16) -> DashboardInp
     let sessions = Cache::new(
         Arc::new({
             let paths = paths.clone();
-            move || read_machine(&paths)
+            // The cache runs one read at a time, so the scanner's lock is never contended.
+            let scanner = Mutex::new(SessionScanner::default());
+            move || {
+                let mut scanner = scanner.lock().unwrap_or_else(PoisonError::into_inner);
+                read_machine(&paths, &mut scanner)
+            }
         }),
         SESSIONS_WINDOW,
         runtime.clone(),
@@ -197,8 +202,10 @@ fn read_keys(env: &Env, store: &dyn Keystore) -> HashMap<&'static str, bool> {
         .collect()
 }
 
-fn read_machine(paths: &Paths) -> Machine {
-    let sessions = scan(&paths.claude_dir, now_ms(), Limits::default());
+/// The sessions, read through `scanner` so a log is read only where it changed, and the
+/// worktrees of their folders.
+fn read_machine(paths: &Paths, scanner: &mut SessionScanner) -> Machine {
+    let sessions = scanner.scan(&paths.claude_dir, now_ms(), Limits::default());
     let cwds: Vec<PathBuf> = sessions
         .iter()
         .filter_map(|session| session.cwd.as_deref().map(PathBuf::from))

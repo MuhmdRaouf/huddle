@@ -165,6 +165,7 @@ const QUESTION_TOOLS: [&str; 2] = ["AskUserQuestion", "ExitPlanMode"];
 
 impl Summary {
     /// Reads every line; a line that is not a JSON object of the expected shape is skipped.
+    #[cfg(test)]
     pub(crate) fn parse(text: &str) -> Summary {
         let mut summary = Summary::default();
         for line in text.lines() {
