@@ -251,6 +251,7 @@ function kpiGrid(items){return items.map(k=>`<div class="kpi"><div class="k">${k
 const checking=(what)=>`<span class="muted">Checking…</span>`;
 
 /* ---------- time ranges ---------- */
+/* rs:start */
 const RANGES=[['15m','15 min','last 15 minutes'],['1h','1 hour','last hour'],['24h','24 hours','last 24 hours'],['7d','7 days','last 7 days'],['30d','30 days','last 30 days'],['90d','90 days','last 90 days']],RANGE_MIN={'15m':15,'1h':60,'24h':1440,'7d':10080,'30d':43200,'90d':129600};
 const FLAT='Claude plan usage is flat-rate; this is what the same tokens cost on the API';
 const HIST={range:'15m',from:0,to:0,keep:90,picking:false,bk:null,tot:null,ser:null,err:false},HCOLOR={};
@@ -260,7 +261,10 @@ const liveRange=()=>HIST.range==='15m';
 const readsMemory=()=>({overview:liveRange(),models:liveRange(),usage:liveRange(),sessions:true,agents:true,requests:HS.mode==='live',errors:liveRange()})[page]===true;
 const rangeShort=()=>HIST.range==='custom'?'custom':RANGES.find(x=>x[0]===HIST.range)[1];
 const rangeText=()=>HIST.range==='custom'?when(HIST.from)+' to '+when(HIST.to):RANGES.find(x=>x[0]===HIST.range)[2];
+/* the time button's text: the quick range's long label, capitalised, or the custom from and to */
+const rangeButtonText=()=>{const t=rangeText();return HIST.range==='custom'?t:t[0].toUpperCase()+t.slice(1)};
 function rangeQuery(){return (HIST.range==='custom'?'from='+HIST.from+'&to='+HIST.to:'range='+HIST.range)+'&'+tzQuery()}
+/* rs:end */
 const usd=v=>num(v)==null?'—':'$'+(v>0&&v<0.01?v.toFixed(4):v.toFixed(2));
 const noPrice='<span class="faint">no price</span>';
 const costText=(cost,priced)=>priced===false?noPrice:`<span class="mono">${usd(cost)}</span>`;
@@ -334,13 +338,10 @@ function menuKeys(e){
  else if(k.length===1&&!e.metaKey&&!e.ctrlKey&&!e.altKey){eat();menuType(k.toLowerCase())}}
 document.addEventListener('keydown',menuKeys,true);
 document.addEventListener('mousemove',e=>{const o=MENU&&e.target.closest&&e.target.closest('[data-mk]');if(o&&MENU.list.contains(o)){const i=MENU.rows.indexOf(o);if(i!==MENU.i&&!o.dataset.off)menuActive(i)}});
-/* the one range control: a preset or a custom from-to, kept in the top bar */
+/* the one time picker: a button in the top bar opens a panel with an absolute From and To and the quick ranges */
+/* rp:start */
 const earliest=()=>Date.now()-HIST.keep*864e5;
-MENUS.range={label:'Time range',
- opts:()=>RANGES.map(([k,s])=>({k,t:s,off:RANGE_MIN[k]/1440>HIST.keep})).concat([{k:'custom',t:'Custom',sep:1}]),
- cur:()=>HIST.picking?'custom':HIST.range,
- pick:k=>{if(k==='custom'){HIST.picking=true;initPick();renderRangeBar();const n=$('#rfrom');if(n)n.focus()}else{HIST.picking=false;if(k===HIST.range)renderRangeBar();else setRange(k)}}};
-/* the own date and time picker for the Custom range: two fields, one month grid, hour and minute menus */
+/* the own date and time picker for an absolute range: two fields, one month grid, hour and minute menus */
 const DT={from:0,to:0,act:'from',y:0,m:0},MONTHS=['January','February','March','April','May','June','July','August','September','October','November','December'];
 function dtView(){const d=zd(DT[DT.act]);DT.y=d.getUTCFullYear();DT.m=d.getUTCMonth()}
 function initPick(){const f=HIST.range==='custom'?HIST.from:Date.now()-864e5,t=HIST.range==='custom'?HIST.to:Date.now();DT.from=Math.max(f,earliest());DT.to=t;DT.act='from';dtView()}
@@ -352,25 +353,37 @@ function calHtml(){const lead=(new Date(Date.UTC(DT.y,DT.m,1)).getUTCDay()+6)%7,
  for(let d=1;d<=days;d++){const s=zmake(DT.y,DT.m,d),off=s<lo||s>hi;g+=`<button type="button" class="day${s===cur?' sel':''}" data-day="${d}" aria-pressed="${s===cur}"${off?' disabled':''}>${d}</button>`}
  return `<div class="calhead"><button type="button" class="calnav" data-cal="-1" aria-label="Previous month">${ic('chev','flip')}</button><b aria-live="polite">${MONTHS[DT.m]} ${DT.y}</b><button type="button" class="calnav" data-cal="1" aria-label="Next month">${ic('chev')}</button></div><div class="calgrid">${['Mo','Tu','We','Th','Fr','Sa','Su'].map(x=>`<i>${x}</i>`).join('')}${g}</div>`}
 const dtField=(f,id,l)=>`<button type="button" class="dtf" id="${id}" data-dtf="${f}" aria-pressed="${DT.act===f}"><span class="dtl">${l}</span><span>${esc(dtText(DT[f]))}</span></button>`;
+const quickHtml=()=>RANGES.map(([k,,l])=>`<button type="button" class="rq" data-rq="${k}"${HIST.range===k?' aria-current="true"':''}${RANGE_MIN[k]/1440>HIST.keep?' disabled':''}>${esc(l[0].toUpperCase()+l.slice(1))}</button>`).join('');
 function rangeBar(){
- const pop=HIST.picking?`<div class="rangepop" role="group" aria-label="Custom range"><div class="dtfs">${dtField('from','rfrom','From')}${dtField('to','rto','To')}</div><div class="cal">${calHtml()}</div><div class="dtime"><span>Time</span>${menuHtml('dth','sm')}<span>:</span>${menuHtml('dtm','sm')}</div><div class="rerr" id="rerr" role="alert"></div><div class="racts"><button id="rapply">Apply</button><button id="rcancel">Cancel</button></div></div>`:'';
- return menuHtml('range')+pop}
+ const btn=`<div class="pmenu"><button type="button" class="mbtn" id="mb-range" data-rtoggle aria-haspopup="dialog" aria-expanded="${HIST.picking}" aria-controls="rpanel" aria-label="Time range: ${esc(rangeButtonText())}"><span class="mval">${esc(rangeButtonText())}</span>${CHEVRON}</button></div>`;
+ const pop=HIST.picking?`<div class="rangepop" id="rpanel" role="dialog" aria-label="Time range"><div class="rleft"><b class="rh">Absolute time range</b><div class="dtfs">${dtField('from','rfrom','From')}${dtField('to','rto','To')}</div><div class="cal">${calHtml()}</div><div class="dtime"><span>Time</span>${menuHtml('dth','sm')}<span>:</span>${menuHtml('dtm','sm')}</div><div class="rerr" id="rerr" role="alert"></div><div class="racts"><button id="rapply">Apply</button></div></div><div class="rright" role="group" aria-label="Quick ranges">${quickHtml()}</div></div>`:'';
+ return btn+pop}
 function redrawPick(focus){const err=($('#rerr')||{}).textContent;renderRangeBar();if(err)setHtml($('#rerr'),esc(err));const n=focus&&$(focus);if(n)n.focus()}
 function pickClick(e){
  const f=e.target.closest('[data-dtf]');if(f){DT.act=f.dataset.dtf;dtView();redrawPick('#'+f.id);return true}
  const c=e.target.closest('[data-cal]');if(c){const d=new Date(Date.UTC(DT.y,DT.m+ +c.dataset.cal,1));DT.y=d.getUTCFullYear();DT.m=d.getUTCMonth();redrawPick('[data-cal="'+c.dataset.cal+'"]');return true}
  const d=e.target.closest('[data-day]');if(d){dtSet(DT.act,x=>x.setUTCFullYear(DT.y,DT.m,+d.dataset.day));DT[DT.act]=Math.min(DT[DT.act],Date.now());redrawPick('[data-day="'+d.dataset.day+'"]');return true}
  return false}
-/* arrows move across the month grid; Escape leaves the picker */
+/* arrows move across the month grid; Escape closes the panel and returns focus to the button */
 document.addEventListener('keydown',e=>{
  if(!HIST.picking||MENU)return;const day=e.target.closest&&e.target.closest('[data-day]');
- if(e.key==='Escape'&&e.target.closest&&e.target.closest('.rangepop')){e.preventDefault();e.stopPropagation();HIST.picking=false;renderRangeBar();const b=$('#mb-range');if(b)b.focus();return}
+ if(e.key==='Escape'&&e.target.closest&&e.target.closest('#rpanel')){e.preventDefault();e.stopPropagation();closeRangePanel();return}
  const step={ArrowLeft:-1,ArrowRight:1,ArrowUp:-7,ArrowDown:7}[e.key];
  if(!day||!step)return;e.preventDefault();e.stopPropagation();
  const d=new Date(Date.UTC(DT.y,DT.m,+day.dataset.day+step));
  if(d.getUTCFullYear()!==DT.y||d.getUTCMonth()!==DT.m){DT.y=d.getUTCFullYear();DT.m=d.getUTCMonth();redrawPick();const n=$('[data-day="'+d.getUTCDate()+'"]');if(n&&!n.disabled)n.focus();return}
  const n=$('[data-day="'+d.getUTCDate()+'"]');if(n&&!n.disabled)n.focus()},true);
 function renderRangeBar(){const el=$('#rangebar');if(el){menuDrop();setHtml(el,rangeBar())}}
+function closeRangePanel(){HIST.picking=false;renderRangeBar();const b=$('#mb-range');if(b)b.focus()}
+function openRangePanel(){HIST.picking=true;initPick();renderRangeBar();const n=$('#rfrom');if(n)n.focus()}
+/* a click that belongs to the time picker: the button toggles the panel, a quick range applies, Apply sends the absolute range, a click outside closes the panel */
+function rangeClick(e){
+ const t=e.target;if(!t||!t.closest)return false;
+ if(t.closest('#rapply')){applyCustom();return true}
+ const q=t.closest('[data-rq]');if(q){if(q.disabled)return true;if(q.dataset.rq===HIST.range){closeRangePanel();return true}setRange(q.dataset.rq);return true}
+ if(t.closest('[data-rtoggle]')){HIST.picking?closeRangePanel():openRangePanel();return true}
+ if(HIST.picking&&!t.closest('#rpanel')){closeRangePanel();return true}
+ return false}
 /* the zone switch: Local (the browser's zone) or UTC; the choice reaches every time and every day bucket */
 MENUS.tz={label:'Time zone',opts:()=>[{k:'local',t:tzLocal()},{k:'utc',t:'UTC'}],cur:()=>TZ.utc?'utc':'local',pick:k=>setTz(k==='utc')};
 function renderTzBar(){const el=$('#tzbar');if(el){menuDrop();setHtml(el,menuHtml('tz'))}}
@@ -384,6 +397,7 @@ function applyCustom(){const f=DT.from,t=Math.min(DT.to,Date.now()),err=m=>{setH
  if(!(f<t))return err('Pick a start that is before the end.');
  if(f<earliest())return err(`huddle keeps ${HIST.keep} days of history. Pick a start inside it.`);
  HIST.range='custom';HIST.from=f;HIST.to=t;applyRange()}
+/* rp:end */
 function loadMeta(){hget('/huddle-router/history?view=meta').then(d=>{const k=num(d.keep_days);if(k>0){HIST.keep=k;if(!HIST.picking)renderRangeBar()}},()=>{})}
 const pricesLine=d=>d?`<div class="legendrow">Estimated from list prices. Prices retrieved ${esc(d.prices_retrieved)}; Claude prices retrieved ${esc(d.claude_prices_retrieved)}.</div>`:'';
 const priceNote=()=>liveRange()?'':pricesLine(HIST.bk);
@@ -474,8 +488,7 @@ document.addEventListener('click',e=>{
  if(mb){openMenu(mb.dataset.mbtn);return}
  if(mo&&MENU){menuPick(MENU.rows.indexOf(mo));return}
  if(pickClick(e))return;
- if(e.target.closest('#rapply')){applyCustom();return}
- if(e.target.closest('#rcancel')){HIST.picking=false;renderRangeBar();return}
+ if(rangeClick(e))return;
  const c=e.target.closest('[data-copy]');if(c){e.stopPropagation();copy(c.dataset.copy);return}
  if(e.target.closest('[data-close]')){closeDrawer();return}
  const so=e.target.closest('[data-sort]');if(so){const[id,k]=so.dataset.sort.split(':');const cur=SORT[id];SORT[id]={k,d:cur&&cur.k===k?-cur.d:(so.closest('th').classList.contains('num')?-1:1)};refresh();if(DR)renderDrawer(true);return}

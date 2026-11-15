@@ -861,10 +861,14 @@ fn d2_one_range_control_in_the_top_bar() {
     );
     assert!(!PAGE.contains("HS.range"));
     for label in [
-        "15 min", "1 hour", "24 hours", "7 days", "30 days", "90 days", "Custom",
+        "15 min", "1 hour", "24 hours", "7 days", "30 days", "90 days",
     ] {
         assert!(PAGE.contains(label), "preset {label}");
     }
+    assert!(
+        PAGE.contains("Absolute time range"),
+        "the panel holds From and To"
+    );
     for subtitle in ["'last 7 days'", "' to '"] {
         assert!(PAGE.contains(subtitle), "the subtitle reads {subtitle}");
     }
@@ -894,7 +898,7 @@ fn d2_custom_picker_stops_at_kept_history() {
     assert!(PAGE.contains("hi=Date.now()"), "days after now are off");
     assert!(PAGE.contains("clamped_from_ms"));
     assert!(
-        PAGE.contains("off:RANGE_MIN[k]/1440>HIST.keep"),
+        PAGE.contains("RANGE_MIN[k]/1440>HIST.keep?' disabled'"),
         "presets past the kept history are off"
     );
 }
@@ -1807,7 +1811,7 @@ fn e9_dashboard_has_no_native_select() {
 }
 
 #[test]
-fn e9_range_menu_keeps_its_values() {
+fn e9_range_panel_keeps_its_values() {
     let ranges = PAGE.find("const RANGES=[").expect("ranges");
     let list = &PAGE[ranges..ranges + PAGE[ranges..].find("];").expect("end")];
     let labels: Vec<&str> = [
@@ -1821,15 +1825,17 @@ fn e9_range_menu_keeps_its_values() {
         at += found + label.len();
     }
     assert!(
-        PAGE.contains("{k:'custom',t:'Custom',sep:1}"),
-        "Custom last, after a divider"
+        !PAGE.contains("{k:'custom',t:'Custom',sep:1}"),
+        "the range has no Custom entry: the panel holds the absolute range"
     );
-    assert!(PAGE.contains("MENUS.range="), "the range is a page menu");
     assert!(
-        PAGE.contains("pick:k=>{if(k==='custom')"),
-        "Custom opens the picker, a preset goes through setRange"
+        !PAGE.contains("MENUS.range="),
+        "the range is a panel, not a menu"
     );
-    assert!(PAGE.contains("else setRange(k)"));
+    assert!(
+        PAGE.contains("setRange(q.dataset.rq)"),
+        "a quick range goes through setRange"
+    );
     assert!(
         PAGE.contains("RANGE_MIN[k]/1440>HIST.keep"),
         "presets past the kept history stay off"
@@ -2453,4 +2459,257 @@ fn l27_the_sessions_page_asks_for_its_listed_ids_only() {
         core.contains("'sessions='+ids.map(encodeURIComponent).join(',')"),
         "ids are joined into one sessions list"
     );
+}
+
+fn marked_block(start: &str, end: &str) -> String {
+    PAGE.split(start)
+        .nth(1)
+        .and_then(|s| s.split(end).next())
+        .unwrap_or_else(|| panic!("the page holds a block between {start} and {end}"))
+        .to_string()
+}
+
+/// Runs the time-picker code in bun in the machine zone UTC+2, with a stub page around it.
+/// `body` sees `make(zone, saved)` where `zone` is `local` or `utc` and `saved` holds the stored
+/// `huddle-range` and `huddle-range-custom` values. `make` returns the picker's functions plus
+/// `els` (the stub elements by selector), `keys` (the document's keydown handlers), `saved` (what
+/// was stored) and `log` (focus and render calls).
+fn run_picker_script(body: &str) -> Value {
+    use std::io::Write;
+    use std::process::Stdio;
+    let code = [
+        zone_block(),
+        marked_block("/* rs:start */", "/* rs:end */"),
+        marked_block("/* rp:start */", "/* rp:end */"),
+    ]
+    .join("\n");
+    let code = serde_json::to_string(&code).expect("block");
+    let script = format!(
+        "const CODE={code};\n\
+         const num=v=>typeof v==='number'&&isFinite(v)?v:null;\n\
+         const esc=s=>String(s==null?'':s).replace(/[&<>\"']/g,c=>({{'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',\"'\":'&#39;'}}[c]));\n\
+         function make(zone,saved){{\n\
+          const mem=Object.assign({{'huddle-tz':zone}},saved||{{}});const savedKeys={{}};\n\
+          const localStorage={{getItem:k=>k in mem?mem[k]:null,setItem:(k,v)=>{{savedKeys[k]=v;mem[k]=v}}}};\n\
+          const els={{}},keys=[],log=[];\n\
+          const $=s=>els[s]||null,$$=()=>[];\n\
+          const document={{addEventListener:(t,f)=>{{if(t==='keydown')keys.push(f)}}}};\n\
+          const setHtml=(el,h)=>{{el.html=h}};\n\
+          const stubs={{$,$$,document,setHtml,esc,num,localStorage,MENUS:{{}},MENU:null,CHEVRON:'',ic:()=>'',menuHtml:()=>'',menuDrop(){{}},\n\
+           render(){{log.push('render')}},loadHistory(){{log.push('history')}},CH:{{focus:null,metric:'req'}},HT:{{}},DR:null,HS:{{mode:'live'}},page:'overview',\n\
+           hget:()=>new Promise(()=>{{}})}};\n\
+          const names=Object.keys(stubs);\n\
+          const api=new Function(...names,CODE+';return {{HIST,RANGES,RANGE_MIN,DT,earliest,rangeButtonText,rangeText,rangeQuery,rangeBar,renderRangeBar,setRange,applyCustom,initPick,rangeClick}}')(...names.map(n=>stubs[n]));\n\
+          els['#rangebar']={{html:''}};els['#mb-range']={{focus(){{log.push('focus mb-range')}}}};els['#rfrom']={{focus(){{log.push('focus rfrom')}}}};els['#rerr']={{textContent:'',html:''}};\n\
+          return Object.assign(api,{{els,keys,log,saved:savedKeys}})}}\n\
+         (async()=>{{{body}}})();"
+    );
+    let mut child = bun()
+        .args(["run", "-"])
+        .env("TZ", "Etc/GMT-2")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("start bun");
+    child
+        .stdin
+        .take()
+        .expect("bun stdin")
+        .write_all(script.as_bytes())
+        .expect("write script");
+    let out = child.wait_with_output().expect("bun");
+    assert!(
+        out.status.success(),
+        "bun failed: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    serde_json::from_slice(&out.stdout).expect("json out")
+}
+
+#[test]
+fn l37_the_top_bar_has_one_time_button_and_no_range_menu() {
+    assert_eq!(PAGE.matches("id=\"mb-range\"").count(), 1);
+    assert!(PAGE.contains("aria-haspopup=\"dialog\""));
+    assert!(PAGE.contains("aria-controls=\"rpanel\""));
+    assert!(PAGE.contains("role=\"dialog\" aria-label=\"Time range\""));
+    assert!(
+        !PAGE.contains("MENUS.range"),
+        "the range is no listbox menu"
+    );
+    assert!(!PAGE.contains("{k:'custom',t:'Custom',sep:1}"));
+    assert!(
+        !PAGE.contains("rcancel"),
+        "Esc and an outside click close it"
+    );
+    assert!(PAGE.contains("Absolute time range"));
+}
+
+#[test]
+fn l37_the_button_reads_the_range() {
+    let v = run_picker_script(
+        "const out={};\n\
+         for(const zone of ['local','utc']){const m=make(zone);const labels={};\n\
+          for(const [k] of m.RANGES){m.HIST.range=k;labels[k]=m.rangeButtonText()}\n\
+          const f=Date.UTC(2026,10,14,10,0),t=Date.UTC(2026,10,14,12,30);m.HIST.range='custom';m.HIST.from=f;m.HIST.to=t;\n\
+          out[zone]={labels,custom:m.rangeButtonText(),text:m.rangeText()}}\n\
+         console.log(JSON.stringify(out));",
+    );
+    let labels = serde_json::json!({
+        "15m": "Last 15 minutes", "1h": "Last hour", "24h": "Last 24 hours",
+        "7d": "Last 7 days", "30d": "Last 30 days", "90d": "Last 90 days"
+    });
+    assert_eq!(v["local"]["labels"], labels);
+    assert_eq!(v["utc"]["labels"], labels);
+    assert_eq!(v["local"]["custom"], "14 Nov 12:00 to 14 Nov 14:30");
+    assert_eq!(v["utc"]["custom"], "14 Nov 10:00 to 14 Nov 12:30");
+    assert_eq!(v["utc"]["text"], v["utc"]["custom"]);
+}
+
+#[test]
+fn l37_a_quick_range_is_marked_and_applies() {
+    let v = run_picker_script(
+        "const m=make('utc',{'huddle-range':'7d'});m.HIST.keep=10;\n\
+         m.HIST.picking=true;m.renderRangeBar();const html=m.els['#rangebar'].html;\n\
+         const rq=[...html.matchAll(/<button[^>]*data-rq=\"([^\"]+)\"[^>]*>/g)].map(x=>({k:x[1],cur:x[0].includes('aria-current=\"true\"'),off:x[0].includes('disabled')}));\n\
+         const click=k=>m.rangeClick({target:{closest:s=>s==='[data-rq]'?{dataset:{rq:k},disabled:false}:null}});\n\
+         click('24h');\n\
+         console.log(JSON.stringify({rq,range:m.HIST.range,stored:m.saved['huddle-range'],query:m.rangeQuery(),picking:m.HIST.picking,custom:m.saved['huddle-range-custom']??null}));",
+    );
+    let rq = v["rq"].as_array().expect("quick ranges");
+    let keys: Vec<&str> = rq.iter().map(|r| r["k"].as_str().expect("key")).collect();
+    assert_eq!(keys, ["15m", "1h", "24h", "7d", "30d", "90d"]);
+    let current: Vec<&str> = rq
+        .iter()
+        .filter(|r| r["cur"] == true)
+        .map(|r| r["k"].as_str().expect("key"))
+        .collect();
+    assert_eq!(current, ["7d"], "only the current range is marked");
+    let off: Vec<&str> = rq
+        .iter()
+        .filter(|r| r["off"] == true)
+        .map(|r| r["k"].as_str().expect("key"))
+        .collect();
+    assert_eq!(off, ["30d", "90d"], "ranges past the kept history are off");
+    assert_eq!(v["range"], "24h");
+    assert_eq!(v["stored"], "24h");
+    assert_eq!(v["query"], "range=24h&tz_offset_min=0");
+    assert_eq!(v["picking"], false);
+    assert!(v["custom"].is_null());
+}
+
+#[test]
+fn l37_apply_sends_the_same_custom_query() {
+    let v = run_picker_script(
+        "const m=make('local');const now=Date.now();\n\
+         m.initPick();m.DT.from=now-3*3600e3;m.DT.to=now-3600e3;\n\
+         const apply=()=>m.rangeClick({target:{closest:s=>s==='#rapply'?{}:null}});\n\
+         apply();\n\
+         const ok={range:m.HIST.range,stored:m.saved['huddle-range'],custom:JSON.parse(m.saved['huddle-range-custom']),query:m.rangeQuery(),from:m.DT.from,to:m.DT.to};\n\
+         const n=make('local');n.HIST.picking=true;n.initPick();\n\
+         n.DT.from=now-1000;n.DT.to=now-5000;n.rangeClick({target:{closest:s=>s==='#rapply'?{}:null}});\n\
+         const after={html:n.els['#rerr'].html,range:n.HIST.range,stored:n.saved['huddle-range']??null};\n\
+         n.DT.from=n.earliest()-864e5;n.DT.to=now;n.rangeClick({target:{closest:s=>s==='#rapply'?{}:null}});\n\
+         const early={html:n.els['#rerr'].html,range:n.HIST.range,stored:n.saved['huddle-range']??null,picking:n.HIST.picking};\n\
+         console.log(JSON.stringify({ok,after,early}));",
+    );
+    let ok = &v["ok"];
+    assert_eq!(ok["range"], "custom");
+    assert_eq!(ok["stored"], "custom");
+    assert_eq!(ok["custom"]["from"], ok["from"]);
+    assert_eq!(ok["custom"]["to"], ok["to"]);
+    let query = format!("from={}&to={}&tz_offset_min=120", ok["from"], ok["to"]);
+    assert_eq!(ok["query"], query.as_str());
+    assert!(
+        v["after"]["html"]
+            .as_str()
+            .expect("html")
+            .contains("start that is before the end")
+    );
+    assert_eq!(v["after"]["range"], "15m");
+    assert!(v["after"]["stored"].is_null());
+    assert!(
+        v["early"]["html"]
+            .as_str()
+            .expect("html")
+            .contains("keeps 90 days")
+    );
+    assert_eq!(v["early"]["range"], "15m");
+    assert!(v["early"]["stored"].is_null());
+    assert_eq!(v["early"]["picking"], true);
+}
+
+#[test]
+fn l37_a_saved_range_from_the_last_release_still_loads() {
+    let v = run_picker_script(
+        "const a=make('local',{'huddle-range':'7d'});\n\
+         const b=make('local',{'huddle-range':'custom','huddle-range-custom':JSON.stringify({from:1000,to:2000})});\n\
+         const c=make('local',{'huddle-range':'custom','huddle-range-custom':JSON.stringify({from:3000,to:2000})});\n\
+         const d=make('local',{'huddle-range':'bogus'});\n\
+         console.log(JSON.stringify([a,b,c,d].map(x=>({range:x.HIST.range,from:x.HIST.from,to:x.HIST.to,picking:x.HIST.picking}))));",
+    );
+    assert_eq!(v[0]["range"], "7d");
+    assert_eq!(v[1]["range"], "custom");
+    assert_eq!(v[1]["from"], 1000);
+    assert_eq!(v[1]["to"], 2000);
+    assert_eq!(v[2]["range"], "15m", "a reversed saved range is dropped");
+    assert_eq!(v[3]["range"], "15m");
+    assert_eq!(v[3]["picking"], false);
+}
+
+#[test]
+fn l37_the_panel_closes_on_escape_and_outside_click_and_returns_focus() {
+    let v = run_picker_script(
+        "const m=make('utc');\n\
+         const toggle=m.rangeClick({target:{closest:s=>s==='[data-rtoggle]'?{}:null}});\n\
+         const opened={toggle,picking:m.HIST.picking,focus:m.log.filter(x=>x.startsWith('focus')),dialog:m.els['#rangebar'].html.includes('role=\"dialog\"'),expanded:m.els['#rangebar'].html.includes('aria-expanded=\"true\"')};\n\
+         m.log.length=0;\n\
+         const esc={key:'Escape',target:{closest:s=>s==='#rpanel'?{}:null},preventDefault(){},stopPropagation(){}};\n\
+         m.keys.forEach(f=>f(esc));\n\
+         const afterEsc={picking:m.HIST.picking,focus:m.log.filter(x=>x.startsWith('focus'))};\n\
+         m.rangeClick({target:{closest:s=>s==='[data-rtoggle]'?{}:null}});m.log.length=0;\n\
+         const inside=m.rangeClick({target:{closest:s=>s==='#rpanel'?{}:null}});\n\
+         const stillOpen=m.HIST.picking;\n\
+         const outside=m.rangeClick({target:{closest:()=>null}});\n\
+         const afterOut={inside,stillOpen,outside,picking:m.HIST.picking,focus:m.log.filter(x=>x.startsWith('focus'))};\n\
+         const idle=m.rangeClick({target:{closest:()=>null}});\n\
+         console.log(JSON.stringify({opened,afterEsc,afterOut,idle}));",
+    );
+    assert_eq!(v["opened"]["picking"], true);
+    assert_eq!(v["opened"]["dialog"], true);
+    assert_eq!(v["opened"]["expanded"], true);
+    assert_eq!(v["opened"]["focus"], serde_json::json!(["focus rfrom"]));
+    assert_eq!(v["afterEsc"]["picking"], false);
+    assert_eq!(
+        v["afterEsc"]["focus"],
+        serde_json::json!(["focus mb-range"])
+    );
+    assert_eq!(
+        v["afterOut"]["stillOpen"], true,
+        "a click inside keeps it open"
+    );
+    assert_eq!(v["afterOut"]["picking"], false);
+    assert_eq!(
+        v["afterOut"]["focus"],
+        serde_json::json!(["focus mb-range"])
+    );
+    assert_eq!(v["idle"], false, "a click with the panel shut is not ours");
+}
+
+#[test]
+fn l37_the_panel_stacks_at_phone_width() {
+    let css = include_str!("../src/dashboard/style.css");
+    let at = css
+        .find("@media (max-width:700px){.rangepop")
+        .expect("a 700px rule for the panel");
+    let rule = &css[at..at + css[at..].find('\n').expect("end")];
+    for part in [
+        "grid-template-columns:minmax(0,1fr)",
+        "left:0",
+        "right:0",
+        "overflow-y:auto",
+    ] {
+        assert!(rule.contains(part), "the phone rule holds {part}");
+    }
+    assert!(css.contains("grid-template-columns:280px 190px"));
 }

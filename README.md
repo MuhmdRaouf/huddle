@@ -191,9 +191,10 @@ The plugin gives Claude Code the huddle tools as an MCP server, so it can call t
 Open `http://127.0.0.1:4835/` while the router runs. The page updates live,
 works on a narrow screen and loads nothing from outside the router.
 
-The top bar holds one time range (15 min, 1 hour, 24 hours, 7, 30 or 90 days, or
-Custom from-to) that every page follows; Custom cannot start before the kept
-history, and the choice is remembered. The page draws its own menus and date
+The top bar holds one time-picker button that every page follows. It opens a
+panel with the quick ranges (15 min, 1 hour, 24 hours, 7, 30 or 90 days) and an
+absolute From and To; the absolute range cannot start before the kept history,
+and the choice is remembered. The page draws its own menus and date
 picker, with full keyboard control, and uses no browser select or date input.
 Next to it, a zone switch reads `Local (UTC+2)` or `UTC`: every time on the page,
 the date picker and the day bars of the cost-per-day chart follow it, and the
@@ -381,7 +382,7 @@ request ends, or after 10 minutes.
 
 Every finished request is one row in `huddle.db` (no prompt, key or header
 value), kept `[history] keep_days` days in `config.toml`, 90 by default. The
-dashboard's range (15 min to 90 days, or a custom from-to), the session and
+dashboard's time picker (15 min to 90 days, or an absolute from-to), the session and
 project totals and the request search read it. Claude models are priced
 at API list rates and shown as API-equivalent.
 
