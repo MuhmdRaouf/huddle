@@ -19,6 +19,7 @@ use tokio::time::{Instant, sleep_until};
 use crate::anthropic::StreamingBody;
 use crate::connect::Phase;
 use crate::dispatch::now_ms;
+use crate::history_cache::{CacheKey, HistoryCache, newest_signature};
 use crate::history_view::{self, Query, Refusal};
 use crate::join;
 use crate::live::{
@@ -167,6 +168,8 @@ pub struct Dashboard {
     drain: Option<watch::Receiver<Phase>>,
     /// The open feeds, oldest first, each with the sender that closes it.
     feeds: Mutex<VecDeque<oneshot::Sender<()>>>,
+    /// The finished history answers every tab shares.
+    history_cache: Arc<HistoryCache>,
 }
 
 impl Dashboard {
@@ -182,6 +185,7 @@ impl Dashboard {
             quota: None,
             drain: None,
             feeds: Mutex::new(VecDeque::new()),
+            history_cache: Arc::default(),
         }
     }
 
@@ -268,20 +272,29 @@ impl Dashboard {
         };
         let open = Arc::clone(&self.inputs.history);
         let machine = Arc::clone(&self.inputs.sessions);
+        let cache = Arc::clone(&self.history_cache);
+        let query = query.to_string();
         let worked = tokio::task::spawn_blocking(move || match open() {
-            None => Ok(history_view::empty_answer(&parsed)),
+            None => Ok(history_view::empty_answer(&parsed).to_string()),
             Some(history) => {
-                let aliases = if matches!(parsed, Query::Totals(_, GroupBy::Project, _)) {
-                    folder_aliases(&machine().worktrees)
-                } else {
-                    BTreeMap::new()
+                let key = CacheKey {
+                    query,
+                    newest: newest_signature(&history, now),
+                    minute: now / 60_000,
                 };
-                history_view::answer(&history, &parsed, &aliases)
+                cache.get_or_compute(key, || {
+                    let aliases = if matches!(parsed, Query::Totals(_, GroupBy::Project, _)) {
+                        folder_aliases(&machine().worktrees)
+                    } else {
+                        BTreeMap::new()
+                    };
+                    history_view::answer(&history, &parsed, &aliases).map(|value| value.to_string())
+                })
             }
         })
         .await;
         let mut response = match worked {
-            Ok(Ok(value)) => json_answer(StatusCode::OK, value.to_string()),
+            Ok(Ok(body)) => json_answer(StatusCode::OK, body),
             Ok(Err(_)) | Err(_) => plain(StatusCode::INTERNAL_SERVER_ERROR, "history unavailable"),
         };
         response

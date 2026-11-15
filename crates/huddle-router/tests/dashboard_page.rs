@@ -2095,7 +2095,7 @@ fn run_refresh_script(body: &str) -> Value {
           const clock={{t:0,timers:[],advance(ms){{const end=this.t+ms;for(;;){{let next=null;for(const x of this.timers)if(x.on&&(next===null||x.at<next.at))next=x;\n\
             if(!next||next.at>end)break;this.t=next.at;next.at+=next.ms;next.fn()}}this.t=end}}}};\n\
           const calls={{state:0,history:0,changed:0}};const tab={{visible:true}};const streams=[];\n\
-          const env={{store:ls,visible:()=>tab.visible,every:(fn,ms)=>{{const x={{fn,ms,at:clock.t+ms,on:true}};clock.timers.push(x);return x}},cancel:h=>{{h.on=false}},\n\
+          const env={{store:ls,floor:opts.floor,visible:()=>tab.visible,every:(fn,ms)=>{{const x={{fn,ms,at:clock.t+ms,on:true}};clock.timers.push(x);return x}},cancel:h=>{{h.on=false}},\n\
            state:()=>{{calls.state++;return opts.state?opts.state():undefined}},history:()=>{{calls.history++}},\n\
            open:cb=>{{const h={{cb,closed:false,close(){{h.closed=true}}}};streams.push(h);return h}},\n\
            later:(fn,ms)=>{{const x={{fn:()=>{{x.on=false;fn()}},ms,at:clock.t+ms,on:true}};clock.timers.push(x);x.ms=1e12;return x}},changed:()=>{{calls.changed++}}}};\n\
@@ -2182,6 +2182,24 @@ fn k4_state_follows_the_interval() {
     assert_eq!(v["five"], 4, "5s: a fetch every 5,000 ms");
     assert_eq!(v["off"], 0, "Off: nothing on the timer");
     assert_eq!(v["def"], 3, "1s is the default");
+}
+
+#[test]
+fn l25_a_long_range_refreshes_every_60_seconds() {
+    let v = run_refresh_script(
+        "const run=(k,floor,ms)=>{const a=make(store(k),{floor});a.rf.start();a.clock.advance(ms);return a.calls.history};\n\
+         console.log(JSON.stringify({\
+          short:run('5s',()=>5000,60000),long:run('5s',()=>60000,120000),\
+          longRt:run('rt',()=>60000,120000),shortRt:run('rt',()=>5000,60000),\
+          longMin:run('1m',()=>60000,180000),\
+          histMs:(()=>{const a=make(store('5s'),{floor:()=>60000});return a.rf.histMs()})()}));",
+    );
+    assert_eq!(v["short"], 12);
+    assert_eq!(v["long"], 2);
+    assert_eq!(v["longRt"], 2);
+    assert_eq!(v["shortRt"], 12);
+    assert_eq!(v["longMin"], 3);
+    assert_eq!(v["histMs"], 60_000);
 }
 
 #[test]

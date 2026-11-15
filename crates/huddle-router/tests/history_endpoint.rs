@@ -595,3 +595,38 @@ async fn k1_history_without_offset_is_unchanged() {
         );
     }
 }
+
+fn minute() -> u64 {
+    now() / MIN
+}
+
+#[tokio::test]
+async fn l25_the_same_query_in_a_minute_gets_the_same_answer_and_a_new_row_a_new_one() {
+    let rig = rig(true).await;
+    let db = rig._home.root().join("huddle.db");
+    let query = "view=totals&by=model&range=24h";
+    // Two asks inside one minute return the answer read once: its window end is the first ask's.
+    let (first, second) = loop {
+        let started = minute();
+        let (a, b) = (json(&rig, query).await, json(&rig, query).await);
+        if minute() == started {
+            break (a, b);
+        }
+    };
+    assert_eq!(first, second);
+    // A row that arrives in the same minute is in the next answer.
+    let before = first["totals"][0]["n"].as_u64().unwrap_or(0)
+        + first["totals"][1]["n"].as_u64().unwrap_or(0);
+    History::open(&db)
+        .expect("open")
+        .insert(&[row(now(), "glm-5.3", "zai", 200)])
+        .expect("insert");
+    let third = json(&rig, query).await;
+    let after: u64 = third["totals"]
+        .as_array()
+        .expect("totals")
+        .iter()
+        .map(|t| t["n"].as_u64().unwrap_or(0))
+        .sum();
+    assert_eq!(after, before + 1);
+}

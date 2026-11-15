@@ -539,19 +539,22 @@ function getState(){if(document.visibilityState==='hidden')return;return fetch(s
 /* ---------- refresh: one clock for the live snapshot and the history panels ---------- */
 /* rf:start */
 const RF_CHOICES=[['off','Off',0],['rt','Realtime',1e3],['1s','1s',1e3],['5s','5s',5e3],['10s','10s',1e4],['30s','30s',3e4],['1m','1m',6e4],['5m','5m',3e5],['15m','15m',9e5],['30m','30m',18e5],['1h','1h',36e5]].map(([k,t,ms])=>({k,t,ms}));
-const RF_FLOOR=5000,RF_STORE='huddle-refresh',RF_DEFAULT='1s',RF_TRIES=3,RF_RETRY_MAX=1e4;
-/* The live snapshot is fetched at the chosen interval, history panels at the same interval but never faster than RF_FLOOR.
+const RF_FLOOR=5000,RF_STORE='huddle-refresh',RF_DEFAULT='1s',RF_TRIES=3,RF_RETRY_MAX=1e4,RF_LONG=6e4;
+/* The live snapshot is fetched at the chosen interval, history panels at the same interval but never faster than env.floor(): RF_FLOOR, or RF_LONG while the range is 7 days or more.
    Off sets no timer. A hidden tab clears the timers and fetches once when it shows again.
-   Realtime holds one event stream instead of the state timer; history panels run every RF_FLOOR. A dropped stream is retried
+   Realtime holds one event stream instead of the state timer; history panels run every env.floor(). A dropped stream is retried
    with a delay that grows to RF_RETRY_MAX, and after RF_TRIES failed tries the 1 s poll runs until a try succeeds. */
 function rfMake(env){
- let key=RF_DEFAULT,timers=[],busy=false,hidden=false,stream=null,retry=null,poll=null,fails=0,down=false;
+ let key=RF_DEFAULT,timers=[],since=0,busy=false,hidden=false,stream=null,retry=null,poll=null,fails=0,down=false;
  try{const v=env.store.getItem(RF_STORE);if(RF_CHOICES.some(c=>c.k===v))key=v}catch(e){}
  const choice=()=>RF_CHOICES.find(c=>c.k===key);
  const live=()=>key==='rt';
  const told=()=>{if(env.changed)env.changed()};
  const fetchState=()=>{if(busy)return;const p=env.state();if(p&&p.then){busy=true;const done=()=>{busy=false};p.then(done,done)}};
- const all=manual=>{fetchState();env.history(manual)};
+ const floor=()=>env.floor?env.floor():RF_FLOOR;
+ /* a history tick that comes before the floor has passed since the last one waits for the next */
+ const histTick=ms=>{since+=ms;if(since<floor())return;since=0;env.history(false)};
+ const all=manual=>{fetchState();since=0;env.history(manual)};
  const closeStream=()=>{if(stream){const s=stream;stream=null;s.close()}};
  const stopLive=()=>{closeStream();if(retry){env.cancel(retry);retry=null}if(poll){env.cancel(poll);poll=null}fails=0;down=false};
  const connect=()=>{retry=null;closeStream();
@@ -563,12 +566,13 @@ function rfMake(env){
   stream=h};
  const disarm=()=>{timers.forEach(env.cancel);timers=[];stopLive()};
  const arm=()=>{disarm();if(hidden||key==='off')return;const ms=choice().ms;
-  if(live()){connect();timers=[env.every(()=>env.history(false),RF_FLOOR)]}
-  else timers=[env.every(fetchState,ms),env.every(()=>env.history(false),Math.max(ms,RF_FLOOR))]};
+  since=0;
+  if(live()){connect();timers=[env.every(()=>histTick(RF_FLOOR),RF_FLOOR)]}
+  else{const every=Math.max(ms,RF_FLOOR);timers=[env.every(fetchState,ms),env.every(()=>histTick(every),every)]}};
  return {choices:()=>RF_CHOICES,key:()=>key,start:arm,now(){if(!live())all(true)},
   nowDisabled:live,nowTitle:()=>live()?'Realtime is on':'Refresh now',
   label:()=>choice().t+(live()&&down?' (reconnecting)':''),
-  histMs:()=>choice().ms?Math.max(choice().ms,RF_FLOOR):Infinity,
+  histMs:()=>choice().ms?Math.max(choice().ms,floor()):Infinity,
   /* reopens the stream when the form it carries (slim or full) is not the one the open page needs */
   refit(differs){if(!differs||!live()||hidden||!stream)return false;connect();return true},
   set(k){if(!RF_CHOICES.some(c=>c.k===k))return;key=k;try{env.store.setItem(RF_STORE,k)}catch(e){}arm();told()},
@@ -577,13 +581,16 @@ function rfMake(env){
 /* HMODE: 0 a page opens or repaints, 1 the history timer, 2 refresh now. A panel loaded less than its own age ago is not loaded again. */
 let HMODE=0;
 const RF_SLACK=50;
-const rfFresh=at=>{const age=Date.now()-at;return HMODE===2?false:HMODE===1?age<RF_FLOOR-RF_SLACK:age<RF.histMs()};
+/* a range of 7 days or more changes slowly and costs the most to read: its panels refresh every RF_LONG */
+const RANGE_LONG_MS=7*864e5;
+const histFloor=()=>(HIST.range==='custom'?HIST.to-HIST.from:RANGE_MIN[HIST.range]*6e4)>=RANGE_LONG_MS?RF_LONG:RF_FLOOR;
+const rfFresh=at=>{const age=Date.now()-at;return HMODE===2?false:HMODE===1?age<histFloor()-RF_SLACK:age<RF.histMs()};
 const pageLoaders=()=>({models:[loadModels],usage:[loadUsage],providers:[loadProviders],errors:[loadProviders,loadErrors],overview:[loadOvCost],requests:[loadReqCost,()=>{if(HS.mode==='history')hsearch()}]}[page]||[]);
 function refreshHistory(manual){HMODE=manual?2:1;try{loadHistory();loadTotals();pageLoaders().forEach(f=>f())}finally{HMODE=0}}
 /* the event stream carries the same form as /state: the slim one unless the open page shows the rows */
 function openStream(cb){STREAM_FULL=wantRecent();const es=new EventSource('/huddle-router/live'+(STREAM_FULL?'':'?recent=0'));
  es.onopen=cb.ok;es.onerror=cb.fail;es.addEventListener('snapshot',e=>{try{onSnapshot(JSON.parse(e.data))}catch(x){}});return es}
-const RF=rfMake({open:openStream,later:(f,ms)=>setTimeout(f,ms),changed:()=>{menuLabel('refresh');renderRefNow()},store:{getItem:k=>localStorage.getItem(k),setItem:(k,v)=>localStorage.setItem(k,v)},visible:()=>document.visibilityState!=='hidden',every:(f,ms)=>setInterval(f,ms),cancel:clearInterval,state:getState,history:refreshHistory});
+const RF=rfMake({open:openStream,later:(f,ms)=>setTimeout(f,ms),changed:()=>{menuLabel('refresh');renderRefNow()},store:{getItem:k=>localStorage.getItem(k),setItem:(k,v)=>localStorage.setItem(k,v)},visible:()=>document.visibilityState!=='hidden',every:(f,ms)=>setInterval(f,ms),cancel:clearInterval,state:getState,history:refreshHistory,floor:histFloor});
 MENUS.refresh={label:'Refresh interval',opts:()=>RF.choices().map(c=>({k:c.k,t:c.k===RF.key()?RF.label():c.t})),cur:()=>RF.key(),pick:k=>RF.set(k)};
 function renderRefNow(){const b=$('#refnow');if(!b)return;const off=RF.nowDisabled();b.classList.toggle('off',off);if(off)b.setAttribute('aria-disabled','true');else b.removeAttribute('aria-disabled');b.title=RF.nowTitle()}
 function renderRefBar(){const el=$('#refbar');if(el){menuDrop();setHtml(el,menuHtml('refresh'))}}
