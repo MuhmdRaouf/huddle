@@ -236,44 +236,31 @@ impl Router {
             enabled,
         ))));
 
-        // The route closures read the lane set through the router's own weak handle, so a
-        // reload swaps what they see and the router is never kept alive by a request.
+        // The route decision reads the lane set fresh on every request, so a reload swaps what
+        // the next request sees; the routes themselves never decide again.
         Arc::new_cyclic(|router: &Weak<Router>| {
-            let is_anthropic: Arc<dyn Fn(&str) -> bool + Send + Sync> = {
+            let route_of: Arc<dyn Fn(&str) -> Route + Send + Sync> = {
                 let lanes = Arc::clone(&lanes);
                 Arc::new(move |model: &str| {
                     let (enabled, resolved) = lane_names(&lanes);
-                    matches!(
-                        decide_resolved(model, &enabled, &resolved),
-                        Route::Anthropic
-                    )
-                })
-            };
-            let lane_streams: Arc<dyn Fn(&str) -> bool + Send + Sync> = {
-                let lanes = Arc::clone(&lanes);
-                Arc::new(move |model: &str| {
-                    let (enabled, resolved) = lane_names(&lanes);
-                    match decide_resolved(model, &enabled, &resolved) {
-                        Route::Lane(provider) => provider.strip.is_empty(),
-                        Route::Anthropic => false,
-                    }
+                    decide_resolved(model, &enabled, &resolved)
                 })
             };
             let streamed_route: StreamedRoute = {
                 let router = Weak::clone(router);
-                Arc::new(move |parts, body, model| {
+                Arc::new(move |parts, body, provider, model| {
                     let router = Weak::clone(&router);
                     Box::pin(async move {
                         let Some(router) = router.upgrade() else {
                             return cut_response();
                         };
-                        match lane_for(&router, &model) {
+                        match lane_by_id(&router.lanes, provider) {
                             Some(lane) => {
                                 let events = RequestEvents::from_parts(&parts);
                                 events.track(lane.provider().id, &model);
                                 lane.forward_streamed(parts, body, &model).await
                             }
-                            // The lane left between the head and this call; the client retries.
+                            // The lane left between the decision and this call; the client retries.
                             None => cut_response(),
                         }
                     })
@@ -281,7 +268,7 @@ impl Router {
             };
             let whole_route: WholeRoute = {
                 let router = Weak::clone(router);
-                Arc::new(move |parts, body| {
+                Arc::new(move |parts, body, decided| {
                     let router = Weak::clone(&router);
                     Box::pin(async move {
                         let Some(router) = router.upgrade() else {
@@ -290,9 +277,14 @@ impl Router {
                         let model = model_of(&body);
                         let method = parts.method.as_str().to_owned();
                         let path = parts.uri.path().to_owned();
-                        let (enabled, resolved) = lane_names(&router.lanes);
+                        // A request routed on its head arrives decided; one that skipped the
+                        // head decides here, once.
+                        let route = decided.unwrap_or_else(|| {
+                            let (enabled, resolved) = lane_names(&router.lanes);
+                            decide_resolved(&model, &enabled, &resolved)
+                        });
                         let events = RequestEvents::from_parts(&parts);
-                        match decide_resolved(&model, &enabled, &resolved) {
+                        match route {
                             Route::Lane(provider) => match lane_by_id(&router.lanes, provider.id) {
                                 Some(lane) => {
                                     events.track(provider.id, &model);
@@ -325,8 +317,7 @@ impl Router {
                 client: Arc::clone(&client),
                 target: config.anthropic_url.clone(),
                 body_limit: BODY_LIMIT,
-                is_anthropic,
-                lane_streams,
+                route_of,
                 streamed_route,
                 whole_route: Arc::clone(&whole_route),
                 pass_through,
@@ -390,7 +381,8 @@ impl Router {
                             &parts.headers,
                         );
                         parts.extensions.insert(context);
-                        (router.whole_route)(parts, body).await
+                        // Nothing routed this request on a head; the whole route decides once.
+                        (router.whole_route)(parts, body, None).await
                     }
                     Err(answer) => answer,
                 }
@@ -779,16 +771,6 @@ fn lane_names(lanes: &RwLock<Arc<Vec<Arc<Lane>>>>) -> (Vec<&'static str>, Vec<Re
         lanes.iter().map(|lane| lane.provider().id).collect(),
         lanes.iter().map(|lane| lane.resolved_ids()).collect(),
     )
-}
-
-/// The lane this model goes to now, or none when the decision is Anthropic or the lane left in
-/// a reload.
-fn lane_for(router: &Router, model: &str) -> Option<Arc<Lane>> {
-    let (enabled, resolved) = lane_names(&router.lanes);
-    match decide_resolved(model, &enabled, &resolved) {
-        Route::Lane(provider) => lane_by_id(&router.lanes, provider.id),
-        Route::Anthropic => None,
-    }
 }
 
 /// Logs every request to `/huddle-router/*` as `<method> <path> -> <status>`, except the

@@ -1,18 +1,24 @@
 //! The dispatch: a model goes to its lane or to Anthropic, the health answer lists the lanes,
 //! and the streak raises once and recovers once.
 
+use huddle_catalog::routing::{Route, decide_resolved};
 use huddle_config::{env::Env, paths::Paths};
 use huddle_router::{
+    anthropic::AnthropicPath,
     dispatch::{Router, RouterConfig},
-    server::{ServerLimits, bind, serve},
+    server::{BODY_LIMIT, ServerLimits, bind, full_body, serve},
+    upstream::{UpstreamClient, UpstreamConfig},
 };
 use huddle_testkit::{
     fake_upstream::{FakeUpstream, Step},
     ports::free_port,
     temp_home::TempHome,
 };
-use hyper::Uri;
-use std::sync::Arc;
+use hyper::{Response, Uri, body::Bytes};
+use std::sync::{
+    Arc, Mutex,
+    atomic::{AtomicUsize, Ordering},
+};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::TcpStream,
@@ -233,4 +239,116 @@ fn os_roots_read_the_platform_trust_store_and_nothing_bundled() {
         "{}",
         String::from_utf8_lossy(&out.stderr)
     );
+}
+
+/// A model request body whose model sits in the head and whose size pushes it past the
+/// streamed relay.
+fn l15_message(model: &str, size: usize) -> String {
+    let head =
+        format!(r#"{{"model":"{model}","max_tokens":16,"messages":[{{"role":"user","content":""#);
+    let tail = r#""}]}"#;
+    let padding = size.saturating_sub(head.len() + tail.len());
+    let mut body = head.into_bytes();
+    body.extend(std::iter::repeat_n(b'x', padding));
+    body.extend_from_slice(tail.as_bytes());
+    String::from_utf8(body).expect("utf8")
+}
+
+/// Serves one hand-built path over plain HTTP: the route resolver comes from the caller, the
+/// streamed route records the lane decisions it served and answers with `streamed-stub`.
+async fn l15_path_rig(
+    route_of: Arc<dyn Fn(&str) -> Route + Send + Sync>,
+    streamed_calls: Arc<Mutex<Vec<(&'static str, String)>>>,
+) -> u16 {
+    let path = Arc::new(AnthropicPath {
+        client: Arc::new(UpstreamClient::new(UpstreamConfig {
+            env: Env::with(&[]),
+            roots: rustls::RootCertStore::empty(),
+            idle: std::time::Duration::from_secs(30),
+        })),
+        target: "http://127.0.0.1:9".parse::<Uri>().expect("target"),
+        body_limit: BODY_LIMIT,
+        route_of,
+        streamed_route: {
+            let sink = streamed_calls;
+            Arc::new(
+                move |_parts, _stream, provider: &'static str, model: String| {
+                    let sink = Arc::clone(&sink);
+                    Box::pin(async move {
+                        sink.lock().expect("sink").push((provider, model));
+                        Response::new(full_body("streamed-stub"))
+                    })
+                },
+            )
+        },
+        whole_route: Arc::new(|_parts, _body: Bytes, _decided| {
+            Box::pin(async { Response::new(full_body("whole-stub")) })
+        }),
+        pass_through: Arc::new(|_req| Box::pin(async { Response::new(full_body("pass-stub")) })),
+        on_outcome: None,
+    });
+    let listener = bind(0).await.expect("bind");
+    let port = listener.local_addr().expect("addr").port();
+    let (_stop, rx) = watch::channel(false);
+    let handler = path.intercept_handler();
+    tokio::spawn(async move {
+        serve(listener, handler, ServerLimits::default(), rx)
+            .await
+            .expect("serve")
+    });
+    port
+}
+
+#[tokio::test]
+async fn l15_a_model_request_decides_its_lane_once() {
+    let decisions = Arc::new(AtomicUsize::new(0));
+    let counted = Arc::clone(&decisions);
+    let route_of: Arc<dyn Fn(&str) -> Route + Send + Sync> = Arc::new(move |model: &str| {
+        counted.fetch_add(1, Ordering::SeqCst);
+        decide_resolved(model, &["zai"], &[])
+    });
+    let streamed_calls: Arc<Mutex<Vec<(&'static str, String)>>> = Arc::default();
+    let port = l15_path_rig(route_of, Arc::clone(&streamed_calls)).await;
+    let body = l15_message("glm-5.3", 512 * 1024);
+    let answer = post(port, "/v1/messages", &body).await;
+    assert!(answer.contains("streamed-stub"), "{answer}");
+    assert_eq!(
+        *streamed_calls.lock().expect("calls"),
+        vec![("zai", "glm-5.3".to_owned())],
+        "the streamed route took the decision's lane"
+    );
+    assert_eq!(
+        decisions.load(Ordering::SeqCst),
+        1,
+        "one request, one lane decision"
+    );
+}
+
+#[tokio::test]
+async fn l15_routing_results_are_unchanged() {
+    let r = rig(&["zai"]).await;
+    let claude = post(
+        r.port,
+        "/v1/messages",
+        r#"{"model":"claude-opus-5-5","messages":[]}"#,
+    )
+    .await;
+    assert!(claude.contains("from-anthropic"), "{claude}");
+    let lane = post(
+        r.port,
+        "/v1/messages",
+        r#"{"model":"glm-5.3","messages":[]}"#,
+    )
+    .await;
+    assert!(lane.contains("from-zai"), "{lane}");
+    let unknown = post(
+        r.port,
+        "/v1/messages",
+        r#"{"model":"unknown-model","messages":[]}"#,
+    )
+    .await;
+    assert!(unknown.contains("from-anthropic"), "{unknown}");
+    assert_eq!(r.anthropic.requests().len(), 2);
+    assert_eq!(r.zai.requests().len(), 1);
+    let _ = r.stop.send(true);
 }

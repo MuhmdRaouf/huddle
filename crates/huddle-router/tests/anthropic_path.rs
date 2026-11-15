@@ -1,4 +1,5 @@
 use http_body_util::BodyExt;
+use huddle_catalog::routing::decide_resolved;
 use huddle_config::env::Env;
 use huddle_pki::ca::{ROUTER_HOST, load_or_create};
 use huddle_pki::leaf::LeafCache;
@@ -70,7 +71,7 @@ async fn rig(
     // The stub lane relays the body to the fake upstream the way a lane does, so a body past the
     // send window drains at the upstream's pace instead of stalling the filler.
     let streamed_route: huddle_router::anthropic::StreamedRoute =
-        Arc::new(move |_parts, stream, model| {
+        Arc::new(move |_parts, stream, _provider, model| {
             let sink = streamed_sink.clone();
             let client = route_client.clone();
             let url = lane_url.clone();
@@ -93,19 +94,19 @@ async fn rig(
         });
     let whole_calls: Arc<Mutex<Vec<Vec<u8>>>> = Arc::default();
     let sink = whole_calls.clone();
-    let whole_route: huddle_router::anthropic::WholeRoute = Arc::new(move |_parts, body: Bytes| {
-        let sink = sink.clone();
-        Box::pin(async move {
-            sink.lock().unwrap().push(body.to_vec());
-            Response::new(full_body("whole-route"))
-        })
-    });
+    let whole_route: huddle_router::anthropic::WholeRoute =
+        Arc::new(move |_parts, body: Bytes, _decided| {
+            let sink = sink.clone();
+            Box::pin(async move {
+                sink.lock().unwrap().push(body.to_vec());
+                Response::new(full_body("whole-route"))
+            })
+        });
     let path = Arc::new(AnthropicPath {
         client,
         target: upstream.url().parse().expect("target"),
         body_limit: limit,
-        is_anthropic: Arc::new(|model: &str| model.starts_with("claude-")),
-        lane_streams: Arc::new(|model: &str| model.starts_with("glm-")),
+        route_of: Arc::new(|model: &str| decide_resolved(model, &["zai", "qwen"], &[])),
         streamed_route,
         whole_route,
         pass_through: stub_handler("pass"),

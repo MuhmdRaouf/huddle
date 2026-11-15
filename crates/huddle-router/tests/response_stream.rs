@@ -1,3 +1,4 @@
+use huddle_catalog::routing::Route;
 use huddle_config::env::Env;
 use huddle_router::anthropic::{AnswerOutcome, AnthropicPath, OutcomeHook};
 use huddle_router::server::{BODY_LIMIT, Handler, ServerLimits, bind, full_body, receive, serve};
@@ -32,10 +33,9 @@ async fn rig(plan: impl Fn(usize, usize) -> Step + Send + Sync + 'static, idle: 
         client,
         target: upstream.url().parse().expect("target"),
         body_limit: BODY_LIMIT,
-        is_anthropic: Arc::new(|_| true),
-        lane_streams: Arc::new(|_| false),
-        streamed_route: Arc::new(|_, _, _| Box::pin(async { Response::new(full_body("x")) })),
-        whole_route: Arc::new(|_, _| Box::pin(async { Response::new(full_body("x")) })),
+        route_of: Arc::new(|_| Route::Anthropic),
+        streamed_route: Arc::new(|_, _, _, _| Box::pin(async { Response::new(full_body("x")) })),
+        whole_route: Arc::new(|_, _, _| Box::pin(async { Response::new(full_body("x")) })),
         pass_through: Arc::new(|_req| Box::pin(async { Response::new(full_body("x")) })),
         on_outcome: Some(on_outcome),
     });
@@ -346,10 +346,9 @@ async fn an_unreachable_upstream_is_502_naming_the_code() {
         client,
         target: target.parse().expect("target"),
         body_limit: BODY_LIMIT,
-        is_anthropic: Arc::new(|_| true),
-        lane_streams: Arc::new(|_| false),
-        streamed_route: Arc::new(|_, _, _| Box::pin(async { Response::new(full_body("x")) })),
-        whole_route: Arc::new(|_, _| Box::pin(async { Response::new(full_body("x")) })),
+        route_of: Arc::new(|_| Route::Anthropic),
+        streamed_route: Arc::new(|_, _, _, _| Box::pin(async { Response::new(full_body("x")) })),
+        whole_route: Arc::new(|_, _, _| Box::pin(async { Response::new(full_body("x")) })),
         pass_through: Arc::new(|_req| Box::pin(async { Response::new(full_body("x")) })),
         on_outcome: None,
     });

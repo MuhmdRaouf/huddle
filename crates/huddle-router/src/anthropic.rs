@@ -11,6 +11,7 @@ use std::task::{Context, Poll};
 use std::time::{Duration, Instant};
 
 use http_body_util::BodyExt;
+use huddle_catalog::routing::Route;
 use hyper::body::{Body, Bytes, Frame, Incoming};
 use hyper::header::{CONNECTION, CONTENT_LENGTH, CONTENT_TYPE, HeaderMap, HeaderValue, UPGRADE};
 use hyper::http::request::Parts;
@@ -39,12 +40,14 @@ pub const STREAM_HEAD_BYTES: usize = 64 * 1024;
 /// The paths of model requests; the query never takes part.
 const MODEL_PATHS: [&str; 2] = ["/v1/messages", "/v1/messages/count_tokens"];
 
-/// A request that was read whole and must still be routed by model.
-pub type WholeRoute = Arc<dyn Fn(Parts, Bytes) -> HandlerFuture + Send + Sync>;
+/// A request that was read whole and must still be routed by model. A decision made on the
+/// request's head rides in `Some`; one that still needs the whole body decides here, in `None`.
+pub type WholeRoute = Arc<dyn Fn(Parts, Bytes, Option<Route>) -> HandlerFuture + Send + Sync>;
 
-/// A model request a provider lane takes as its body arrives.
+/// A model request a provider lane takes as its body arrives; the lane's provider id comes
+/// from the request's one routing decision.
 pub type StreamedRoute =
-    Arc<dyn Fn(Parts, Arc<StreamedBody>, String) -> HandlerFuture + Send + Sync>;
+    Arc<dyn Fn(Parts, Arc<StreamedBody>, &'static str, String) -> HandlerFuture + Send + Sync>;
 
 /// How one answer ended, for whatever the dispatch and the events record.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -95,10 +98,8 @@ pub struct AnthropicPath {
     pub target: Uri,
     /// The largest body a request may announce or carry.
     pub body_limit: u64,
-    /// True when no provider lane claims this model.
-    pub is_anthropic: Arc<dyn Fn(&str) -> bool + Send + Sync>,
-    /// True when this model's lane forwards the body without editing it.
-    pub lane_streams: Arc<dyn Fn(&str) -> bool + Send + Sync>,
+    /// The route of a model, decided once per request.
+    pub route_of: Arc<dyn Fn(&str) -> Route + Send + Sync>,
     /// Serves a lane-bound body as it arrives.
     pub streamed_route: StreamedRoute,
     /// Serves a request read whole.
@@ -132,7 +133,7 @@ impl AnthropicPath {
     async fn model_request(self: Arc<Self>, req: Request<Incoming>) -> Response<RespBody> {
         let Some(len) = announced(&req, self.body_limit) else {
             return match receive(req, self.body_limit).await {
-                Ok((parts, body)) => (self.whole_route)(parts, body).await,
+                Ok((parts, body)) => (self.whole_route)(parts, body, None).await,
                 Err(answer) => answer,
             };
         };
@@ -146,16 +147,24 @@ impl AnthropicPath {
             Err(answer) => return answer,
         };
         let (model, settled) = body::model_head(&head);
+        // The lane is decided once for the whole request; the routes below read this decision.
+        let route = (self.route_of)(&model);
         let relays = settled
             && (head.len() as u64) < len
-            && ((self.is_anthropic)(&model) || (self.lane_streams)(&model));
+            && match route {
+                Route::Anthropic => true,
+                Route::Lane(provider) => provider.strip.is_empty(),
+            };
         if !relays {
+            // A head that stopped inside the model name is no decision; the whole route reads
+            // the model off the complete body itself.
+            let decided = settled.then_some(route);
             return match fill(body, Arc::clone(&stream)).await {
                 Ok(()) => {
                     let whole = stream.take_whole();
                     drop(stream);
                     match whole {
-                        Some(whole) => (self.whole_route)(parts, whole).await,
+                        Some(whole) => (self.whole_route)(parts, whole, decided).await,
                         None => cut_response(),
                     }
                 }
@@ -166,12 +175,13 @@ impl AnthropicPath {
         // hold keeps the filler at the upstream's pace until the route is done with the body.
         let _routing = stream.hold();
         tokio::spawn(fill(body, Arc::clone(&stream)));
-        if (self.is_anthropic)(&model) {
-            let events = RequestEvents::from_parts(&parts);
-            events.track("anthropic", &model);
-            self.forward_streamed(parts, stream).await
-        } else {
-            (self.streamed_route)(parts, stream, model).await
+        match route {
+            Route::Anthropic => {
+                let events = RequestEvents::from_parts(&parts);
+                events.track("anthropic", &model);
+                self.forward_streamed(parts, stream).await
+            }
+            Route::Lane(provider) => (self.streamed_route)(parts, stream, provider.id, model).await,
         }
     }
 
