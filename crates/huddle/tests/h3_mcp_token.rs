@@ -110,6 +110,19 @@ fn h3_mcp_without_a_token_is_401() {
     assert!(get.starts_with("HTTP/1.1 401"), "{get}");
 }
 
+/// The 401 names this server `huddle`, the name the plugin's `.mcp.json` reconnects.
+#[test]
+fn l40_the_401_text_names_the_huddle_server() {
+    let daemon = Daemon::start(&[], &[]);
+    let (_, raw) = post(daemon.port, &[]);
+    let message = body_json(&raw)["error"]["message"]
+        .as_str()
+        .unwrap_or_default()
+        .to_string();
+    assert!(message.contains("reconnect huddle in /mcp"), "{raw}");
+    assert!(!message.contains("huddle-http"), "{raw}");
+}
+
 #[test]
 fn h3_mcp_with_the_token_answers() {
     let daemon = Daemon::start(&[], &[]);

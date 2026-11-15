@@ -144,7 +144,8 @@ pub struct McpGuard {
 const OAUTH_DISCOVERY: &str = "/.well-known/";
 
 /// The one message for a missing or wrong token, whichever it was.
-const NO_TOKEN: &str = "huddle-router: /mcp needs huddle's token. Run /huddle:update, then reconnect huddle-http in /mcp.";
+const NO_TOKEN: &str =
+    "huddle-router: /mcp needs huddle's token. Run /huddle:update, then reconnect huddle in /mcp.";
 
 /// `forward`, except that `/mcp` goes to `service` once Host, Origin and the token pass. A GET
 /// is refused: the tools never push a message, so no standalone event stream is held open.

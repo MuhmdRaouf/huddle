@@ -255,10 +255,13 @@ fn l15_message(model: &str, size: usize) -> String {
 }
 
 /// Serves one hand-built path over plain HTTP: the route resolver comes from the caller, the
-/// streamed route records the lane decisions it served and answers with `streamed-stub`.
+/// streamed route records the lane decisions it served and answers with `streamed-stub`, and
+/// the read-whole route records the decision each request carried and answers with
+/// `whole-stub`.
 async fn l15_path_rig(
     route_of: Arc<dyn Fn(&str) -> Route + Send + Sync>,
     streamed_calls: Arc<Mutex<Vec<(&'static str, String)>>>,
+    whole_calls: Arc<Mutex<Vec<Option<Route>>>>,
 ) -> u16 {
     let path = Arc::new(AnthropicPath {
         client: Arc::new(UpstreamClient::new(UpstreamConfig {
@@ -281,9 +284,16 @@ async fn l15_path_rig(
                 },
             )
         },
-        whole_route: Arc::new(|_parts, _body: Bytes, _decided| {
-            Box::pin(async { Response::new(full_body("whole-stub")) })
-        }),
+        whole_route: {
+            let sink = whole_calls;
+            Arc::new(move |_parts, _body: Bytes, decided: Option<Route>| {
+                let sink = Arc::clone(&sink);
+                Box::pin(async move {
+                    sink.lock().expect("sink").push(decided);
+                    Response::new(full_body("whole-stub"))
+                })
+            })
+        },
         pass_through: Arc::new(|_req| Box::pin(async { Response::new(full_body("pass-stub")) })),
         on_outcome: None,
     });
@@ -308,7 +318,13 @@ async fn l15_a_model_request_decides_its_lane_once() {
         decide_resolved(model, &["zai"], &[])
     });
     let streamed_calls: Arc<Mutex<Vec<(&'static str, String)>>> = Arc::default();
-    let port = l15_path_rig(route_of, Arc::clone(&streamed_calls)).await;
+    let whole_calls: Arc<Mutex<Vec<Option<Route>>>> = Arc::default();
+    let port = l15_path_rig(
+        route_of,
+        Arc::clone(&streamed_calls),
+        Arc::clone(&whole_calls),
+    )
+    .await;
     let body = l15_message("glm-5.3", 512 * 1024);
     let answer = post(port, "/v1/messages", &body).await;
     assert!(answer.contains("streamed-stub"), "{answer}");
@@ -321,6 +337,65 @@ async fn l15_a_model_request_decides_its_lane_once() {
         decisions.load(Ordering::SeqCst),
         1,
         "one request, one lane decision"
+    );
+}
+
+/// A body that fits in the head is read whole, and the head's lane decision travels with it.
+#[tokio::test]
+async fn l40_a_small_body_reaches_the_read_whole_route_with_the_heads_decision() {
+    let decisions = Arc::new(AtomicUsize::new(0));
+    let counted = Arc::clone(&decisions);
+    let route_of: Arc<dyn Fn(&str) -> Route + Send + Sync> = Arc::new(move |model: &str| {
+        counted.fetch_add(1, Ordering::SeqCst);
+        decide_resolved(model, &["zai"], &[])
+    });
+    let streamed_calls: Arc<Mutex<Vec<(&'static str, String)>>> = Arc::default();
+    let whole_calls: Arc<Mutex<Vec<Option<Route>>>> = Arc::default();
+    let port = l15_path_rig(route_of, streamed_calls, Arc::clone(&whole_calls)).await;
+    let body = l15_message("glm-5.3", 512);
+    let answer = post(port, "/v1/messages", &body).await;
+    assert!(answer.contains("whole-stub"), "{answer}");
+    assert_eq!(
+        decisions.load(Ordering::SeqCst),
+        1,
+        "one request, one lane decision"
+    );
+    let calls = whole_calls.lock().expect("calls").clone();
+    assert_eq!(calls.len(), 1, "{calls:?}");
+    assert!(
+        matches!(calls[0], Some(Route::Lane(provider)) if provider.id == "zai"),
+        "the head's decision reaches the whole route: {calls:?}"
+    );
+}
+
+/// A body whose model sits past the head is read whole with no decision: the route decides on
+/// the whole body itself.
+#[tokio::test]
+async fn l40_a_model_late_body_reaches_the_read_whole_route_with_no_decision() {
+    let decisions = Arc::new(AtomicUsize::new(0));
+    let counted = Arc::clone(&decisions);
+    let route_of: Arc<dyn Fn(&str) -> Route + Send + Sync> = Arc::new(move |model: &str| {
+        counted.fetch_add(1, Ordering::SeqCst);
+        decide_resolved(model, &["zai"], &[])
+    });
+    let streamed_calls: Arc<Mutex<Vec<(&'static str, String)>>> = Arc::default();
+    let whole_calls: Arc<Mutex<Vec<Option<Route>>>> = Arc::default();
+    let port = l15_path_rig(route_of, streamed_calls, Arc::clone(&whole_calls)).await;
+    let padding = "x".repeat(70 * 1024);
+    let body = format!(
+        r#"{{"messages":[{{"role":"user","content":"{padding}"}}],"model":"glm-5.3","max_tokens":16}}"#
+    );
+    let answer = post(port, "/v1/messages", &body).await;
+    assert!(answer.contains("whole-stub"), "{answer}");
+    assert_eq!(
+        decisions.load(Ordering::SeqCst),
+        1,
+        "the head's unsettled model asks once; its answer is discarded"
+    );
+    assert_eq!(
+        *whole_calls.lock().expect("calls"),
+        vec![None],
+        "the whole route decides on the whole body itself"
     );
 }
 

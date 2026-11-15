@@ -691,6 +691,9 @@ struct LiveTap {
     id: u64,
     /// Set by the first frame; every later frame moves it without the live lock.
     clock: Option<ByteClock>,
+    /// Set by the first frame. It matters only when that frame found the request already gone
+    /// from the live state (`first_byte` gave no clock): it stops every later frame from
+    /// asking again.
     seen: bool,
     inner: Option<Box<dyn AnswerTap>>,
 }
@@ -967,4 +970,126 @@ pub(crate) fn now_ms() -> u64 {
 /// A lock's guard, past a poisoned lock: the data is a few integers, sane to keep using.
 fn lock<T>(value: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
     value.lock().unwrap_or_else(PoisonError::into_inner)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    /// Records the frames a tap hands on, and how often `end` reached it.
+    struct TapRecorder {
+        frames: Arc<Mutex<Vec<Bytes>>>,
+        ended: Arc<AtomicUsize>,
+    }
+
+    impl AnswerTap for TapRecorder {
+        fn chunk(&mut self, chunk: &Bytes) {
+            self.frames.lock().expect("frames").push(chunk.clone());
+        }
+
+        fn end(&mut self) {
+            self.ended.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+
+    fn tap(
+        live: &Arc<LiveState>,
+        id: u64,
+        frames: &Arc<Mutex<Vec<Bytes>>>,
+        ended: &Arc<AtomicUsize>,
+    ) -> LiveTap {
+        LiveTap {
+            state: Arc::clone(live),
+            id,
+            clock: None,
+            seen: false,
+            inner: Some(Box::new(TapRecorder {
+                frames: Arc::clone(frames),
+                ended: Arc::clone(ended),
+            })),
+        }
+    }
+
+    fn started() -> (Arc<LiveState>, u64) {
+        let live = Arc::new(LiveState::new(now_ms()));
+        let id = live.start(RequestStart {
+            session: None,
+            model: "m".into(),
+            lane: "zai".into(),
+            now_ms: now_ms(),
+        });
+        (live, id)
+    }
+
+    fn last_byte_ms(live: &LiveState) -> u64 {
+        live.snapshot(now_ms(), &crate::live::SnapshotInputs::default())
+            .in_flight[0]
+            .last_byte_ms
+    }
+
+    #[test]
+    fn l40_the_live_tap_moves_the_byte_time_on_every_frame() {
+        let (live, id) = started();
+        let frames = Arc::new(Mutex::new(Vec::new()));
+        let ended = Arc::new(AtomicUsize::new(0));
+        let mut tap = tap(&live, id, &frames, &ended);
+        // A tick so the first frame's byte time sits strictly after the start.
+        std::thread::sleep(std::time::Duration::from_millis(5));
+        for n in 0..4u32 {
+            let frame = Bytes::from(format!("frame-{n}"));
+            let last = last_byte_ms(&live);
+            tap.chunk(&frame);
+            std::thread::sleep(std::time::Duration::from_millis(5));
+            assert!(
+                last_byte_ms(&live) > last,
+                "frame {n} moved last_byte_ms: {last}"
+            );
+        }
+        assert_eq!(
+            *frames.lock().expect("frames"),
+            vec![
+                Bytes::from_static(b"frame-0"),
+                Bytes::from_static(b"frame-1"),
+                Bytes::from_static(b"frame-2"),
+                Bytes::from_static(b"frame-3"),
+            ],
+            "the frames reach the inner tap in order, byte for byte"
+        );
+        tap.end();
+        assert_eq!(
+            ended.load(Ordering::SeqCst),
+            1,
+            "end reaches the inner tap once"
+        );
+    }
+
+    #[test]
+    fn l40_the_live_tap_passes_frames_on_when_the_request_left_the_live_state() {
+        let (live, id) = started();
+        live.finish(
+            id,
+            Finish {
+                status: 200,
+                now_ms: now_ms(),
+                ..Finish::default()
+            },
+        );
+        let frames = Arc::new(Mutex::new(Vec::new()));
+        let ended = Arc::new(AtomicUsize::new(0));
+        let mut tap = tap(&live, id, &frames, &ended);
+        for n in 0..3u32 {
+            tap.chunk(&Bytes::from(format!("late-{n}")));
+        }
+        assert_eq!(
+            *frames.lock().expect("frames"),
+            vec![
+                Bytes::from_static(b"late-0"),
+                Bytes::from_static(b"late-1"),
+                Bytes::from_static(b"late-2"),
+            ],
+            "every frame still reaches the inner tap"
+        );
+        assert!(tap.clock.is_none(), "a gone request gets no clock");
+    }
 }

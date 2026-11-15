@@ -1,3 +1,6 @@
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+
 use huddle_catalog::providers::provider_by_id;
 use huddle_router::adapt::adapt;
 use huddle_router::body::scan_with_strip;
@@ -131,22 +134,56 @@ fn scan_with_strip_and_no_names_is_the_plain_scan() {
     assert_eq!(scanned.scan.members.len(), 1);
 }
 
-#[test]
-fn l2_adapt_without_a_strip_member_returns_the_same_allocation() {
-    let body = r#"{"model":"qwen3.8-max","messages":[]}"#;
-    let input = Bytes::copy_from_slice(body.as_bytes());
-    let ptr = input.as_ptr();
-    let out = adapt(input, provider_by_id("qwen").expect("provider"));
-    assert_eq!(out.as_ptr(), ptr);
-    assert_eq!(text(&out), body);
+/// An owner the test can watch: `dropped` turns true the instant `Bytes` releases it.
+struct Probe {
+    data: Vec<u8>,
+    dropped: Arc<AtomicBool>,
+}
+
+impl AsRef<[u8]> for Probe {
+    fn as_ref(&self) -> &[u8] {
+        &self.data
+    }
+}
+
+impl Drop for Probe {
+    fn drop(&mut self) {
+        self.dropped.store(true, Ordering::SeqCst);
+    }
 }
 
 #[test]
-fn l2_adapt_with_a_strip_member_leaves_one_owner() {
-    let input = Bytes::copy_from_slice(
-        br#"{"model":"qwen3.8-max","context_management":{"x":1},"messages":[]}"#,
-    );
+fn l40_an_edited_body_releases_the_original() {
+    let dropped = Arc::new(AtomicBool::new(false));
+    let input = Bytes::from_owner(Probe {
+        data: br#"{"model":"qwen3.8-max","context_management":{"x":1},"messages":[]}"#.to_vec(),
+        dropped: Arc::clone(&dropped),
+    });
     let out = adapt(input, provider_by_id("qwen").expect("provider"));
+    assert!(
+        dropped.load(Ordering::SeqCst),
+        "the original owner is released while out is still alive"
+    );
     assert_eq!(text(&out), r#"{"model":"qwen3.8-max","messages":[]}"#);
-    assert!(out.is_unique());
+}
+
+#[test]
+fn l40_a_body_with_nothing_to_strip_comes_back_as_the_same_owner() {
+    let dropped = Arc::new(AtomicBool::new(false));
+    let input = Bytes::from_owner(Probe {
+        data: br#"{"model":"qwen3.8-max","messages":[]}"#.to_vec(),
+        dropped: Arc::clone(&dropped),
+    });
+    let ptr = input.as_ptr();
+    let out = adapt(input, provider_by_id("qwen").expect("provider"));
+    assert!(
+        !dropped.load(Ordering::SeqCst),
+        "out holds the original owner"
+    );
+    assert_eq!(out.as_ptr(), ptr, "no copy: the same allocation");
+    drop(out);
+    assert!(
+        dropped.load(Ordering::SeqCst),
+        "dropping out releases the owner"
+    );
 }

@@ -105,8 +105,8 @@ impl JsonUsageTracker {
 }
 
 /// Reads one `data:` line: the event's usage object, and whether it marks the first token.
-/// Only `message_start` and `message_delta` are parsed in full; every other event costs
-/// one scan up to its `type` key.
+/// Only `message_start` and `message_delta` are parsed in full; every other event is skipped
+/// key by key, allocating nothing.
 fn take(line: &[u8]) -> (Option<Usage>, bool) {
     let Some(payload) = line.strip_prefix(b"data:") else {
         return (None, false);
@@ -129,10 +129,75 @@ enum EventKind {
     Other,
 }
 
-/// Reads the `type` of an event object and stops there: the rest of the payload, valid or not,
-/// is never looked at.
+/// Reads the `type` of an event object: the keys it does not need are skipped without
+/// allocation, and a truncated object keeps the type it read before the cut.
 fn kind_of(payload: &[u8]) -> Option<EventKind> {
     use serde::de::{Deserializer as _, IgnoredAny, MapAccess, Visitor};
+
+    /// A map key, read borrowed off the payload: true when the key is exactly `type`.
+    struct IsType(bool);
+
+    impl<'de> serde::Deserialize<'de> for IsType {
+        fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+            struct Key;
+
+            impl<'de> Visitor<'de> for Key {
+                type Value = bool;
+
+                fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+                    formatter.write_str("a key")
+                }
+
+                fn visit_borrowed_str<E: serde::de::Error>(
+                    self,
+                    value: &'de str,
+                ) -> Result<bool, E> {
+                    self.visit_str(value)
+                }
+
+                fn visit_str<E: serde::de::Error>(self, value: &str) -> Result<bool, E> {
+                    Ok(value == "type")
+                }
+            }
+
+            deserializer.deserialize_str(Key).map(IsType)
+        }
+    }
+
+    /// An event type name, read borrowed off the payload.
+    struct KindName(EventKind);
+
+    impl<'de> serde::Deserialize<'de> for KindName {
+        fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+            struct Name;
+
+            impl<'de> Visitor<'de> for Name {
+                type Value = EventKind;
+
+                fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+                    formatter.write_str("an event type name")
+                }
+
+                fn visit_borrowed_str<E: serde::de::Error>(
+                    self,
+                    value: &'de str,
+                ) -> Result<EventKind, E> {
+                    self.visit_str(value)
+                }
+
+                fn visit_str<E: serde::de::Error>(self, value: &str) -> Result<EventKind, E> {
+                    Ok(match value {
+                        "message_start" => EventKind::MessageStart,
+                        "message_delta" => EventKind::MessageDelta,
+                        "content_block_delta" => EventKind::ContentBlockDelta,
+                        _ => EventKind::Other,
+                    })
+                }
+            }
+
+            deserializer.deserialize_str(Name).map(KindName)
+        }
+    }
 
     struct TypeOf<'a>(&'a mut Option<EventKind>);
 
@@ -144,18 +209,14 @@ fn kind_of(payload: &[u8]) -> Option<EventKind> {
         }
 
         fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<(), A::Error> {
-            while let Some(key) = map.next_key::<std::borrow::Cow<str>>()? {
-                if key == "type" {
-                    let kind = map.next_value::<std::borrow::Cow<str>>()?;
-                    *self.0 = Some(match &*kind {
-                        "message_start" => EventKind::MessageStart,
-                        "message_delta" => EventKind::MessageDelta,
-                        "content_block_delta" => EventKind::ContentBlockDelta,
-                        _ => EventKind::Other,
-                    });
-                    return Ok(());
+            // The map is drained to its end: an early return would leave serde_json building
+            // an error for the unread rest, one allocation a frame.
+            while let Some(IsType(is_type)) = map.next_key::<IsType>()? {
+                if is_type && self.0.is_none() {
+                    *self.0 = Some(map.next_value::<KindName>()?.0);
+                } else {
+                    map.next_value::<IgnoredAny>()?;
                 }
-                map.next_value::<IgnoredAny>()?;
             }
             Ok(())
         }
@@ -163,8 +224,8 @@ fn kind_of(payload: &[u8]) -> Option<EventKind> {
 
     let mut kind = None;
     let mut reader = serde_json::Deserializer::from_slice(payload);
-    // The reader reports the unread rest as an error once the visitor returns early; the
-    // type it captured before that is the answer.
+    // A payload that is no object leaves the type unset; a truncated object keeps the type
+    // it read before the cut.
     let _ = (&mut reader).deserialize_map(TypeOf(&mut kind));
     kind
 }
