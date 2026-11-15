@@ -4,7 +4,7 @@ use std::collections::hash_map::RandomState;
 use std::ffi::OsString;
 use std::fs::{self, OpenOptions};
 use std::hash::{BuildHasher, Hasher};
-use std::io;
+use std::io::{self, Write};
 use std::net::TcpListener;
 use std::path::{Path, PathBuf};
 use std::thread;
@@ -33,8 +33,9 @@ pub fn listen() -> TcpListener {
 
 /// A port for a child process to bind, outside the kernel's ephemeral ranges (macOS 49152-65535,
 /// Linux 32768-60999), so no `127.0.0.1:0` listener of a parallel test can take it. The answer is a
-/// lease file in the lease folder that every test binary and every guarded run respects; it expires
-/// after an hour.
+/// lease file in the lease folder that every test binary and every guarded run respects. The file
+/// holds the pid of the process that took it: the lease is free again the moment that process is
+/// gone, and a lease with no readable owner expires after an hour.
 pub fn free_port() -> u16 {
     let dir = lease_dir(std::env::var_os(LEASE_DIR_VAR), &std::env::temp_dir());
     match free_in(&dir, FIRST_PORT, LAST_PORT) {
@@ -128,20 +129,38 @@ fn take_stale(dir: &Path, file: &Path, port: u16) -> io::Result<bool> {
     taken
 }
 
+// Creates the file and writes the caller's pid into it. A reader that sees the file before the pid
+// lands finds no owner and falls back to the file's age.
 fn create(file: &Path) -> io::Result<()> {
-    OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(file)
-        .map(|_| ())
+    let mut lease = OpenOptions::new().write(true).create_new(true).open(file)?;
+    let _ = writeln!(lease, "{}", std::process::id());
+    Ok(())
 }
 
 fn is_stale(file: &Path) -> bool {
+    owner_is_gone(file) || older_than_expiry(file)
+}
+
+fn older_than_expiry(file: &Path) -> bool {
     fs::metadata(file)
         .and_then(|meta| meta.modified())
         .ok()
         .and_then(|modified| SystemTime::now().duration_since(modified).ok())
         .is_some_and(|age| age > STALE_AFTER)
+}
+
+// Answers whether the file names an owner pid that no longer exists. EPERM means the pid exists.
+fn owner_is_gone(file: &Path) -> bool {
+    let Some(pid) = fs::read_to_string(file)
+        .ok()
+        .and_then(|text| text.trim().parse::<libc::pid_t>().ok())
+        .filter(|pid| *pid > 0)
+    else {
+        return false;
+    };
+    // SAFETY: `kill` with signal 0 sends nothing; it only reports whether the pid can be signalled.
+    let rc = unsafe { libc::kill(pid, 0) };
+    rc == -1 && io::Error::last_os_error().raw_os_error() == Some(libc::ESRCH)
 }
 
 // Another binary removed the lease directory between the make and the create: ENOENT on Linux and
