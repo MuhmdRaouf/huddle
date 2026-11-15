@@ -62,6 +62,20 @@ impl History {
         })
     }
 
+    /// Opens the file for writing only when it exists: no folder, file or schema is created, and
+    /// a missing file is an error.
+    pub fn open_existing(path: &Path) -> Result<History, HistoryError> {
+        let conn = Connection::open_with_flags(
+            path,
+            OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+        )?;
+        conn.busy_timeout(std::time::Duration::from_secs(5))?;
+        Ok(History {
+            conn,
+            path: path.to_path_buf(),
+        })
+    }
+
     /// Opens an existing file for reading only. Nothing is created, migrated or changed, and a
     /// read never waits for the writer: the file is in WAL mode, so readers and the writer run
     /// side by side.

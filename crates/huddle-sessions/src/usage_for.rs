@@ -2,7 +2,9 @@
 //! time. Like the scan, it decodes only the fields `log::Summary` names: message text and
 //! tool data are never held.
 
-use std::fs;
+use std::collections::HashSet;
+use std::fs::{self, File};
+use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 
 use crate::log::Summary;
@@ -29,20 +31,20 @@ pub fn usage_for(claude_dir: &Path, ids: &[String], since_ms: u64) -> Vec<LogUsa
     if ids.is_empty() {
         return Vec::new();
     }
+    let wanted: HashSet<&str> = ids.iter().map(String::as_str).collect();
     let mut found = Vec::new();
     let mut repos = Repos::default();
     for log in logs_since(&claude_dir.join("projects"), since_ms) {
-        let Ok(text) = fs::read_to_string(&log.path) else {
+        let Some(summary) = summarize(&log.path, &wanted) else {
             continue;
         };
-        let summary = Summary::parse(&text);
         let project = summary
             .cwd
             .as_deref()
             .and_then(|cwd| repos.of(cwd))
             .map(|repo| repo.name);
         for tag in summary.tags(&log.agent_id) {
-            if ids.contains(&tag.request_id) {
+            if wanted.contains(tag.request_id.as_str()) {
                 found.push(LogUsage {
                     request_id: tag.request_id,
                     session: log.session.clone(),
@@ -55,6 +57,21 @@ pub fn usage_for(claude_dir: &Path, ids: &[String], since_ms: u64) -> Vec<LogUsa
         }
     }
     found
+}
+
+/// Reads the log one line at a time and keeps only the requests in `wanted`, so memory holds a
+/// line and the wanted ids, never the file. None when the log cannot be opened; a line that
+/// cannot be read ends the read.
+fn summarize(path: &Path, wanted: &HashSet<&str>) -> Option<Summary> {
+    let mut lines = BufReader::new(File::open(path).ok()?).lines();
+    let mut summary = Summary::default();
+    while let Some(Ok(line)) = lines.next() {
+        summary.feed(&line);
+        summary
+            .requests
+            .retain(|(id, ..)| wanted.contains(id.as_str()));
+    }
+    Some(summary)
 }
 
 struct LogFile {

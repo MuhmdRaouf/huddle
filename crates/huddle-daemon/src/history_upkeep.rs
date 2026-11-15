@@ -76,10 +76,11 @@ pub fn fill(
     now_ms: u64,
     window_ms: u64,
 ) -> Result<usize, HistoryError> {
-    if !db_path.exists() {
-        return Ok(0);
-    }
-    let mut history = History::open(db_path)?;
+    let mut history = match History::open_existing(db_path) {
+        Ok(history) => history,
+        Err(_) if !db_path.exists() => return Ok(0),
+        Err(error) => return Err(error),
+    };
     fill_missing(&mut history, claude_dir, now_ms, window_ms)
 }
 

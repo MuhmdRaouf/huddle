@@ -168,11 +168,16 @@ impl Summary {
     pub(crate) fn parse(text: &str) -> Summary {
         let mut summary = Summary::default();
         for line in text.lines() {
-            if let Ok(line) = serde_json::from_str::<Line>(line) {
-                summary.add(line);
-            }
+            summary.feed(line);
         }
         summary
+    }
+
+    /// Reads one line; a line that is not a JSON object of the expected shape is skipped.
+    pub(crate) fn feed(&mut self, line: &str) {
+        if let Ok(line) = serde_json::from_str::<Line>(line) {
+            self.add(line);
+        }
     }
 
     fn add(&mut self, mut line: Line) {
