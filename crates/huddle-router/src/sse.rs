@@ -105,26 +105,82 @@ impl JsonUsageTracker {
 }
 
 /// Reads one `data:` line: the event's usage object, and whether it marks the first token.
+/// Only `message_start` and `message_delta` are parsed in full; every other event costs
+/// one scan up to its `type` key.
 fn take(line: &[u8]) -> (Option<Usage>, bool) {
     let Some(payload) = line.strip_prefix(b"data:") else {
         return (None, false);
     };
-    let Ok(event) = serde_json::from_slice::<serde_json::Value>(payload) else {
+    let Some(kind) = kind_of(payload) else {
         return (None, false);
     };
-    let Some(object) = event.as_object() else {
-        return (None, false);
-    };
-    let kind = object.get("type").and_then(|value| value.as_str());
-    let first_token = kind == Some("content_block_delta");
-    let found = match kind {
-        Some("message_start") => object
+    match kind {
+        EventKind::ContentBlockDelta => (None, true),
+        EventKind::MessageStart | EventKind::MessageDelta => (usage_of_event(payload, kind), false),
+        EventKind::Other => (None, false),
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum EventKind {
+    MessageStart,
+    MessageDelta,
+    ContentBlockDelta,
+    Other,
+}
+
+/// Reads the `type` of an event object and stops there: the rest of the payload, valid or not,
+/// is never looked at.
+fn kind_of(payload: &[u8]) -> Option<EventKind> {
+    use serde::de::{Deserializer as _, IgnoredAny, MapAccess, Visitor};
+
+    struct TypeOf<'a>(&'a mut Option<EventKind>);
+
+    impl<'de> Visitor<'de> for TypeOf<'_> {
+        type Value = ();
+
+        fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+            formatter.write_str("an event object")
+        }
+
+        fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<(), A::Error> {
+            while let Some(key) = map.next_key::<std::borrow::Cow<str>>()? {
+                if key == "type" {
+                    let kind = map.next_value::<std::borrow::Cow<str>>()?;
+                    *self.0 = Some(match &*kind {
+                        "message_start" => EventKind::MessageStart,
+                        "message_delta" => EventKind::MessageDelta,
+                        "content_block_delta" => EventKind::ContentBlockDelta,
+                        _ => EventKind::Other,
+                    });
+                    return Ok(());
+                }
+                map.next_value::<IgnoredAny>()?;
+            }
+            Ok(())
+        }
+    }
+
+    let mut kind = None;
+    let mut reader = serde_json::Deserializer::from_slice(payload);
+    // The reader reports the unread rest as an error once the visitor returns early; the
+    // type it captured before that is the answer.
+    let _ = (&mut reader).deserialize_map(TypeOf(&mut kind));
+    kind
+}
+
+/// The usage of a `message_start` or `message_delta` event, parsed in full.
+fn usage_of_event(payload: &[u8], kind: EventKind) -> Option<Usage> {
+    let event: serde_json::Value = serde_json::from_slice(payload).ok()?;
+    let object = event.as_object()?;
+    match kind {
+        EventKind::MessageStart => object
             .get("message")
             .and_then(|message| message.as_object())
             .and_then(|message| message.get("usage"))
             .and_then(|usage| usage.as_object())
             .map(usage_from),
-        Some("message_delta") => {
+        EventKind::MessageDelta => {
             object
                 .get("usage")
                 .and_then(|usage| usage.as_object())
@@ -137,8 +193,7 @@ fn take(line: &[u8]) -> (Option<Usage>, bool) {
                 })
         }
         _ => None,
-    };
-    (found, first_token)
+    }
 }
 
 /// Counts a key only when it is a JSON integer.
@@ -299,6 +354,95 @@ mod tests {
             tracker.finish().expect("usage").stop_reason.as_deref(),
             Some("end_turn")
         );
+    }
+
+    #[test]
+    fn l8_delta_events_are_not_parsed_into_a_value() {
+        let mut tracker = SseUsageTracker::new();
+        tracker.feed(
+            b"data: {\"type\":\"message_start\",\"message\":{\"usage\":{\"input_tokens\":7}}}\n\n",
+        );
+        // A delta whose body is not valid JSON: only a reader that stops at `type` sees it as one.
+        for _ in 0..1000 {
+            tracker.feed(b"data: {\"type\":\"content_block_delta\",\"delta\":{\"text\":\"x\n\n");
+        }
+        tracker.feed(b"data: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"},\"usage\":{\"output_tokens\":9}}\n\n");
+        assert!(tracker.first_token_seen());
+        assert_eq!(
+            tracker.usage(),
+            Some(&Usage {
+                input_tokens: Some(7),
+                output_tokens: Some(9),
+                stop_reason: Some("end_turn".into()),
+                ..Usage::default()
+            })
+        );
+    }
+
+    #[test]
+    fn l8_usage_and_stop_reason_match_the_old_parse_on_the_fixtures() {
+        let mut tracker = SseUsageTracker::new();
+        let stream = concat!(
+            "event: message_start\n",
+            "data: {\"type\":\"message_start\",\"message\":{\"id\":\"m\",\"usage\":{\"input_tokens\":12,\"cache_read_input_tokens\":3,\"output_tokens\":1}}}\n\n",
+            "data: {\"message\":{},\"type\":\"ping\"}\n\n",
+            "data: {\"index\":0,\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"hi\"}}\n\n",
+            "data: {\"delta\":{\"stop_reason\":\"tool_use\"},\"type\":\"message_delta\",\"usage\":{\"output_tokens\":78}}\n\n",
+            "data: {\"type\":\"message_stop\"}\n\n",
+        );
+        tracker.feed(stream.as_bytes());
+        assert!(tracker.first_token_seen());
+        assert_eq!(
+            tracker.usage(),
+            Some(&Usage {
+                input_tokens: Some(12),
+                output_tokens: Some(78),
+                cache_read_input_tokens: Some(3),
+                stop_reason: Some("tool_use".into()),
+                ..Usage::default()
+            })
+        );
+    }
+
+    fn expected_usage() -> Usage {
+        Usage {
+            input_tokens: Some(12),
+            output_tokens: Some(78),
+            stop_reason: Some("end_turn".into()),
+            ..Usage::default()
+        }
+    }
+
+    #[test]
+    fn l8_crlf_line_endings_still_count() {
+        let mut tracker = SseUsageTracker::new();
+        tracker.feed(b"event: message_start\r\ndata: {\"type\":\"message_start\",\"message\":{\"usage\":{\"input_tokens\":12}}}\r\n\r\n");
+        tracker.feed(b"data: {\"type\":\"content_block_delta\"}\r\n\r\n");
+        tracker.feed(b"data: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"},\"usage\":{\"output_tokens\":78}}\r\n\r\n");
+        assert!(tracker.first_token_seen());
+        assert_eq!(tracker.usage(), Some(&expected_usage()));
+    }
+
+    #[test]
+    fn l8_an_escaped_type_value_or_key_still_counts() {
+        let mut tracker = SseUsageTracker::new();
+        tracker.feed(b"data: {\"type\":\"message\\u005fstart\",\"message\":{\"usage\":{\"input_tokens\":12}}}\n\n");
+        tracker.feed(b"data: {\"\\u0074ype\":\"content_block_delta\"}\n\n");
+        tracker.feed(b"data: {\"a\\\"b\":1,\"\\u0074ype\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"},\"usage\":{\"output_tokens\":78}}\n\n");
+        assert!(tracker.first_token_seen());
+        assert_eq!(tracker.usage(), Some(&expected_usage()));
+    }
+
+    #[test]
+    fn l8_an_error_event_mid_stream_neither_fails_nor_adds_usage() {
+        let mut tracker = SseUsageTracker::new();
+        tracker.feed(
+            b"data: {\"type\":\"message_start\",\"message\":{\"usage\":{\"input_tokens\":12}}}\n\n",
+        );
+        tracker.feed(b"event: error\ndata: {\"type\":\"error\",\"error\":{\"type\":\"overloaded_error\",\"message\":\"Overloaded\"},\"usage\":{\"output_tokens\":999}}\n\n");
+        assert_eq!(tracker.usage().expect("usage").output_tokens, None);
+        tracker.feed(b"data: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"},\"usage\":{\"output_tokens\":78}}\n\n");
+        assert_eq!(tracker.usage(), Some(&expected_usage()));
     }
 
     #[test]
