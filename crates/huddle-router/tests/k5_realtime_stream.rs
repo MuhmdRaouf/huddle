@@ -77,6 +77,7 @@ struct Feed {
     buf: String,
     head: String,
     machines: Vec<Value>,
+    evicted: bool,
 }
 
 impl Feed {
@@ -93,6 +94,7 @@ impl Feed {
             buf: String::new(),
             head: String::new(),
             machines: Vec::new(),
+            evicted: false,
         };
         while !feed.buf.contains("\r\n\r\n") {
             if !feed.fill().await {
@@ -124,6 +126,10 @@ impl Feed {
             if let Some(at) = self.buf.find("\n\n") {
                 let frame: String = self.buf.drain(..at + 2).collect();
                 let frame = frame.trim();
+                if frame.lines().any(|l| l == "event: evicted") {
+                    self.evicted = true;
+                    return None;
+                }
                 if let Some(data) = frame.lines().find_map(|l| l.strip_prefix("data: ")) {
                     let json = serde_json::from_str(data).expect("json");
                     if frame.lines().any(|l| l == "event: machine") {
@@ -551,5 +557,27 @@ async fn c2_evicted_feed_ends_while_its_reader_is_stalled() {
         "{seen} open streams, the stalled one outlived its eviction"
     );
     drop(stalled);
+    let _ = r.stop.send(true);
+}
+
+#[tokio::test]
+async fn l32_an_evicted_feed_gets_an_evicted_event() {
+    let anthropic = FakeUpstream::start(|_, _| Step::answer(200, "{}")).await;
+    let r = rig(anthropic).await;
+    let mut feeds = Vec::new();
+    for _ in 0..MAX_LIVE_STREAMS + 1 {
+        feeds.push(Feed::open(r.port, "?recent=0", "").await);
+    }
+    let oldest = &mut feeds[0];
+    let ended = tokio::time::timeout(Duration::from_secs(5), async {
+        while oldest.next().await.is_some() {}
+    })
+    .await;
+    assert!(ended.is_ok(), "the oldest feed ends once it is evicted");
+    assert!(oldest.evicted, "the oldest feed is told it was evicted");
+    assert!(
+        !feeds[1].evicted,
+        "a feed inside the cap is not told it was evicted"
+    );
     let _ = r.stop.send(true);
 }

@@ -2,7 +2,7 @@ const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
 /* Every snapshot string passes through esc; setHtml is the one place markup is written. */
 const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 function setHtml(el,html){el.innerHTML=html;el.querySelectorAll('[data-css]').forEach(n=>{n.style.cssText=n.dataset.css})}
-/* A region is written only when its markup changed; a focused control returns by id or data key. */
+/* A region is written only when its markup changed; a focused control returns by id or data key */
 const LASTHTML=new WeakMap(), FOCUS_KEYS=['data-copy','data-sort','data-open','data-seg','data-metric','data-focus','data-q','data-hf','data-hp','data-close'];
 function focusSelector(el){if(el.id)return '#'+CSS.escape(el.id);for(const a of FOCUS_KEYS){const v=el.getAttribute(a);if(v!==null)return `[${a}="${CSS.escape(v)}"]`}return null}
 function patch(el,html){if(LASTHTML.get(el)===html)return false;
@@ -185,7 +185,7 @@ const JOB_ENDED=['completed','failed','accepted','cancelled'],ACTIVE_STATES=['ne
 /* live jobs, plus finished ones that ended inside the global time range */
 function jobsInRange(){const{from,to}=curRange(NOW);
  return JOBS.concat(JOBS_DONE.filter(j=>{const e=j.end||j.started||0;return e>=from&&e<=to}))}
-/* one project per git repository: its sessions, worktrees and jobs roll up under the repo key */
+/* one project per git repository: sessions, worktrees and jobs roll up under the repo key */
 function projects(){
  const P={},get=(k,n)=>P[k]||(P[k]={key:k,name:n,ss:[],wts:[],jobs:[]});
  SESS.forEach(s=>{if(s.project)get(s.repo||s.project,s.project).ss.push(s)});
@@ -201,7 +201,7 @@ function projects(){
 }
 
 const FAIL_RATE=0.2;
-/* Live facts decide the status: quota, error rate, wiring. A provider with traffic is never Not set up. */
+/* Live facts decide the status: quota, error rate, wiring; a provider with traffic is never Not set up */
 function provStatus(x){
  if(x.quotaOut)return ['bad','Out of quota'];
  if(x.id==='anthropic'&&RT.path.state==='failing')return ['bad','Failing'];
@@ -284,7 +284,7 @@ function histSeries(d){const w=Math.max(1,num(d.width_ms)||3e5),s0=Math.floor(d.
  arr(d.buckets).forEach(x=>{const k=b[Math.min(N-1,Math.max(0,Math.floor((x.start_ms-s0)/w)))],o={n:n0(x.n),err:n0(x.err),tok:n0(x.tok_in)+n0(x.tok_out),p50:n0(x.ttft_p50),cost:n0(x.cost_usd)};
   k.byM[x.model]=o;k.n+=o.n;k.err+=o.err;k.tok+=o.tok;k.cost+=o.cost;k.w+=o.p50*o.n;names.add(x.model)});
  b.forEach(k=>{k.p50=k.n?k.w/k.n:0});return {b,mn:[...names].filter(Boolean).sort(),bw:w}}
-/* per-model rows for a history range: totals carry counts, cost and the latency of their own rows */
+/* per-model rows for a history range: totals carry counts, cost and their rows' latency */
 function histRows(){const ts=arr(HIST.tot&&HIST.tot.totals),all=Math.max(1,sum(ts.map(t=>n0(t.n))));
  return ts.map(t=>({id:t.key,n:n0(t.n),err:n0(t.err),...tokSplit(t.tok_in,t.cache_read,t.cache_write),out:n0(t.tok_out),p50:num(t.ttft_p50),p95:num(t.ttft_p95),cost:num(t.cost_usd),priced:t.priced!==false,share:n0(t.n)/all}))}
 const RM=()=>liveRange()?MODELS:histRows();
@@ -396,7 +396,7 @@ document.addEventListener('keydown',e=>{
 function renderRangeBar(){const el=$('#rangebar');if(el){menuDrop();setHtml(el,rangeBar());const pop=$('#rpanel');if(pop&&pop.getBoundingClientRect().right>innerWidth-8)pop.classList.add('right')}}
 function closeRangePanel(){HIST.picking=false;renderRangeBar();const b=$('#mb-range');if(b)b.focus()}
 function openRangePanel(){HIST.picking=true;initPick();renderRangeBar();const n=$('#rfrom');if(n)n.focus()}
-/* time-picker clicks: the button toggles, a quick range applies, Apply sends, outside closes */
+/* time-picker clicks: toggle, quick range, Apply, outside closes */
 function rangeClick(e){
  const t=e.target;if(!t||!t.closest)return false;
  if(t.closest('#rapply')){applyCustom();return true}
@@ -407,7 +407,7 @@ function rangeClick(e){
  if(t.closest('[data-rtoggle]')){HIST.picking?closeRangePanel():openRangePanel();return true}
  if(HIST.picking&&!t.closest('#rpanel')){closeRangePanel();return true}
  return false}
-/* the footer zone switch redraws only while the panel is open; boot's call is a no-op otherwise */
+/* the footer zone switch redraws only while the panel is open */
 function renderTzBar(){const el=$('#tzfoot');if(el)setHtml(el,tzFootHtml())}
 function setTz(utc){if(utc===TZ.utc)return;tzSet(utc);renderTzBar();applyRange();if(DR)renderDrawer(true)}
 function applyRange(){HIST.bk=HIST.tot=HIST.ser=null;HIST.err=false;HIST.picking=false;CH.focus=null;if(liveRange()&&CH.metric==='cost')CH.metric='req';
@@ -442,7 +442,7 @@ const histCols=get=>[
  {k:'hreq',get label(){return `Requests (${rangeShort()})`},num:1,sm:1,v:x=>n0((get(x)||HZERO).n),h:x=>hCell(get(x),t=>t.n?fmt(t.n):'<span class="faint">0</span>')},
  {k:'htok',get label(){return `Tokens (${rangeShort()})`},num:1,sm:1,v:x=>n0((get(x)||HZERO).tok_in)+n0((get(x)||HZERO).tok_out),h:x=>hCell(get(x),t=>t.n?`${fmt(t.tok_in)} <span class="faint">/</span> ${fmt(t.tok_out)}`:NA)},
  {k:'hcost',get label(){return `API price (${rangeShort()})`},num:1,v:x=>n0((get(x)||HZERO).cost_usd),h:x=>hCell(get(x),t=>t.n?costCell(t):NA)}];
-/* the History block of a session or project sheet: totals, a daily trend and the models used */
+/* the History block of a session or project sheet: totals, daily trend, models */
 function histBlock(key,t){const tr=HT.trend[key],models=key.startsWith('session:')?HT.mod[key]:t&&t.models,head=`<h4>History <span class="faint">${rangeText()}</span></h4>`;
  if(!t)return `<div>${head}<div class="card pad">${HT.err?'<span class="badc">Could not load history. Showing the last data.</span> <button type="button" class="cmd" data-retry>Retry</button>':checking()}</div></div>`;
  if(!t.n)return `<div>${head}<div class="card"><div class="allclear">${ic('info')} No requests in ${rangeText()}</div></div></div>`;
@@ -596,10 +596,10 @@ function getState(){if(document.visibilityState==='hidden')return;return fetch(s
 /* rf:start */
 const RF_CHOICES=[['off','Off',0],['rt','Realtime',1e3],['1s','1s',1e3],['5s','5s',5e3],['10s','10s',1e4],['30s','30s',3e4],['1m','1m',6e4],['5m','5m',3e5],['15m','15m',9e5],['30m','30m',18e5],['1h','1h',36e5]].map(([k,t,ms])=>({k,t,ms}));
 const RF_FLOOR=5000,RF_STORE='huddle-refresh',RF_DEFAULT='1s',RF_TRIES=3,RF_RETRY_MAX=1e4,RF_LONG=6e4;
-/* The live snapshot is fetched at the chosen interval, history panels at the same interval but never faster than env.floor(): RF_FLOOR, or RF_LONG while the range is 7 days or more.
-   Off sets no timer. A hidden tab clears the timers and fetches once when it shows again.
-   Realtime holds one event stream instead of the state timer; history panels run every env.floor(). A dropped stream is retried
-   with a delay that grows to RF_RETRY_MAX, and after RF_TRIES failed tries the 1 s poll runs until a try succeeds. */
+/* The live snapshot is fetched at the chosen interval; history panels at it too, never faster than env.floor() (RF_FLOOR, or RF_LONG for a range of 7 days or more).
+   Off sets no timer; a hidden tab clears the timers and fetches once on show.
+   Realtime holds one event stream instead of the state timer. A dropped stream is retried with a delay up to RF_RETRY_MAX;
+   after RF_TRIES failures a 1 s poll runs until a try succeeds. An evicted stream is not retried: the page polls every RF_FLOOR. */
 function rfMake(env){
  let key=RF_DEFAULT,timers=[],since=0,busy=false,hidden=false,stream=null,retry=null,poll=null,fails=0,down=false;
  try{const v=env.store.getItem(RF_STORE);if(RF_CHOICES.some(c=>c.k===v))key=v}catch(e){}
@@ -618,7 +618,8 @@ function rfMake(env){
    ok(){if(stream!==h)return;fails=0;if(poll){env.cancel(poll);poll=null}if(down){down=false;told()}},
    fail(){if(stream!==h)return;stream=null;h.close();fails++;if(!down){down=true;told()}
     if(fails>=RF_TRIES&&!poll)poll=env.every(fetchState,1e3);
-    retry=env.later(connect,Math.min(RF_RETRY_MAX,1e3*2**(fails-1)))}});
+    retry=env.later(connect,Math.min(RF_RETRY_MAX,1e3*2**(fails-1)))},
+   evicted(){if(stream===h){stopLive();poll=env.every(fetchState,RF_FLOOR)}}});
   stream=h};
  const disarm=()=>{timers.forEach(env.cancel);timers=[];stopLive()};
  const arm=()=>{disarm();if(hidden||key==='off')return;const ms=choice().ms;
@@ -634,7 +635,7 @@ function rfMake(env){
   set(k){if(!RF_CHOICES.some(c=>c.k===k))return;key=k;try{env.store.setItem(RF_STORE,k)}catch(e){}arm();told()},
   visibility(visible){if(!visible){hidden=true;disarm();return}if(!hidden)return;hidden=false;if(key!=='off')all(false);arm()}}}
 /* rf:end */
-/* HMODE: 0 a page opens or repaints, 1 the history timer, 2 refresh now; a panel younger than its age is not reloaded */
+/* HMODE: 0 page open or repaint, 1 history timer, 2 refresh now; a panel younger than its age is not reloaded */
 let HMODE=0;
 const RF_SLACK=50;
 /* a range of 7 days or more is slow and costly to read: its panels refresh every RF_LONG */
@@ -645,7 +646,7 @@ const pageLoaders=()=>({models:[loadModels],usage:[loadUsage],providers:[loadPro
 function refreshHistory(manual){HMODE=manual?2:1;try{loadHistory();loadTotals();pageLoaders().forEach(f=>f())}finally{HMODE=0}}
 /* the stream is slim unless the open page shows the rows */
 function openStream(cb){STREAM_FULL=wantRecent();const es=new EventSource('/huddle-router/live'+(STREAM_FULL?'':'?recent=0'));
- es.onopen=cb.ok;es.onerror=cb.fail;es.addEventListener('machine',e=>{try{MACH=JSON.parse(e.data)}catch(x){}});es.addEventListener('snapshot',e=>{try{onSnapshot(JSON.parse(e.data))}catch(x){}});return es}
+ es.onopen=cb.ok;es.onerror=cb.fail;es.addEventListener('evicted',cb.evicted);es.addEventListener('machine',e=>{try{MACH=JSON.parse(e.data)}catch(x){}});es.addEventListener('snapshot',e=>{try{onSnapshot(JSON.parse(e.data))}catch(x){}});return es}
 const RF=rfMake({open:openStream,later:(f,ms)=>setTimeout(f,ms),changed:()=>{menuLabel('refresh');renderRefNow()},store:{getItem:k=>localStorage.getItem(k),setItem:(k,v)=>localStorage.setItem(k,v)},visible:()=>document.visibilityState!=='hidden',every:(f,ms)=>setInterval(f,ms),cancel:clearInterval,state:getState,history:refreshHistory,floor:histFloor});
 MENUS.refresh={label:'Refresh interval',opts:()=>RF.choices().map(c=>({k:c.k,t:c.k===RF.key()?RF.label():c.t})),cur:()=>RF.key(),pick:k=>RF.set(k)};
 function renderRefNow(){const b=$('#refnow');if(!b)return;const off=RF.nowDisabled();b.classList.toggle('off',off);if(off)b.setAttribute('aria-disabled','true');else b.removeAttribute('aria-disabled');b.title=RF.nowTitle()}

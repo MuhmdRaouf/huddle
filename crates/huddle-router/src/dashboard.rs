@@ -460,7 +460,7 @@ impl Dashboard {
 
     /// The snapshot as a server-sent event stream: one at once, then at most four a second while
     /// the live state changes. `slim` leaves the recent rows out, as `/state?recent=0` does. Past
-    /// `MAX_LIVE_STREAMS` open feeds the oldest closes. The task ends when the client leaves.
+    /// `MAX_LIVE_STREAMS` open feeds the oldest gets an `evicted` event and closes. The task ends when the client leaves.
     pub fn live_answer(self: &Arc<Self>, slim: bool) -> Response<RespBody> {
         let (tx, rx) = mpsc::channel(2);
         let evicted = self.register_feed();
@@ -527,7 +527,10 @@ impl Dashboard {
                 }
                 () = sleep_until_some(ping) => None,
                 _ = tx.closed() => return,
-                _ = &mut evicted => return,
+                _ = &mut evicted => {
+                    tell_evicted(&tx);
+                    return;
+                }
                 () = drained(self.drain.clone()) => return,
             };
             let text = match event {
@@ -860,8 +863,20 @@ async fn send(
 ) -> bool {
     tokio::select! {
         sent = tx.send(Ok(Frame::data(text))) => sent.is_ok(),
-        _ = evicted => false,
+        _ = evicted => {
+            tell_evicted(tx);
+            false
+        }
     }
+}
+
+/// The last frame of a feed closed for the cap. A page that gets it polls instead of
+/// reconnecting, which would evict the next feed in turn. Best effort: a reader that has
+/// stopped reading has a full queue and just sees the stream end.
+fn tell_evicted(tx: &mpsc::Sender<Result<Frame<Bytes>, crate::server::BodyCut>>) {
+    let _ = tx.try_send(Ok(Frame::data(Bytes::from_static(
+        b"event: evicted\ndata: {}\n\n",
+    ))));
 }
 
 /// Resolves once `drain` has left Serving; never when there is no drain to watch.

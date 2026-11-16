@@ -3439,3 +3439,21 @@ fn l30_the_page_renders_the_same_from_machine_and_snapshot_events() {
     assert_eq!(v["s1"], serde_json::json!(["s1", "working", null]));
     assert_eq!(v["idle"], serde_json::json!(["s1", "your_turn", 5]));
 }
+
+#[test]
+fn l32_an_evicted_page_polls_instead_of_reconnecting() {
+    let v = run_refresh_script(
+        "const a=make(store('rt'));a.rf.start();a.streams[0].cb.ok();\n\
+         const state0=a.calls.state;\n\
+         a.streams[0].cb.evicted();\n\
+         a.clock.advance(30000);\n\
+         console.log(JSON.stringify({opened:a.streams.length,closed:a.streams[0].closed,polls:a.calls.state-state0,label:a.rf.label()}));",
+    );
+    assert_eq!(v["opened"], 1, "no stream is opened after the eviction");
+    assert_eq!(v["closed"], true, "the evicted stream is closed");
+    assert_eq!(v["polls"], 6, "a poll runs every 5 s for 30 s");
+    assert_eq!(
+        v["label"], "Realtime",
+        "the page does not claim to reconnect"
+    );
+}
