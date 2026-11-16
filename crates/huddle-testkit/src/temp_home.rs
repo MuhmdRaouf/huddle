@@ -16,6 +16,14 @@ use crate::ports;
 /// How long a drop waits for the record of a router whose lock file exists.
 const LATE_RECORD_WAIT: Duration = Duration::from_secs(3);
 
+/// How long a drop keeps removing the home while a writer still recreates it. A loaded runner
+/// can hold a child's last writes for seconds; a drop that gives up earlier leaves the folder.
+const REMOVAL_BUDGET: Duration = Duration::from_secs(15);
+
+/// The file in a home's root that names the test that made it, so the suite guard can say who
+/// left the home behind.
+pub const TEST_NAME_FILE: &str = ".test-name";
+
 const KEPT_FROM_PARENT: &[&str] = &["LANG", "LC_ALL", "LC_CTYPE", "USER", "LOGNAME"];
 
 /// A directory under the OS per-user temp directory, removed on drop. Nothing here touches the
@@ -57,6 +65,11 @@ impl TempHome {
         ] {
             fs::create_dir_all(root.join(dir))?;
         }
+        let name = std::thread::current()
+            .name()
+            .unwrap_or("unnamed")
+            .to_string();
+        fs::write(root.join(TEST_NAME_FILE), format!("{name}\n"))?;
         let router_port = ports::free_port();
         let inherited: Vec<(String, String)> = KEPT_FROM_PARENT
             .iter()
@@ -124,13 +137,14 @@ impl Drop for TempHome {
         }
         stop_key_page_helpers(&self.root);
         stop_recorded_router(&self.root);
-        stop_writers_under(&self.root);
-        // A child's last writes can land while the tree is being removed; a
-        // few short retries close that race without waiting on a live child.
-        for _ in 0..20 {
+        // A child's last writes can land while the tree is being removed, and a writer can start
+        // late: look again for writers and remove again until the folder stays gone.
+        let deadline = Instant::now() + REMOVAL_BUDGET;
+        loop {
+            stop_writers_under(&self.root);
             let removed = fs::remove_dir_all(&self.root).is_ok();
-            std::thread::sleep(std::time::Duration::from_millis(25));
-            if removed && !self.root.exists() {
+            std::thread::sleep(Duration::from_millis(25));
+            if (removed && !self.root.exists()) || Instant::now() >= deadline {
                 return;
             }
         }

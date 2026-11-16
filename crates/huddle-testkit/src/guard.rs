@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use crate::ports::{LEASE_DIR, LEASE_DIR_VAR};
-use crate::temp_home::inside_git_tree;
+use crate::temp_home::{TEST_NAME_FILE, inside_git_tree};
 
 const RUN_PREFIX: &str = "g";
 const OWNER_FILE: &str = "owner.pid";
@@ -52,7 +52,7 @@ fn guarded(temp_root: &Path, command: &[String], out: &mut dyn Write) -> io::Res
     let left = entries_left(&run_dir)?;
     let held: Vec<Vec<String>> = left
         .iter()
-        .map(|name| names_inside(&run_dir.join(name)))
+        .map(|name| describe_leftover(&run_dir.join(name)))
         .collect();
     let escaped = stop_processes_under(&run_dir, out)?;
     fs::remove_dir_all(&run_dir)?;
@@ -101,20 +101,52 @@ fn entries_left(run_dir: &Path) -> io::Result<Vec<String>> {
     Ok(names)
 }
 
-// The names two levels down inside a leftover, never what a file holds: a temp home's folders and
-// files name the test that made it.
-fn names_inside(entry: &Path) -> Vec<String> {
-    let mut paths = Vec::new();
-    for child in sorted_names(entry) {
-        let grandchildren = sorted_names(&entry.join(&child));
-        paths.push(child.clone());
-        paths.extend(
-            grandchildren
-                .into_iter()
-                .map(|name| format!("{child}/{name}")),
-        );
+const LEFTOVER_ENTRIES: usize = 60;
+const LEFTOVER_DEPTH: usize = 8;
+const FIRST_LINE_CHARS: usize = 120;
+
+// What a leftover holds, so the log says who made it: the test named by a temp home's marker file,
+// every path inside (capped), and the first line of a log or a router record.
+fn describe_leftover(entry: &Path) -> Vec<String> {
+    let mut lines = Vec::new();
+    if let Some(test) = first_line(&entry.join(TEST_NAME_FILE)) {
+        lines.push(format!("made by the test {test}"));
     }
-    paths
+    walk(entry, entry, 0, &mut lines);
+    lines
+}
+
+fn walk(base: &Path, dir: &Path, depth: usize, lines: &mut Vec<String>) {
+    for name in sorted_names(dir) {
+        if lines.len() >= LEFTOVER_ENTRIES {
+            return;
+        }
+        let path = dir.join(&name);
+        let shown = path
+            .strip_prefix(base)
+            .unwrap_or(&path)
+            .display()
+            .to_string();
+        if path.is_dir() {
+            lines.push(shown);
+            if depth < LEFTOVER_DEPTH {
+                walk(base, &path, depth + 1, lines);
+            }
+        } else if name.ends_with(".log") || name == "router.toml" {
+            match first_line(&path) {
+                Some(first) => lines.push(format!("{shown}: {first}")),
+                None => lines.push(shown),
+            }
+        } else {
+            lines.push(shown);
+        }
+    }
+}
+
+fn first_line(path: &Path) -> Option<String> {
+    let text = fs::read_to_string(path).ok()?;
+    let line = text.lines().next()?.trim();
+    (!line.is_empty()).then(|| line.chars().take(FIRST_LINE_CHARS).collect())
 }
 
 fn sorted_names(dir: &Path) -> Vec<String> {

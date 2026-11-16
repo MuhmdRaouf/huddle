@@ -147,11 +147,11 @@ fn t7_guard_names_what_a_leftover_holds() {
     assert!(out.contains(".local"), "{out}");
     assert!(out.contains(".local/state"), "{out}");
     assert!(out.contains("repo/deep"), "{out}");
+    assert!(out.contains("repo/deep/deeper"), "every level shown: {out}");
+    assert!(out.contains("huddle.db"), "{out}");
     assert!(
-        !out.contains("repo/deep/deeper"),
-        "three levels shown: {out}"
+        !out.contains("secret"),
+        "a database's contents shown: {out}"
     );
-    assert!(!out.contains("huddle.db"), "deeper than two levels: {out}");
-    assert!(!out.contains("secret"), "file contents shown: {out}");
     assert!(guard_dirs(&home).is_empty());
 }
