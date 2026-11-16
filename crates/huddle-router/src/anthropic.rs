@@ -333,6 +333,12 @@ pub(crate) fn anthropic_line(
         .get::<UpstreamFailure>()
         .map(|f| format!(" error {} {}", f.code.as_str(), f.trace.line()))
         .unwrap_or_default();
+    // A refused target is never echoed: the request's path is the refused part.
+    let refused = answer
+        .extensions()
+        .get::<UpstreamFailure>()
+        .is_some_and(|f| f.code == FailureCode::EPath);
+    let path = if refused { "-" } else { path };
     format!(
         "{method} {path} model={} -> anthropic {}{why}",
         crate::dispatch::model_or_dash(model),
@@ -661,6 +667,18 @@ impl Body for StreamingBody {
 /// An upstream failure that is not the client's leaving: one Anthropic-shaped error, 504
 /// when the upstream stayed silent, 502 for the rest.
 fn failed(failure: Failure) -> Response<RespBody> {
+    if failure.code == FailureCode::EPath {
+        let mut answer = anthropic_error(
+            StatusCode::BAD_REQUEST,
+            "invalid_request_error",
+            "huddle-router router: request path refused",
+        );
+        answer.extensions_mut().insert(UpstreamFailure {
+            code: failure.code,
+            trace: failure.trace,
+        });
+        return answer;
+    }
     let status = match failure.code {
         FailureCode::ETimedOut => StatusCode::GATEWAY_TIMEOUT,
         _ => StatusCode::BAD_GATEWAY,
@@ -857,6 +875,8 @@ fn pass_error(
     trace: Trace,
 ) -> Response<RespBody> {
     let ms = started.elapsed().as_millis() as u64;
+    let refused = code == FailureCode::EPath;
+    let path = if refused { "-" } else { path };
     let line = format!(
         "{method} {path} host={host} \u{2192} anthropic-pass error {} ms={ms} {}",
         code.as_str(),
@@ -865,6 +885,13 @@ fn pass_error(
     (ctx.note)(&line);
     if let Some(hook) = &ctx.on_outcome {
         hook(AnswerOutcome::Failed { code, trace });
+    }
+    if refused {
+        return anthropic_error(
+            StatusCode::BAD_REQUEST,
+            "invalid_request_error",
+            "huddle-router router: request path refused",
+        );
     }
     unreachable_answer()
 }

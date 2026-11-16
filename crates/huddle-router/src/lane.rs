@@ -141,6 +141,36 @@ impl Lane {
             events.emit(answer.status, Some("message threads beta".to_owned()));
             return respond(answer);
         }
+        // The destination is settled before the key is read: a refused request reads no key.
+        let path_and_query = parts.uri.path_and_query().map_or("/", |pq| pq.as_str());
+        let url = match upstream_url(&self.target, path_and_query) {
+            Ok(url) => url,
+            Err(FailureCode::EPath) => {
+                self.failure_note(
+                    method,
+                    "-",
+                    model,
+                    400,
+                    FailureCode::EPath,
+                    Trace::default(),
+                );
+                events.emit(400, Some("bad request path".to_owned()));
+                return anthropic_error(
+                    StatusCode::BAD_REQUEST,
+                    "invalid_request_error",
+                    &format!("{} router: request path refused", self.provider.id),
+                );
+            }
+            Err(code) => {
+                self.refused_note(method, path, model, code);
+                events.emit(502, Some("bad request path".to_owned()));
+                return anthropic_error(
+                    StatusCode::BAD_GATEWAY,
+                    "api_error",
+                    &format!("{} router: bad request path", self.provider.id),
+                );
+            }
+        };
         let key = match self.keys.get(KEY_BUDGET).await {
             KeyAnswer::Found(key) => key,
             KeyAnswer::NoKey => {
@@ -160,19 +190,6 @@ impl Lane {
                 let answer = unusable_key_answer(&self.names(), &why);
                 events.emit(answer.status, Some("no key".to_owned()));
                 return respond(answer);
-            }
-        };
-        let path_and_query = parts.uri.path_and_query().map_or("/", |pq| pq.as_str());
-        let url = match upstream_url(&self.target, path_and_query) {
-            Ok(url) => url,
-            Err(code) => {
-                self.refused_note(method, path, model, code);
-                events.emit(502, Some("bad request path".to_owned()));
-                return anthropic_error(
-                    StatusCode::BAD_GATEWAY,
-                    "api_error",
-                    &format!("{} router: bad request path", self.provider.id),
-                );
             }
         };
         if !forwardable(&self.target) {

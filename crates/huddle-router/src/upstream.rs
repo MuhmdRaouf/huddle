@@ -56,6 +56,8 @@ pub enum FailureCode {
     EConnRefused,
     EUpstream,
     EAborted,
+    /// The request's own path could change where the upstream request goes.
+    EPath,
 }
 
 impl FailureCode {
@@ -69,6 +71,7 @@ impl FailureCode {
             FailureCode::EConnRefused => "ECONNREFUSED",
             FailureCode::EUpstream => "EUPSTREAM",
             FailureCode::EAborted => "EABORTED",
+            FailureCode::EPath => "EPATH",
         }
     }
 }
@@ -132,8 +135,10 @@ const HOP_BY_HOP: [&str; 11] = [
 const RESPONSE_HOP: [&str; 3] = ["connection", "keep-alive", "transfer-encoding"];
 
 /// The upstream URL: the target's origin, its path with one trailing `/` trimmed, then the
-/// request's own path and query. Pure string assembly, never URL resolution, so a request path
-/// cannot change the host.
+/// request's own path and query. The request's part must be an origin-form path: it starts with
+/// one `/`, holds no backslash and no control character, so it cannot reach into the authority.
+/// The result's scheme, host and port are checked against the target's by value. A request part
+/// that fails either check is `EPath`.
 pub fn upstream_url(target: &Uri, request_path_and_query: &str) -> Result<Uri, FailureCode> {
     let Some(scheme) = target.scheme_str() else {
         return Err(FailureCode::EUpstream);
@@ -144,12 +149,30 @@ pub fn upstream_url(target: &Uri, request_path_and_query: &str) -> Result<Uri, F
     let Some(authority) = target.authority() else {
         return Err(FailureCode::EUpstream);
     };
+    if !is_origin_form(request_path_and_query) {
+        return Err(FailureCode::EPath);
+    }
     let mut path = target.path().to_owned();
     if path.ends_with('/') {
         path.pop();
     }
     let assembled = format!("{scheme}://{authority}{path}{request_path_and_query}");
-    Uri::try_from(assembled).map_err(|_| FailureCode::EUpstream)
+    let url = Uri::try_from(assembled).map_err(|_| FailureCode::EUpstream)?;
+    let same_origin = url.scheme_str() == Some(scheme)
+        && url.host() == target.host()
+        && url.port_u16() == target.port_u16();
+    if same_origin {
+        Ok(url)
+    } else {
+        Err(FailureCode::EPath)
+    }
+}
+
+/// A path-and-query that starts with a single `/` and holds no backslash or control character.
+fn is_origin_form(path_and_query: &str) -> bool {
+    path_and_query.starts_with('/')
+        && !path_and_query.starts_with("//")
+        && !path_and_query.chars().any(|c| c == '\\' || c.is_control())
 }
 
 /// The client's headers for the next hop: hop-by-hop ones dropped, `Host` and `Content-Length`
@@ -1764,6 +1787,28 @@ fn elapsed_ms(since: Instant) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn l63_upstream_url_keeps_the_base_origin_or_refuses() {
+        let base: Uri = "http://127.0.0.1:9".parse().expect("base");
+        for bad in [
+            "*",
+            "@127.0.0.1:7/v1",
+            ".evil/v1",
+            ":7/v1",
+            "//127.0.0.1:7/v1",
+            "/\\127.0.0.1:7",
+            "/v1\n/x",
+            "",
+        ] {
+            assert_eq!(upstream_url(&base, bad), Err(FailureCode::EPath), "{bad:?}");
+        }
+        for good in ["/v1/messages", "/v1/messages/../x?a=@h:1", "/%2f%2fh:1"] {
+            let url = upstream_url(&base, good).expect(good);
+            assert_eq!(url.authority().map(|a| a.as_str()), Some("127.0.0.1:9"));
+            assert_eq!(url.path_and_query().map(|p| p.as_str()), Some(good));
+        }
+    }
 
     #[tokio::test]
     async fn l1_take_whole_moves_the_chunks_out() {

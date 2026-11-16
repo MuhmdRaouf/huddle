@@ -349,3 +349,17 @@ Each incident, its cause, and the test that now stops it. A guard named here mus
   crates/huddle-daemon/tests/e1_handover_exit.rs:l19_a_drain_that_hits_the_limit_names_what_stayed_open
 - **Rule:** a drain logs what it waits for when it starts and what stayed open when it ends or is cut.
   A shorter drain budget is decided from that log.
+
+## 2026-11-16, a request path could change the host an upstream request went to
+
+- **What happened:** `OPTIONS *` with a provider model made the lane's upstream URL
+  `http://127.0.0.1:9*/`, and the request reached a server on port 80. A path such as `@host` would turn
+  the lane's base into the userinfo of another host, with the provider key attached.
+- **Cause:** the upstream URL was the lane's base joined to the request's path as strings, so a path that
+  did not start with `/` merged into the authority.
+- **Guard:** crates/huddle-router/tests/l63_path_cannot_steer.rs:l63_no_request_target_reaches_another_host,
+  crates/huddle-router/tests/l63_path_cannot_steer.rs:l63_a_refused_target_logs_one_line_without_the_target,
+  crates/huddle-router/tests/l63_path_cannot_steer.rs:l63_a_refused_target_reads_no_key
+- **Rule:** the upstream host comes from configuration, never from the request. A request path that does not
+  start with a single `/`, or holds a backslash or a control character, is answered 400 before any key is
+  read, and the built URL must keep the base's scheme, host and port.
