@@ -1618,7 +1618,7 @@ fn dial_failure(code: FailureCode) -> AttemptFailure {
 
 /// The attempt verdict for a transport error: the socket went away when hyper says the message
 /// was incomplete or canceled, or the code is a reset or a broken pipe. A timeout, a refused
-/// connection and a certificate failure are never a closed socket. the failure starts
+/// connection and a certificate failure are never a closed socket. The failure starts
 /// non-replayable and `drive` sets `replayable` once the attempt's pump has ended.
 fn hyper_failure(err: &HyperError, dial: &Dial, reused: bool, handed: &Handed) -> AttemptFailure {
     let code = classify(err);
@@ -1635,7 +1635,7 @@ fn hyper_failure(err: &HyperError, dial: &Dial, reused: bool, handed: &Handed) -
     }
 }
 
-/// Silence is never a closed socket: no retry rides on a timeout. the failure starts
+/// Silence is never a closed socket: no retry rides on a timeout. The failure starts
 /// non-replayable and `drive` sets `replayable` once the attempt's pump has ended.
 fn timeout_failure(dial: &Dial, reused: bool, handed: &Handed) -> AttemptFailure {
     AttemptFailure {
