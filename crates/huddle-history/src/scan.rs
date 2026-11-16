@@ -2,22 +2,36 @@
 
 use std::borrow::Cow;
 use std::collections::HashMap;
+use std::fmt::Write;
 
 use rusqlite::Row as SqlRow;
 use rusqlite::types::ValueRef;
 
 use crate::error::HistoryError;
 use crate::history::History;
-use crate::query::{count, opt_count};
+use crate::query::opt_count;
 use crate::row::Range;
 
-/// A text column borrowed from the row, an integer (a day number) as its decimal text.
+/// A text column borrowed from the row, an integer (a status) as its decimal text.
 pub(crate) fn text_at<'r>(r: &'r SqlRow<'_>, i: usize) -> rusqlite::Result<Cow<'r, str>> {
     match r.get_ref(i)? {
         ValueRef::Text(bytes) => Ok(String::from_utf8_lossy(bytes)),
         ValueRef::Integer(n) => Ok(Cow::Owned(n.to_string())),
         _ => Ok(Cow::Borrowed("")),
     }
+}
+
+/// Appends column `i` to `out` as `text_at` reads it, writing an integer's digits in place
+/// instead of into a new string.
+pub(crate) fn push_text(r: &SqlRow<'_>, i: usize, out: &mut String) -> rusqlite::Result<()> {
+    match r.get_ref(i)? {
+        ValueRef::Text(bytes) => out.push_str(&String::from_utf8_lossy(bytes)),
+        ValueRef::Integer(n) => {
+            let _ = write!(out, "{n}");
+        }
+        _ => {}
+    }
+    Ok(())
 }
 
 /// Numbers each distinct name once, in first-seen order.
@@ -67,16 +81,21 @@ impl Default for Sums {
 }
 
 impl Sums {
-    /// Adds a row whose columns from `first` on are at_ms, is_error, tokens_in, cache_read,
+    /// Adds a row at `at` whose four token columns, from `first` on, are tokens_in, cache_read,
     /// cache_write and tokens_out.
-    pub(crate) fn add(&mut self, r: &SqlRow<'_>, first: usize) -> rusqlite::Result<()> {
-        let at = count(r, first)?;
+    pub(crate) fn add(
+        &mut self,
+        at: u64,
+        err: bool,
+        r: &SqlRow<'_>,
+        first: usize,
+    ) -> rusqlite::Result<()> {
         self.n += 1;
-        self.err += count(r, first + 1)?;
-        self.tok_in += opt_count(r, first + 2)?.unwrap_or(0);
-        self.cache_read += opt_count(r, first + 3)?.unwrap_or(0);
-        self.cache_write += opt_count(r, first + 4)?.unwrap_or(0);
-        self.tok_out += opt_count(r, first + 5)?.unwrap_or(0);
+        self.err += u64::from(err);
+        self.tok_in += opt_count(r, first)?.unwrap_or(0);
+        self.cache_read += opt_count(r, first + 1)?.unwrap_or(0);
+        self.cache_write += opt_count(r, first + 2)?.unwrap_or(0);
+        self.tok_out += opt_count(r, first + 3)?.unwrap_or(0);
         self.first_ms = self.first_ms.min(at);
         self.last_ms = self.last_ms.max(at);
         Ok(())

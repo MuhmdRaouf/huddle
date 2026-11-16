@@ -1,6 +1,7 @@
 use std::collections::{BTreeMap, HashMap};
+use std::fmt::Write;
 
-use crate::scan::{Interner, Sums, text_at};
+use crate::scan::{Interner, Sums, push_text, text_at};
 
 use rusqlite::types::Value;
 use rusqlite::{Row as SqlRow, params_from_iter};
@@ -13,6 +14,16 @@ const MAX_PAGE: u64 = 500;
 
 /// A request counts as an error on status 0 or 4xx/5xx, except 499 (the client left).
 const IS_ERROR: &str = "(status = 0 OR (status >= 400 AND status != 499))";
+
+/// The first and last request time. One MIN or MAX alone is a single seek to an end of the time
+/// index; both in one SELECT walk the whole index.
+const BOUNDS: &str = "SELECT (SELECT MIN(at_ms) FROM requests), (SELECT MAX(at_ms) FROM requests)";
+
+/// `IS_ERROR` for the status in column `i`, decided in Rust so a scan steps plain columns only.
+fn is_error(r: &SqlRow<'_>, i: usize) -> rusqlite::Result<bool> {
+    let status: i64 = r.get(i)?;
+    Ok(status == 0 || (status >= 400 && status != 499))
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Bucket {
@@ -41,18 +52,57 @@ pub enum GroupBy {
 }
 
 impl GroupBy {
-    /// The key expression; an unknown session, agent or project groups under the empty key.
-    /// A day is its number since the epoch in the zone `offset_ms` east of UTC; `totals` names
-    /// it afterwards.
-    fn key_column(self, offset_ms: i64) -> String {
+    /// The key columns a totals scan selects ahead of `model`, each followed by a comma. The key
+    /// is built in Rust: an expression per row in SQL (a `COALESCE`, a string join) costs more
+    /// than the scan of the columns themselves. A day and a reason reuse the scan's own `at_ms`
+    /// and `status`.
+    fn key_columns(self) -> &'static str {
         match self {
-            GroupBy::Session => "COALESCE(session, '')".into(),
-            GroupBy::Project => "COALESCE(project, '')".into(),
-            GroupBy::Model => "model".into(),
-            GroupBy::Lane => "lane".into(),
-            GroupBy::Reason => "lane || '|' || status || '|' || COALESCE(reason, '')".into(),
-            GroupBy::Day => format!("(at_ms + ({offset_ms})) / 86400000"),
+            GroupBy::Session => "session, ",
+            GroupBy::Project => "project, ",
+            GroupBy::Model => "model, ",
+            GroupBy::Lane => "lane, ",
+            GroupBy::Reason => "lane, reason, ",
+            GroupBy::Day => "",
         }
+    }
+
+    /// How many columns `key_columns` names.
+    fn key_width(self) -> usize {
+        match self {
+            GroupBy::Reason => 2,
+            GroupBy::Day => 0,
+            _ => 1,
+        }
+    }
+
+    /// Writes the key of `r` into `key`; `model_at` is the column of `model`, followed by
+    /// `at_ms` and `status`. An unknown session, agent or project is the empty key. A day is its
+    /// number since the epoch in the zone `offset_ms` east of UTC, which `totals` names
+    /// afterwards.
+    fn write_key(
+        self,
+        r: &SqlRow<'_>,
+        model_at: usize,
+        offset_ms: i64,
+        key: &mut String,
+    ) -> rusqlite::Result<()> {
+        key.clear();
+        match self {
+            GroupBy::Reason => {
+                push_text(r, 0, key)?;
+                key.push('|');
+                push_text(r, model_at + 2, key)?;
+                key.push('|');
+                push_text(r, 1, key)?;
+            }
+            GroupBy::Day => {
+                let at: i64 = r.get(model_at + 1)?;
+                let _ = write!(key, "{}", at.saturating_add(offset_ms) / 86_400_000);
+            }
+            _ => push_text(r, 0, key)?,
+        }
+        Ok(())
     }
 }
 
@@ -230,6 +280,24 @@ fn nearest_rank(sorted: &[u64], pct: usize) -> Option<u64> {
 }
 
 impl History {
+    /// The table clause for a scan of `range`. A range that holds every row reads the table in
+    /// row order (`NOT INDEXED`): stepping the time index and looking each row up costs more than
+    /// reading every row once.
+    fn scanned(&self, range: Range) -> Result<&'static str, HistoryError> {
+        let (first, last): (Option<i64>, Option<i64>) = self
+            .conn
+            .query_row(BOUNDS, [], |r| Ok((r.get(0)?, r.get(1)?)))?;
+        let whole = match (first, last) {
+            (Some(first), Some(last)) => to_db(range.from_ms) <= first && last < to_db(range.to_ms),
+            _ => false,
+        };
+        Ok(if whole {
+            "requests NOT INDEXED"
+        } else {
+            "requests"
+        })
+    }
+
     /// Per bucket start (a multiple of `width_ms`) and model: counts, token sums, TTFT percentiles.
     /// `session` and `project` narrow the rows to one session or one project.
     pub fn buckets(
@@ -283,17 +351,20 @@ impl History {
             }
         }
         let mut stmt = self.conn.prepare(&format!(
-            "SELECT model, at_ms, {IS_ERROR}, tokens_in, cache_read, cache_write, tokens_out, ttft_ms
-             FROM requests WHERE at_ms >= ?1 AND at_ms < ?2{narrow}"
+            "SELECT model, at_ms, status, tokens_in, cache_read, cache_write, tokens_out, ttft_ms
+             FROM {table} WHERE at_ms >= ?1 AND at_ms < ?2{narrow}",
+            table = self.scanned(range)?
         ))?;
         let mut models = Interner::default();
         let mut cells: HashMap<(u64, usize), (Sums, Vec<u64>)> = HashMap::new();
         let mut rows = stmt.query(params_from_iter(&args))?;
         while let Some(r) = rows.next()? {
             let model = models.id(&text_at(r, 0)?);
-            let start = bucket_start(count(r, 1)?, width_ms, offset_ms);
-            let (sums, ttft) = cells.entry((start, model)).or_default();
-            sums.add(r, 1)?;
+            let at = count(r, 1)?;
+            let (sums, ttft) = cells
+                .entry((bucket_start(at, width_ms, offset_ms), model))
+                .or_default();
+            sums.add(at, is_error(r, 2)?, r, 3)?;
             if let Some(ms) = opt_count(r, 7)? {
                 ttft.push(ms);
             }
@@ -423,21 +494,31 @@ impl History {
         ];
         args.extend(extra);
         let mut stmt = self.conn.prepare(&format!(
-            "SELECT {key}, model, at_ms, {IS_ERROR}, tokens_in, cache_read, cache_write, tokens_out,
+            "SELECT {key}model, at_ms, status, tokens_in, cache_read, cache_write, tokens_out,
                     ttft_ms
-             FROM requests WHERE at_ms >= ?1 AND at_ms < ?2{kept}",
-            key = by.key_column(offset_ms)
+             FROM {table} WHERE at_ms >= ?1 AND at_ms < ?2{kept}",
+            key = by.key_columns(),
+            table = self.scanned(range)?
         ))?;
+        let model_at = by.key_width();
         let mut keys = Interner::default();
         let mut models = Interner::default();
         let mut sums: HashMap<(usize, usize), Sums> = HashMap::new();
         let mut times: HashMap<usize, Vec<u64>> = HashMap::new();
+        let mut key = String::new();
         let mut rows = stmt.query(params_from_iter(&args))?;
         while let Some(r) = rows.next()? {
-            let key = keys.id(&text_at(r, 0)?);
-            let model = models.id(&text_at(r, 1)?);
-            sums.entry((key, model)).or_default().add(r, 2)?;
-            if let Some(ms) = opt_count(r, 8)? {
+            by.write_key(r, model_at, offset_ms, &mut key)?;
+            let key = keys.id(&key);
+            let model = models.id(&text_at(r, model_at)?);
+            let at = count(r, model_at + 1)?;
+            sums.entry((key, model)).or_default().add(
+                at,
+                is_error(r, model_at + 2)?,
+                r,
+                model_at + 3,
+            )?;
+            if let Some(ms) = opt_count(r, model_at + 7)? {
                 times.entry(key).or_default().push(ms);
             }
         }
@@ -629,4 +710,37 @@ fn where_clause(filter: &Filter) -> (String, Vec<Value>) {
         StatusClass::ClientLeft => clause.push_str(" AND status = 499"),
     }
     (clause, args)
+}
+
+#[cfg(test)]
+mod tests {
+    use huddle_testkit::temp_home::TempHome;
+
+    use crate::history::History;
+
+    #[test]
+    fn l57_the_bounds_query_seeks_both_ends_of_the_time_index() {
+        let home = TempHome::new();
+        let history = History::open(&home.root().join("scratch/history/huddle.db")).expect("open");
+        let mut stmt = history
+            .conn
+            .prepare(&format!("EXPLAIN QUERY PLAN {}", super::BOUNDS))
+            .expect("plan");
+        let plan: Vec<String> = stmt
+            .query_map([], |r| r.get(3))
+            .expect("plan")
+            .collect::<Result<_, _>>()
+            .expect("plan");
+        assert!(
+            plan.iter().all(|step| !step.starts_with("SCAN requests")),
+            "the bounds walk the table: {plan:?}"
+        );
+        assert_eq!(
+            plan.iter()
+                .filter(|step| step.starts_with("SEARCH requests"))
+                .count(),
+            2,
+            "{plan:?}"
+        );
+    }
 }
