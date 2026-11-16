@@ -378,3 +378,16 @@ Each incident, its cause, and the test that now stops it. A guard named here mus
 - **Rule:** a temp home's drop looks for writers and removes the home again until it stays gone, for up to
   15 seconds. Each home names its test in `.test-name`, and the guard prints that name, every path inside a
   leftover and the first line of its logs.
+
+## 2026-11-16, an in-process handover test left a temp home behind on Linux CI
+
+- **What happened:** CI run 43955269585 on `1af07db1` (Linux): every test passed, then the TMPDIR guard
+  failed on two leftover homes that each held only `.local/state/huddle/run/router.lock`.
+- **Cause:** an in-process handover test dropped its temp home before its runtime. The runtime's drop then
+  joined the takeover's lock wait, whose next try created the lock folder and file again inside the dropped home.
+  No process wrote it, so the home's check for running processes could not see it.
+- **Guard:** crates/huddle-daemon/tests/e1_handover_exit.rs:l68_a_router_started_just_before_the_drop_leaves_nothing,
+  crates/huddle-testkit/tests/guard.rs:l68_the_guard_names_the_test_of_a_home_made_again_after_its_drop,
+  crates/huddle-testkit/tests/guard.rs:l68_the_ledger_alone_is_not_a_leftover,
+  crates/huddle-testkit/tests/guard.rs:l68_a_home_is_recorded_in_the_ledger_only_under_a_guard
+- **Rule:** an in-process router test drops its temp home only after its runtime.
