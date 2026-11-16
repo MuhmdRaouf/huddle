@@ -44,6 +44,18 @@ fn open_pty() -> (RawFd, RawFd) {
 impl Pty {
     fn spawn(home: &TempHome, port: u16, args: &[&str], extra: &[(&str, &str)]) -> Pty {
         let (master, slave) = open_pty();
+        Pty::on(master, slave, home, port, args, extra)
+    }
+
+    /// Spawns on a pty pair the caller opened, so the baseline can be read before the child runs.
+    fn on(
+        master: RawFd,
+        slave: RawFd,
+        home: &TempHome,
+        port: u16,
+        args: &[&str],
+        extra: &[(&str, &str)],
+    ) -> Pty {
         let dup = |fd: RawFd| unsafe { Stdio::from_raw_fd_dup(fd) };
         let mut command = Command::new(env!("CARGO_BIN_EXE_huddle"));
         command
@@ -125,10 +137,15 @@ impl Pty {
 
     /// The local flags, without PENDIN, which the kernel sets by itself on a mode change.
     fn lflag(&self) -> libc::tcflag_t {
-        let mut state = unsafe { std::mem::zeroed::<libc::termios>() };
-        assert_eq!(unsafe { libc::tcgetattr(self.slave, &mut state) }, 0);
-        state.c_lflag & !libc::PENDIN
+        lflag(self.slave)
     }
+}
+
+/// The local flags of one pty side, without PENDIN, which the kernel sets by itself on a mode change.
+fn lflag(fd: RawFd) -> libc::tcflag_t {
+    let mut state = unsafe { std::mem::zeroed::<libc::termios>() };
+    assert_eq!(unsafe { libc::tcgetattr(fd, &mut state) }, 0);
+    state.c_lflag & !libc::PENDIN
 }
 
 impl Drop for Pty {
@@ -314,8 +331,11 @@ fn k7_ctrl_c_stores_nothing_and_restores_the_terminal() {
     let home = TempHome::new();
     let port = free_port();
     mark_installed(&home);
-    let mut pty = Pty::spawn(&home, port, &["provider", "zai"], &[]);
-    let before = pty.lflag();
+    let (master, slave) = open_pty();
+    // The baseline comes from the pty before the child exists: a loaded runner can park this
+    // thread between spawn and the first read, and the child has the mode changed by then.
+    let before = lflag(slave);
+    let mut pty = Pty::on(master, slave, &home, port, &["provider", "zai"], &[]);
     assert!(pty.read_until(PROMPT), "{}", pty.seen);
     // The prompt is written just before the mode changes, so the mode is polled.
     let start = Instant::now();
