@@ -70,6 +70,7 @@ async fn rig(dir: PathBuf, seen: Arc<Mutex<Vec<String>>>, dial: Option<DialFn>) 
     ));
     let tunnels = TunnelTracker::new();
     let ctx = Arc::new(ConnectCtx {
+        log: Arc::new(|_| {}),
         env: Env::with(&[]),
         dial,
         tunnels: tunnels.clone(),

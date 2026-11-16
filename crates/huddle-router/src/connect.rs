@@ -35,7 +35,10 @@ use huddle_config::env::Env;
 use huddle_pki::ca::ROUTER_HOST;
 use huddle_pki::leaf::LeafCache;
 
+use crate::lane::Logger;
 use crate::server::{Handler, RespBody, ServerLimits, anthropic_error, empty_body};
+use crate::trace::{Phase as DialPhase, Trace};
+use crate::upstream::FailureCode;
 use crate::watched::Watched;
 
 /// A direct dial to a name that resolves nowhere gives up after this long.
@@ -97,6 +100,8 @@ pub struct ConnectCtx {
     /// Decrypts `api.anthropic.com:443` with the local CA when set; `None` tunnels every
     /// CONNECT blind.
     pub decrypt: Option<Arc<Decrypt>>,
+    /// Where the line of a CONNECT answered 502 goes.
+    pub log: Logger,
 }
 
 /// Serves a CONNECT. Called only for CONNECT. A refusal or a failed dial answers before any 200,
@@ -148,7 +153,10 @@ async fn connect(
         let mut target = match dial(host, port, &ctx).await {
             Ok(target) => target,
             Err(DialFailure::Local) => return refused("a CONNECT may not name this machine"),
-            Err(DialFailure::Other) => return dial_failed(),
+            Err(DialFailure::Other) => {
+                (ctx.log)(dial_failed_line());
+                return dial_failed();
+            }
         };
         let upgraded = hyper::upgrade::on(&mut req);
         // Counted before the upgrade: a drain that starts once the server stops accepting finds
@@ -408,6 +416,16 @@ fn refused(why: &str) -> Response<RespBody> {
         StatusCode::FORBIDDEN,
         "permission_error",
         &format!("huddle-router router: CONNECT refused ({why})"),
+    )
+}
+
+/// The log line of a CONNECT whose target could not be opened: the code and where it ended,
+/// never the target.
+fn dial_failed_line() -> String {
+    format!(
+        "CONNECT -> 502 error {} {}",
+        FailureCode::EUpstream.as_str(),
+        Trace::default().at(DialPhase::Connect).line()
     )
 }
 

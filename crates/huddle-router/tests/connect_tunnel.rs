@@ -1,7 +1,7 @@
 use huddle_config::env::Env;
 use huddle_router::connect::{ConnectCtx, DialFn, DrainOutcome, TunnelTracker, connect_handler};
 use huddle_router::server::{ServerLimits, bind, serve};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
@@ -29,6 +29,7 @@ fn dial_to(port: u16) -> DialFn {
 
 async fn router(dial: Option<DialFn>, tunnels: Arc<TunnelTracker>) -> u16 {
     let ctx = Arc::new(ConnectCtx {
+        log: Arc::new(|_| {}),
         env: Env::with(&[]),
         dial,
         tunnels,
@@ -257,4 +258,36 @@ async fn e1_a_drain_keeps_a_blind_tunnel_that_is_carrying_bytes() {
             .expect("the busy tunnel still echoes");
     }
     assert!(!draining.is_finished(), "a busy tunnel holds the drain");
+}
+
+#[tokio::test]
+async fn l61_a_failed_connect_dial_logs_one_line() {
+    let refused: DialFn = Arc::new(|_target: String| {
+        Box::pin(async move { Err(std::io::Error::from(std::io::ErrorKind::ConnectionRefused)) })
+    });
+    let lines: Arc<Mutex<Vec<String>>> = Arc::default();
+    let sink = lines.clone();
+    let ctx = Arc::new(ConnectCtx {
+        env: Env::with(&[]),
+        dial: Some(refused),
+        tunnels: TunnelTracker::new(),
+        decrypt: None,
+        log: Arc::new(move |l| sink.lock().unwrap().push(l)),
+    });
+    let listener = bind(0).await.expect("bind");
+    let port = listener.local_addr().expect("addr").port();
+    let (_tx, rx) = watch::channel(false);
+    tokio::spawn(async move {
+        let _keep = _tx;
+        serve(listener, connect_handler(ctx), ServerLimits::default(), rx)
+            .await
+            .expect("serve")
+    });
+    let (_stream, head) = connect(port, "secret-host.example:443").await;
+    assert!(head.starts_with("HTTP/1.1 502"), "{head}");
+    let lines = lines.lock().unwrap().clone();
+    assert_eq!(
+        lines,
+        vec!["CONNECT -> 502 error EUPSTREAM phase=connect peer=- conn=fresh".to_owned()]
+    );
 }

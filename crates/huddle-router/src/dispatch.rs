@@ -5,8 +5,8 @@
 
 use crate::answer_facts::{self, AnswerFacts};
 use crate::anthropic::{
-    AnswerOutcome, AnswerTap, AnthropicPath, OutcomeHook, PassCtx, StreamedRoute, UpstreamFailure,
-    WholeRoute, is_model_request, pass_through_handler,
+    AnswerOutcome, AnswerTap, AnthropicPath, OutcomeHook, PassCtx, StreamedRoute, WholeRoute,
+    anthropic_line, is_model_request, pass_through_handler,
 };
 use crate::body::model_of;
 use crate::connect::{ConnectCtx, Decrypt, TunnelTracker, connect_handler};
@@ -328,18 +328,7 @@ impl Router {
                             Route::Anthropic => {
                                 events.track("anthropic", &model);
                                 let answer = router.anthropic.forward_whole(parts, body).await;
-                                let why = answer
-                                    .extensions()
-                                    .get::<UpstreamFailure>()
-                                    .map(|f| {
-                                        format!(" error {} {}", f.code.as_str(), f.trace.line())
-                                    })
-                                    .unwrap_or_default();
-                                (router.log)(format!(
-                                    "{method} {path} model={} -> anthropic {}{why}",
-                                    model_or_dash(&model),
-                                    answer.status().as_u16(),
-                                ));
+                                (router.log)(anthropic_line(&method, &path, &model, &answer));
                                 answer
                             }
                         }
@@ -355,6 +344,7 @@ impl Router {
                 whole_route: Arc::clone(&whole_route),
                 pass_through,
                 on_outcome: Some(on_outcome),
+                log: Some(Arc::clone(&log)),
             });
             Router {
                 lanes,
@@ -390,6 +380,7 @@ impl Router {
         let connect = connect_handler(Arc::new(ConnectCtx {
             env: self.env.clone(),
             dial: None,
+            log: Arc::clone(&self.log),
             tunnels: Arc::clone(&self.tunnels),
             decrypt: Some(Arc::new(Decrypt::new(
                 Arc::new(LeafCache::new(
@@ -989,7 +980,7 @@ fn probe_target_of(target: &hyper::Uri) -> Option<ProbeTarget> {
 }
 
 /// The model on a log line, or `-` when the body named none.
-fn model_or_dash(model: &str) -> &str {
+pub(crate) fn model_or_dash(model: &str) -> &str {
     if model.is_empty() { "-" } else { model }
 }
 

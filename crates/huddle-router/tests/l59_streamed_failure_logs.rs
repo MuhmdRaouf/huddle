@@ -57,24 +57,33 @@ fn streamed_post() -> String {
     )
 }
 
-#[tokio::test]
-#[ignore = "L59: a single failed streamed Anthropic upload is answered 502 with no router log line"]
-async fn l59_a_failed_streamed_upload_leaves_a_log_line() {
+type Lines = Arc<Mutex<Vec<String>>>;
+
+struct Rig {
+    port: u16,
+    ca_der: Vec<u8>,
+    lines: Lines,
+    _home: TempHome,
+    _stop: watch::Sender<bool>,
+}
+
+/// A router whose Anthropic origin is `anthropic_url`, serving on a free port; its log lines
+/// are collected.
+async fn rig(anthropic_url: &str) -> Rig {
     let home = TempHome::new();
     let root = home.root().to_str().expect("utf8").to_string();
     let env = Env::with(&[("HOME", root.as_str())]);
     let paths = Paths::from_env(&env).expect("paths");
     let ca = load_or_create(&paths.ca_dir, SystemTime::now()).expect("ca");
     let port = free_port();
-    let dead = free_port();
-    let lines: Arc<Mutex<Vec<String>>> = Arc::default();
+    let lines: Lines = Arc::default();
     let sink = lines.clone();
     let router = Router::new(
         RouterConfig {
             env,
             paths,
             port,
-            anthropic_url: format!("http://127.0.0.1:{dead}").parse().expect("uri"),
+            anthropic_url: anthropic_url.parse().expect("uri"),
             log: Arc::new(move |l| sink.lock().unwrap().push(l)),
             history: None,
             dashboard: huddle_router::dashboard::DashboardInputs::default(),
@@ -82,34 +91,158 @@ async fn l59_a_failed_streamed_upload_leaves_a_log_line() {
         &[],
     );
     let listener = bind(port).await.expect("bind");
-    let (_stop, rx) = watch::channel(false);
+    let (stop, rx) = watch::channel(false);
     let handler = router.handler();
     tokio::spawn(async move {
         serve(listener, handler, ServerLimits::default(), rx)
             .await
             .expect("serve")
     });
+    Rig {
+        port,
+        ca_der: ca.cert_der().to_vec(),
+        lines,
+        _home: home,
+        _stop: stop,
+    }
+}
 
-    let tcp = connect_tunnel(port, &format!("{ROUTER_HOST}:443")).await;
+fn dead_url() -> String {
+    format!("http://127.0.0.1:{}", free_port())
+}
+
+/// Sends `request` through a decrypted tunnel; the router's whole answer.
+async fn through_tunnel(rig: &Rig, request: &str) -> String {
+    let tcp = connect_tunnel(rig.port, &format!("{ROUTER_HOST}:443")).await;
     let name = ServerName::try_from(ROUTER_HOST.to_string()).expect("name");
-    let mut tls = tls_client(ca.cert_der())
+    let mut tls = tls_client(&rig.ca_der)
         .connect(name, tcp)
         .await
         .expect("handshake");
-    tls.write_all(streamed_post().as_bytes())
-        .await
-        .expect("write");
+    tls.write_all(request.as_bytes()).await.expect("write");
     let mut out = Vec::new();
     let _ = tokio::time::timeout(Duration::from_secs(5), tls.read_to_end(&mut out)).await;
-    let answer = String::from_utf8_lossy(&out).into_owned();
-    assert!(answer.starts_with("HTTP/1.1 502"), "{answer}");
+    String::from_utf8_lossy(&out).into_owned()
+}
 
+/// Sends `request` straight to the router's port: a small body takes the whole-body route.
+async fn direct(rig: &Rig, request: &str) -> String {
+    let mut s = TcpStream::connect(("127.0.0.1", rig.port))
+        .await
+        .expect("connect");
+    s.write_all(request.as_bytes()).await.expect("write");
+    let mut out = Vec::new();
+    let _ = tokio::time::timeout(Duration::from_secs(5), s.read_to_end(&mut out)).await;
+    String::from_utf8_lossy(&out).into_owned()
+}
+
+fn small_post(port: u16) -> String {
+    let body = r#"{"model":"claude-opus-5-5","messages":[]}"#;
+    format!(
+        "POST /v1/messages HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nConnection: close\r\nContent-Length: {}\r\n\r\n{body}",
+        body.len()
+    )
+}
+
+/// The lines that name the request, after the router has had time to write them.
+async fn request_lines(rig: &Rig) -> Vec<String> {
     tokio::time::sleep(Duration::from_millis(300)).await;
-    let lines = lines.lock().unwrap().clone();
+    rig.lines
+        .lock()
+        .unwrap()
+        .iter()
+        .filter(|l| l.contains("POST /v1/messages"))
+        .cloned()
+        .collect()
+}
+
+#[tokio::test]
+async fn l59_a_failed_streamed_upload_leaves_a_log_line() {
+    let rig = rig(&dead_url()).await;
+    let answer = through_tunnel(&rig, &streamed_post()).await;
+    assert!(answer.starts_with("HTTP/1.1 502"), "{answer}");
+    let lines = request_lines(&rig).await;
     assert!(
-        lines
-            .iter()
-            .any(|l| l.contains("POST /v1/messages") && l.contains("502")),
+        lines.iter().any(|l| l.contains("502")),
         "the 502 left no line naming the request: {lines:?}"
     );
+}
+
+#[tokio::test]
+async fn l61_a_streamed_failure_logs_one_line_in_the_whole_body_shape() {
+    let rig = rig(&dead_url()).await;
+    through_tunnel(&rig, &streamed_post()).await;
+    let lines = request_lines(&rig).await;
+    assert_eq!(lines.len(), 1, "{lines:?}");
+    assert!(
+        lines[0]
+            .contains("model=claude-opus-5-5 -> anthropic 502 error ECONNREFUSED phase=connect"),
+        "{lines:?}"
+    );
+}
+
+#[tokio::test]
+async fn l61_a_whole_body_failure_logs_one_line() {
+    let rig = rig(&dead_url()).await;
+    let answer = direct(&rig, &small_post(rig.port)).await;
+    assert!(answer.starts_with("HTTP/1.1 502"), "{answer}");
+    let lines = request_lines(&rig).await;
+    assert_eq!(lines.len(), 1, "{lines:?}");
+    assert!(
+        lines[0].contains("-> anthropic 502 error ECONNREFUSED"),
+        "{lines:?}"
+    );
+}
+
+#[tokio::test]
+async fn l61_an_unbuildable_request_logs_one_line() {
+    // A scheme the router never forwards to cannot form an upstream URL.
+    let rig = rig("ftp://127.0.0.1:9").await;
+    let answer = through_tunnel(&rig, &streamed_post()).await;
+    assert!(answer.starts_with("HTTP/1.1 502"), "{answer}");
+    let lines = request_lines(&rig).await;
+    assert_eq!(lines.len(), 1, "{lines:?}");
+    assert!(
+        lines[0].contains("-> anthropic 502 error EUPSTREAM"),
+        "{lines:?}"
+    );
+}
+
+#[tokio::test]
+async fn l61_a_failure_line_holds_no_secret() {
+    let rig = rig(&dead_url()).await;
+    let markers = [
+        "AUTHMARK7f3a",
+        "KEYMARK91bc",
+        "QUERYMARK4d2e",
+        "BODYMARK58aa",
+    ];
+    let pad = "x".repeat(300 * 1024);
+    let body = format!(
+        r#"{{"model":"claude-opus-5-5","messages":[{{"content":"{}"}}],"pad":"{pad}"}}"#,
+        markers[3]
+    );
+    let post = |host: &str, body: &str| {
+        format!(
+            "POST /v1/messages?q={} HTTP/1.1\r\nHost: {host}\r\nConnection: close\r\nauthorization: Bearer {}\r\nx-api-key: {}\r\nContent-Length: {}\r\n\r\n{body}",
+            markers[2],
+            markers[0],
+            markers[1],
+            body.len()
+        )
+    };
+    let small = format!(
+        r#"{{"model":"claude-opus-5-5","messages":[{{"content":"{}"}}]}}"#,
+        markers[3]
+    );
+    through_tunnel(&rig, &post("api.anthropic.com", &body)).await;
+    direct(&rig, &post(&format!("127.0.0.1:{}", rig.port), &small)).await;
+    let lines = request_lines(&rig).await;
+    assert_eq!(lines.len(), 2, "{lines:?}");
+    for marker in markers {
+        assert!(
+            lines.iter().all(|l| !l.contains(marker)),
+            "{marker} reached the log: {lines:?}"
+        );
+    }
 }

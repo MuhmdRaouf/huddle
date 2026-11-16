@@ -21,7 +21,7 @@ use tokio::sync::mpsc;
 
 use crate::body;
 use crate::dispatch::RequestEvents;
-use crate::lane::{LaneTap, compressed};
+use crate::lane::{LaneTap, Logger, compressed};
 use crate::server::{
     BodyCut, Handler, HandlerFuture, RespBody, anthropic_error, cut_response, empty_body, receive,
     safe_path,
@@ -108,6 +108,9 @@ pub struct AnthropicPath {
     pub pass_through: Handler,
     /// Told how every answer ends, exactly once per answer.
     pub on_outcome: Option<OutcomeHook>,
+    /// Where a streamed request's failure line goes; a whole-body request's line is written by
+    /// the route that serves it.
+    pub log: Option<Logger>,
 }
 
 impl AnthropicPath {
@@ -180,7 +183,15 @@ impl AnthropicPath {
             Route::Anthropic => {
                 let events = RequestEvents::from_parts(&parts);
                 events.track("anthropic", &model);
-                self.forward_streamed(parts, stream).await
+                let method = parts.method.as_str().to_owned();
+                let path = parts.uri.path().to_owned();
+                let answer = self.forward_streamed(parts, stream).await;
+                if let Some(log) = &self.log
+                    && answer.extensions().get::<UpstreamFailure>().is_some()
+                {
+                    log(anthropic_line(&method, &path, &model, &answer));
+                }
+                answer
             }
             Route::Lane(provider) => (self.streamed_route)(parts, stream, provider.id, model).await,
         }
@@ -306,6 +317,27 @@ impl AnthropicPath {
             body,
         })
     }
+}
+
+/// The one log line of a request Anthropic answered: method, path without the query, model, the
+/// status, and for a failed upstream call its code and trace. Nothing of the request's headers,
+/// query or body.
+pub(crate) fn anthropic_line(
+    method: &str,
+    path: &str,
+    model: &str,
+    answer: &Response<RespBody>,
+) -> String {
+    let why = answer
+        .extensions()
+        .get::<UpstreamFailure>()
+        .map(|f| format!(" error {} {}", f.code.as_str(), f.trace.line()))
+        .unwrap_or_default();
+    format!(
+        "{method} {path} model={} -> anthropic {}{why}",
+        crate::dispatch::model_or_dash(model),
+        answer.status().as_u16(),
+    )
 }
 
 /// A request that never left: its event and its live entry end with the answer it got.

@@ -30,6 +30,7 @@ async fn rig(plan: impl Fn(usize, usize) -> Step + Send + Sync + 'static, idle: 
     let sink = outcomes.clone();
     let on_outcome: OutcomeHook = Arc::new(move |o| sink.lock().unwrap().push(o));
     let path = Arc::new(AnthropicPath {
+        log: None,
         client,
         target: upstream.url().parse().expect("target"),
         body_limit: BODY_LIMIT,
@@ -343,6 +344,7 @@ async fn an_unreachable_upstream_is_502_naming_the_code() {
         idle: IDLE_TIMEOUT,
     }));
     let path = Arc::new(AnthropicPath {
+        log: None,
         client,
         target: target.parse().expect("target"),
         body_limit: BODY_LIMIT,

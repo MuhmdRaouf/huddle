@@ -165,7 +165,8 @@ impl Lane {
         let path_and_query = parts.uri.path_and_query().map_or("/", |pq| pq.as_str());
         let url = match upstream_url(&self.target, path_and_query) {
             Ok(url) => url,
-            Err(_) => {
+            Err(code) => {
+                self.refused_note(method, path, model, code);
                 events.emit(502, Some("bad request path".to_owned()));
                 return anthropic_error(
                     StatusCode::BAD_GATEWAY,
@@ -175,6 +176,7 @@ impl Lane {
             }
         };
         if !forwardable(&self.target) {
+            self.refused_note(method, path, model, FailureCode::EUpstream);
             events.emit(
                 502,
                 Some("provider upstream must be https unless it is loopback".to_owned()),
@@ -298,6 +300,22 @@ impl Lane {
                 }
             }
         }
+    }
+
+    /// The line of a request that never left because its destination is unusable: a 502 with
+    /// the code and an empty trace.
+    fn refused_note(&self, method: &str, path: &str, model: &str, code: FailureCode) {
+        self.note(
+            method,
+            path,
+            model,
+            &format!(
+                "-> {} 502 error {} {}",
+                self.provider.id,
+                code.as_str(),
+                Trace::default().line()
+            ),
+        );
     }
 
     fn note(&self, method: &str, path: &str, model: &str, tail: &str) {

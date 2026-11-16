@@ -290,6 +290,7 @@ async fn l15_path_rig(
     whole_calls: Arc<Mutex<Vec<Option<Route>>>>,
 ) -> u16 {
     let path = Arc::new(AnthropicPath {
+        log: None,
         client: Arc::new(UpstreamClient::new(UpstreamConfig {
             env: Env::with(&[]),
             roots: rustls::RootCertStore::empty(),

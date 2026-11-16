@@ -122,6 +122,7 @@ async fn rig_with_lane(
             })
         });
     let path = Arc::new(AnthropicPath {
+        log: None,
         client,
         target: upstream.url().parse().expect("target"),
         body_limit: limit,
@@ -134,6 +135,7 @@ async fn rig_with_lane(
     let intercept = path.intercept_handler();
     let leaf = Arc::new(LeafCache::new(dir, Arc::new(|_| {})));
     let ctx = Arc::new(ConnectCtx {
+        log: Arc::new(|_| {}),
         env: Env::with(&[]),
         dial: None,
         tunnels: TunnelTracker::new(),
