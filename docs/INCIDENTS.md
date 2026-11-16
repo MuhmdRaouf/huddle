@@ -359,7 +359,8 @@ Each incident, its cause, and the test that now stops it. A guard named here mus
   did not start with `/` merged into the authority.
 - **Guard:** crates/huddle-router/tests/l63_path_cannot_steer.rs:l63_no_request_target_reaches_another_host,
   crates/huddle-router/tests/l63_path_cannot_steer.rs:l63_a_refused_target_logs_one_line_without_the_target,
-  crates/huddle-router/tests/l63_path_cannot_steer.rs:l63_a_refused_target_reads_no_key
+  crates/huddle-router/tests/l63_path_cannot_steer.rs:l63_a_refused_target_reads_no_key,
+  crates/huddle-router/src/upstream.rs:l63_upstream_url_keeps_the_base_origin_or_refuses
 - **Rule:** the upstream host comes from configuration, never from the request. A request path that does not
   start with a single `/`, or holds a backslash or a control character, is answered 400 before any key is
   read, and the built URL must keep the base's scheme, host and port.
