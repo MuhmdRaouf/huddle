@@ -48,6 +48,11 @@ struct Rig {
 }
 
 async fn rig(enabled: &[&str]) -> Rig {
+    rig_with_ports(enabled, free_port).await
+}
+
+/// Builds the rig, taking every port from `next_port`.
+async fn rig_with_ports(enabled: &[&str], next_port: impl Fn() -> u16) -> Rig {
     let anthropic = FakeUpstream::start(|_, _| Step::answer(200, "from-anthropic")).await;
     let zai = FakeUpstream::start(|_, _| Step::answer(200, "from-zai")).await;
     let home = TempHome::new();
@@ -59,7 +64,29 @@ async fn rig(enabled: &[&str]) -> Rig {
         ("ZAI_API_KEY", "test-key-test-key"),
     ]);
     let paths = Paths::from_env(&env).expect("paths");
-    let port = free_port();
+    // A port another process took between the pick and the bind costs a retry, never a failed
+    // test: bind first, then build the config with the port that was bound.
+    let mut listener = None;
+    let mut port = 0;
+    let mut last_err = None;
+    for _ in 0..10 {
+        port = next_port();
+        match bind(port).await {
+            Ok(bound) => {
+                listener = Some(bound);
+                break;
+            }
+            Err(err) if err.kind() == std::io::ErrorKind::AddrInUse => last_err = Some(err),
+            Err(err) => panic!("bind 127.0.0.1:{port}: {err}"),
+        }
+    }
+    let listener = match listener {
+        Some(listener) => listener,
+        None => panic!(
+            "bind 127.0.0.1:{port} after 10 tries: {:?}",
+            last_err.expect("the last bind error")
+        ),
+    };
     let config = RouterConfig {
         env,
         paths,
@@ -71,7 +98,6 @@ async fn rig(enabled: &[&str]) -> Rig {
     };
     let enabled: Vec<String> = enabled.iter().map(|s| s.to_string()).collect();
     let router = Router::new(config, &enabled);
-    let listener = bind(port).await.expect("bind");
     let (stop, rx) = watch::channel(false);
     let handler = router.handler();
     tokio::spawn(async move {
@@ -424,6 +450,37 @@ async fn l15_routing_results_are_unchanged() {
     .await;
     assert!(unknown.contains("from-anthropic"), "{unknown}");
     assert_eq!(r.anthropic.requests().len(), 2);
+    assert_eq!(r.zai.requests().len(), 1);
+    let _ = r.stop.send(true);
+}
+
+/// The rig survives a port another process holds: it moves past the taken port and serves on the
+/// one it bound.
+#[tokio::test]
+async fn l49_the_rig_survives_a_taken_port() {
+    let taken = free_port();
+    let holder = std::net::TcpListener::bind(("127.0.0.1", taken)).expect("hold the port");
+    let queue = Arc::new(Mutex::new(vec![taken]));
+    let next = {
+        let queue = Arc::clone(&queue);
+        move || {
+            let mut queue = queue.lock().expect("queue");
+            match queue.pop() {
+                Some(port) => port,
+                None => free_port(),
+            }
+        }
+    };
+    let r = rig_with_ports(&["zai"], next).await;
+    drop(holder);
+    assert_ne!(r.port, taken, "the rig moved past the taken port");
+    let answer = post(
+        r.port,
+        "/v1/messages",
+        r#"{"model":"glm-5.3","messages":[]}"#,
+    )
+    .await;
+    assert!(answer.contains("from-zai"), "{answer}");
     assert_eq!(r.zai.requests().len(), 1);
     let _ = r.stop.send(true);
 }
