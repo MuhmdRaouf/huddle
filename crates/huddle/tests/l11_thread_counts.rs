@@ -110,3 +110,52 @@ fn l11_supervisor_has_at_most_4_threads() {
         panic!("no sample of the supervisor was within {SUPERVISOR_LIMIT} threads: {samples:?}");
     }
 }
+
+/// A blocking thread that finished a read leaves within a second, so over 10 consecutive
+/// samples taken 100 ms apart at least 9 show the idle count.
+#[test]
+fn l44_a_finished_blocking_thread_leaves_within_a_second() {
+    let home = TempHome::new();
+    let start = home
+        .command(env!("CARGO_BIN_EXE_huddle"))
+        .args(["router", "start"])
+        .output()
+        .expect("run huddle");
+    assert!(start.status.success(), "{start:?}");
+    let deadline = Instant::now() + Duration::from_secs(15);
+    let pids = loop {
+        if let Some(pids) = record(&home).filter(|pids| pids.worker > 0) {
+            break pids;
+        }
+        assert!(Instant::now() < deadline, "the record never named a worker");
+        thread::sleep(Duration::from_millis(10));
+    };
+    thread::sleep(Duration::from_secs(2));
+    let settled_until = Instant::now() + Duration::from_secs(15);
+    let mut windows = Vec::new();
+    let mut passed = false;
+    while Instant::now() < settled_until && !passed {
+        let window: Vec<usize> = (0..10)
+            .map(|_| {
+                let count = threads(pids.worker);
+                assert!(count > 0, "the worker is gone: it shows 0 threads");
+                thread::sleep(Duration::from_millis(100));
+                count
+            })
+            .collect();
+        passed = window
+            .iter()
+            .filter(|count| **count <= WORKER_LIMIT)
+            .count()
+            >= 9;
+        windows.push(window);
+    }
+    let _ = home
+        .command(env!("CARGO_BIN_EXE_huddle"))
+        .args(["router", "stop"])
+        .output();
+    assert!(
+        passed,
+        "no window had 9 of 10 samples within {WORKER_LIMIT}: {windows:?}"
+    );
+}

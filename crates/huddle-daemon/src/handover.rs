@@ -112,10 +112,13 @@ pub fn serve_handover(
         log,
     });
     let loop_server = Arc::clone(&server);
-    let accept_thread = thread::spawn(move || accept_loop(loop_server, unix));
+    let accept_thread = thread::Builder::new()
+        .name("huddle-handover".into())
+        .spawn(move || accept_loop(loop_server, unix))
+        .ok();
     HandoverListener {
         server: Some(server),
-        accept_thread: Mutex::new(Some(accept_thread)),
+        accept_thread: Mutex::new(accept_thread),
     }
 }
 

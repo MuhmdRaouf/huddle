@@ -109,8 +109,9 @@ pub fn run(args: &[String], env: &Env) -> i32 {
 
 /// Runtime threads of the worker's multi-thread runtime.
 const WORKER_THREADS: usize = 4;
-/// How long an idle blocking thread lives; the start-up jobs leave none behind at idle.
-const BLOCKING_KEEP_ALIVE: Duration = Duration::from_secs(1);
+/// How long an idle blocking thread lives: a thread that finished a read is gone before the
+/// next sample of an idle worker.
+const BLOCKING_KEEP_ALIVE: Duration = Duration::from_millis(100);
 
 /// The worker serves requests on a small multi-thread runtime; the supervisor only waits on its
 /// child, a 1 s check and the handover socket, so one thread runs it. Runtime threads carry the

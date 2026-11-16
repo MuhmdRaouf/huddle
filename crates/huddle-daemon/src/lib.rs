@@ -6,6 +6,7 @@ pub mod history_upkeep;
 pub mod key_presence;
 pub mod nochain;
 pub mod output;
+pub mod periodic;
 pub mod read_cache;
 pub mod rss;
 pub mod serve;

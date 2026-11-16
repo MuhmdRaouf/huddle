@@ -29,8 +29,8 @@ use rustls::pki_types::ServerName;
 use rustls::{ClientConfig, RootCertStore};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::{TcpStream, lookup_host};
-use tokio::sync::mpsc;
 use tokio::sync::{Notify, OwnedSemaphorePermit, Semaphore};
+use tokio::sync::{OnceCell, mpsc};
 use tokio_rustls::TlsConnector;
 use tokio_rustls::client::TlsStream;
 
@@ -1091,10 +1091,82 @@ pub struct UpstreamConfig {
     pub idle: Duration,
 }
 
+/// Reads the trust roots for upstream TLS. It blocks, so the client calls it on a blocking
+/// thread; an error names why no usable root came back.
+pub type RootsSource = Arc<dyn Fn() -> Result<RootCertStore, String> + Send + Sync>;
+
+/// Why no trust roots were available: an upstream request that meets it fails as `ECERT`.
+#[derive(Debug)]
+struct TrustStoreError(String);
+
+impl fmt::Display for TrustStoreError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl StdError for TrustStoreError {}
+
+/// `source` with every failed read written to `log` once, as one `huddle-router:` line.
+pub fn log_failures(source: RootsSource, log: Arc<dyn Fn(String) + Send + Sync>) -> RootsSource {
+    Arc::new(move || {
+        let read = source();
+        if let Err(why) = &read {
+            log(format!("huddle-router: {why}"));
+        }
+        read
+    })
+}
+
+/// The TLS client config: ready at build, or read from a [`RootsSource`] by the first TLS dial.
+struct TlsSlot {
+    connector: OnceCell<TlsConnector>,
+    source: Option<RootsSource>,
+}
+
+impl TlsSlot {
+    fn ready(roots: RootCertStore) -> TlsSlot {
+        TlsSlot {
+            connector: OnceCell::new_with(tls_connector(roots)),
+            source: None,
+        }
+    }
+
+    fn lazy(source: RootsSource) -> TlsSlot {
+        TlsSlot {
+            connector: OnceCell::new(),
+            source: Some(source),
+        }
+    }
+
+    /// The connector. The first call reads the roots once, off the async threads, while the
+    /// calls that arrive meanwhile wait for that read. A failed read is returned to every call
+    /// waiting on it and is not kept: the next call reads again.
+    async fn get(&self) -> io::Result<&TlsConnector> {
+        let Some(source) = &self.source else {
+            return self
+                .connector
+                .get()
+                .ok_or_else(|| io::Error::other("the TLS client config is unavailable"));
+        };
+        self.connector
+            .get_or_try_init(|| async {
+                let source = Arc::clone(source);
+                let roots = tokio::task::spawn_blocking(move || source())
+                    .await
+                    .map_err(io::Error::other)?
+                    .map_err(|why| io::Error::other(TrustStoreError(why)))?;
+                tls_connector(roots)
+                    .ok_or_else(|| io::Error::other("the TLS client config is unavailable"))
+            })
+            .await
+    }
+}
+
 /// The keep-alive upstream client: one pool per client, one socket per in-flight request.
 pub struct UpstreamClient {
     env: Env,
-    tls: Option<TlsConnector>,
+    tls: TlsSlot,
     idle: Duration,
     idle_ttl: Duration,
     pool: Arc<Mutex<HashMap<String, HostPool>>>,
@@ -1104,8 +1176,20 @@ impl UpstreamClient {
     pub fn new(cfg: UpstreamConfig) -> UpstreamClient {
         UpstreamClient {
             env: cfg.env,
-            tls: tls_connector(cfg.roots),
+            tls: TlsSlot::ready(cfg.roots),
             idle: cfg.idle,
+            idle_ttl: IDLE_CONN_TTL,
+            pool: Arc::new(Mutex::new(HashMap::new())),
+        }
+    }
+
+    /// A client whose trust roots come from `roots`, read when the first TLS connection needs
+    /// them: an idle client never reads them.
+    pub fn lazy(env: Env, idle: Duration, roots: RootsSource) -> UpstreamClient {
+        UpstreamClient {
+            env,
+            tls: TlsSlot::lazy(roots),
+            idle,
             idle_ttl: IDLE_CONN_TTL,
             pool: Arc::new(Mutex::new(HashMap::new())),
         }
@@ -1267,12 +1351,11 @@ impl UpstreamClient {
         if !is_tls {
             return Ok((Box::new(tcp), dial));
         }
-        let Some(tls) = &self.tls else {
-            return Err(DialError {
-                error: io::Error::other("the TLS client config is unavailable"),
-                trace,
-            });
-        };
+        let tls = self
+            .tls
+            .get()
+            .await
+            .map_err(|error| DialError { error, trace })?;
         let name = ServerName::try_from(host.to_owned()).map_err(|_| DialError {
             error: io::Error::new(
                 ErrorKind::InvalidInput,
@@ -1585,6 +1668,12 @@ fn io_code(err: &io::Error) -> Option<FailureCode> {
         ErrorKind::ConnectionRefused => return Some(FailureCode::EConnRefused),
         ErrorKind::TimedOut => return Some(FailureCode::ETimedOut),
         _ => {}
+    }
+    if err
+        .get_ref()
+        .is_some_and(|inner| inner.is::<TrustStoreError>())
+    {
+        return Some(FailureCode::ECert);
     }
     match err.raw_os_error() {
         Some(libc::ECONNRESET) => Some(FailureCode::EConnReset),

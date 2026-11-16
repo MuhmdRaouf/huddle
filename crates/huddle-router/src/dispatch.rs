@@ -25,7 +25,7 @@ use crate::server::{
 };
 use crate::sse::Usage;
 use crate::trace::Trace;
-use crate::upstream::{FailureCode, IDLE_TIMEOUT, UpstreamClient, UpstreamConfig};
+use crate::upstream::{FailureCode, IDLE_TIMEOUT, RootsSource, UpstreamClient, log_failures};
 use huddle_catalog::providers::{provider_by_id, provider_ids};
 use huddle_catalog::routing::{ResolvedIds, Route, decide_resolved};
 use huddle_config::mcp_token::{McpToken, token_path};
@@ -148,9 +148,9 @@ impl Default for Tuning {
     }
 }
 
-/// The OS trust store as the upstream client's roots; a certificate that does not parse is
-/// skipped and logged.
-pub fn os_roots(log: &dyn Fn(String)) -> RootCertStore {
+/// The OS trust store as roots; a certificate that does not parse is skipped and logged. No
+/// usable root is an error, never an empty store.
+pub fn read_os_roots(log: &dyn Fn(String)) -> Result<RootCertStore, String> {
     let loaded = rustls_native_certs::load_native_certs();
     for error in &loaded.errors {
         log(format!(
@@ -159,7 +159,19 @@ pub fn os_roots(log: &dyn Fn(String)) -> RootCertStore {
     }
     let mut roots = RootCertStore::empty();
     roots.add_parsable_certificates(loaded.certs);
-    roots
+    if roots.is_empty() {
+        return Err(match loaded.errors.first() {
+            Some(error) => format!("reading the OS trust store failed: {error}"),
+            None => "the OS trust store holds no usable certificate".to_owned(),
+        });
+    }
+    Ok(roots)
+}
+
+/// The OS trust store as the roots of a client that only needs them once; empty when it cannot
+/// be read.
+pub fn os_roots(log: &dyn Fn(String)) -> RootCertStore {
+    read_os_roots(log).unwrap_or_else(|_| RootCertStore::empty())
 }
 
 /// The router's fixed wiring: the environment, the paths, the port, the Anthropic origin,
@@ -200,17 +212,38 @@ impl Router {
 
     /// Like `new`, with the probe and silence timings set by the caller.
     pub fn with_tuning(config: RouterConfig, enabled: &[String], tuning: Tuning) -> Arc<Router> {
+        Router::build(config, enabled, tuning, |log| {
+            let log = Arc::clone(log);
+            Arc::new(move || read_os_roots(&*log))
+        })
+    }
+
+    /// Like `with_tuning`, with the source of the upstream trust roots set by the caller. The
+    /// roots are read when the first upstream TLS connection needs them, never at build.
+    pub fn with_roots(
+        config: RouterConfig,
+        enabled: &[String],
+        tuning: Tuning,
+        roots: RootsSource,
+    ) -> Arc<Router> {
+        Router::build(config, enabled, tuning, move |_| roots)
+    }
+
+    /// The wiring. `roots_of` makes the roots source from the router's own log, so a failed read
+    /// reaches the log and the dashboard events.
+    fn build(
+        config: RouterConfig,
+        enabled: &[String],
+        tuning: Tuning,
+        roots_of: impl FnOnce(&Logger) -> RootsSource,
+    ) -> Arc<Router> {
         let live = Arc::new(match config.history.clone() {
             Some(sink) => LiveState::with_sink(now_ms(), sink),
             None => LiveState::new(now_ms()),
         });
         let log = events_noted(config.log, &live);
-        let roots = os_roots(&*log);
-        let client = Arc::new(UpstreamClient::new(UpstreamConfig {
-            env: config.env.clone(),
-            roots,
-            idle: tuning.idle,
-        }));
+        let roots = log_failures(roots_of(&log), Arc::clone(&log));
+        let client = Arc::new(UpstreamClient::lazy(config.env.clone(), tuning.idle, roots));
         let tunnels = TunnelTracker::new();
         let connections = TunnelTracker::new();
 

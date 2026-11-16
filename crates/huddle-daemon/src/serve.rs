@@ -30,6 +30,7 @@ use crate::handover::{serve_handover, takeover as take_over_socket};
 use crate::history_sink::HistoryBridge;
 use crate::history_upkeep::{self, FILL_WINDOW_MS, FIRST_FILL_WINDOW_MS};
 use crate::nochain::clean_proxy_env;
+use crate::periodic::{Job, Runner, Schedule};
 use crate::rss::{RssDecision, RssWatch, ceiling_of, interval_of, read_rss};
 use crate::singleton::{self, SingletonError};
 use crate::start::{RouterRecord, read_record, spawn_serve};
@@ -513,16 +514,18 @@ async fn engine(
     ));
     let tunnels = router.tunnels();
 
-    // The first tick of a `tokio::time::interval` is immediate; both watches fire first after
-    // one period.
-    let mut reload_timer = tokio::time::interval(POLL);
-    reload_timer.tick().await;
+    // The reload, the RSS check and the prune share one schedule: the loop awaits each due job
+    // before it waits again, so one blocking read runs at a time.
     let rss_interval = interval_of(&cleaned);
-    let mut rss_timer = tokio::time::interval(rss_interval);
-    rss_timer.tick().await;
+    let mut schedule = Schedule::new(
+        Instant::now(),
+        POLL,
+        rss_interval,
+        Duration::ZERO,
+        PRUNE_EVERY,
+    );
 
     let mut stop = stop;
-    let mut prune_timer = tokio::time::interval(PRUNE_EVERY);
     let mut fill_timer = tokio::time::interval(FILL_EVERY);
     let mut first_fill = true;
     let fill_gate = history_upkeep::FillGate::default();
@@ -588,39 +591,25 @@ async fn engine(
                 }
                 break;
             }
-            _ = reload_timer.tick() => {
-                let (hosts, action) = match tokio::task::spawn_blocking({
-                    let watches = Arc::clone(&reload_watches);
-                    let log = Arc::clone(&log);
-                    move || {
-                        let mut watches = watches.lock().unwrap_or_else(|e| e.into_inner());
-                        let (providers, hosts) = &mut *watches;
-                        let hosts = hosts.tick(&*log);
-                        let action = providers.tick(&*log);
-                        (hosts, action)
-                    }
-                })
-                .await
-                {
-                    Ok(answer) => answer,
-                    Err(error) => {
-                        log(format!("huddle-router: reload poll: {error}"));
-                        (Vec::new(), ReloadAction::Keep)
-                    }
+            _ = schedule.wait() => {
+                let mut jobs = Jobs {
+                    reload_watches: &reload_watches,
+                    dashboard_hosts_now: &dashboard_hosts_now,
+                    router: &router,
+                    rss_watch: &mut rss_watch,
+                    env: &cleaned,
+                    paths: &paths,
+                    port,
+                    executable: executable.as_deref(),
+                    log: &log,
                 };
-                *dashboard_hosts_now.write().unwrap_or_else(|e| e.into_inner()) = hosts;
-                if let ReloadAction::Swap(names) = action {
-                    router.reload(&names);
-                    log(format!("huddle-router: now serving {}", names.join(", ")));
-                }
+                schedule.run_due(&mut jobs).await;
             }
-            _ = prune_timer.tick() => prune_history(&paths, &log).await,
             _ = fill_timer.tick() => {
                 let window = if first_fill { FIRST_FILL_WINDOW_MS } else { FILL_WINDOW_MS };
                 first_fill = false;
                 fill_history(&fill_gate, &paths, window, &log);
             }
-            _ = rss_timer.tick() => rss_check(&mut rss_watch, &cleaned, &paths, port, executable.as_deref(), &log).await,
         }
     }
     if let Some(handover) = &handover {
@@ -822,6 +811,82 @@ fn fill_history(gate: &history_upkeep::FillGate, paths: &Paths, window_ms: u64, 
             log(format!("huddle-router: history fill: {error}"));
         }
     });
+}
+
+/// The daemon's periodic jobs with what each needs.
+struct Jobs<'a> {
+    reload_watches: &'a Arc<Mutex<(ProvidersWatch, DashboardHostsWatch)>>,
+    dashboard_hosts_now: &'a RwLock<Vec<String>>,
+    router: &'a Arc<Router>,
+    rss_watch: &'a mut RssWatch,
+    env: &'a Env,
+    paths: &'a Paths,
+    port: u16,
+    executable: Option<&'a Path>,
+    log: &'a Logger,
+}
+
+impl Runner for Jobs<'_> {
+    async fn run(&mut self, job: Job) {
+        match job {
+            Job::Reload => {
+                reload_tick(
+                    self.reload_watches,
+                    self.dashboard_hosts_now,
+                    self.router,
+                    self.log,
+                )
+                .await
+            }
+            Job::Rss => {
+                rss_check(
+                    self.rss_watch,
+                    self.env,
+                    self.paths,
+                    self.port,
+                    self.executable,
+                    self.log,
+                )
+                .await
+            }
+            Job::Prune => prune_history(self.paths, self.log).await,
+        }
+    }
+}
+
+/// One reload of the provider and dashboard-host files, read off the async runtime, then applied.
+async fn reload_tick(
+    watches: &Arc<Mutex<(ProvidersWatch, DashboardHostsWatch)>>,
+    dashboard_hosts_now: &RwLock<Vec<String>>,
+    router: &Arc<Router>,
+    log: &Logger,
+) {
+    let (hosts, action) = match tokio::task::spawn_blocking({
+        let watches = Arc::clone(watches);
+        let log = Arc::clone(log);
+        move || {
+            let mut watches = watches.lock().unwrap_or_else(|e| e.into_inner());
+            let (providers, hosts) = &mut *watches;
+            let hosts = hosts.tick(&*log);
+            let action = providers.tick(&*log);
+            (hosts, action)
+        }
+    })
+    .await
+    {
+        Ok(answer) => answer,
+        Err(error) => {
+            log(format!("huddle-router: reload poll: {error}"));
+            (Vec::new(), ReloadAction::Keep)
+        }
+    };
+    *dashboard_hosts_now
+        .write()
+        .unwrap_or_else(|e| e.into_inner()) = hosts;
+    if let ReloadAction::Swap(names) = action {
+        router.reload(&names);
+        log(format!("huddle-router: now serving {}", names.join(", ")));
+    }
 }
 
 /// One prune of the history database, off the async runtime. A failure is one log line.

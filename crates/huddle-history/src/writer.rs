@@ -26,15 +26,18 @@ impl Writer {
         let path = path.to_path_buf();
         let dropped = Arc::new(AtomicU64::new(0));
         let lost = Arc::clone(&dropped);
-        let thread = thread::spawn(move || {
-            if let Ok(mut history) = History::open(&path) {
-                run(&mut history, &rx, &lost, &|| {});
-            }
-        });
+        let thread = thread::Builder::new()
+            .name("huddle-history-writer".into())
+            .spawn(move || {
+                if let Ok(mut history) = History::open(&path) {
+                    run(&mut history, &rx, &lost, &|| {});
+                }
+            })
+            .ok();
         Writer {
             tx: Some(tx),
             dropped,
-            thread: Some(thread),
+            thread,
         }
     }
 
