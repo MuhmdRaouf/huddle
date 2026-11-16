@@ -127,3 +127,33 @@ async fn l62_both_lane_failures_share_one_shape() {
     }
     assert!(sent[0].contains("ECONNREFUSED"), "{sent:?}");
 }
+
+/// The lane's failure line for a request whose model text is `model`, against a refusing upstream.
+async fn line_for_model(model: &str) -> Vec<String> {
+    let (lane, lines, _home) = lane_at("http://provider.example:80");
+    let parts = Request::builder()
+        .method(Method::POST)
+        .uri("/v1/messages")
+        .body(())
+        .expect("request")
+        .into_parts()
+        .0;
+    let body = Bytes::from_static(br#"{"model":"glm-5.3","messages":[]}"#);
+    lane.forward(parts, body, model).await;
+    lines.lock().unwrap().clone()
+}
+
+#[tokio::test]
+async fn l64_a_lane_model_with_a_newline_stays_on_one_log_line() {
+    let lines = line_for_model("glm-5.3\nb").await;
+    assert_eq!(lines.len(), 1, "{lines:?}");
+    assert!(lines[0].contains("model=glm-5.3?b "), "{lines:?}");
+    assert!(!lines[0].contains('\n'), "{lines:?}");
+}
+
+#[tokio::test]
+async fn l64_a_model_with_bidi_or_line_separator_text_is_logged_plain() {
+    let lines = line_for_model("glm-5.3\u{2028}a\u{2029}b\u{202E}c\u{2066}d\u{2069}e").await;
+    assert_eq!(lines.len(), 1, "{lines:?}");
+    assert!(lines[0].contains("model=glm-5.3?a?b?c?d?e "), "{lines:?}");
+}

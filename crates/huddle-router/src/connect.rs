@@ -352,7 +352,7 @@ enum DialFailure {
 
 impl DialFailure {
     fn io(error: &io::Error) -> DialFailure {
-        DialFailure::Other(crate::upstream::io_code(error).unwrap_or(FailureCode::EUpstream))
+        DialFailure::Other(crate::upstream::classify_io(error))
     }
 }
 
@@ -401,7 +401,7 @@ async fn lookup_and_connect(host: &str, port: u16) -> Result<TcpStream, DialFail
     for address in non_local {
         match TcpStream::connect(address).await {
             Ok(stream) => return Ok(stream),
-            Err(e) => last = crate::upstream::io_code(&e).unwrap_or(FailureCode::EUpstream),
+            Err(e) => last = crate::upstream::classify_io(&e),
         }
     }
     Err(DialFailure::Other(last))

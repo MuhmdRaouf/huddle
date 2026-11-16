@@ -147,6 +147,11 @@ fn small_post(port: u16) -> String {
 /// The lines that name the request, after the router has had time to write them.
 async fn request_lines(rig: &Rig) -> Vec<String> {
     tokio::time::sleep(Duration::from_millis(300)).await;
+    named_lines(rig)
+}
+
+/// The lines that name the request, as written so far.
+fn named_lines(rig: &Rig) -> Vec<String> {
     rig.lines
         .lock()
         .unwrap()
@@ -278,17 +283,22 @@ async fn l62_a_model_with_a_newline_stays_on_one_log_line() {
 }
 
 /// A streamed upload whose client leaves halfway, against an upstream that never answers, is a
-/// 499 and writes no failure line. It passed before L62 and stays a guard.
+/// 499 and writes no failure line.
 #[tokio::test]
 async fn l62_a_streamed_client_that_left_logs_nothing() {
     let holder = tokio::net::TcpListener::bind("127.0.0.1:0")
         .await
         .expect("bind");
     let url = format!("http://{}", holder.local_addr().expect("addr"));
+    let (closed, mut upstream_closed) = tokio::sync::mpsc::unbounded_channel();
     let _held = tokio::spawn(async move {
-        let mut open = Vec::new();
-        while let Ok((socket, _)) = holder.accept().await {
-            open.push(socket);
+        while let Ok((mut socket, _)) = holder.accept().await {
+            let closed = closed.clone();
+            tokio::spawn(async move {
+                let mut sink = [0u8; 4096];
+                while matches!(socket.read(&mut sink).await, Ok(n) if n > 0) {}
+                let _ = closed.send(());
+            });
         }
     });
     let rig = rig(&url).await;
@@ -306,6 +316,12 @@ async fn l62_a_streamed_client_that_left_logs_nothing() {
     tls.write_all(head.as_bytes()).await.expect("write");
     tls.flush().await.expect("flush");
     drop(tls);
-    let lines = request_lines(&rig).await;
+    // The router closes its upstream connection once it has settled the request as a 499.
+    let settled = tokio::time::timeout(Duration::from_secs(5), upstream_closed.recv()).await;
+    assert!(
+        settled.is_ok(),
+        "the router never closed the upstream connection"
+    );
+    let lines = named_lines(&rig);
     assert!(lines.is_empty(), "{lines:?}");
 }

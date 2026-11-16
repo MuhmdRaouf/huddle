@@ -992,8 +992,15 @@ pub(crate) fn model_or_dash(model: &str) -> String {
     model
         .chars()
         .take(LOGGED_MODEL_MAX)
-        .map(|c| if c.is_control() { '?' } else { c })
+        .map(|c| if is_unsafe_in_log(c) { '?' } else { c })
         .collect()
+}
+
+/// A control character, a line or paragraph separator, or a bidi override: text that can end a
+/// log line or make it read differently from what it holds.
+fn is_unsafe_in_log(c: char) -> bool {
+    c.is_control()
+        || matches!(c, '\u{2028}' | '\u{2029}' | '\u{202A}'..='\u{202E}' | '\u{2066}'..='\u{2069}')
 }
 
 /// The router's clock in milliseconds since the epoch.

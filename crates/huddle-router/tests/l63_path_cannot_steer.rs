@@ -36,7 +36,6 @@ struct Rig {
     lane: FakeUpstream,
     anthropic: FakeUpstream,
     foreign: FakeUpstream,
-    lines: Lines,
     _home: TempHome,
     _stop: watch::Sender<bool>,
 }
@@ -56,15 +55,13 @@ async fn rig() -> Rig {
     let paths = Paths::from_env(&env).expect("paths");
     let port = free_port();
     let listener = bind(port).await.expect("bind");
-    let lines: Lines = Arc::default();
-    let sink = lines.clone();
     let router = Router::new(
         RouterConfig {
             env,
             paths,
             port,
             anthropic_url: anthropic.url().parse::<Uri>().expect("uri"),
-            log: Arc::new(move |l| sink.lock().unwrap().push(l)),
+            log: Arc::new(|_| {}),
             history: None,
             dashboard: huddle_router::dashboard::DashboardInputs::default(),
         },
@@ -82,7 +79,6 @@ async fn rig() -> Rig {
         lane,
         anthropic,
         foreign,
-        lines,
         _home: home,
         _stop: stop,
     }
@@ -265,7 +261,6 @@ async fn l63_a_normal_path_and_query_arrive_unchanged() {
     let answer = raw(r.port, "POST", "/v1/messages?c=2", claude).await;
     assert_eq!(status_of(&answer), "200", "{answer}");
     assert_eq!(r.anthropic.requests()[0].path, "/v1/messages?c=2");
-    let _ = r.lines.lock().unwrap().len();
 }
 
 #[tokio::test]
@@ -283,4 +278,21 @@ async fn l63_a_refused_target_reads_no_key() {
     let answer = lane.forward(parts, body, "glm-5.3").await;
     assert_eq!(answer.status(), StatusCode::BAD_REQUEST);
     assert_eq!(reads.load(Ordering::SeqCst), 0);
+}
+
+#[tokio::test]
+async fn l64_a_refused_upstream_reads_no_key() {
+    let (lane, lines, _home, reads) = lane_counting("http://provider.example:80");
+    let parts = Request::builder()
+        .method(Method::POST)
+        .uri("/v1/messages")
+        .body(())
+        .expect("request")
+        .into_parts()
+        .0;
+    let body = Bytes::from_static(br#"{"model":"glm-5.3","messages":[]}"#);
+    let answer = lane.forward(parts, body, "glm-5.3").await;
+    assert_eq!(answer.status(), StatusCode::BAD_GATEWAY);
+    assert_eq!(reads.load(Ordering::SeqCst), 0);
+    assert_eq!(lines.lock().unwrap().len(), 1);
 }

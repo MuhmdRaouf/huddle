@@ -141,7 +141,7 @@ impl Lane {
             events.emit(answer.status, Some("message threads beta".to_owned()));
             return respond(answer);
         }
-        // The destination is settled before the key is read: a refused request reads no key.
+        // The destination is settled before the key is read: a request that will be refused reads no key.
         let path_and_query = parts.uri.path_and_query().map_or("/", |pq| pq.as_str());
         let url = match upstream_url(&self.target, path_and_query) {
             Ok(url) => url,
@@ -171,6 +171,22 @@ impl Lane {
                 );
             }
         };
+        if !forwardable(&self.target) {
+            self.refused_note(method, path, model, FailureCode::EUpstream);
+            events.emit(
+                502,
+                Some("provider upstream must be https unless it is loopback".to_owned()),
+            );
+            return anthropic_error(
+                StatusCode::BAD_GATEWAY,
+                "api_error",
+                &format!(
+                    "{} router: provider upstream must be https unless it is loopback ({})",
+                    self.provider.id,
+                    self.target.authority().map_or("", |a| a.as_str()),
+                ),
+            );
+        }
         let key = match self.keys.get(KEY_BUDGET).await {
             KeyAnswer::Found(key) => key,
             KeyAnswer::NoKey => {
@@ -192,22 +208,6 @@ impl Lane {
                 return respond(answer);
             }
         };
-        if !forwardable(&self.target) {
-            self.refused_note(method, path, model, FailureCode::EUpstream);
-            events.emit(
-                502,
-                Some("provider upstream must be https unless it is loopback".to_owned()),
-            );
-            return anthropic_error(
-                StatusCode::BAD_GATEWAY,
-                "api_error",
-                &format!(
-                    "{} router: provider upstream must be https unless it is loopback ({})",
-                    self.provider.id,
-                    self.target.authority().map_or("", |a| a.as_str()),
-                ),
-            );
-        }
         let mut headers = forward_headers(&parts.headers, &self.target, length);
         headers.remove("x-api-key");
         headers.remove(AUTHORIZATION);

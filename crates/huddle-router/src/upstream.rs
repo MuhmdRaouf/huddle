@@ -1713,7 +1713,7 @@ pub(crate) fn io_code(err: &io::Error) -> Option<FailureCode> {
 }
 
 /// A dial failure is classified the same way, straight from its io error.
-fn classify_io(err: &io::Error) -> FailureCode {
+pub(crate) fn classify_io(err: &io::Error) -> FailureCode {
     io_code(err).unwrap_or(FailureCode::EUpstream)
 }
 

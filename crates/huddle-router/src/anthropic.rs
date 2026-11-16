@@ -664,8 +664,8 @@ impl Body for StreamingBody {
     }
 }
 
-/// An upstream failure that is not the client's leaving: one Anthropic-shaped error, 504
-/// when the upstream stayed silent, 502 for the rest.
+/// An upstream failure that is not the client's leaving: one Anthropic-shaped error, 400 for a
+/// refused request path, 504 when the upstream stayed silent, 502 for the rest.
 fn failed(failure: Failure) -> Response<RespBody> {
     if failure.code == FailureCode::EPath {
         let mut answer = anthropic_error(
