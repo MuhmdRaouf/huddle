@@ -91,3 +91,58 @@ fn check_links(file: &Path) {
         );
     }
 }
+
+fn doc(path: &str) -> String {
+    fs::read_to_string(repo_root().join(path)).unwrap_or_else(|_| panic!("read {path}"))
+}
+
+#[test]
+fn l34_docs_state_the_release_changes() {
+    let changelog = doc("CHANGELOG.md");
+    let release = changelog
+        .split("\n## ")
+        .find(|section| section.starts_with("0.0.9"))
+        .expect("CHANGELOG has a 0.0.9 section");
+    for phrase in [
+        "replay prefix + window + one frame",
+        "4 runtime threads",
+        "no `huddle mcp` process",
+        "without forking `ps`",
+        "about 3 seconds faster",
+    ] {
+        assert!(release.contains(phrase), "CHANGELOG 0.0.9 lacks: {phrase}");
+    }
+
+    let incidents = doc("docs/INCIDENTS.md");
+    for phrase in [
+        "the history fill recreated a removed home",
+        "the history fill held whole session logs in memory",
+        "a drain that hit its limit did not say what held it",
+    ] {
+        assert!(incidents.contains(phrase), "INCIDENTS lacks: {phrase}");
+    }
+
+    let adr = doc("docs/adr/0004-router-process.md");
+    assert!(
+        adr.contains("4 worker threads"),
+        "ADR 4 lacks the worker threads"
+    );
+    assert!(
+        adr.contains("current-thread"),
+        "ADR 4 lacks the supervisor runtime"
+    );
+
+    let decisions = doc("docs/DECISIONS.md");
+    for phrase in [
+        "an upstream never receives a second request it could process",
+        "replay prefix + window + one frame",
+    ] {
+        assert!(decisions.contains(phrase), "DECISIONS lacks: {phrase}");
+    }
+
+    let readme = doc("README.md");
+    assert!(
+        readme.contains("replay prefix + window + one frame"),
+        "README lacks the request body bound"
+    );
+}

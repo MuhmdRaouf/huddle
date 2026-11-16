@@ -375,10 +375,15 @@ panic, so the router's request paths never panic.
 5. A provider request is forwarded unchanged except the destination, the key
    swap and the hop-by-hop headers. Qwen's `context_management` field is the one
    body edit.
+6. A request body streams through. The router keeps the first 1 MiB to send the
+   request again and reads at most 256 KiB ahead of what the upstream has taken, so
+   a body holds at most replay prefix + window + one frame (1 MiB + 256 KiB + up to
+   64 KiB), however large the upload. A body over 1 MiB that meets a dead pooled
+   socket is not retried by the router: the client gets the cut and retries.
 
 The daemon re-reads `~/.config/huddle/providers.toml` every 2 s, so
-adding or removing a provider needs no restart. A binary update, or a resident
-size past 1 GiB, hands the socket to a new process while the requests in flight
+adding or removing a provider needs no restart. A binary update, or a memory
+footprint past 1 GiB, hands the socket to a new process while the requests in flight
 drain: the old router closes idle connections at once and exits after the last
 request ends, or after 10 minutes.
 

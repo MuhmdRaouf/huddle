@@ -25,6 +25,9 @@ Status: accepted, 2026-10-25. It sets D2 and D10 in [DECISIONS.md](../DECISIONS.
 - A stop sends no signal when the record names no live daemon on the recorded port.
 - The RSS ceiling (1 GiB by default, `HUDDLE_ROUTER_RSS_CEILING_MB`, checked every 30 s, read from the kernel as the memory footprint, not by forking `ps`) hands the
   listening socket to a fresh copy of the binary the same way.
+- The worker runs a tokio runtime of 4 worker threads and the supervisor a current-thread runtime, so a
+  fresh worker holds at most 10 threads and the supervisor at most 4. The supervisor only waits for its
+  child and serves the handover socket, so it needs no more than one.
 
 ## Consequences
 

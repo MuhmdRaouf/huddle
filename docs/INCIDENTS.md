@@ -316,3 +316,36 @@ Each incident, its cause, and the test that now stops it. A guard named here mus
   record and read the log at once.
 - **Guard:** crates/huddle/tests/s1_supervisor.rs:s1_a_killed_worker_is_back_within_a_second
 - **Rule:** a test that asserts on a log line waits for that line, with a bound.
+
+## 2026-11-15, the history fill recreated a removed home
+
+- **What happened:** after a test removed its temp home, the folder came back with an empty `huddle.db`
+  inside it, and a Linux CI run named the leftover as a leaked temp home.
+- **Cause:** the fill ran detached from the process that started it, checked that the database existed,
+  then called `History::open`, which creates the folder. A home removed between the check and the open was
+  made again.
+- **Guard:** crates/huddle-daemon/tests/l16_fill_keeps_removed_home.rs:l16_a_fill_never_recreates_a_removed_home,
+  crates/huddle-daemon/tests/l16_fill_keeps_removed_home.rs:l16_opening_an_existing_database_never_creates_a_folder_or_file
+- **Rule:** the fill opens the database with `History::open_existing`, which creates no folder and no file.
+
+## 2026-11-15, the history fill held whole session logs in memory
+
+- **What happened:** with a dashboard open, the worker's resident size went from 7 MB to 139 MB during one
+  fill over 300 MB of session logs, and the owner saw a 476 MB router.
+- **Cause:** the fill read each session log whole into a string and kept every request id it parsed, then
+  read every log again on the next tick.
+- **Guard:** crates/huddle-sessions/tests/l16_fill_memory.rs:l16_a_fill_over_a_large_log_holds_one_line_not_the_file,
+  crates/huddle-sessions/tests/t5_usage_for.rs:l17_a_second_tick_reads_only_the_appended_bytes
+- **Rule:** the fill reads a log one line at a time, keeps only the ids it was asked for, reads only the
+  bytes appended since its last tick, and stops asking for an id after an hour.
+
+## 2026-11-15, a drain that hit its limit did not say what held it
+
+- **What happened:** an update handover left the old router running for the full 10 minutes, and its log
+  said nothing about what it waited for.
+- **Cause:** the drain logged only that it ended, not the tunnels and connections open at its start or at
+  its limit.
+- **Guard:** crates/huddle-daemon/tests/e1_handover_exit.rs:l19_a_drain_logs_its_counts_at_the_start,
+  crates/huddle-daemon/tests/e1_handover_exit.rs:l19_a_drain_that_hits_the_limit_names_what_stayed_open
+- **Rule:** a drain logs what it waits for when it starts and what stayed open when it ends or is cut.
+  A shorter drain budget is decided from that log.

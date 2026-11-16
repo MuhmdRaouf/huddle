@@ -76,10 +76,17 @@ budget: idle connections and feeds close at once, a request in flight finishes, 
 
 ## D11: A streamed request is sent once
 
+A request body streams from the client to the upstream. The router keeps the first 1 MiB (the replay prefix) so
+it can send the request again, reads at most 256 KiB ahead of what the upstream has taken (the window), and drops
+every chunk past the prefix once it is sent. A body holds at most replay prefix + window + one frame in memory:
+1 MiB + 256 KiB + up to 64 KiB, never the whole upload.
+
 An upstream reset on a reused socket before the body reached the transport retries once, on a fresh connection,
-replaying the body from byte zero, while the router still holds it: the first 1 MiB is kept for that. Once a
-chunk past it is sent, the body cannot be replayed, so the client gets the cut and retries. A timeout or a
-refused connection is never retried, and an answer already streaming is never sent again in full.
+replaying the body from byte zero, while the whole body is still held. Once a chunk past the prefix is sent, the
+body cannot be replayed, so the client gets the cut and retries. When the client stops while a retry is relaying
+its body, the upstream sees a second request that is length-framed and incomplete, so it cannot be processed:
+an upstream never receives a second request it could process. A timeout or a refused connection is never
+retried, and an answer already streaming is never sent again in full.
 
 ## D12: Request history
 

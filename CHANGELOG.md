@@ -2,11 +2,66 @@
 
 ## 0.0.9
 
+A lighter router: bodies stream through, the dashboard costs a fraction of its CPU, and the worker runs on fewer threads.
+
+### Router
+
+- A request body streams through: the router keeps the first 1 MiB for a retry, reads at most 256 KiB ahead of what the upstream has taken, and drops every chunk past the prefix once it is sent. A body holds at most replay prefix + window + one frame (1 MiB + 256 KiB + up to 64 KiB) instead of the whole upload.
+- A request body over 1 MiB that meets a dead pooled upstream socket is no longer retried by the router; the client gets the cut and retries, and a retry never sends a half body.
+- A streamed upload the router will not read again (an early 4xx, a failed send) is read to its end and dropped as it arrives, instead of being held whole until the client finishes.
+- A request body that takes the fallback path is held once instead of twice, and the Qwen lane holds one copy (the adapted bytes) instead of the original beside it.
+- The router worker runs on 4 runtime threads and the supervisor on 1, cutting idle threads from 29 and 18 to 9 and 4. An idle worker stays at 10 threads on a loaded machine.
+- The router's memory ceiling and the dashboard's CPU and memory read the kernel's footprint directly, without forking `ps`; the ceiling now counts compressed and swapped pages.
+- The answer stream tap reads only the `type` of most events and parses usage events in full, cutting its CPU about 8x.
+- A second CONNECT from the same client resumes its TLS session instead of a full handshake, because every tunnel shares one TLS server config.
+- The upstream pool drops expired idle sockets when another returns, keeps at most 16 idle sockets per host, and sweeps every host's idle sockets, not only the one that returned.
+- The upstream client takes the request body's reader before the pump task starts and never marks a failure replayable except while the body can replay.
+- The router decides a request's lane once instead of up to three times.
+- A request's answer frames no longer take the live-state lock to record their last byte time.
+- Log lines are written by one thread that keeps the file open, so a request no longer opens and closes the log file.
+- The reload poll stats `providers.toml` and the dashboard hosts file and reads them only when one changed, on a blocking thread instead of the serve loop's async task.
+- The history writer and the handover socket sleep until there is work instead of waking on one-second and 200-millisecond timers.
+- The history database's WAL file is capped at 4 MB and shrinks back after each checkpoint.
+- A history call runs on one read connection with a capped page cache and spawns no threads, so ten concurrent 90-day calls no longer add over 100 MB.
+- A handover drain logs what it waits for at its start and what was still open when it ended or hit its limit.
+- The dashboard asks the key store whether a key is set without reading the key, at most once per provider per minute.
+
+### History fill
+
+- The history fill reads session logs one line at a time and never recreates a removed data or state folder.
+- The fill reads only the bytes appended to each session log since the last tick and stops asking for an id after an hour.
+
+### Dashboard
+
+- The dashboard's session scan reads only the bytes appended to each session log since the last scan, and skips a log that did not change.
+- The dashboard builds one snapshot per change for every open tab, credits each session reading once, and shares the sessions and worktrees reading instead of copying it per tab; the joined snapshot copies only the busy sessions.
+- Dashboard history ranges are answered from one cache shared by every tab (a new row or a new minute asks again), and ranges of 7 days or more refresh every 60 s instead of 5 s.
+- Session and project totals filter in SQL, and the Sessions page asks for its listed sessions only.
+- A dashboard tab whose live feed is closed for the 8-feed limit polls every 5 s instead of reconnecting and evicting another tab in a loop.
+- The default one-second refresh shows sessions, worktrees, plugins, harnesses and router CPU and RAM, and a finished request gets its agent and tokens even when no page is open.
+- The dashboard's worktree feed lists each repository's worktrees with one `git worktree list`, however many sessions work in it.
+- The live feed sends the sessions and worktrees only when they change, and each snapshot event is written once.
+- The page no longer rebuilds every region every 2 s; a tick moves only the clock and the relative times, and a hidden tab holds no timer.
+- The top bar has one time-picker button that opens a panel with the quick ranges and an absolute From and To, replacing the range menu and its Custom popover.
+- The time panel lists the last four applied custom ranges under the absolute fields and holds the Local/UTC switch in its footer; the separate header switch is gone.
+- Beside the time-picker button, « and » shift the range back and forward by its own length and a zoom-out button doubles it around its centre; each turns the range into a custom range clamped to the kept history and to now, and » is disabled while the range ends at now.
+
+### Plugin
+
+- The plugin ships one MCP server, `huddle`, over HTTP: a Claude session starts no `huddle mcp` process and lists the 11 huddle tools once. The tools need the router up. The `huddle mcp` word stays in the binary.
+- `/huddle:setup` asks once whether the router is already running instead of polling for up to 3 s, so a fresh install is about 3 seconds faster.
+
 ### Fixes
 
 - When nothing newer is published, `/huddle:update` prints only `huddle <installed> is the
   latest published version. Nothing to update.` and exits 0, whether or not the plugin's own
   version is above it. It no longer says the plugin's version is not published yet.
+- `/mcp`: the 401 text says to reconnect huddle, not huddle-http.
+
+### Tests
+
+- A new e2e test fails when eight parallel 20 MiB uploads through CONNECT grow the router worker's memory footprint by 32 MiB or more.
+- The unit suite and the e2e suite run as separate tasks; no test runs the real ZCode app.
 
 ## 0.0.8
 
