@@ -979,9 +979,21 @@ fn probe_target_of(target: &hyper::Uri) -> Option<ProbeTarget> {
     Some(ProbeTarget { host, port })
 }
 
-/// The model on a log line, or `-` when the body named none.
-pub(crate) fn model_or_dash(model: &str) -> &str {
-    if model.is_empty() { "-" } else { model }
+/// The longest model a log line holds, in characters.
+const LOGGED_MODEL_MAX: usize = 128;
+
+/// The model on a log line: `-` when the body named none, else the body's text with every
+/// control character replaced by `?` and cut at 128 characters, so a value from the request
+/// can never end the line or start another.
+pub(crate) fn model_or_dash(model: &str) -> String {
+    if model.is_empty() {
+        return "-".to_owned();
+    }
+    model
+        .chars()
+        .take(LOGGED_MODEL_MAX)
+        .map(|c| if c.is_control() { '?' } else { c })
+        .collect()
 }
 
 /// The router's clock in milliseconds since the epoch.

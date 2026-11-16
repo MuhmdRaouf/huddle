@@ -1663,7 +1663,7 @@ fn spot_code(err: &(dyn StdError + 'static)) -> Option<FailureCode> {
     None
 }
 
-fn io_code(err: &io::Error) -> Option<FailureCode> {
+pub(crate) fn io_code(err: &io::Error) -> Option<FailureCode> {
     match err.kind() {
         ErrorKind::ConnectionReset => return Some(FailureCode::EConnReset),
         ErrorKind::BrokenPipe => return Some(FailureCode::EPipe),

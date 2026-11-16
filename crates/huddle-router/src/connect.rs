@@ -153,8 +153,8 @@ async fn connect(
         let mut target = match dial(host, port, &ctx).await {
             Ok(target) => target,
             Err(DialFailure::Local) => return refused("a CONNECT may not name this machine"),
-            Err(DialFailure::Other) => {
-                (ctx.log)(dial_failed_line());
+            Err(DialFailure::Other(code)) => {
+                (ctx.log)(dial_failed_line(code));
                 return dial_failed();
             }
         };
@@ -344,10 +344,16 @@ fn names_this_machine(host: &str) -> bool {
     lower == "localhost" || lower.ends_with(".localhost")
 }
 
-/// Why a target could not be opened: it names this machine, or it is merely unreachable.
+/// Why a target could not be opened: it names this machine, or it is unreachable with a code.
 enum DialFailure {
     Local,
-    Other,
+    Other(FailureCode),
+}
+
+impl DialFailure {
+    fn io(error: &io::Error) -> DialFailure {
+        DialFailure::Other(crate::upstream::io_code(error).unwrap_or(FailureCode::EUpstream))
+    }
 }
 
 /// Opens the blind tunnel's target: the dial seam when one is set, else the user's own proxy when
@@ -358,18 +364,18 @@ async fn dial(host: &str, port: u16, ctx: &ConnectCtx) -> Result<TcpStream, Dial
     if let Some(dial) = &ctx.dial {
         return dial(format!("{host}:{port}"))
             .await
-            .map_err(|_| DialFailure::Other);
+            .map_err(|e| DialFailure::io(&e));
     }
     let proxy =
         https_uri(host, port).and_then(|target| crate::upstream::proxy_for(&target, &ctx.env));
     if let Some(proxy) = proxy {
         return crate::upstream::dial_tunnel(&proxy, host, port, PROXY_DIAL_DEADLINE)
             .await
-            .map_err(|_| DialFailure::Other);
+            .map_err(|e| DialFailure::io(&e));
     }
     match tokio::time::timeout(LOCAL_DIAL_DEADLINE, lookup_and_connect(host, port)).await {
         Ok(opened) => opened,
-        Err(_) => Err(DialFailure::Other),
+        Err(_) => Err(DialFailure::Other(FailureCode::ETimedOut)),
     }
 }
 
@@ -378,7 +384,7 @@ async fn dial(host: &str, port: u16, ctx: &ConnectCtx) -> Result<TcpStream, Dial
 async fn lookup_and_connect(host: &str, port: u16) -> Result<TcpStream, DialFailure> {
     let addresses = tokio::net::lookup_host((host, port))
         .await
-        .map_err(|_| DialFailure::Other)?;
+        .map_err(|e| DialFailure::io(&e))?;
     let mut all_local = true;
     let mut non_local = Vec::new();
     for address in addresses {
@@ -391,12 +397,14 @@ async fn lookup_and_connect(host: &str, port: u16) -> Result<TcpStream, DialFail
     if all_local {
         return Err(DialFailure::Local);
     }
+    let mut last = FailureCode::EUpstream;
     for address in non_local {
-        if let Ok(stream) = TcpStream::connect(address).await {
-            return Ok(stream);
+        match TcpStream::connect(address).await {
+            Ok(stream) => return Ok(stream),
+            Err(e) => last = crate::upstream::io_code(&e).unwrap_or(FailureCode::EUpstream),
         }
     }
-    Err(DialFailure::Other)
+    Err(DialFailure::Other(last))
 }
 
 /// The proxy lookup's target URI: `https://{host}:{port}/`, IPv6 hosts re-bracketed. A host that
@@ -421,10 +429,10 @@ fn refused(why: &str) -> Response<RespBody> {
 
 /// The log line of a CONNECT whose target could not be opened: the code and where it ended,
 /// never the target.
-fn dial_failed_line() -> String {
+fn dial_failed_line(code: FailureCode) -> String {
     format!(
         "CONNECT -> 502 error {} {}",
-        FailureCode::EUpstream.as_str(),
+        code.as_str(),
         Trace::default().at(DialPhase::Connect).line()
     )
 }

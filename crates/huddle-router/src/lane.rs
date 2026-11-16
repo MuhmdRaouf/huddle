@@ -23,7 +23,7 @@ use crate::anthropic::{
     AnswerOutcome, AnswerTap, OutcomeHook, OutcomeWatch, StreamShape, event_of, is_event_stream,
     stream_answer,
 };
-use crate::dispatch::RequestEvents;
+use crate::dispatch::{RequestEvents, model_or_dash};
 use crate::keycache::{KEY_BUDGET, KeyAnswer, KeyCache, KeySources, STORE_SHARE};
 use crate::refusal::{
     INSPECT_LIMIT, Refusal, RefusalNames, Replacement, error_reason, key_timeout_answer,
@@ -305,20 +305,34 @@ impl Lane {
     /// The line of a request that never left because its destination is unusable: a 502 with
     /// the code and an empty trace.
     fn refused_note(&self, method: &str, path: &str, model: &str, code: FailureCode) {
+        self.failure_note(method, path, model, 502, code, Trace::default());
+    }
+
+    /// The one shape of a lane failure line: `-> <lane> <status> error <code> <trace>`.
+    fn failure_note(
+        &self,
+        method: &str,
+        path: &str,
+        model: &str,
+        status: u16,
+        code: FailureCode,
+        trace: Trace,
+    ) {
         self.note(
             method,
             path,
             model,
             &format!(
-                "-> {} 502 error {} {}",
+                "-> {} {status} error {} {}",
                 self.provider.id,
                 code.as_str(),
-                Trace::default().line()
+                trace.line()
             ),
         );
     }
 
     fn note(&self, method: &str, path: &str, model: &str, tail: &str) {
+        let model = model_or_dash(model);
         (self.log)(format!("{method} {path} model={model} {tail}"));
     }
 
@@ -464,17 +478,12 @@ impl Lane {
         model: &str,
         events: &RequestEvents,
     ) -> Response<RespBody> {
-        self.note(
-            method,
-            path,
-            model,
-            &format!("-> provider error {} {}", code.as_str(), trace.line()),
-        );
         let status = if code == FailureCode::ETimedOut {
             504
         } else {
             502
         };
+        self.failure_note(method, path, model, status, code, trace);
         events.emit(status, Some(code.as_str().to_owned()));
         let status = match code {
             FailureCode::ETimedOut => StatusCode::GATEWAY_TIMEOUT,

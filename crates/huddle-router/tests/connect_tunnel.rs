@@ -263,7 +263,7 @@ async fn e1_a_drain_keeps_a_blind_tunnel_that_is_carrying_bytes() {
 #[tokio::test]
 async fn l61_a_failed_connect_dial_logs_one_line() {
     let refused: DialFn = Arc::new(|_target: String| {
-        Box::pin(async move { Err(std::io::Error::from(std::io::ErrorKind::ConnectionRefused)) })
+        Box::pin(async move { Err(std::io::Error::from(std::io::ErrorKind::NotFound)) })
     });
     let lines: Arc<Mutex<Vec<String>>> = Arc::default();
     let sink = lines.clone();
@@ -289,5 +289,37 @@ async fn l61_a_failed_connect_dial_logs_one_line() {
     assert_eq!(
         lines,
         vec!["CONNECT -> 502 error EUPSTREAM phase=connect peer=- conn=fresh".to_owned()]
+    );
+}
+
+#[tokio::test]
+async fn l62_a_dial_failure_names_its_code() {
+    let refused: DialFn = Arc::new(|_target: String| {
+        Box::pin(async move { Err(std::io::Error::from(std::io::ErrorKind::ConnectionRefused)) })
+    });
+    let lines: Arc<Mutex<Vec<String>>> = Arc::default();
+    let sink = lines.clone();
+    let ctx = Arc::new(ConnectCtx {
+        env: Env::with(&[]),
+        dial: Some(refused),
+        tunnels: TunnelTracker::new(),
+        decrypt: None,
+        log: Arc::new(move |l| sink.lock().unwrap().push(l)),
+    });
+    let listener = bind(0).await.expect("bind");
+    let port = listener.local_addr().expect("addr").port();
+    let (_tx, rx) = watch::channel(false);
+    tokio::spawn(async move {
+        let _keep = _tx;
+        serve(listener, connect_handler(ctx), ServerLimits::default(), rx)
+            .await
+            .expect("serve")
+    });
+    let (_stream, head) = connect(port, "secret-host.example:443").await;
+    assert!(head.starts_with("HTTP/1.1 502"), "{head}");
+    let lines = lines.lock().unwrap().clone();
+    assert_eq!(
+        lines,
+        vec!["CONNECT -> 502 error ECONNREFUSED phase=connect peer=- conn=fresh".to_owned()]
     );
 }

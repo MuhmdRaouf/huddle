@@ -246,3 +246,66 @@ async fn l61_a_failure_line_holds_no_secret() {
         );
     }
 }
+
+#[tokio::test]
+async fn l62_a_model_with_a_newline_stays_on_one_log_line() {
+    let rig = rig(&dead_url()).await;
+    let body = r#"{"model":"a\nb -> anthropic 200","messages":[]}"#;
+    let request = format!(
+        "POST /v1/messages HTTP/1.1\r\nHost: 127.0.0.1:{}\r\nConnection: close\r\nContent-Length: {}\r\n\r\n{body}",
+        rig.port,
+        body.len()
+    );
+    let answer = direct(&rig, &request).await;
+    assert!(answer.starts_with("HTTP/1.1 502"), "{answer}");
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    let lines = rig.lines.lock().unwrap().clone();
+    let named: Vec<_> = lines
+        .iter()
+        .filter(|l| l.contains("POST /v1/messages"))
+        .collect();
+    assert_eq!(named.len(), 1, "{lines:?}");
+    assert!(
+        named[0].contains("model=a?b -> anthropic 200 -> anthropic 502"),
+        "{lines:?}"
+    );
+    assert!(
+        lines
+            .iter()
+            .all(|l| !l.contains('\n') && !l.starts_with('b')),
+        "{lines:?}"
+    );
+}
+
+/// A streamed upload whose client leaves halfway, against an upstream that never answers, is a
+/// 499 and writes no failure line. It passed before L62 and stays a guard.
+#[tokio::test]
+async fn l62_a_streamed_client_that_left_logs_nothing() {
+    let holder = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind");
+    let url = format!("http://{}", holder.local_addr().expect("addr"));
+    let _held = tokio::spawn(async move {
+        let mut open = Vec::new();
+        while let Ok((socket, _)) = holder.accept().await {
+            open.push(socket);
+        }
+    });
+    let rig = rig(&url).await;
+    let tcp = connect_tunnel(rig.port, &format!("{ROUTER_HOST}:443")).await;
+    let name = ServerName::try_from(ROUTER_HOST.to_string()).expect("name");
+    let mut tls = tls_client(&rig.ca_der)
+        .connect(name, tcp)
+        .await
+        .expect("handshake");
+    let pad = "x".repeat(200 * 1024);
+    let head = format!(
+        "POST /v1/messages HTTP/1.1\r\nHost: api.anthropic.com\r\nContent-Length: {}\r\n\r\n{{\"model\":\"claude-opus-5-5\",\"pad\":\"{pad}",
+        600 * 1024
+    );
+    tls.write_all(head.as_bytes()).await.expect("write");
+    tls.flush().await.expect("flush");
+    drop(tls);
+    let lines = request_lines(&rig).await;
+    assert!(lines.is_empty(), "{lines:?}");
+}

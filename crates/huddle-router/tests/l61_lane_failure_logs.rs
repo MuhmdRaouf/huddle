@@ -61,3 +61,69 @@ async fn l61_a_refused_provider_upstream_logs_one_line() {
         ]
     );
 }
+
+type Lines = Arc<Mutex<Vec<String>>>;
+
+/// A zai lane aimed at `upstream`, and the lines it logs.
+fn lane_at(upstream: &str) -> (Arc<Lane>, Lines, TempHome) {
+    let home = TempHome::new();
+    let root = home.root().to_str().expect("utf8").to_string();
+    let env = Env::with(&[("HOME", root.as_str()), ("ZAI_ROUTER_URL", upstream)]);
+    let read: KeyRead = Arc::new(|| Ok(Some(SecretString::new("test-key-test-key".to_string()))));
+    let lines: Lines = Arc::default();
+    let sink = lines.clone();
+    let lane = Lane::build(
+        provider_by_id("zai").expect("zai"),
+        &env,
+        KeySources {
+            env_key: None,
+            os: None,
+            file: read,
+        },
+        Arc::new(UpstreamClient::new(UpstreamConfig {
+            env: Env::with(&[]),
+            roots: RootCertStore::empty(),
+            idle: IDLE_TIMEOUT,
+        })),
+        Arc::new(move |l| sink.lock().unwrap().push(l)),
+    )
+    .expect("lane");
+    (lane, lines, home)
+}
+
+async fn send(lane: &Lane, uri: &str) -> StatusCode {
+    let parts = Request::builder()
+        .method(Method::POST)
+        .uri(uri)
+        .body(())
+        .expect("request")
+        .into_parts()
+        .0;
+    let body = Bytes::from_static(br#"{"model":"glm-5.3","messages":[]}"#);
+    lane.forward(parts, body, "glm-5.3").await.status()
+}
+
+#[tokio::test]
+async fn l62_both_lane_failures_share_one_shape() {
+    let dead = std::net::TcpListener::bind("127.0.0.1:0").expect("bind");
+    let dead_url = format!("http://{}", dead.local_addr().expect("addr"));
+    drop(dead);
+    let (lane, sent, _home) = lane_at(&dead_url);
+    assert_eq!(send(&lane, "/v1/messages").await, StatusCode::BAD_GATEWAY);
+    let (refusing, refused, _home) = lane_at("http://provider.example:80");
+    assert_eq!(
+        send(&refusing, "/v1/messages").await,
+        StatusCode::BAD_GATEWAY
+    );
+    let sent = sent.lock().unwrap().clone();
+    let refused = refused.lock().unwrap().clone();
+    assert_eq!(sent.len(), 1, "{sent:?}");
+    assert_eq!(refused.len(), 1, "{refused:?}");
+    for line in sent.iter().chain(refused.iter()) {
+        assert!(
+            line.starts_with("POST /v1/messages model=glm-5.3 -> zai 502 error E"),
+            "{line}"
+        );
+    }
+    assert!(sent[0].contains("ECONNREFUSED"), "{sent:?}");
+}
