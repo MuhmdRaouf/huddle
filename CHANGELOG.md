@@ -34,8 +34,10 @@ A lighter router: bodies stream through, the dashboard costs a fraction of its C
 ### Dashboard
 
 - The dashboard's session scan reads only the bytes appended to each session log since the last scan, and skips a log that did not change.
+- The session scanner shares its request-tag strings with its readings instead of copying them, so the worker holds less memory with the dashboard open.
 - The dashboard builds one snapshot per change for every open tab, credits each session reading once, and shares the sessions and worktrees reading instead of copying it per tab; the joined snapshot copies only the busy sessions.
 - Dashboard history ranges are answered from one cache shared by every tab (a new row or a new minute asks again), and ranges of 7 days or more refresh every 60 s instead of 5 s.
+- Tabs that ask the same history question at the same time share one read, and the cache keeps one answer per question.
 - Session and project totals filter in SQL, and the Sessions page asks for its listed sessions only.
 - A dashboard tab whose live feed is closed for the 8-feed limit polls every 5 s instead of reconnecting and evicting another tab in a loop.
 - The default one-second refresh shows sessions, worktrees, plugins, harnesses and router CPU and RAM, and a finished request gets its agent and tokens even when no page is open.
