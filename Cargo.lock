@@ -511,7 +511,7 @@ checksum = "df3b46402a9d5adb4c86a0cf463f42e19994e3ee891101b1841f30a545cb49a9"
 
 [[package]]
 name = "huddle"
-version = "0.0.8"
+version = "0.0.9"
 dependencies = [
  "http-body-util",
  "huddle-catalog",
@@ -539,14 +539,14 @@ dependencies = [
 
 [[package]]
 name = "huddle-catalog"
-version = "0.0.8"
+version = "0.0.9"
 dependencies = [
  "huddle-testkit",
 ]
 
 [[package]]
 name = "huddle-config"
-version = "0.0.8"
+version = "0.0.9"
 dependencies = [
  "huddle-testkit",
  "serde",
@@ -556,7 +556,7 @@ dependencies = [
 
 [[package]]
 name = "huddle-daemon"
-version = "0.0.8"
+version = "0.0.9"
 dependencies = [
  "http-body-util",
  "huddle-catalog",
@@ -581,7 +581,7 @@ dependencies = [
 
 [[package]]
 name = "huddle-harness"
-version = "0.0.8"
+version = "0.0.9"
 dependencies = [
  "huddle-config",
  "huddle-procs",
@@ -594,7 +594,7 @@ dependencies = [
 
 [[package]]
 name = "huddle-history"
-version = "0.0.8"
+version = "0.0.9"
 dependencies = [
  "huddle-config",
  "huddle-testkit",
@@ -603,7 +603,7 @@ dependencies = [
 
 [[package]]
 name = "huddle-jobs"
-version = "0.0.8"
+version = "0.0.9"
 dependencies = [
  "huddle-config",
  "huddle-harness",
@@ -618,7 +618,7 @@ dependencies = [
 
 [[package]]
 name = "huddle-keystore"
-version = "0.0.8"
+version = "0.0.9"
 dependencies = [
  "huddle-config",
  "huddle-testkit",
@@ -628,7 +628,7 @@ dependencies = [
 
 [[package]]
 name = "huddle-mcp"
-version = "0.0.8"
+version = "0.0.9"
 dependencies = [
  "huddle-catalog",
  "huddle-config",
@@ -644,7 +644,7 @@ dependencies = [
 
 [[package]]
 name = "huddle-pki"
-version = "0.0.8"
+version = "0.0.9"
 dependencies = [
  "huddle-config",
  "huddle-testkit",
@@ -656,7 +656,7 @@ dependencies = [
 
 [[package]]
 name = "huddle-procs"
-version = "0.0.8"
+version = "0.0.9"
 dependencies = [
  "huddle-config",
  "huddle-testkit",
@@ -665,11 +665,11 @@ dependencies = [
 
 [[package]]
 name = "huddle-release"
-version = "0.0.8"
+version = "0.0.9"
 
 [[package]]
 name = "huddle-router"
-version = "0.0.8"
+version = "0.0.9"
 dependencies = [
  "flate2",
  "http-body-util",
@@ -695,7 +695,7 @@ dependencies = [
 
 [[package]]
 name = "huddle-sessions"
-version = "0.0.8"
+version = "0.0.9"
 dependencies = [
  "huddle-testkit",
  "serde",
@@ -704,7 +704,7 @@ dependencies = [
 
 [[package]]
 name = "huddle-setup"
-version = "0.0.8"
+version = "0.0.9"
 dependencies = [
  "huddle-catalog",
  "huddle-config",
@@ -719,7 +719,7 @@ dependencies = [
 
 [[package]]
 name = "huddle-testkit"
-version = "0.0.8"
+version = "0.0.9"
 dependencies = [
  "libc",
  "rcgen",
