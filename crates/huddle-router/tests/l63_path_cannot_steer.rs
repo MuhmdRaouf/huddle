@@ -53,8 +53,29 @@ async fn rig() -> Rig {
         ("ZAI_API_KEY", KEY),
     ]);
     let paths = Paths::from_env(&env).expect("paths");
-    let port = free_port();
-    let listener = bind(port).await.expect("bind");
+    // A port another process took between the pick and the bind costs a retry, never a failed
+    // test: bind first, then build the config with the port that was bound.
+    let mut listener = None;
+    let mut port = 0;
+    let mut last_err = None;
+    for _ in 0..10 {
+        port = free_port();
+        match bind(port).await {
+            Ok(bound) => {
+                listener = Some(bound);
+                break;
+            }
+            Err(err) if err.kind() == std::io::ErrorKind::AddrInUse => last_err = Some(err),
+            Err(err) => panic!("bind 127.0.0.1:{port}: {err}"),
+        }
+    }
+    let listener = match listener {
+        Some(listener) => listener,
+        None => panic!(
+            "bind 127.0.0.1:{port} after 10 tries: {:?}",
+            last_err.expect("the last bind error")
+        ),
+    };
     let router = Router::new(
         RouterConfig {
             env,

@@ -75,7 +75,29 @@ async fn rig(anthropic_url: &str) -> Rig {
     let env = Env::with(&[("HOME", root.as_str())]);
     let paths = Paths::from_env(&env).expect("paths");
     let ca = load_or_create(&paths.ca_dir, SystemTime::now()).expect("ca");
-    let port = free_port();
+    // A port another process took between the pick and the bind costs a retry, never a failed
+    // test: bind first, then build the config with the port that was bound.
+    let mut listener = None;
+    let mut port = 0;
+    let mut last_err = None;
+    for _ in 0..10 {
+        port = free_port();
+        match bind(port).await {
+            Ok(bound) => {
+                listener = Some(bound);
+                break;
+            }
+            Err(err) if err.kind() == std::io::ErrorKind::AddrInUse => last_err = Some(err),
+            Err(err) => panic!("bind 127.0.0.1:{port}: {err}"),
+        }
+    }
+    let listener = match listener {
+        Some(listener) => listener,
+        None => panic!(
+            "bind 127.0.0.1:{port} after 10 tries: {:?}",
+            last_err.expect("the last bind error")
+        ),
+    };
     let lines: Lines = Arc::default();
     let sink = lines.clone();
     let router = Router::new(
@@ -90,7 +112,6 @@ async fn rig(anthropic_url: &str) -> Rig {
         },
         &[],
     );
-    let listener = bind(port).await.expect("bind");
     let (stop, rx) = watch::channel(false);
     let handler = router.handler();
     tokio::spawn(async move {
@@ -108,7 +129,11 @@ async fn rig(anthropic_url: &str) -> Rig {
 }
 
 fn dead_url() -> String {
-    format!("http://127.0.0.1:{}", free_port())
+    // A port nothing listens on: bound to learn it, dropped at once so connects are refused.
+    let dead = std::net::TcpListener::bind("127.0.0.1:0").expect("bind");
+    let url = format!("http://{}", dead.local_addr().expect("addr"));
+    drop(dead);
+    url
 }
 
 /// Sends `request` through a decrypted tunnel; the router's whole answer.
