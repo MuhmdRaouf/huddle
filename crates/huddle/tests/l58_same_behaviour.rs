@@ -189,9 +189,19 @@ fn write_body(dir: &Path, name: &str, len: usize) -> PathBuf {
     path
 }
 
-/// `curl` posting `file` through the router's CONNECT: the status code text and stderr.
-fn post_through_proxy(port: u16, ca: &Path, file: &Path) -> (String, String) {
-    let out = Command::new("/usr/bin/curl")
+/// `curl` posting `file` through the router's CONNECT, at most `upload_rate` (curl's
+/// `--limit-rate` form) when one is given: the status code text and stderr.
+fn post_through_proxy(
+    port: u16,
+    ca: &Path,
+    file: &Path,
+    upload_rate: Option<&str>,
+) -> (String, String) {
+    let mut curl = Command::new("/usr/bin/curl");
+    if let Some(rate) = upload_rate {
+        curl.args(["--limit-rate", rate]);
+    }
+    let out = curl
         .args([
             "-sS",
             "--max-time",
@@ -248,7 +258,7 @@ fn fixture(reset_after: usize) -> Fixture {
     let router = Router::start(&home, &[("HUDDLE_ROUTER_ANTHROPIC_URL", upstream.url())]);
     let ca = ca_cert_path(&ca_dir);
     let small = write_body(home.root(), "warm.json", KIB);
-    let (status, stderr) = post_through_proxy(home.router_port(), &ca, &small);
+    let (status, stderr) = post_through_proxy(home.router_port(), &ca, &small, None);
     assert_eq!(status, "200", "warm-up: {stderr}");
     assert_eq!(
         upstream.connections(),
@@ -268,7 +278,7 @@ fn l58_a_body_over_one_mib_is_not_retried_after_a_dead_pooled_socket() {
     let f = fixture(2 * 1024 * KIB);
     let body = write_body(f.home.root(), "big.json", 3 * 1024 * KIB);
 
-    let (status, _) = post_through_proxy(f.home.router_port(), &f.ca, &body);
+    let (status, _) = post_through_proxy(f.home.router_port(), &f.ca, &body, None);
 
     assert_ne!(status, "200", "the client sees the cut");
     assert_eq!(
@@ -285,9 +295,17 @@ fn l58_a_body_under_one_mib_is_still_retried_after_a_dead_pooled_socket() {
     let f = fixture(64 * KIB);
     let body = write_body(f.home.root(), "mid.json", 900 * KIB);
 
-    let (status, stderr) = post_through_proxy(f.home.router_port(), &f.ca, &body);
+    // The reset must land while the body is still being sent: once its last byte is handed to
+    // the socket the router never asks twice. Linux's loopback buffers take 900 KiB at once, so
+    // the upload is held to about 1.8 s and the reset after 64 KiB always comes first.
+    let (status, stderr) = post_through_proxy(f.home.router_port(), &f.ca, &body, Some("512K"));
 
-    assert_eq!(status, "200", "the retry answers: {stderr}");
+    let log = fs::read_to_string(f.home.root().join(".local/state/huddle/router.log"))
+        .unwrap_or_default();
+    assert_eq!(
+        status, "200",
+        "the retry answers: {stderr}\nrouter.log:\n{log}"
+    );
     assert_eq!(f.upstream.connections(), 2, "one fresh connection");
     let full: Vec<_> = f
         .upstream
