@@ -33,6 +33,23 @@ fn l43_no_fixed_path_is_reached_from_a_temp_home() {
 }
 
 #[test]
+fn l56_no_builtin_harness_resolves_outside_the_temp_home() {
+    let home = TempHome::new();
+    let root = home.root().to_path_buf();
+    let env = home_env(&home);
+    for entry in builtin() {
+        if let Ok(found) = resolve(&entry, &env) {
+            assert!(
+                found.path.starts_with(&root),
+                "{} resolved to {} outside the temp home",
+                entry.id,
+                found.path.display()
+            );
+        }
+    }
+}
+
+#[test]
 fn l43_a_fixed_path_entry_names_its_own_variable() {
     let home = TempHome::new();
     let vars = home.env();

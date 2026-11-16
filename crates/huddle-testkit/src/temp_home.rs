@@ -16,7 +16,7 @@ use crate::ports;
 /// How long a drop waits for the record of a router whose lock file exists.
 const LATE_RECORD_WAIT: Duration = Duration::from_secs(3);
 
-const KEPT_FROM_PARENT: &[&str] = &["PATH", "LANG", "LC_ALL", "LC_CTYPE", "USER", "LOGNAME"];
+const KEPT_FROM_PARENT: &[&str] = &["LANG", "LC_ALL", "LC_CTYPE", "USER", "LOGNAME"];
 
 /// A directory under the OS per-user temp directory, removed on drop. Nothing here touches the
 /// parent's environment: the variables reach only the children built by `command`.
@@ -214,7 +214,9 @@ fn stop_recorded_router(root: &Path) {
 
 /// The full environment of a child rooted at `root`: the machine variables named in
 /// `KEPT_FROM_PARENT`, then the private directories. Every other inherited variable is left out,
-/// so owner keys, proxies and Claude Code session variables never reach a child.
+/// so owner keys, proxies and Claude Code session variables never reach a child. The child's
+/// `PATH` holds the temp home's `bin` first, then the system folders: a harness check in a test
+/// finds no real harness CLI from the owner's PATH. A test that sets `PATH` itself still wins.
 /// A local address nothing listens on: port 9, the discard service, closed on every test machine.
 const CLOSED_PORT_URL: &str = "http://127.0.0.1:9";
 
@@ -231,6 +233,9 @@ pub fn child_env(
         .collect();
     for (name, value) in [
         ("HOME", root.display().to_string()),
+        // The temp home's bin first: a test's stand-in beats the system folders; the system
+        // folders keep git, sh and ps working without the owner's own PATH.
+        ("PATH", format!("{}/bin:/usr/bin:/bin", root.display())),
         ("CLAUDE_CONFIG_DIR", path(".claude")),
         ("XDG_CONFIG_HOME", path(".config")),
         ("XDG_STATE_HOME", path(".local/state")),
