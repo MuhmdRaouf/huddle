@@ -240,6 +240,10 @@ pub struct RecentRow {
     pub stop: Option<String>,
     /// The upstream's `request-id`, the key that joins a request to a session log line.
     pub upstream_id: Option<String>,
+    /// How many sessions readings have left this row without its agent or tokens; past
+    /// `PENDING_READS` it no longer counts as awaiting credit. Not part of the JSON.
+    #[serde(skip)]
+    pending_reads: u8,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
@@ -458,6 +462,12 @@ struct LaneStats {
 /// first, and the history fill still settles them.
 const MAX_UNREAD: usize = 4096;
 
+/// How many sessions readings a finished request can sit without its tag and still keep the
+/// credit pass asking: one pass asks at most three times (`CREDIT_FOLLOW_UPS` follow-ups
+/// included), so a row one whole pass could not credit — a request the session logs never
+/// name — stops waking every later quiet spell.
+const PENDING_READS: u8 = 3;
+
 struct Inner {
     next_id: u64,
     active: HashMap<u64, Active>,
@@ -597,10 +607,14 @@ impl LiveState {
     }
 
     /// True when a finished request that carries an upstream id still lacks its agent or its
-    /// tokens: a sessions reading could credit it.
+    /// tokens and has not outlived the credit pass's patience: a sessions reading could still
+    /// credit it. A row that `PENDING_READS` readings left untagged — a request the session
+    /// logs never name — stops keeping the pass awake.
     pub fn awaiting_credit(&self) -> bool {
         lock(&self.inner).recent.iter().any(|row| {
-            row.upstream_id.is_some() && (row.agent.is_none() || row.tokens_out.is_none())
+            row.pending_reads < PENDING_READS
+                && row.upstream_id.is_some()
+                && (row.agent.is_none() || row.tokens_out.is_none())
         })
     }
 
@@ -684,8 +698,21 @@ impl LiveState {
         #[cfg(test)]
         self.credit_runs.fetch_add(1, Ordering::Relaxed);
         let credits = self.apply_credits(sessions);
+        self.age_pending();
         if let Some(sink) = self.sink.as_ref().filter(|_| !credits.is_empty()) {
             sink.credited(credits);
+        }
+    }
+
+    /// Counts one more reading that left each still-untagged row without its agent or tokens,
+    /// so a row the logs never name stops counting as awaiting credit once a whole credit pass
+    /// (`PENDING_READS` asks) has tried.
+    fn age_pending(&self) {
+        let mut inner = lock(&self.inner);
+        for row in inner.recent.iter_mut() {
+            if row.upstream_id.is_some() && (row.agent.is_none() || row.tokens_out.is_none()) {
+                row.pending_reads = row.pending_reads.saturating_add(1);
+            }
         }
     }
 
@@ -1033,6 +1060,7 @@ fn record(inner: &mut Inner, id: u64, active: Active, finish: Finish) -> RecentR
         cache_write,
         stop,
         upstream_id: finish.upstream_id,
+        pending_reads: 0,
     };
     inner.recent.push_front(row.clone());
     inner.recent.truncate(RING_CAPACITY);
@@ -1868,6 +1896,38 @@ mod tests {
         let snapshot = live.snapshot(T0 + 5_000, &inputs(&["anthropic"]));
         assert_eq!(snapshot.lanes[0].tokens_in, 240);
         assert_eq!(snapshot.models[0].tokens_in, 240);
+    }
+
+    #[test]
+    fn l46_a_row_that_two_readings_cannot_credit_stops_awaiting_credit_at_the_third() {
+        let live = LiveState::new(T0);
+        // A request the session logs never name: every reading leaves it without a tag.
+        unread(&live, "req_A", T0);
+        assert!(live.awaiting_credit());
+        live.credit(&[]);
+        live.credit(&[]);
+        assert!(
+            live.awaiting_credit(),
+            "two readings that name nothing keep the row pending"
+        );
+        live.credit(&[]);
+        assert!(
+            !live.awaiting_credit(),
+            "a third reading with no tag ages the row out"
+        );
+    }
+
+    #[test]
+    fn l46_a_credited_row_keeps_counting_as_credited_whatever_the_ageing_saw() {
+        let live = LiveState::new(T0);
+        unread(&live, "req_A", T0);
+        live.credit(&[]);
+        live.credit(&[logged("s1", "agent-x", "req_A")]);
+        assert!(!live.awaiting_credit(), "the tag credited the row");
+        // More readings that name nothing leave the credited row alone.
+        live.credit(&[]);
+        live.credit(&[]);
+        assert!(!live.awaiting_credit());
     }
 
     const WINDOW_PAST: u64 = 16 * 60_000;

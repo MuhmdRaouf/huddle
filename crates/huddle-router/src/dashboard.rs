@@ -324,14 +324,18 @@ impl Dashboard {
     /// One pass: asks for the sessions once, and while that ask credited nothing and a request
     /// still awaits its credit, waits `credit_follow_up` and asks again, at most
     /// `CREDIT_FOLLOW_UPS` more times. The cache answers a stale ask with the old reading and
-    /// reads in the background, so the follow-up finds the new reading or the same one.
+    /// reads in the background, so the follow-up finds the new reading or the same one. The
+    /// wait ends with the drain, so a shutdown never lingers inside a follow-up.
     async fn credit_pass(&self) {
         for ask in 0..=CREDIT_FOLLOW_UPS {
             if !self.live.awaiting_credit() || self.lock_hub().is_some() {
                 return;
             }
             if ask > 0 {
-                sleep(self.credit_follow_up).await;
+                tokio::select! {
+                    () = sleep(self.credit_follow_up) => {}
+                    () = drained(self.drain.clone()) => return,
+                }
             }
             self.machine();
         }
@@ -1159,6 +1163,7 @@ mod l28_tests {
     use hyper::body::Bytes;
 
     use super::{Dashboard, DashboardInputs, Event, Machine};
+    use crate::connect::Phase;
     use crate::dispatch::now_ms;
     use crate::live::{Finish, LiveState, RequestStart};
     use crate::server::RespBody;
@@ -1369,6 +1374,17 @@ mod l28_tests {
     }
 
     #[tokio::test]
+    async fn l46_no_reading_when_the_only_pending_row_is_already_credited() {
+        let (_dashboard, live, asks) = counting();
+        finish_request(&live);
+        // The reading that credits it lands before the pass wakes: nothing is left to ask for.
+        let tagged = session("req_A");
+        live.credit(std::slice::from_ref(&tagged));
+        tokio::time::sleep(Duration::from_millis(600)).await;
+        assert_eq!(asks.load(Ordering::Relaxed), 0);
+    }
+
+    #[tokio::test]
     async fn l28_events_that_are_not_finishes_wake_no_pass() {
         let (_dashboard, live, asks) = counting();
         finish_request(&live);
@@ -1403,6 +1419,46 @@ mod l28_tests {
         dashboard.credit_after_finishes();
         tokio::time::sleep(Duration::from_millis(600)).await;
         assert_eq!(asks.load(Ordering::Relaxed), 0);
+    }
+
+    #[tokio::test]
+    async fn l46_the_drain_ends_the_pass_during_its_follow_up_wait() {
+        let live = Arc::new(LiveState::new(now_ms()));
+        let asks = Arc::new(AtomicUsize::new(0));
+        let never = Arc::new(Machine::default());
+        let inputs = DashboardInputs {
+            sessions: Arc::new({
+                let asks = Arc::clone(&asks);
+                move || {
+                    asks.fetch_add(1, Ordering::Relaxed);
+                    Arc::clone(&never)
+                }
+            }),
+            ..DashboardInputs::default()
+        };
+        let (phase, watched) = tokio::sync::watch::channel(Phase::Serving);
+        let dashboard = Arc::new(
+            Dashboard::new(Arc::clone(&live), inputs, Arc::new(Vec::new))
+                .with_credit_after(Duration::from_millis(40))
+                .with_credit_follow_up(Duration::from_millis(500))
+                .ending_with(watched),
+        );
+        dashboard.credit_after_finishes();
+        finish_request(&live);
+        let start = std::time::Instant::now();
+        while asks.load(Ordering::Relaxed) == 0 && start.elapsed() < Duration::from_secs(2) {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        assert_eq!(asks.load(Ordering::Relaxed), 1, "the pass asked once");
+        // The drain arrives while the pass sits in its follow-up wait: the second ask
+        // never happens.
+        phase.send_modify(|phase| *phase = Phase::Draining);
+        tokio::time::sleep(Duration::from_millis(700)).await;
+        assert_eq!(
+            asks.load(Ordering::Relaxed),
+            1,
+            "the drain ended the pass inside the follow-up wait"
+        );
     }
 
     #[test]
