@@ -10,7 +10,7 @@ use std::time::UNIX_EPOCH;
 use serde::Deserialize;
 
 use crate::log::Summary;
-use crate::model::{Agent, AgentState, Limits, RequestTag, Session};
+use crate::model::{Agent, AgentState, Limits, RequestTag, Session, SharedStr};
 use crate::repo::Repos;
 use crate::state::{agent_state, standing};
 use crate::tail::{feed_lines, first_ms};
@@ -49,9 +49,17 @@ struct Cursor {
     head_ms: Option<u64>,
     from_start: bool,
     summary: Summary,
+    /// The agent id its tags carry, made once per log.
+    agent_id: Option<SharedStr>,
 }
 
 impl Cursor {
+    fn agent_id(&mut self, id: &str) -> SharedStr {
+        self.agent_id
+            .get_or_insert_with(|| SharedStr::from(id))
+            .clone()
+    }
+
     fn started_ms(&self) -> Option<u64> {
         if self.from_start {
             self.summary.first_ms
@@ -96,7 +104,7 @@ impl SessionScanner {
         path: &Path,
         modified_ms: u64,
         tail_bytes: u64,
-    ) -> Option<&Cursor> {
+    ) -> Option<&mut Cursor> {
         let len = fs::metadata(path).ok()?.len();
         let mut cursor = match earlier.remove(path) {
             Some(cursor) if cursor.len <= len => cursor,
@@ -110,6 +118,7 @@ impl SessionScanner {
             cursor.modified_ms = modified_ms;
             let requests = &mut cursor.summary.requests;
             requests.drain(..requests.len().saturating_sub(MAX_REQUESTS));
+            requests.shrink_to_fit();
         }
         Some(
             self.cursors
@@ -138,6 +147,7 @@ impl SessionScanner {
             head_ms,
             from_start: offset == 0,
             summary: Summary::default(),
+            agent_id: None,
         }
     }
 
@@ -156,6 +166,8 @@ impl SessionScanner {
             tail_bytes,
         );
         let cursor = self.read(earlier, &log.path, log.modified_ms, tail_bytes)?;
+        let main_id = cursor.agent_id("main");
+        let cursor = &*cursor;
         let main = &cursor.summary;
         let started_ms = cursor.started_ms();
         let repo = main.cwd.as_deref().and_then(|cwd| repos.of(cwd));
@@ -175,7 +187,9 @@ impl SessionScanner {
         } else {
             200_000
         };
-        let mut request_ids = main.tags("main");
+        let tag_count = main.requests.len() + subagents.iter().map(|(_, t)| t.len()).sum::<usize>();
+        let mut request_ids = Vec::with_capacity(tag_count);
+        request_ids.extend(main.tags(&main_id));
         let mut agents = vec![Agent {
             id: "main".to_string(),
             kind: "main".to_string(),
@@ -263,6 +277,8 @@ impl SessionScanner {
             .and_then(|text| serde_json::from_str(&text).ok())
             .unwrap_or_default();
         let cursor = self.read(earlier, path, modified_ms, tail_bytes)?;
+        let agent_id = cursor.agent_id(&id);
+        let cursor = &*cursor;
         let tail = &cursor.summary;
         let state = standing(tail, true, now_ms).state;
         let (state, ended_ms) = if meta.finished {
@@ -270,7 +286,7 @@ impl SessionScanner {
         } else {
             (agent_state(state), None)
         };
-        let tags = tail.tags(&id);
+        let tags = tail.tags(&agent_id).collect();
         let agent = Agent {
             kind: meta.agent_type.unwrap_or_default(),
             description: meta.description.unwrap_or_default(),

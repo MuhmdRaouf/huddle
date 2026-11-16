@@ -89,14 +89,14 @@ impl UsageReader {
                 .as_deref()
                 .and_then(|cwd| repos.of(cwd))
                 .map(|repo| repo.name);
-            for tag in cursor.summary.tags(&log.agent_id) {
+            for (request_id, usage, stop) in &cursor.summary.requests {
                 found.push(LogUsage {
-                    request_id: tag.request_id,
+                    request_id: request_id.to_string(),
                     session: log.session.clone(),
-                    agent_id: tag.agent_id,
+                    agent_id: log.agent_id.clone(),
                     project: project.clone(),
-                    usage: tag.usage,
-                    stop: tag.stop,
+                    usage: *usage,
+                    stop: stop.as_deref().map(str::to_string),
                 });
             }
         }

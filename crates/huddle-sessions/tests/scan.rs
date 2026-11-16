@@ -387,3 +387,34 @@ fn l23_a_tail_is_read_once() {
     );
     assert!(s.request_ids.len() < 200, "only the tail is parsed");
 }
+
+#[test]
+fn l52_a_reading_shares_its_tag_strings_with_the_scanner() {
+    let home = TempHome::new();
+    let claude = claude_dir(&home);
+    let mut scanner = SessionScanner::default();
+    let first = scanner.scan(&claude, now_ms(), Limits::default());
+    let second = scanner.scan(&claude, now_ms(), Limits::default());
+    let (one, two) = (
+        &by_id(&first, "s-waiting").request_ids,
+        &by_id(&second, "s-waiting").request_ids,
+    );
+    assert_eq!(one.len(), 4);
+    for (a, b) in one.iter().zip(two) {
+        assert_eq!(
+            a.request_id.as_str().as_ptr(),
+            b.request_id.as_str().as_ptr(),
+            "an unchanged log's request id is copied into each reading"
+        );
+    }
+    assert_eq!(
+        one[0].agent_id.as_str().as_ptr(),
+        one[1].agent_id.as_str().as_ptr(),
+        "each tag of one agent copies its agent id"
+    );
+    assert_eq!(
+        one.capacity(),
+        one.len(),
+        "the reading's tag vector holds spare room"
+    );
+}

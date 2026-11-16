@@ -14,7 +14,8 @@ mod usage_for;
 mod worktrees;
 
 pub use model::{
-    Agent, AgentState, Limits, RequestTag, Session, SessionState, Usage, Worktree, WorktreeKind,
+    Agent, AgentState, Limits, RequestTag, Session, SessionState, SharedStr, Usage, Worktree,
+    WorktreeKind,
 };
 pub use scan::{SessionScanner, scan};
 pub use time::parse_iso_ms;

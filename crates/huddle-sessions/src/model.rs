@@ -1,6 +1,10 @@
 //! The typed view of a session. Only the fields the admin panel shows; no message text.
 
-use serde::Serialize;
+use std::fmt;
+use std::ops::Deref;
+use std::sync::Arc;
+
+use serde::{Serialize, Serializer};
 
 /// How many sessions to list, how old a log may be and how much of each log's end to read.
 #[derive(Debug, Clone, Copy)]
@@ -53,14 +57,75 @@ pub struct Usage {
     pub output: u64,
 }
 
+/// Text the scanner keeps and every reading names: a clone shares the bytes, so a reading of
+/// 30 000 request tags owns none of their strings.
+#[derive(Clone, PartialEq, Eq, Hash)]
+pub struct SharedStr(Arc<str>);
+
+impl SharedStr {
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl Deref for SharedStr {
+    type Target = str;
+
+    fn deref(&self) -> &str {
+        &self.0
+    }
+}
+
+impl From<&str> for SharedStr {
+    fn from(text: &str) -> SharedStr {
+        SharedStr(Arc::from(text))
+    }
+}
+
+impl From<String> for SharedStr {
+    fn from(text: String) -> SharedStr {
+        SharedStr(Arc::from(text))
+    }
+}
+
+impl PartialEq<str> for SharedStr {
+    fn eq(&self, other: &str) -> bool {
+        self.as_str() == other
+    }
+}
+
+impl PartialEq<&str> for SharedStr {
+    fn eq(&self, other: &&str) -> bool {
+        self.as_str() == *other
+    }
+}
+
+impl fmt::Debug for SharedStr {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Debug::fmt(self.as_str(), f)
+    }
+}
+
+impl fmt::Display for SharedStr {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl Serialize for SharedStr {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(self.as_str())
+    }
+}
+
 /// One API request found in a log: the router joins it to the response's `request-id`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct RequestTag {
-    pub request_id: String,
-    pub agent_id: String,
+    pub request_id: SharedStr,
+    pub agent_id: SharedStr,
     pub usage: Usage,
     /// The `stop_reason` of the request's last assistant line.
-    pub stop: Option<String>,
+    pub stop: Option<SharedStr>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]

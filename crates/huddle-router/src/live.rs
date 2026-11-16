@@ -757,7 +757,7 @@ impl LiveState {
             let usage = tag.usage;
             if row.agent.is_none() || row.tokens_out.is_none() {
                 credits.push(Credit {
-                    upstream_id: tag.request_id.clone(),
+                    upstream_id: tag.request_id.to_string(),
                     agent: Some(format!("{}:{}", session.id, tag.agent_id)),
                     project: session.project.clone(),
                     usage: (
@@ -766,7 +766,7 @@ impl LiveState {
                         usage.cache_write,
                         usage.output,
                     ),
-                    stop: tag.stop.clone(),
+                    stop: tag.stop.as_deref().map(str::to_string),
                 });
             }
             if row.agent.is_none() {
@@ -779,7 +779,7 @@ impl LiveState {
             row.cache_write = row.cache_write.or(Some(usage.cache_write));
             row.tokens_out = row.tokens_out.or(Some(usage.output));
             if row.stop.is_none() {
-                row.stop.clone_from(&tag.stop);
+                row.stop = tag.stop.as_deref().map(str::to_string);
             }
         }
         for series in models.values_mut() {

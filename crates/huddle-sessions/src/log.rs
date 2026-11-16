@@ -5,7 +5,7 @@
 use serde::Deserialize;
 use serde::de::IgnoredAny;
 
-use crate::model::{RequestTag, Usage};
+use crate::model::{RequestTag, SharedStr, Usage};
 use crate::time::parse_iso_ms;
 
 #[derive(Deserialize)]
@@ -136,8 +136,8 @@ pub(crate) struct Summary {
     pub last_usage: Option<Usage>,
     pub one_hour_cache: bool,
     /// One entry per request id, holding the last usage and stop reason seen for it, in order
-    /// of first sight.
-    pub requests: Vec<(String, Usage, Option<String>)>,
+    /// of first sight. The strings are shared with every tag made from them.
+    pub requests: Vec<(SharedStr, Usage, Option<SharedStr>)>,
     /// A line carried a driven marker: `entrypoint` `sdk-*` or `promptSource` `sdk`.
     pub driven: bool,
     /// Questions asked and not yet answered: tool-call id, tool name, when.
@@ -146,6 +146,8 @@ pub(crate) struct Summary {
     pub tasks: Vec<Task>,
     /// Ids of background `Bash` calls whose result has not arrived.
     launching: Vec<String>,
+    /// One string per distinct stop reason the requests carry.
+    stops: Vec<SharedStr>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -162,6 +164,8 @@ pub(crate) struct Task {
 }
 
 const QUESTION_TOOLS: [&str; 2] = ["AskUserQuestion", "ExitPlanMode"];
+/// Stop reasons past this many distinct ones are not shared.
+const MAX_STOPS: usize = 8;
 
 impl Summary {
     /// Reads every line; a line that is not a JSON object of the expected shape is skipped.
@@ -337,32 +341,52 @@ impl Summary {
             .and_then(|c| c.ephemeral_1h_input_tokens)
             .is_some_and(|tokens| tokens > 0);
         if let Some(id) = request_id {
-            match self.requests.iter_mut().find(|(seen, _, _)| *seen == id) {
+            let stop = stop.map(|stop| self.stop_reason(stop));
+            match self
+                .requests
+                .iter_mut()
+                .find(|(seen, _, _)| *seen == id.as_str())
+            {
                 Some(entry) => {
                     entry.1 = usage;
                     if stop.is_some() {
                         entry.2 = stop;
                     }
                 }
-                None => self.requests.push((id, usage, stop)),
+                None => self.requests.push((SharedStr::from(id), usage, stop)),
             }
         }
+    }
+
+    /// The shared string for a stop reason: a log names only a few, thousands of times.
+    fn stop_reason(&mut self, stop: String) -> SharedStr {
+        if let Some(known) = self.stops.iter().find(|known| **known == *stop) {
+            return known.clone();
+        }
+        let stop = SharedStr::from(stop);
+        if self.stops.len() < MAX_STOPS {
+            self.stops.push(stop.clone());
+        }
+        stop
     }
 
     fn turn(&mut self, at_ms: Option<u64>, phase: Phase) {
         self.last_turn = Some(Turn { at_ms, phase });
     }
 
-    pub(crate) fn tags(&self, agent_id: &str) -> Vec<RequestTag> {
+    /// The request tags of this log's agent; each shares its strings with the summary.
+    pub(crate) fn tags<'a>(
+        &'a self,
+        agent_id: &'a SharedStr,
+    ) -> impl ExactSizeIterator<Item = RequestTag> + 'a {
         self.requests
             .iter()
             .map(|(request_id, usage, stop)| RequestTag {
                 request_id: request_id.clone(),
-                agent_id: agent_id.to_string(),
+                agent_id: agent_id.clone(),
                 usage: *usage,
                 stop: stop.clone(),
             })
-            .collect()
     }
 }
 

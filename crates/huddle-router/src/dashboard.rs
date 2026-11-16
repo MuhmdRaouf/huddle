@@ -6,7 +6,7 @@
 
 use std::collections::BTreeMap;
 use std::collections::VecDeque;
-use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError, Weak};
 use std::time::Duration;
 
 use http_body_util::BodyExt;
@@ -194,11 +194,12 @@ pub struct Dashboard {
     builds: std::sync::atomic::AtomicUsize,
 }
 
-/// A sessions reading as it came from the cache, and the copy snapshots carry: joined once,
-/// without the request ids.
+/// The sessions reading last credited, and the copy snapshots carry: joined once, without the
+/// request ids. Only the cache keeps a reading alive: `source` tells a new one by its address,
+/// which its `Weak` keeps from being reused.
 #[derive(Default)]
 struct Reading {
-    source: Arc<Machine>,
+    source: Weak<Machine>,
     view: Arc<Machine>,
 }
 
@@ -675,12 +676,12 @@ impl Dashboard {
     fn machine(&self) -> Arc<Machine> {
         let latest = (self.inputs.sessions)();
         let mut reading = self.reading.lock().unwrap_or_else(PoisonError::into_inner);
-        if !Arc::ptr_eq(&reading.source, &latest) {
+        if !std::ptr::eq(reading.source.as_ptr(), Arc::as_ptr(&latest)) {
             self.live.credit(&latest.sessions);
             let mut view = Machine::clone(&latest);
             join::reading(&mut view);
             reading.view = Arc::new(view);
-            reading.source = latest;
+            reading.source = Arc::downgrade(&latest);
         }
         Arc::clone(&reading.view)
     }
