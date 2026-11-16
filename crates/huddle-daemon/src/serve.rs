@@ -101,6 +101,9 @@ async fn drain_all(
 /// drains: the drain's budget plus a minute of margin.
 pub const TAKEOVER_LOCK_WAIT: Duration = Duration::from_secs(660);
 
+/// How often the takeover's lock wait tries the lock and looks for its run's end.
+const LOCK_POLL: Duration = Duration::from_millis(50);
+
 /// The record under the run dir, `<run_dir>/router.toml`.
 pub(crate) const RECORD_FILE: &str = "router.toml";
 
@@ -961,17 +964,29 @@ async fn rss_check(
 /// Takes the router lock once the previous daemon lets go and holds it until the returned
 /// receiver drops: a takeover start serves the port before it can prove it is the one daemon, and
 /// the lock catches up with it. The waiting thread ends once it has the lock: the guard waits in
-/// the channel, and dropping the receiver drops it, also when it arrives after the drop. A wait
-/// that fails is logged, the daemon serves unheld.
+/// the channel, and dropping the receiver drops it, also when it arrives after the drop. It also
+/// ends within one poll of the receiver dropping, before it tries the lock again, so a run that
+/// is over creates no file. A wait that fails is logged, the daemon serves unheld.
 fn hold_lock_behind_the_run(
     run_dir: PathBuf,
     log: Logger,
 ) -> tokio::sync::oneshot::Receiver<singleton::LockGuard> {
     let (guard_tx, guard_rx) = tokio::sync::oneshot::channel();
     tokio::task::spawn_blocking(move || {
-        match singleton::wait(&run_dir.join(LOCK_FILE), ROUTER_NAME, TAKEOVER_LOCK_WAIT) {
-            Ok(guard) => drop(guard_tx.send(guard)),
-            Err(error) => log(singleton_line(&error)),
+        let path = run_dir.join(LOCK_FILE);
+        let deadline = Instant::now() + TAKEOVER_LOCK_WAIT;
+        loop {
+            if guard_tx.is_closed() {
+                return;
+            }
+            match singleton::lock(&path, ROUTER_NAME) {
+                Ok(guard) => return drop(guard_tx.send(guard)),
+                Err(error @ SingletonError::Held(_)) if Instant::now() >= deadline => {
+                    return log(singleton_line(&error));
+                }
+                Err(SingletonError::Held(_)) => std::thread::sleep(LOCK_POLL),
+                Err(error) => return log(singleton_line(&error)),
+            }
         }
     });
     guard_rx

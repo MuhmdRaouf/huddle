@@ -215,6 +215,38 @@ fn l68_a_router_started_just_before_the_drop_leaves_nothing() {
 }
 
 #[test]
+fn l70_the_lock_wait_stops_when_its_run_is_gone() {
+    in_home(async |home: &TempHome| {
+        let port = free_port();
+        let upstream_port = upstream(None).await;
+        let run_dir = home.root().join(".local/state/huddle/run");
+        // A request stuck in the old router's drain keeps its lock held for 300 ms.
+        let (handover, _stuck) = handover_after(home, port, upstream_port, "300", || async {
+            message_request(port).await
+        })
+        .await;
+        let old = handover.old;
+        finish(Handover {
+            old: tokio::spawn(async { Ok(ServeOutcome::Stopped) }),
+            ..handover
+        })
+        .await;
+        assert!(
+            run_dir.join("router.lock").exists(),
+            "the old router's lock file"
+        );
+        std::fs::remove_dir_all(&run_dir).expect("remove the run folder");
+        let ended = tokio::time::timeout(Duration::from_secs(5), old).await;
+        assert!(ended.is_ok(), "the old router frees its lock");
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        assert!(
+            !run_dir.exists(),
+            "the lock wait of an ended run created the run folder again"
+        );
+    });
+}
+
+#[test]
 fn e1_old_router_exits_after_handover_with_an_idle_connection() {
     in_home(async |home: &TempHome| {
         let port = free_port();
