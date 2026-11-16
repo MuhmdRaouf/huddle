@@ -76,7 +76,8 @@ impl HandoverListener {
 
 /// Listens on `<run_dir>/handover.sock`. A socket that cannot open (a path longer than the OS
 /// allows, a run dir that cannot be made) is logged as `huddle-router: handover socket: <err>`
-/// and answers a no-op listener: the router still serves.
+/// and answers a no-op listener: the router still serves. A thread that cannot start is logged
+/// as `huddle-router: handover accept thread: <err>` and handover accepts nothing.
 pub fn serve_handover(
     run_dir: &Path,
     port: u16,
@@ -112,10 +113,16 @@ pub fn serve_handover(
         log,
     });
     let loop_server = Arc::clone(&server);
-    let accept_thread = thread::Builder::new()
+    let accept_thread = match thread::Builder::new()
         .name("huddle-handover".into())
         .spawn(move || accept_loop(loop_server, unix))
-        .ok();
+    {
+        Ok(handle) => Some(handle),
+        Err(source) => {
+            (server.log)(format!("huddle-router: handover accept thread: {source}"));
+            None
+        }
+    };
     HandoverListener {
         server: Some(server),
         accept_thread: Mutex::new(accept_thread),

@@ -1141,7 +1141,7 @@ impl TlsSlot {
 
     /// The connector. The first call reads the roots once, off the async threads, while the
     /// calls that arrive meanwhile wait for that read. A failed read is returned to every call
-    /// waiting on it and is not kept: the next call reads again.
+    /// waiting on it, fails that request as `ECERT`, and is not kept: the next call reads again.
     async fn get(&self) -> io::Result<&TlsConnector> {
         let Some(source) = &self.source else {
             return self

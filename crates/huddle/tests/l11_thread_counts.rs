@@ -65,6 +65,20 @@ fn settled(pid: u32, limit: usize) -> Result<usize, Vec<usize>> {
     Err(samples)
 }
 
+/// Stops the router when the test ends, panic or not: a failed assertion must not leave the
+/// router running in the temp home.
+struct StopOnDrop<'a>(&'a TempHome);
+
+impl Drop for StopOnDrop<'_> {
+    fn drop(&mut self) {
+        let _ = self
+            .0
+            .command(env!("CARGO_BIN_EXE_huddle"))
+            .args(["router", "stop"])
+            .output();
+    }
+}
+
 /// Starts a router in a temp home, gives it 2 s to start every thread it owns (so a count taken
 /// before they exist cannot pass) and returns both settled thread counts.
 fn idle_threads() -> (Result<usize, Vec<usize>>, Result<usize, Vec<usize>>) {
@@ -75,6 +89,7 @@ fn idle_threads() -> (Result<usize, Vec<usize>>, Result<usize, Vec<usize>>) {
         .output()
         .expect("run huddle");
     assert!(start.status.success(), "{start:?}");
+    let _stop = StopOnDrop(&home);
     let deadline = Instant::now() + Duration::from_secs(15);
     let pids = loop {
         if let Some(pids) = record(&home).filter(|pids| pids.worker > 0) {
@@ -84,15 +99,10 @@ fn idle_threads() -> (Result<usize, Vec<usize>>, Result<usize, Vec<usize>>) {
         thread::sleep(Duration::from_millis(10));
     };
     thread::sleep(Duration::from_secs(2));
-    let counts = (
+    (
         settled(pids.worker, WORKER_LIMIT),
         settled(pids.parent, SUPERVISOR_LIMIT),
-    );
-    let _ = home
-        .command(env!("CARGO_BIN_EXE_huddle"))
-        .args(["router", "stop"])
-        .output();
-    counts
+    )
 }
 
 #[test]
@@ -122,6 +132,7 @@ fn l44_a_finished_blocking_thread_leaves_within_a_second() {
         .output()
         .expect("run huddle");
     assert!(start.status.success(), "{start:?}");
+    let _stop = StopOnDrop(&home);
     let deadline = Instant::now() + Duration::from_secs(15);
     let pids = loop {
         if let Some(pids) = record(&home).filter(|pids| pids.worker > 0) {
@@ -150,10 +161,6 @@ fn l44_a_finished_blocking_thread_leaves_within_a_second() {
             >= 9;
         windows.push(window);
     }
-    let _ = home
-        .command(env!("CARGO_BIN_EXE_huddle"))
-        .args(["router", "stop"])
-        .output();
     assert!(
         passed,
         "no window had 9 of 10 samples within {WORKER_LIMIT}: {windows:?}"
