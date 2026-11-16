@@ -164,7 +164,8 @@ pub(crate) struct Task {
 }
 
 const QUESTION_TOOLS: [&str; 2] = ["AskUserQuestion", "ExitPlanMode"];
-/// Stop reasons past this many distinct ones are not shared.
+/// The provider names about six stop reasons, so a set of 8 holds every real one; the bound
+/// keeps a log with made-up reasons from growing the set.
 const MAX_STOPS: usize = 8;
 
 impl Summary {

@@ -418,3 +418,26 @@ fn l52_a_reading_shares_its_tag_strings_with_the_scanner() {
         "the reading's tag vector holds spare room"
     );
 }
+
+#[test]
+fn l55_tags_with_one_stop_reason_share_one_string() {
+    let home = TempHome::new();
+    let claude = claude_dir(&home);
+    let log = claude.join("projects/-Users-x-huddle/s-stops.jsonl");
+    let mut text = assistant_line("2026-11-11T11:55:00.000Z", "req_stop_a", "end_turn");
+    text += &assistant_line("2026-11-11T11:56:00.000Z", "req_stop_b", "end_turn");
+    fs::write(&log, &text).expect("write log");
+    set_age(&log, 60_000);
+    let sessions = scan(&claude, now_ms(), Limits::default());
+    let stops: Vec<_> = by_id(&sessions, "s-stops")
+        .request_ids
+        .iter()
+        .filter_map(|t| t.stop.as_ref())
+        .collect();
+    assert_eq!(stops.len(), 2, "one stop reason per request tag");
+    assert_eq!(
+        stops[0].as_str().as_ptr(),
+        stops[1].as_str().as_ptr(),
+        "two tags of one log with the same stop reason hold one string"
+    );
+}

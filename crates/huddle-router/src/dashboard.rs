@@ -1547,6 +1547,45 @@ mod l28_tests {
         let next = next_event(&mut feed).await;
         assert!(next.windows(5).any(|w| w == b"fresh"), "{next:?}");
     }
+
+    /// The dashboard holds its reading's source only as a `Weak`: after one read, dropping
+    /// the machine leaves the dashboard's source pointing at nothing.
+    #[test]
+    fn l55_the_dashboard_does_not_keep_a_reading_alive() {
+        let live = Arc::new(LiveState::new(now_ms()));
+        let machine = Arc::new(Machine {
+            sessions: vec![session("req_A")],
+            worktrees: Vec::new(),
+        });
+        let source = Arc::downgrade(&machine);
+        let inputs = DashboardInputs {
+            sessions: Arc::new(move || source.upgrade().expect("the test holds the machine")),
+            ..DashboardInputs::default()
+        };
+        let dashboard = Dashboard::new(Arc::clone(&live), inputs, Arc::new(Vec::new));
+        dashboard.machine();
+        assert_eq!(
+            dashboard
+                .reading
+                .lock()
+                .expect("reading lock")
+                .source
+                .strong_count(),
+            1,
+            "the read stored the machine as its source",
+        );
+        drop(machine);
+        assert_eq!(
+            dashboard
+                .reading
+                .lock()
+                .expect("reading lock")
+                .source
+                .strong_count(),
+            0,
+            "only the cache keeps a reading alive; the dashboard holds a Weak",
+        );
+    }
 }
 
 #[cfg(test)]
