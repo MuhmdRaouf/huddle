@@ -60,6 +60,21 @@ fn has(lines: &Lines, needle: &str) -> bool {
     lines.lock().unwrap().iter().any(|l| l.contains(needle))
 }
 
+/// Runs `body` with a fresh home on a fresh current-thread runtime, and removes the home only
+/// once the runtime is gone. A takeover leaves a blocking task that polls for the old router's
+/// lock and creates the lock file when it gets it; dropping the runtime waits for that task, so
+/// nothing the test started can write into the home after it is removed.
+fn in_home(body: impl AsyncFnOnce(&TempHome)) {
+    let home = TempHome::new();
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .expect("runtime");
+    runtime.block_on(body(&home));
+    drop(runtime);
+    drop(home);
+}
+
 #[tokio::test]
 async fn k16_admin_requests_and_lifecycle_are_logged_without_values() {
     let home = TempHome::new();
@@ -88,39 +103,40 @@ async fn k16_admin_requests_and_lifecycle_are_logged_without_values() {
     );
 }
 
-#[tokio::test]
-async fn k16_a_handover_logs_both_sides_and_the_old_router_logs_its_exit() {
-    let home = TempHome::new();
-    let port = free_port();
-    let (old_opts, old_lines) = options(&home, port, false, "setup");
-    let (_old_stop, old_rx) = watch::channel(false);
-    let old = tokio::spawn(run(old_opts, old_rx));
-    wait_health(port, "").await;
-    let (new_opts, new_lines) = options(&home, port, true, "prompt-submit");
-    let (new_stop, new_rx) = watch::channel(false);
-    let new = tokio::spawn(run(new_opts, new_rx));
-    assert_eq!(
-        old.await.expect("join").expect("serve"),
-        ServeOutcome::HandedOver
-    );
-    let pid = std::process::id();
-    assert!(has(
-        &old_lines,
-        &format!("huddle-router: handing over to pid={pid} (asked by prompt-submit)")
-    ));
-    assert!(has(
-        &old_lines,
-        &format!("huddle-router: exit pid={pid} reason=handover")
-    ));
-    wait_health(port, "").await;
-    assert!(has(
-        &new_lines,
-        &format!("huddle-router: took over from pid={pid}")
-    ));
-    assert!(has(
-        &new_lines,
-        &format!("huddle-router: start vtest pid={pid} port={port} by=handover")
-    ));
-    new_stop.send(true).expect("stop");
-    new.await.expect("join").expect("serve");
+#[test]
+fn k16_a_handover_logs_both_sides_and_the_old_router_logs_its_exit() {
+    in_home(async |home: &TempHome| {
+        let port = free_port();
+        let (old_opts, old_lines) = options(home, port, false, "setup");
+        let (_old_stop, old_rx) = watch::channel(false);
+        let old = tokio::spawn(run(old_opts, old_rx));
+        wait_health(port, "").await;
+        let (new_opts, new_lines) = options(home, port, true, "prompt-submit");
+        let (new_stop, new_rx) = watch::channel(false);
+        let new = tokio::spawn(run(new_opts, new_rx));
+        assert_eq!(
+            old.await.expect("join").expect("serve"),
+            ServeOutcome::HandedOver
+        );
+        let pid = std::process::id();
+        assert!(has(
+            &old_lines,
+            &format!("huddle-router: handing over to pid={pid} (asked by prompt-submit)")
+        ));
+        assert!(has(
+            &old_lines,
+            &format!("huddle-router: exit pid={pid} reason=handover")
+        ));
+        wait_health(port, "").await;
+        assert!(has(
+            &new_lines,
+            &format!("huddle-router: took over from pid={pid}")
+        ));
+        assert!(has(
+            &new_lines,
+            &format!("huddle-router: start vtest pid={pid} port={port} by=handover")
+        ));
+        new_stop.send(true).expect("stop");
+        new.await.expect("join").expect("serve");
+    });
 }

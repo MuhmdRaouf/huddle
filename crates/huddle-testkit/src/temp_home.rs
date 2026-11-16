@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{Duration, Instant};
 
-use crate::guard::processes_naming;
+use crate::guard::{processes_naming, record_home};
 use crate::ports;
 
 /// How long a drop waits for the record of a router whose lock file exists.
@@ -70,6 +70,9 @@ impl TempHome {
             .unwrap_or("unnamed")
             .to_string();
         fs::write(root.join(TEST_NAME_FILE), format!("{name}\n"))?;
+        if let Some(folder) = root.file_name().and_then(OsStr::to_str) {
+            record_home(&temp, folder, &name);
+        }
         let router_port = ports::free_port();
         let inherited: Vec<(String, String)> = KEPT_FROM_PARENT
             .iter()

@@ -13,6 +13,9 @@ use crate::temp_home::{TEST_NAME_FILE, inside_git_tree};
 
 const RUN_PREFIX: &str = "g";
 const OWNER_FILE: &str = "owner.pid";
+/// One line per temp home made in a guarded run: `<home folder>\t<test name>`. It outlives the
+/// home, so a home a late writer makes again, without its marker file, is still named.
+const HOMES_FILE: &str = "homes.tsv";
 
 /// Runs `command` with TMPDIR set to a fresh directory under `temp_root`, then fails on anything
 /// the command left behind. Answers the exit code the guard's caller exits with.
@@ -50,9 +53,10 @@ fn guarded(temp_root: &Path, command: &[String], out: &mut dyn Write) -> io::Res
         .status()?;
     let code = status.code().unwrap_or(1);
     let left = entries_left(&run_dir)?;
+    let homes = fs::read_to_string(run_dir.join(HOMES_FILE)).unwrap_or_default();
     let held: Vec<Vec<String>> = left
         .iter()
-        .map(|name| describe_leftover(&run_dir.join(name)))
+        .map(|name| describe_leftover(&run_dir.join(name), ledger_test(&homes, name)))
         .collect();
     let escaped = stop_processes_under(&run_dir, out)?;
     fs::remove_dir_all(&run_dir)?;
@@ -93,7 +97,7 @@ fn entries_left(run_dir: &Path) -> io::Result<Vec<String>> {
     let mut names = Vec::new();
     for entry in fs::read_dir(run_dir)? {
         let name = entry?.file_name().to_string_lossy().to_string();
-        if name != OWNER_FILE && name != LEASE_DIR {
+        if name != OWNER_FILE && name != LEASE_DIR && name != HOMES_FILE {
             names.push(name);
         }
     }
@@ -105,12 +109,39 @@ const LEFTOVER_ENTRIES: usize = 60;
 const LEFTOVER_DEPTH: usize = 8;
 const FIRST_LINE_CHARS: usize = 120;
 
+/// Adds a temp home to the ledger of the guarded run whose TMPDIR is `temp`. Outside a guarded
+/// run it writes nothing, so a plain `cargo test` leaves no ledger in the system temp folder.
+pub fn record_home(temp: &Path, home: &str, test: &str) {
+    if !temp.join(OWNER_FILE).exists() {
+        return;
+    }
+    // One short append per home: concurrent tests never interleave inside a line.
+    let line = format!("{home}\t{test}\n");
+    let _ = fs::OpenOptions::new()
+        .append(true)
+        .create(true)
+        .open(temp.join(HOMES_FILE))
+        .and_then(|mut file| file.write_all(line.as_bytes()));
+}
+
+// The test the ledger names for the home folder `name`.
+fn ledger_test<'a>(homes: &'a str, name: &str) -> Option<&'a str> {
+    homes
+        .lines()
+        .find_map(|line| line.strip_prefix(name)?.strip_prefix('\t'))
+}
+
 // What a leftover holds, so the log says who made it: the test named by a temp home's marker file,
-// every path inside (capped), and the first line of a log or a router record.
-fn describe_leftover(entry: &Path) -> Vec<String> {
+// else by the run's ledger (the home was made again after its drop), every path inside (capped),
+// and the first line of a log or a router record.
+fn describe_leftover(entry: &Path, ledger: Option<&str>) -> Vec<String> {
     let mut lines = Vec::new();
-    if let Some(test) = first_line(&entry.join(TEST_NAME_FILE)) {
-        lines.push(format!("made by the test {test}"));
+    match (first_line(&entry.join(TEST_NAME_FILE)), ledger) {
+        (Some(test), _) => lines.push(format!("made by the test {test}")),
+        (None, Some(test)) => lines.push(format!(
+            "made by the test {test} (the home came back after its drop)"
+        )),
+        (None, None) => {}
     }
     walk(entry, entry, 0, &mut lines);
     lines

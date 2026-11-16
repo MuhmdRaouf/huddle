@@ -3,7 +3,7 @@ use std::process::Stdio;
 use std::thread;
 use std::time::Duration;
 
-use huddle_testkit::guard::run_guarded;
+use huddle_testkit::guard::{record_home, run_guarded};
 use huddle_testkit::temp_home::TempHome;
 
 fn sh(script: &str) -> Vec<String> {
@@ -154,4 +154,55 @@ fn t7_guard_names_what_a_leftover_holds() {
         "a database's contents shown: {out}"
     );
     assert!(guard_dirs(&home).is_empty());
+}
+
+#[test]
+fn l68_the_guard_names_the_test_of_a_home_made_again_after_its_drop() {
+    let home = TempHome::new();
+    let (code, out) = run(
+        &home,
+        "printf 'h654321\\tsome_test_name\\n' >> \"$TMPDIR/homes.tsv\"\n\
+         mkdir -p \"$TMPDIR/h654321/.local/state/huddle/run\"\n\
+         : > \"$TMPDIR/h654321/.local/state/huddle/run/router.lock\"",
+    );
+    assert_eq!(code, 1, "{out}");
+    assert!(out.contains("h654321"), "{out}");
+    assert!(
+        out.contains("made by the test some_test_name (the home came back after its drop)"),
+        "{out}"
+    );
+    assert!(
+        !out.contains("  homes.tsv"),
+        "the ledger is not a leftover: {out}"
+    );
+}
+
+#[test]
+fn l68_the_ledger_alone_is_not_a_leftover() {
+    let home = TempHome::new();
+    let (code, out) = run(
+        &home,
+        "printf 'h654321\\tsome_test_name\\n' >> \"$TMPDIR/homes.tsv\"",
+    );
+    assert_eq!(code, 0, "{out}");
+}
+
+#[test]
+fn l68_a_home_is_recorded_in_the_ledger_only_under_a_guard() {
+    let temp = TempHome::new();
+    let unguarded = temp.root().join("plain");
+    let guarded = temp.root().join("run");
+    fs::create_dir_all(&unguarded).unwrap();
+    fs::create_dir_all(&guarded).unwrap();
+    fs::write(guarded.join("owner.pid"), "1").unwrap();
+
+    record_home(&unguarded, "h111111", "a_test");
+    record_home(&guarded, "h222222", "b_test");
+    record_home(&guarded, "h333333", "c_test");
+
+    assert!(!unguarded.join("homes.tsv").exists());
+    assert_eq!(
+        fs::read_to_string(guarded.join("homes.tsv")).unwrap(),
+        "h222222\tb_test\nh333333\tc_test\n"
+    );
 }
