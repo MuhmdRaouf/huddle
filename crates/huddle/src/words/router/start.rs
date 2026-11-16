@@ -4,7 +4,10 @@ use std::io::Write;
 
 use huddle_config::env::Env;
 use huddle_config::paths::Paths;
-use huddle_daemon::start::{DEFAULT_BUDGET, StartOptions, UPDATE_WAIT, start_by};
+use huddle_daemon::start::{
+    DEFAULT_BUDGET, IF_INSTALLED, StartOptions, UPDATE_WAIT, start_by, start_if_installed,
+};
+use huddle_setup::settings::ledger_path;
 
 pub fn run(args: &[String], env: &Env) -> i32 {
     let Some(port) = super::router_port(env) else {
@@ -32,7 +35,13 @@ pub fn run(args: &[String], env: &Env) -> i32 {
         budget: DEFAULT_BUDGET,
         update_wait: UPDATE_WAIT,
     };
-    match start_by(&options, &super::reason_of(args)) {
+    let by = super::reason_of(args);
+    let started = if args.iter().any(|arg| arg == IF_INSTALLED) {
+        start_if_installed(&options, &by, &ledger_path(&paths))
+    } else {
+        start_by(&options, &by)
+    };
+    match started {
         Ok(line) => {
             let _ = writeln!(std::io::stdout(), "{line}");
             0

@@ -18,7 +18,7 @@ use tokio::sync::{mpsc, watch};
 use crate::handover::serve_handover;
 use crate::serve::{
     RECORD_FILE, Refused, STOP_BUDGET, ServeError, ServeOptions, ServeOutcome, Workers, acquire,
-    anthropic_url, drain_limit, make_run_dir, write_record,
+    anthropic_url, drain_limit, lock_path, make_run_dir, write_record,
 };
 
 /// The descriptor number the worker finds the listening socket on.
@@ -38,6 +38,11 @@ const DELAYS_MS: [u64; 5] = [0, 1_000, 2_000, 5_000, 30_000];
 
 /// How long past its own drain a stopping worker gets before it is killed.
 const KILL_GRACE: Duration = Duration::from_secs(5);
+
+/// The longest a supervisor takes from a stop signal to its exit: the worker's drain, the grace
+/// before the kill and the wait after it.
+pub const STOP_DEADLINE: Duration =
+    Duration::from_secs(STOP_BUDGET.as_secs() + 2 * KILL_GRACE.as_secs());
 
 /// The restart delays: none for the first crash, then 1 s, 2 s, 5 s and 30 s for each further
 /// fast one.
@@ -124,12 +129,26 @@ pub async fn run(
     if let Err(text) = anthropic_url(&options.env) {
         return Err(ServeError::BadAnthropicUrl(text));
     }
+    let made = missing_folders(&options.paths.run_dir);
     make_run_dir(&options.paths.run_dir, &options.log);
     let held = match acquire(&options).await {
         Ok(held) => held,
         Err(Refused::Served { pid }) => return Ok(ServeOutcome::AlreadyServed { pid }),
         Err(Refused::Failed(error)) => return Err(error),
     };
+    // An uninstall that removed the install mark after this start looked finds no router to
+    // stop: this one leaves before it writes anything, taking back the lock file and the folders
+    // it made. The lock file goes while the lock is still held, so no starter shares it.
+    if let Some(mark) = &options.install_mark
+        && !mark.exists()
+    {
+        let _ = std::fs::remove_file(lock_path(&options.paths));
+        drop(held);
+        for folder in made {
+            let _ = std::fs::remove_dir(folder);
+        }
+        return Ok(ServeOutcome::Stopped);
+    }
     let ServeOptions {
         env,
         paths,
@@ -300,6 +319,14 @@ pub async fn run(
         std::process::id()
     ));
     Ok(outcome)
+}
+
+/// The folders from `dir` up that do not exist yet, deepest first: what creating `dir` makes.
+fn missing_folders(dir: &Path) -> Vec<PathBuf> {
+    dir.ancestors()
+        .take_while(|folder| !folder.as_os_str().is_empty() && !folder.exists())
+        .map(Path::to_path_buf)
+        .collect()
 }
 
 /// Tells the worker to end with `signal`, waits for it up to `budget` plus a grace, and kills

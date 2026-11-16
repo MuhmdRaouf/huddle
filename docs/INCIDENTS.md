@@ -391,3 +391,26 @@ Each incident, its cause, and the test that now stops it. A guard named here mus
   crates/huddle-testkit/tests/guard.rs:l68_the_ledger_alone_is_not_a_leftover,
   crates/huddle-testkit/tests/guard.rs:l68_a_home_is_recorded_in_the_ledger_only_under_a_guard
 - **Rule:** an in-process router test drops its temp home only after its runtime.
+
+## 2026-11-16, uninstall left the CA key on disk on macOS CI
+
+- **What happened:** CI run 43955269585 on `1af07db1` (macOS): `h1_uninstall_leaves_nothing` found
+  `ca/huddle-ca.pem` and `ca/huddle-ca-key.pem` in `.local/share/huddle` after `huddle uninstall` exited 0.
+  The test took 14.5 s.
+- **Cause:** `huddle router stop` gave up after 10 s while the supervisor it signalled may take 20 s to end
+  its worker, so uninstall kept the data folder ("huddle-router is still running"). The same word called a
+  router "not running" when the router held its lock but did not answer (frozen, or still coming up) or when
+  an old router still drained after a handover, and uninstall then erased the folders around a live router.
+  A hook that read the install ledger just before the uninstall could also start a router after the stop
+  had looked; that router recreated the state folder and, on its first CONNECT, the CA key.
+- **Guard:** crates/huddle/tests/uninstall_word.rs:l67_uninstall_is_final_while_a_router_is_starting,
+  crates/huddle/tests/uninstall_word.rs:l67_a_router_started_after_uninstall_writes_nothing,
+  crates/huddle/src/words/router/stop.rs:l67_a_held_lock_with_no_proven_pid_waits_then_gives_up_never_not_running,
+  crates/huddle/src/words/router/stop.rs:l67_after_a_handover_the_taker_and_then_the_draining_holder_are_signalled,
+  crates/huddle/src/words/router/stop.rs:l67_a_reused_record_pid_with_another_holder_is_never_signalled,
+  crates/huddle-daemon/src/singleton.rs:l67_a_held_lock_that_names_no_live_token_proves_nobody,
+  crates/huddle-daemon/tests/l67_install_mark.rs:l67_a_router_without_the_install_mark_leaves_nothing_after_taking_the_lock
+- **Rule:** uninstall removes the install mark first, and a router without the mark writes nothing.
+  `huddle router stop` returns 0 or 6 only when no process of this install holds the router lock or answers
+  on its port; it signals only a pid the record (answering on the port) or the lock file (pid and start
+  token of a live process) proves, and exits 1 when it cannot prove one.

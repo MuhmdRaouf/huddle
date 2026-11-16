@@ -42,6 +42,7 @@ async fn an_idle_daemon_costs_under_half_a_percent_of_one_core() {
         version: "test".into(),
         takeover: false,
         by: "test".into(),
+        install_mark: None,
         signal: Arc::default(),
         log: Arc::new(|_| {}),
         output: None,

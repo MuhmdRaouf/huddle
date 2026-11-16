@@ -9,8 +9,10 @@ use huddle_config::env::Env;
 use huddle_config::paths::Paths;
 use huddle_daemon::output::{Saved, Sink, capture};
 use huddle_daemon::serve::{ServeError, ServeOptions, ServeOutcome};
+use huddle_daemon::start::IF_INSTALLED;
 use huddle_daemon::supervisor;
 use huddle_router::crashlog;
+use huddle_setup::settings::ledger_path;
 use tokio::signal::unix::{SignalKind, signal};
 use tokio::sync::{mpsc, watch};
 
@@ -30,6 +32,15 @@ pub fn run(args: &[String], env: &Env) -> i32 {
             return 1;
         }
     };
+    // A start nobody asked for serves only while huddle is set up; without the install mark it
+    // ends here, before anything is written.
+    let install_mark = args
+        .iter()
+        .any(|argument| argument == IF_INSTALLED)
+        .then(|| ledger_path(&paths));
+    if install_mark.as_ref().is_some_and(|mark| !mark.exists()) {
+        return 0;
+    }
     let log = crashlog::router_logs(&paths.state_dir);
     crashlog::install_crash_hook(&log);
     let signal: Arc<OnceLock<&'static str>> = Arc::default();
@@ -56,6 +67,7 @@ pub fn run(args: &[String], env: &Env) -> i32 {
         version: VERSION_FILE.trim().to_string(),
         takeover,
         by: super::reason_of(args),
+        install_mark,
         signal: Arc::clone(&signal),
         log: Arc::clone(&log),
         output,

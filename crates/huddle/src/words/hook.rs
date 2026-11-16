@@ -10,6 +10,7 @@ use std::time::Duration;
 
 use huddle_config::env::Env;
 use huddle_config::paths::Paths;
+use huddle_daemon::start::IF_INSTALLED;
 use huddle_setup::settings::ledger_path;
 
 /// The events wired in hooks.json. Every other word stays a silent no-op: an old session's
@@ -168,7 +169,9 @@ fn key_present(env: &Env, paths: &Paths, provider: &huddle_catalog::providers::P
 
 fn start_router_detached(exe: &Path, by: &str) {
     let mut cmd = Command::new(exe);
-    cmd.args(["router", "start", "--by", by])
+    // The start and the daemon it spawns check the install ledger again: an uninstall that
+    // removed it after this hook looked leaves nothing behind.
+    cmd.args(["router", "start", "--by", by, IF_INSTALLED])
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())

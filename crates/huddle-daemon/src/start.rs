@@ -29,6 +29,13 @@ pub const HEALTH_WAIT: Duration = Duration::from_millis(300);
 /// How often a start re-probes while its daemon comes up.
 pub const SPAWN_POLL: Duration = Duration::from_millis(50);
 
+/// The `router serve` flag of a start nobody asked for: the daemon serves only while the
+/// install mark exists.
+pub const IF_INSTALLED: &str = "--if-installed";
+
+/// The answer of a gated start while huddle is not set up.
+const NOT_SET_UP: &str = "huddle-router: huddle is not set up; nothing started";
+
 /// How long a start waits for a spawned daemon's health answer.
 pub const DEFAULT_BUDGET: Duration = Duration::from_secs(10);
 
@@ -280,6 +287,11 @@ pub fn spawn_serve(
         return Err(refusal(&base));
     }
     let log = paths.state_dir.join(LOG_NAME);
+    // A start that needs the install mark never makes the state folder: the mark lives in it,
+    // so a missing folder means huddle is not set up (or an uninstall removed it).
+    if extra_args.contains(&IF_INSTALLED) && !paths.state_dir.is_dir() {
+        return Err(StartError::Refused(NOT_SET_UP.to_string()));
+    }
     create_dir(&paths.state_dir, DIR_MODE).map_err(|source| StartError::Log {
         path: log.clone(),
         source,
@@ -333,6 +345,7 @@ fn updated_or_up(
     opts: &StartOptions<'_>,
     answer: &HealthAnswer,
     by: &str,
+    gated: bool,
 ) -> Result<String, StartError> {
     let Some(record) = read_record(opts.paths) else {
         return Ok(up_line(opts.port, answer));
@@ -344,13 +357,11 @@ fn updated_or_up(
         return Ok(up_line(opts.port, answer));
     }
     let old = record.pid;
-    spawn_serve(
-        opts.env,
-        opts.paths,
-        opts.port,
-        &opts.executable,
-        &["--takeover", "--by", by],
-    )?;
+    let mut args = vec!["--takeover", "--by", by];
+    if gated {
+        args.push(IF_INSTALLED);
+    }
+    spawn_serve(opts.env, opts.paths, opts.port, &opts.executable, &args)?;
     let deadline = Instant::now() + opts.update_wait;
     loop {
         if let Some(fresh) = read_record(opts.paths)
@@ -384,8 +395,31 @@ pub fn start(opts: &StartOptions<'_>) -> Result<String, StartError> {
 /// [`start`], naming who asks: the daemon it spawns logs the reason on its start line, and a
 /// daemon asked to hand over logs it on its handover line.
 pub fn start_by(opts: &StartOptions<'_>, by: &str) -> Result<String, StartError> {
+    start_gated(opts, by, None)
+}
+
+/// [`start_by`] for a start nobody asked for (a hook): it starts nothing while `mark` (the
+/// install ledger) is missing, and the daemon it spawns checks the mark again once it holds the
+/// router lock, exiting without writing anything when an uninstall removed it in between.
+pub fn start_if_installed(
+    opts: &StartOptions<'_>,
+    by: &str,
+    mark: &Path,
+) -> Result<String, StartError> {
+    start_gated(opts, by, Some(mark))
+}
+
+fn start_gated(
+    opts: &StartOptions<'_>,
+    by: &str,
+    mark: Option<&Path>,
+) -> Result<String, StartError> {
+    if mark.is_some_and(|mark| !mark.exists()) {
+        return Ok(NOT_SET_UP.to_string());
+    }
+    let gated = mark.is_some();
     if let Some(answer) = health(opts.port, HEALTH_WAIT) {
-        return updated_or_up(opts, &answer, by);
+        return updated_or_up(opts, &answer, by, gated);
     }
     // An empty list still spawns: the router serves Anthropic with no provider enabled.
     let _providers = read_enabled(&opts.paths.config_dir, &provider_ids())
@@ -396,12 +430,16 @@ pub fn start_by(opts: &StartOptions<'_>, by: &str) -> Result<String, StartError>
     let spawned = if lock_held() {
         None
     } else {
+        let mut args = vec!["--by", by];
+        if gated {
+            args.push(IF_INSTALLED);
+        }
         Some(spawn_serve(
             opts.env,
             opts.paths,
             opts.port,
             &opts.executable,
-            &["--by", by],
+            &args,
         )?)
     };
     let deadline = Instant::now() + opts.budget;

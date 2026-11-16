@@ -57,7 +57,7 @@ build; on Windows, run Claude Code and huddle inside WSL.
 3. The router, started on `127.0.0.1:4835`, and the local CA.
 4. Claude Code's `settings.json`: the proxy and CA settings.
 
-`huddle uninstall` undoes every one of them, restores `settings.json` byte for byte, and then deletes huddle's own folders: the CA and its key, every binary, the config, the state (the request history included), the cache and the runtime folder. It prints one `removed <path>` line per folder, and `left in place: <path> (<reason>)` for a folder it will not delete.
+`huddle uninstall` undoes every one of them, restores `settings.json` byte for byte, and then deletes huddle's own folders: the CA and its key, every binary, the config, the state (the request history included), the cache and the runtime folder. It prints one `removed <path>` line per folder, and `left in place: <path> (<reason>)` for a folder it will not delete. When the router cannot be stopped, it says `could not stop huddle-router: <why>` and keeps the CA, the state and the runtime folders: run `huddle uninstall` again once the router is gone.
 
 ### Update
 

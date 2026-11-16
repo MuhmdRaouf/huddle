@@ -1,5 +1,5 @@
-//! The uninstall work: every set-up provider's remove, the router stop, the MCP token, the settings
-//! undo, the managed agent files, then huddle's own folders. Each step reports a line; a step's
+//! The uninstall work: every set-up provider's remove, the settings undo, the router stop, the MCP
+//! token, the managed agent files, then huddle's own folders. Each step reports a line; a step's
 //! failure never stops the rest.
 
 use std::path::Path;
@@ -20,8 +20,10 @@ pub struct UninstallReport {
     pub lines: Vec<String>,
 }
 
-/// Runs the steps in this order: each set-up provider's remove, the router stop, the MCP token,
-/// the settings undo, the agent files, huddle's folders. Each step's failure is reported in
+/// Runs the steps in this order: each set-up provider's remove, the settings undo, the router
+/// stop, the MCP token, the agent files, huddle's folders. The undo removes the install ledger
+/// before the stop, so no hook starts a router after the stop has looked, and a router a hook
+/// started just before exits without writing anything. Each step's failure is reported in
 /// `lines` and the rest still run.
 pub fn run(paths: &Paths, exe: &Path) -> UninstallReport {
     let mut lines = Vec::new();
@@ -46,35 +48,6 @@ pub fn run(paths: &Paths, exe: &Path) -> UninstallReport {
                 lines.push(format!("could not remove {id}: {error}"));
             }
         }
-    }
-
-    let mut router_stopped = true;
-    match Command::new(exe).args(["router", "stop"]).output() {
-        Ok(out) => {
-            let stdout = String::from_utf8_lossy(&out.stdout);
-            if stdout.contains("not running") {
-                // The router was already down: nothing to undo there.
-            } else if out.status.success() {
-                lines.push("stopped huddle-router".to_string());
-            } else {
-                router_stopped = false;
-                lines.push(format!(
-                    "could not stop huddle-router: {}",
-                    first_line(&out.stderr)
-                ));
-            }
-        }
-        Err(error) => {
-            router_stopped = false;
-            lines.push(format!("could not stop huddle-router: {error}"));
-        }
-    }
-
-    let token = huddle_config::mcp_token::token_path(paths);
-    match std::fs::remove_file(&token) {
-        Ok(()) => lines.push("removed the MCP token".to_string()),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-        Err(error) => lines.push(format!("could not remove the MCP token: {error}")),
     }
 
     // The state folder holds the ledger and the pristine copy: it stays while the settings are
@@ -111,6 +84,35 @@ pub fn run(paths: &Paths, exe: &Path) -> UninstallReport {
             settings_restored = false;
             lines.push(format!("could not undo settings.json: {error}"));
         }
+    }
+
+    let mut router_stopped = true;
+    match Command::new(exe).args(["router", "stop"]).output() {
+        Ok(out) => {
+            let stdout = String::from_utf8_lossy(&out.stdout);
+            if stdout.contains("not running") {
+                // The router was already down: nothing to undo there.
+            } else if out.status.success() {
+                lines.push("stopped huddle-router".to_string());
+            } else {
+                router_stopped = false;
+                lines.push(format!(
+                    "could not stop huddle-router: {}",
+                    first_line(&out.stderr)
+                ));
+            }
+        }
+        Err(error) => {
+            router_stopped = false;
+            lines.push(format!("could not stop huddle-router: {error}"));
+        }
+    }
+
+    let token = huddle_config::mcp_token::token_path(paths);
+    match std::fs::remove_file(&token) {
+        Ok(()) => lines.push("removed the MCP token".to_string()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => lines.push(format!("could not remove the MCP token: {error}")),
     }
 
     if let Err(error) = remove_managed(paths) {

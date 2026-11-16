@@ -4,6 +4,7 @@
 //! deleting it would let a racing starter lock a fresh inode while the old lock is still held.
 
 use huddle_config::files::{DIR_MODE, create_dir};
+use huddle_procs::live::{process_alive, start_token};
 use std::fmt;
 use std::fs::{File, OpenOptions, TryLockError};
 use std::io::{self, Read, Write};
@@ -89,7 +90,11 @@ pub fn lock(path: &Path, holder: &str) -> Result<LockGuard, SingletonError> {
         path: path.to_path_buf(),
         source,
     })?;
-    writeln!(file, "{}", std::process::id()).map_err(|source| SingletonError::Io {
+    // The start token on the second line lets a reader prove the pid is still this holder,
+    // not a later process that reused the number.
+    let pid = std::process::id();
+    let token = start_token(pid).unwrap_or_default();
+    writeln!(file, "{pid}\n{token}").map_err(|source| SingletonError::Io {
         path: path.to_path_buf(),
         source,
     })?;
@@ -142,6 +147,28 @@ pub fn holder(path: &Path) -> Option<u32> {
             None
         }
         Err(TryLockError::WouldBlock) => Some(pid_line(&mut file)),
+        Err(TryLockError::Error(_)) => None,
+    }
+}
+
+/// The pid holding the lock at `path`, only when the file proves it: the lock is held, the
+/// file names a pid and its start token, and that pid is alive with that token. A holder that
+/// has not written its lines yet, an older file with no token, or a reused pid is `None`.
+pub fn proven_holder(path: &Path) -> Option<u32> {
+    let mut file = OpenOptions::new().read(true).write(true).open(path).ok()?;
+    match file.try_lock() {
+        Ok(()) => {
+            let _ = file.unlock();
+            None
+        }
+        Err(TryLockError::WouldBlock) => {
+            let mut raw = String::new();
+            file.read_to_string(&mut raw).ok()?;
+            let mut lines = raw.lines();
+            let pid: u32 = lines.next()?.trim().parse().ok()?;
+            let token = lines.next()?.trim();
+            (pid > 0 && process_alive(pid, token)).then_some(pid)
+        }
         Err(TryLockError::Error(_)) => None,
     }
 }
@@ -244,6 +271,42 @@ mod tests {
         assert_eq!(holder(&path), None);
         fs::write(&path, "123\n").expect("seed");
         assert_eq!(holder(&path), None);
+    }
+
+    #[test]
+    fn l67_a_held_lock_proves_its_holder_by_pid_and_start_token() {
+        let home = TempHome::new();
+        let path = home.root().join("x.lock");
+        assert_eq!(proven_holder(&path), None, "no file");
+        let guard = lock(&path, "a Huddle server").expect("lock");
+        assert_eq!(proven_holder(&path), Some(std::process::id()));
+        drop(guard);
+        assert_eq!(proven_holder(&path), None, "a free lock proves nobody");
+    }
+
+    #[test]
+    fn l67_a_held_lock_that_names_no_live_token_proves_nobody() {
+        let home = TempHome::new();
+        let path = home.root().join("x.lock");
+        let held = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .open(&path)
+            .expect("open");
+        held.try_lock().expect("hold");
+        let me = std::process::id();
+        for text in [
+            format!("{me}\n"),
+            format!("{me}\n1.2\n"),
+            "0\n1.2\n".to_string(),
+            String::new(),
+        ] {
+            fs::write(&path, &text).expect("write");
+            assert_eq!(proven_holder(&path), None, "{text:?}");
+            assert!(holder(&path).is_some(), "the lock still reads as held");
+        }
     }
 
     #[test]

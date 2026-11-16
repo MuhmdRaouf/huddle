@@ -40,6 +40,7 @@ fn options(
         version: "test".into(),
         takeover,
         by: "test".into(),
+        install_mark: None,
         signal: Arc::default(),
         log: Arc::new(move |l| sink.lock().expect("lines").push(l)),
         output: None,

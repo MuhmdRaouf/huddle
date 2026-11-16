@@ -141,6 +141,9 @@ pub struct ServeOptions {
     /// Who started this run: `setup`, `session-start`, `prompt-submit`, `router start`. A
     /// takeover passes the reason it asks the running daemon to hand over.
     pub by: String,
+    /// The install mark a start nobody asked for (a hook) needs: once the router lock is held,
+    /// a missing mark ends the run before it writes anything. `None` serves unconditionally.
+    pub install_mark: Option<PathBuf>,
     /// The signal that stopped the run, set by the caller's signal task before it sends the stop.
     pub signal: Arc<OnceLock<&'static str>>,
     pub log: Logger,

@@ -48,7 +48,7 @@ One row per word, with the exit codes it answers. An unknown word or action is n
 | `huddle router start` | One daemon for this home, detached. | `0`, `1`, `2` bad port |
 | `huddle router status` | What answers on the port, with the record's pid and version and the dashboard hosts; `--json` is for scripts. | `0` running, `6` not running, `2` bad port |
 | `huddle router log` | The last 40 event lines from `router-events.log`, oldest first; `--since <n>m\|<n>h` limits by time and reads the older files, `--requests` prints request lines from `router.log`, `--all` merges both. Reads files only, so no router is needed. | `0`, `2` usage |
-| `huddle router stop` | One SIGTERM to the recorded pid, then a wait for the port to go. | `0` stopped, `6` not running, `1` past 10 s, `2` bad port |
+| `huddle router stop` | One SIGTERM to each process proven to be this home's router (the recorded one and the router lock's holder), then a wait until each has exited, the port is closed and the lock is free; a router still coming up is waited for and stopped. | `0` stopped, `6` not running, `1` past 22 s or the lock's holder cannot be proven, `2` bad port |
 | `huddle add-dashboard-host <host>` | Lists a bare host name in `~/.config/huddle/config.toml`; the router reads the dashboard's page, state and live paths for it within 2 s. A repeat changes nothing. | `0`, `2` not a bare host name or usage, `1` |
 | `huddle remove-dashboard-host <host>` | Takes the host back out; one that is not listed changes nothing. | `0`, `2`, `1` |
 | `huddle provider` | Lists the providers. | `0` |
@@ -123,4 +123,4 @@ Lifecycle lines say why the router changed: `start v0.0.6 pid=91414 port=4835 by
 - **Requests fail with 407 or 502.** The settings patch is gone or stale. Run `/huddle:setup` again, then check `huddle router status`.
 - **A key is refused.** The report names the status the provider sent. Check the key at the provider's key page and run `/huddle:<p>:setup` again; the stored key stays as it was.
 - **`huddle` is not found.** Put `~/.local/bin` on your `PATH`, or run `~/.local/share/huddle/bin/huddle`.
-- **Restore the settings.** `huddle uninstall` stops the router, takes the proxy env and the `/model` entries back out, and puts `settings.json` back the way it found it, one line per step.
+- **Restore the settings.** `huddle uninstall` takes the proxy env and the `/model` entries back out, puts `settings.json` back the way it found it, then stops the router, one line per step.

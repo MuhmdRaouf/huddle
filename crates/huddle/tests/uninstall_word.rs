@@ -1,6 +1,9 @@
+use huddle_daemon::singleton::holder;
+use huddle_procs::live::is_alive;
 use huddle_testkit::ports::free_port;
 use huddle_testkit::temp_home::TempHome;
 use std::fs;
+use std::io::Write;
 use std::net::{SocketAddr, TcpStream};
 use std::process::{Command, Output};
 use std::thread;
@@ -390,4 +393,151 @@ fn h1_failed_restore_keeps_the_ledger() {
     assert!(ledger.exists(), "the ledger stays for a retry");
     assert!(state.join("settings.json.pristine").exists());
     assert!(!home.root().join(".config/huddle").exists());
+}
+
+/// Asserts the data, state and run folders are empty, the port is closed and `router_pid` is gone.
+fn assert_final(home: &TempHome, port: u16, router_pid: Option<u32>, case: &str) {
+    let root = home.root();
+    for rel in [".local/share/huddle", ".local/state/huddle", "r/huddle"] {
+        assert!(
+            files_under(&root.join(rel)).is_empty(),
+            "{case}: {rel} holds {:?} 2 s after uninstall",
+            files_under(&root.join(rel))
+        );
+    }
+    assert!(!port_open(port), "{case}: the port still answers");
+    if let Some(pid) = router_pid {
+        assert!(!is_alive(pid), "{case}: router pid {pid} still runs");
+    }
+}
+
+/// The pid holding the router lock of `home`, polled until a router holds it; none within 10 s.
+fn lock_holder(home: &TempHome) -> Option<u32> {
+    let lock = home.root().join("r/huddle/router.lock");
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while Instant::now() < deadline {
+        if let Some(pid) = holder(&lock) {
+            return Some(pid);
+        }
+        thread::sleep(Duration::from_millis(2));
+    }
+    None
+}
+
+/// The worker pid the router record of `home` names.
+fn recorded_worker(home: &TempHome) -> Option<u32> {
+    let record = fs::read_to_string(home.root().join("r/huddle/router.toml")).ok()?;
+    record.lines().find_map(|line| {
+        let value = line
+            .strip_prefix("worker")?
+            .trim_start()
+            .strip_prefix('=')?;
+        value.trim().parse().ok()
+    })
+}
+
+#[test]
+fn l67_uninstall_is_final_while_a_router_is_starting() {
+    // A router coming up: its lock is held, the record and the answer may not be there yet.
+    for round in 0..8 {
+        let home = TempHome::new();
+        let port = free_port();
+        let _stop = StopOnDrop(&home, port);
+        let install = huddle(&home, port, &["setup", "--install"]);
+        assert_eq!(install.status.code(), Some(0), "{install:?}");
+        let stop = huddle(&home, port, &["router", "stop"]);
+        assert_eq!(stop.status.code(), Some(0), "{stop:?}");
+        let mut start = Command::new(env!("CARGO_BIN_EXE_huddle"))
+            .args(["router", "start"])
+            .env_clear()
+            .envs(home.env())
+            .env("CLAUDE_CONFIG_DIR", home.root().join(".claude"))
+            .env("HUDDLE_ROUTER_PORT", port.to_string())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .expect("spawn router start");
+        let pid = lock_holder(&home);
+
+        let out = huddle(&home, port, &["uninstall"]);
+
+        let _ = start.wait();
+        assert_eq!(out.status.code(), Some(0), "{out:?}");
+        thread::sleep(Duration::from_secs(2));
+        assert_final(&home, port, pid, &format!("starting round {round}"));
+    }
+    // Routers slow to stop, side by side: one drains a half-sent request for its whole budget,
+    // one has a frozen worker the supervisor kills after its grace.
+    let rounds = [
+        thread::spawn(|| uninstall_while_slow_to_stop(Slow::Draining)),
+        thread::spawn(|| uninstall_while_slow_to_stop(Slow::FrozenWorker)),
+    ];
+    for round in rounds {
+        round.join().expect("slow round");
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+enum Slow {
+    Draining,
+    FrozenWorker,
+}
+
+fn uninstall_while_slow_to_stop(slow: Slow) {
+    let home = TempHome::new();
+    let port = free_port();
+    let _stop = StopOnDrop(&home, port);
+    install_with_files(&home, port);
+    let pid = lock_holder(&home);
+    let mut held = TcpStream::connect(("127.0.0.1", port)).expect("connect");
+    let half = format!(
+        "POST /v1/messages HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nContent-Length: 100\r\n\r\n{{\"a\""
+    );
+    held.write_all(half.as_bytes())
+        .expect("send half a request");
+    if let Slow::FrozenWorker = slow {
+        let worker = recorded_worker(&home).expect("the record names a worker");
+        // SAFETY: the worker is a child of the router this test started in its own home.
+        unsafe { libc::kill(worker as libc::pid_t, libc::SIGSTOP) };
+    }
+
+    let out = huddle(&home, port, &["uninstall"]);
+
+    assert_eq!(out.status.code(), Some(0), "{out:?}");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(!stdout.contains("left in place"), "{slow:?}: {stdout}");
+    thread::sleep(Duration::from_secs(2));
+    assert_final(&home, port, pid, &format!("{slow:?}"));
+    drop(held);
+}
+
+#[test]
+fn l67_a_router_started_after_uninstall_writes_nothing() {
+    let home = TempHome::new();
+    let port = free_port();
+    let _stop = StopOnDrop(&home, port);
+    install_with_files(&home, port);
+    let out = huddle(&home, port, &["uninstall"]);
+    assert_eq!(out.status.code(), Some(0), "{out:?}");
+
+    // What a hook that read the ledger just before the uninstall runs next: the start, and the
+    // daemon it spawns.
+    let start = huddle(
+        &home,
+        port,
+        &["router", "start", "--by", "session-start", "--if-installed"],
+    );
+    let serve = huddle(
+        &home,
+        port,
+        &["router", "serve", "--by", "session-start", "--if-installed"],
+    );
+
+    assert_eq!(start.status.code(), Some(0), "{start:?}");
+    assert_eq!(serve.status.code(), Some(0), "{serve:?}");
+    let root = home.root();
+    for rel in [".local/share/huddle", ".local/state/huddle", "r/huddle"] {
+        assert!(!root.join(rel).exists(), "{rel} exists after a late start");
+    }
+    assert!(!port_open(port), "no router serves the port");
 }
