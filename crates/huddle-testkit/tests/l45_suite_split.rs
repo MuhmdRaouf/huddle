@@ -73,6 +73,73 @@ fn e2e_extras(root: &Path) -> Vec<(String, String)> {
     extras
 }
 
+/// The body lines of the `[tasks.check]` table in `mise.toml`, between its header and the next
+/// table header. The table must exist: the check gate is what CI runs.
+fn check_task_body(root: &Path) -> Vec<String> {
+    let file = root.join("mise.toml");
+    let text = fs::read_to_string(&file).unwrap_or_else(|_| {
+        panic!(
+            "{} is missing: the check gate is not defined",
+            file.display()
+        )
+    });
+    let mut body = Vec::new();
+    let mut inside = false;
+    for line in text.lines() {
+        if line.starts_with('[') {
+            inside = line == "[tasks.check]";
+            continue;
+        }
+        if inside {
+            body.push(line.to_string());
+        }
+    }
+    assert!(
+        !body.is_empty(),
+        "mise.toml has no [tasks.check] table: the check gate is not defined"
+    );
+    body
+}
+
+/// The `rust:check` entries of `[tasks.check]`: occurrences inside the `depends` and `run`
+/// keys, spanning multi-line arrays until a new key or table starts.
+fn rust_check_entries(body: &[String]) -> usize {
+    let mut occurrences = 0;
+    let mut counting = false;
+    for line in body {
+        let trimmed = line.trim();
+        if trimmed.starts_with("depends") || trimmed.starts_with("run") {
+            counting = true;
+            occurrences += trimmed.matches("rust:check").count();
+            continue;
+        }
+        if !counting {
+            continue;
+        }
+        let new_entry =
+            trimmed.starts_with('[') || (trimmed.contains('=') && !trimmed.starts_with('"'));
+        if new_entry {
+            counting = false;
+            continue;
+        }
+        occurrences += trimmed.matches("rust:check").count();
+    }
+    occurrences
+}
+
+/// Ticket L54: `mise run check` runs the Rust gates once. `rust:check` is a dependency of
+/// `[tasks.check]`; a second naming in the task's `run` list runs every Rust gate twice.
+#[test]
+fn l54_check_runs_the_rust_gates_once() {
+    let root = repo_root();
+    let body = check_task_body(&root);
+    let occurrences = rust_check_entries(&body);
+    assert_eq!(
+        occurrences, 1,
+        "l54: rust:check must be named exactly once in [tasks.check] (depends or run), found {occurrences} names: every Rust gate runs twice on `mise run check`"
+    );
+}
+
 #[test]
 fn l45_unit_and_e2e_sets_cover_every_test_target() {
     let root = repo_root();

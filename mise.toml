@@ -44,9 +44,6 @@ run = "pre-commit run --all-files"
 description = "Every gate CI runs: lint, static checks and the test suites"
 dir = "{{config_root}}"
 depends = ["lint", "pins:check", "rust:check"]
-run = [
-  "mise run rust:check",
-]
 
 [tasks."rust:check"]
 description = "Rust gates: format, lint and the test suites (unit, then e2e)"
