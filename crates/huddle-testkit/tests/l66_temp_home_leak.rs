@@ -1,28 +1,37 @@
 use std::fs;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, mpsc};
 use std::thread;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use huddle_testkit::guard::run_guarded;
 use huddle_testkit::temp_home::TempHome;
 
 #[test]
-fn l66_a_home_dropped_under_a_slow_writer_leaves_nothing() {
+fn l66_a_home_dropped_after_its_writer_ended_leaves_nothing() {
     let home = TempHome::new();
     let root = home.root().to_path_buf();
     let state = root.join(".local/state/huddle");
-    // A writer the process table does not show, such as a thread of the test itself, that keeps
-    // recreating the state folder for longer than a loaded runner takes to finish.
-    let writer = thread::spawn(move || {
-        let until = Instant::now() + Duration::from_millis(1200);
-        while Instant::now() < until {
-            let _ = fs::create_dir_all(&state);
-            let _ = fs::write(state.join("huddle.db"), "row");
-            thread::sleep(Duration::from_millis(15));
-        }
-    });
+    let stop = Arc::new(AtomicBool::new(false));
+    // A writer the process table does not show, such as a thread of the test itself. The drop
+    // cannot see it, so the test ends it before the drop, after it has written at least once.
+    let (written, wrote) = mpsc::channel();
+    let writer = {
+        let stop = Arc::clone(&stop);
+        thread::spawn(move || {
+            while !stop.load(Ordering::SeqCst) {
+                let _ = fs::create_dir_all(&state);
+                let _ = fs::write(state.join("huddle.db"), "row");
+                let _ = written.send(());
+                thread::sleep(Duration::from_millis(5));
+            }
+        })
+    };
+    wrote.recv().expect("the writer wrote once");
+    stop.store(true, Ordering::SeqCst);
+    writer.join().expect("writer thread");
 
     drop(home);
-    writer.join().expect("writer thread");
 
     assert!(!root.exists(), "{} was left behind", root.display());
 }

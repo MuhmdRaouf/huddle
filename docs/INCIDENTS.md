@@ -372,11 +372,11 @@ Each incident, its cause, and the test that now stops it. A guard named here mus
 - **Cause:** a temp home's drop stopped its writers and retried the removal for half a second, then gave up
   silently. A writer that kept recreating the state folder past that budget on a loaded runner left the home.
   The leaking test was not reproduced: 30 runs each of the l58 files under 12 busy loops left nothing.
-- **Guard:** crates/huddle-testkit/tests/l66_temp_home_leak.rs:l66_a_home_dropped_under_a_slow_writer_leaves_nothing,
+- **Guard:** crates/huddle-testkit/tests/l66_temp_home_leak.rs:l66_a_home_dropped_after_its_writer_ended_leaves_nothing,
   crates/huddle-testkit/tests/l66_temp_home_leak.rs:l66_a_home_records_the_name_of_its_test,
   crates/huddle-testkit/tests/l66_temp_home_leak.rs:l66_the_guard_names_the_test_and_what_is_inside
 - **Rule:** a temp home's drop looks for writers and removes the home again until it stays gone, for up to
-  15 seconds. Each home names its test in `.test-name`, and the guard prints that name, every path inside a
+  15 seconds; a test ends its own writers before it drops its home. Each home names its test in `.test-name`, and the guard prints that name, every path inside a
   leftover and the first line of its logs.
 
 ## 2026-11-16, an in-process handover test left a temp home behind on Linux CI

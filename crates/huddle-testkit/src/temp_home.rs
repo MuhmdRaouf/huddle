@@ -131,6 +131,9 @@ impl TempHome {
     }
 }
 
+/// Removes the home. It finds and stops every process that names the home, and keeps removing
+/// until the folder stays gone for a moment. A thread of the test's own process is not in the
+/// process table: a test ends its own writers before it drops the home.
 impl Drop for TempHome {
     fn drop(&mut self) {
         // A router a hook spawned can write its record after the test body ends: when its
