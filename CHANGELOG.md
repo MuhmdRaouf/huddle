@@ -25,6 +25,12 @@ A lighter router: bodies stream through, the dashboard costs a fraction of its C
 - A history call runs on one read connection with a capped page cache and spawns no threads, so ten concurrent 90-day calls no longer add over 100 MB.
 - A handover drain logs what it waits for at its start and what was still open when it ended or hit its limit.
 - The dashboard asks the key store whether a key is set without reading the key, at most once per provider per minute.
+- Every error the router answers leaves one log line, with the same shape for a failure on the lane and a failure on the Anthropic route, and request text cannot split a line.
+- A request whose path could change the upstream host is refused with 400 before any key is read.
+- `huddle uninstall` no longer leaves the local CA and its key behind when the router is slow to stop, frozen, still starting or draining after an update, and a router a hook starts during an uninstall writes nothing.
+- `huddle router stop` signals only a router it has proven by pid and start time, and always ends within 44 s.
+- The takeover's lock wait ends with its run instead of outliving it.
+- A released router lock names no holder, so `huddle router stop` never names a router that has let go.
 
 ### History fill
 
@@ -38,6 +44,7 @@ A lighter router: bodies stream through, the dashboard costs a fraction of its C
 - The dashboard builds one snapshot per change for every open tab, credits each session reading once, and shares the sessions and worktrees reading instead of copying it per tab; the joined snapshot copies only the busy sessions.
 - Dashboard history ranges are answered from one cache shared by every tab (a new row or a new minute asks again), and ranges of 7 days or more refresh every 60 s instead of 5 s.
 - Tabs that ask the same history question at the same time share one read, and the cache keeps one answer per question.
+- Long history ranges answer faster on a cold view: the history keys are built in Rust and a full range scans the whole table.
 - Session and project totals filter in SQL, and the Sessions page asks for its listed sessions only.
 - A dashboard tab whose live feed is closed for the 8-feed limit polls every 5 s instead of reconnecting and evicting another tab in a loop.
 - The default one-second refresh shows sessions, worktrees, plugins, harnesses and router CPU and RAM, and a finished request gets its agent and tokens even when no page is open.
