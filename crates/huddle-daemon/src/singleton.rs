@@ -46,9 +46,20 @@ pub enum SingletonError {
 /// Holding this keeps the flock; dropping it releases. The file stays on disk.
 #[derive(Debug)]
 pub struct LockGuard {
-    /// Held for the flock; the kernel releases it when the guard drops.
-    #[allow(dead_code)]
     file: File,
+}
+
+impl Drop for LockGuard {
+    /// Empties the holder's record, then unlocks before the file closes.
+    /// - Emptied: a probe takes the lock for an instant, so another reader can see a free lock
+    ///   as held; an empty file then names nobody, never the holder that let go.
+    /// - Unlocked: a child forked by any thread of this process carries a copy of the
+    ///   descriptor until it execs, and the flock lives while any copy is open; an explicit
+    ///   unlock frees it at once.
+    fn drop(&mut self) {
+        let _ = self.file.set_len(0);
+        let _ = self.file.unlock();
+    }
 }
 
 /// Takes the lock at `path`, refusing while another process holds it. Creates the file and its
@@ -153,7 +164,8 @@ pub fn holder(path: &Path) -> Option<u32> {
 
 /// The pid holding the lock at `path`, only when the file proves it: the lock is held, the
 /// file names a pid and its start token, and that pid is alive with that token. A holder that
-/// has not written its lines yet, an older file with no token, or a reused pid is `None`.
+/// has not written its lines yet, a released lock (its guard empties the file), an older file
+/// with no token, or a reused pid is `None`.
 pub fn proven_holder(path: &Path) -> Option<u32> {
     proven_holder_token(path).map(|(pid, _)| pid)
 }
@@ -216,12 +228,6 @@ mod tests {
         }
         assert_eq!(holder(&path), Some(std::process::id()));
         drop(first);
-        // A fork of this process can inherit the lock's fd for a moment before it execs, so
-        // the release can land a beat after the drop.
-        let deadline = Instant::now() + Duration::from_secs(2);
-        while holder(&path).is_some() && Instant::now() < deadline {
-            thread::sleep(Duration::from_millis(10));
-        }
         assert_eq!(holder(&path), None, "free after release");
         assert!(path.exists(), "the file is never deleted");
     }
@@ -287,6 +293,88 @@ mod tests {
         assert_eq!(proven_holder(&path), Some(std::process::id()));
         drop(guard);
         assert_eq!(proven_holder(&path), None, "a free lock proves nobody");
+    }
+
+    /// Starts `/usr/bin/true` again and again until `stop`, each child pausing 2 ms between
+    /// fork and exec: the window in which a child carries a copy of every descriptor of this
+    /// process, the way any test in this binary that starts a process does.
+    fn spawn_children_until(stop: Arc<std::sync::atomic::AtomicBool>) -> thread::JoinHandle<()> {
+        use std::os::unix::process::CommandExt;
+        thread::spawn(move || {
+            while !stop.load(std::sync::atomic::Ordering::Relaxed) {
+                let mut command = std::process::Command::new("/usr/bin/true");
+                // SAFETY: usleep is async-signal-safe; nothing else runs before the exec.
+                unsafe {
+                    command.pre_exec(|| {
+                        libc::usleep(2_000);
+                        Ok(())
+                    });
+                }
+                if let Ok(mut child) = command.spawn() {
+                    let _ = child.wait();
+                }
+            }
+        })
+    }
+
+    #[test]
+    fn l74_a_free_lock_names_no_holder() {
+        use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+        let home = TempHome::new();
+        let path = Arc::new(home.root().join("run/router.lock"));
+        let me = std::process::id();
+        let my_token = start_token(me).expect("own start token");
+        // Odd from just before the lock is taken until its drop has returned, even after.
+        let phase = Arc::new(AtomicU64::new(0));
+        let stop = Arc::new(AtomicBool::new(false));
+        let forks = spawn_children_until(Arc::clone(&stop));
+        let readers: Vec<_> = (0..2)
+            .map(|_| {
+                let (path, phase, stop) =
+                    (Arc::clone(&path), Arc::clone(&phase), Arc::clone(&stop));
+                let my_token = my_token.clone();
+                thread::spawn(move || {
+                    let mut faults = Vec::new();
+                    while !stop.load(Ordering::SeqCst) {
+                        let before = phase.load(Ordering::SeqCst);
+                        let answer = proven_holder_token(&path);
+                        let after = phase.load(Ordering::SeqCst);
+                        let free_throughout = before == after && before % 2 == 0;
+                        let fault = match &answer {
+                            None => false,
+                            Some(_) if free_throughout => true,
+                            Some((pid, token)) => *pid != me || *token != my_token,
+                        };
+                        if fault {
+                            faults.push(format!("phase {before}..{after}: {answer:?}"));
+                        }
+                        // A short pause keeps two readers from starving the other tests.
+                        thread::sleep(Duration::from_micros(100));
+                    }
+                    faults
+                })
+            })
+            .collect();
+        for _ in 0..500 {
+            phase.fetch_add(1, Ordering::SeqCst);
+            let guard = wait(&path, "huddle-router", Duration::from_secs(2)).expect("lock");
+            thread::sleep(Duration::from_millis(1));
+            drop(guard);
+            phase.fetch_add(1, Ordering::SeqCst);
+            thread::sleep(Duration::from_millis(1));
+        }
+        stop.store(true, Ordering::SeqCst);
+        forks.join().expect("join");
+        let faults: Vec<String> = readers
+            .into_iter()
+            .flat_map(|reader| reader.join().expect("join"))
+            .collect();
+        assert!(
+            faults.is_empty(),
+            "{} answers named a holder of a free lock or a stranger, first: {:?}",
+            faults.len(),
+            faults.first()
+        );
     }
 
     #[test]

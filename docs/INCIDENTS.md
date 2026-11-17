@@ -422,3 +422,11 @@ Each incident, its cause, and the test that now stops it. A guard named here mus
   time of the live process, so a reused pid is never signalled; the word ends within 44 s and confirms
   "nothing left" with a second look; a router started with a missing install mark binds, logs and makes
   nothing.
+- **Later, a free lock named its last holder:** the unit gate on `feat/next` saw
+  `l67_a_held_lock_proves_its_holder_by_pid_and_start_token` read `Some(65534)`, the test's own pid, after
+  the guard was dropped. Two paths kept a released lock looking held: a child that another thread forked
+  carried a copy of the lock's descriptor until it exec'd, and a probe's own instant hold made a free lock
+  look held to a second reader, who then read the last holder's lines. The guard now empties the lock
+  file and unlocks it before it closes. Guard:
+  crates/huddle-daemon/src/singleton.rs:l74_a_free_lock_names_no_holder. Rule: a lock file names a holder
+  only while that holder keeps the lock.
