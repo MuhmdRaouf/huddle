@@ -70,3 +70,21 @@ async fn l67_a_router_without_the_mark_takes_back_only_what_it_made() {
     );
     assert!(!run_dir.join("router.lock").exists(), "its lock file goes");
 }
+
+#[tokio::test]
+async fn l73_a_router_without_the_mark_leaves_before_it_binds_or_logs() {
+    // The port is taken, so a start that got as far as the bind would fail and log it.
+    let home = TempHome::new();
+    let (opts, lines) = options(&home, home.root().join("no-mark"));
+    let _taken = std::net::TcpListener::bind(("127.0.0.1", opts.port)).expect("bind");
+    let run_dir = opts.paths.run_dir.clone();
+    let state_dir = opts.paths.state_dir.clone();
+    let (_stop_tx, stop_rx) = watch::channel(false);
+
+    let outcome = supervisor::run(opts, stop_rx).await.expect("run");
+
+    assert_eq!(outcome, ServeOutcome::Stopped);
+    assert!(!run_dir.exists(), "{} is left", run_dir.display());
+    assert!(!state_dir.exists(), "{} is left", state_dir.display());
+    assert!(lines.lock().expect("lines").is_empty());
+}

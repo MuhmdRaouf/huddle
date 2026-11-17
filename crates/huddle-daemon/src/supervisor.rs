@@ -129,6 +129,13 @@ pub async fn run(
     if let Err(text) = anthropic_url(&options.env) {
         return Err(ServeError::BadAnthropicUrl(text));
     }
+    // A gated start whose install mark is gone leaves before it makes a folder, binds a port or
+    // writes a line.
+    if let Some(mark) = &options.install_mark
+        && !mark.exists()
+    {
+        return Ok(ServeOutcome::Stopped);
+    }
     let made = missing_folders(&options.paths.run_dir);
     make_run_dir(&options.paths.run_dir, &options.log);
     let held = match acquire(&options).await {

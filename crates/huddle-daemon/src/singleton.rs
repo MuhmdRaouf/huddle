@@ -155,6 +155,11 @@ pub fn holder(path: &Path) -> Option<u32> {
 /// file names a pid and its start token, and that pid is alive with that token. A holder that
 /// has not written its lines yet, an older file with no token, or a reused pid is `None`.
 pub fn proven_holder(path: &Path) -> Option<u32> {
+    proven_holder_token(path).map(|(pid, _)| pid)
+}
+
+/// [`proven_holder`] with the start token that proved it.
+pub fn proven_holder_token(path: &Path) -> Option<(u32, String)> {
     let mut file = OpenOptions::new().read(true).write(true).open(path).ok()?;
     match file.try_lock() {
         Ok(()) => {
@@ -167,7 +172,7 @@ pub fn proven_holder(path: &Path) -> Option<u32> {
             let mut lines = raw.lines();
             let pid: u32 = lines.next()?.trim().parse().ok()?;
             let token = lines.next()?.trim();
-            (pid > 0 && process_alive(pid, token)).then_some(pid)
+            (pid > 0 && process_alive(pid, token)).then(|| (pid, token.to_string()))
         }
         Err(TryLockError::Error(_)) => None,
     }

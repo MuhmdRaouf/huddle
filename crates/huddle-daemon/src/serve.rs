@@ -18,6 +18,7 @@ use huddle_config::env::Env;
 use huddle_config::paths::Paths;
 use huddle_config::providers_file::read_enabled;
 use huddle_history::History;
+use huddle_procs::live::start_token;
 use huddle_router::clock::{iso_utc_ms, now_ms};
 use huddle_router::connect::{DrainOutcome, TunnelTracker};
 use huddle_router::dispatch::{Router, RouterConfig};
@@ -783,14 +784,16 @@ pub(crate) fn write_record(
     workers: &Workers,
     log: &Logger,
 ) {
+    let pid = std::process::id();
     let record = RouterRecord {
-        pid: std::process::id(),
+        pid,
         port,
         version: version.to_string(),
         executable: executable
             .map(|path| path.to_string_lossy().into_owned())
             .unwrap_or_default(),
         started: started.to_string(),
+        start: start_token(pid).unwrap_or_default(),
         worker: workers.pid,
         restarts: workers.restarts,
         last_restart: workers.last_restart.clone(),

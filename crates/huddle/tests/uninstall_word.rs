@@ -1,11 +1,13 @@
 use huddle_daemon::singleton::holder;
 use huddle_procs::live::is_alive;
-use huddle_testkit::ports::free_port;
+use huddle_testkit::ports::{free_port, listen};
 use huddle_testkit::temp_home::TempHome;
 use std::fs;
-use std::io::Write;
-use std::net::{SocketAddr, TcpStream};
-use std::process::{Command, Output};
+use std::io::{Read as _, Write};
+use std::net::{SocketAddr, TcpListener, TcpStream};
+use std::process::{Child, Command, Output};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -540,4 +542,133 @@ fn l67_a_router_started_after_uninstall_writes_nothing() {
         assert!(!root.join(rel).exists(), "{rel} exists after a late start");
     }
     assert!(!port_open(port), "no router serves the port");
+}
+
+/// A stand-in daemon: every health probe on the port gets a 200 naming huddle-router, until
+/// dropped.
+struct HealthFake {
+    stop: Arc<AtomicBool>,
+    reader: Option<thread::JoinHandle<()>>,
+}
+
+impl HealthFake {
+    fn start(listener: TcpListener) -> HealthFake {
+        let stop = Arc::new(AtomicBool::new(false));
+        let flag = Arc::clone(&stop);
+        let reader = thread::spawn(move || {
+            let body = "{\"name\":\"huddle-router\",\"providers\":[\"zai\"]}";
+            let answer = format!(
+                "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
+                body.len()
+            );
+            listener.set_nonblocking(true).expect("nonblocking");
+            while !flag.load(Ordering::SeqCst) {
+                match listener.accept() {
+                    Ok((mut stream, _)) => {
+                        let mut probe = [0u8; 512];
+                        let _ = stream.read(&mut probe);
+                        let _ = stream.write_all(answer.as_bytes());
+                    }
+                    Err(_) => thread::sleep(Duration::from_millis(10)),
+                }
+            }
+        });
+        HealthFake {
+            stop,
+            reader: Some(reader),
+        }
+    }
+}
+
+impl Drop for HealthFake {
+    fn drop(&mut self) {
+        self.stop.store(true, Ordering::SeqCst);
+        if let Some(reader) = self.reader.take() {
+            let _ = reader.join();
+        }
+    }
+}
+
+/// A process the stop word must leave alone; killed on drop whatever the test decided.
+struct Bystander(Child);
+
+impl Drop for Bystander {
+    fn drop(&mut self) {
+        let _ = self.0.kill();
+        let _ = self.0.wait();
+    }
+}
+
+fn write_record_for(home: &TempHome, port: u16, pid: u32, start: Option<&str>) {
+    let run_dir = home.root().join("r/huddle");
+    fs::create_dir_all(&run_dir).expect("run dir");
+    let start = start.map_or(String::new(), |token| format!("start = \"{token}\"\n"));
+    let record = format!(
+        "pid = {pid}\nport = {port}\nversion = \"1.0.0\"\nstarted = \"2026-11-09T00:00:00Z\"\n{start}"
+    );
+    fs::write(run_dir.join("router.toml"), record).expect("record");
+}
+
+#[test]
+fn l73_stop_never_signals_an_unproven_pid() {
+    let home = TempHome::new();
+    let listener = listen();
+    let port = listener.local_addr().expect("addr").port();
+    let _fake = HealthFake::start(listener);
+    let mut sleeper = Bystander(Command::new("/bin/sleep").arg("60").spawn().expect("sleep"));
+    // The right pid with a start time that is not the process's own.
+    write_record_for(&home, port, sleeper.0.id(), Some("1.1"));
+
+    let out = huddle(&home, port, &["router", "stop"]);
+
+    assert_eq!(out.status.code(), Some(1), "{out:?}");
+    assert!(
+        String::from_utf8_lossy(&out.stderr).contains("cannot prove"),
+        "{out:?}"
+    );
+    thread::sleep(Duration::from_millis(300));
+    assert!(
+        sleeper.0.try_wait().expect("poll").is_none(),
+        "the stop word signalled a pid it had not proven"
+    );
+}
+
+#[test]
+fn l73_stop_ends_when_a_start_time_cannot_be_read() {
+    let home = TempHome::new();
+    let listener = listen();
+    let port = listener.local_addr().expect("addr").port();
+    let _fake = HealthFake::start(listener);
+    // An exited child nobody reaped: the pid is alive to a signal probe, and its start time
+    // cannot be read.
+    let zombie = Command::new("/usr/bin/true").spawn().expect("true");
+    thread::sleep(Duration::from_millis(300));
+    write_record_for(&home, port, zombie.id(), None);
+    let mut word = Command::new(env!("CARGO_BIN_EXE_huddle"))
+        .args(["router", "stop"])
+        .env_clear()
+        .envs(home.env())
+        .env("HUDDLE_ROUTER_PORT", port.to_string())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .expect("spawn the stop word");
+
+    let deadline = Instant::now() + Duration::from_secs(15);
+    let status = loop {
+        if let Some(status) = word.try_wait().expect("poll") {
+            break Some(status);
+        }
+        if Instant::now() >= deadline {
+            let _ = word.kill();
+            let _ = word.wait();
+            break None;
+        }
+        thread::sleep(Duration::from_millis(50));
+    };
+    let mut zombie = zombie;
+    let _ = zombie.wait();
+
+    let status = status.expect("the stop word is still waiting after 15 s");
+    assert_eq!(status.code(), Some(1));
 }

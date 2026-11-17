@@ -1,7 +1,9 @@
 //! The `huddle router stop` word: a SIGTERM to each process proven to be this home's router (the
-//! recorded one, and the one holding the router lock), then a wait until every one of them has
-//! exited, the port is closed and the lock is free. A held lock never reads as "not running":
-//! when no pid can be proven, the word exits 1 and names the lock.
+//! recorded one, and the one holding the router lock; a pid counts as proven only with a start
+//! time that matches the live process), then a wait until every one of them has exited, the
+//! port is closed and the lock is free. A held lock or an answering port never reads as "not
+//! running": when no pid can be proven, the word exits 1 and says so. The whole word ends within
+//! [`OVERALL_DEADLINE`].
 
 use std::io::Write;
 use std::path::Path;
@@ -10,7 +12,7 @@ use std::time::{Duration, Instant};
 use huddle_config::env::Env;
 use huddle_config::paths::Paths;
 use huddle_daemon::serve::lock_path;
-use huddle_daemon::singleton::{holder, proven_holder};
+use huddle_daemon::singleton::{holder, proven_holder_token};
 use huddle_daemon::start::{DEFAULT_BUDGET, HEALTH_WAIT, health, read_record};
 use huddle_daemon::supervisor::STOP_DEADLINE;
 use huddle_procs::live::{is_alive, process_alive, start_token};
@@ -30,6 +32,11 @@ const UNPROVEN_WAIT: Duration = DEFAULT_BUDGET;
 /// reports it did not stop.
 const EXIT_MARGIN: Duration = Duration::from_secs(2);
 
+/// The whole word's limit: a handover stop signals two routers, each with its supervisor's
+/// worst case and a margin.
+const OVERALL_DEADLINE: Duration =
+    Duration::from_secs(2 * (STOP_DEADLINE.as_secs() + EXIT_MARGIN.as_secs()));
+
 /// One look at this home's router.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 struct Look {
@@ -37,12 +44,19 @@ struct Look {
     lock_held: bool,
     /// The lock holder, when the lock file proves it (pid and start token of a live process).
     proven_holder: Option<u32>,
-    /// The recorded pid, when it is alive and the record names the probed port.
+    /// The recorded pid, when it is alive, the record names the probed port and its start time
+    /// matches the live process.
     record: Option<u32>,
+    /// The record names a live pid on the probed port that its start time does not prove.
+    record_unproven: bool,
     /// A health probe of the port answered.
     answers: bool,
     /// How long since the word started or last sent a signal.
     waited: Duration,
+    /// How long since the word started.
+    total: Duration,
+    /// The start time that proved each pid above, to check again right before a signal.
+    tokens: Vec<(u32, String)>,
 }
 
 /// What the word does after one look.
@@ -54,13 +68,19 @@ enum Step {
     Wait,
     /// Nothing of this home's router is left.
     Done,
-    /// The lock is held and no pid can be proven: signal nothing, report failure.
+    /// A router holds the lock or answers and no pid can be proven: signal nothing, report
+    /// failure.
     Unproven,
+    /// The overall deadline passed.
+    GiveUp,
 }
 
 /// The stop decision. `signaled` are the pids this stop already sent SIGTERM to; `exiting` is
 /// whether one of them, or a worker they named, still lives.
 fn decide(look: &Look, signaled: &[u32], exiting: bool) -> Step {
+    if look.total >= OVERALL_DEADLINE {
+        return Step::GiveUp;
+    }
     // A recorded router is ours when it answers on the probed port or the lock proves its pid.
     // During a handover the taker answers while the old router still holds the lock.
     if let Some(pid) = look.record
@@ -71,7 +91,11 @@ fn decide(look: &Look, signaled: &[u32], exiting: bool) -> Step {
     }
     // The port answers while no record names a router: a handover is between owners, and the
     // fresh record is on its way.
-    if look.answers && look.record.is_none() && look.waited < HANDOVER_WAIT {
+    // A record whose pid nothing proves gets the same window: a slow answer is not silence.
+    if (look.answers || look.record_unproven)
+        && look.record.is_none()
+        && look.waited < HANDOVER_WAIT
+    {
         return Step::Wait;
     }
     // The lock holder: an old router still draining after a handover, or one coming up that
@@ -88,6 +112,11 @@ fn decide(look: &Look, signaled: &[u32], exiting: bool) -> Step {
     };
     if exiting || named(look.proven_holder) || named(look.record) {
         return Step::Wait;
+    }
+    // The port answers and the record names a pid nothing proves is the router: another
+    // install's router, or a record whose pid was reused.
+    if look.answers && look.record_unproven {
+        return Step::Unproven;
     }
     if look.lock_held {
         return if look.waited < UNPROVEN_WAIT {
@@ -137,8 +166,12 @@ pub fn run(_args: &[String], env: &Env) -> i32 {
         }
     };
     let lock = lock_path(&paths);
-    let mut since = Instant::now();
+    let begun = Instant::now();
+    let mut since = begun;
     let mut watched: Vec<Watched> = Vec::new();
+    // Every pid this stop signalled, including one that exited before its start time was read.
+    let mut signaled: Vec<u32> = Vec::new();
+    let mut seen_done = false;
     loop {
         if let Some(late) = watched
             .iter()
@@ -152,12 +185,23 @@ pub fn run(_args: &[String], env: &Env) -> i32 {
             );
             return 1;
         }
-        let look = look(&paths, &lock, port, since.elapsed());
-        let signaled: Vec<u32> = watched.iter().map(|watch| watch.pid).collect();
+        let look = look(&paths, &lock, port, since.elapsed(), begun.elapsed());
         let exiting = watched.iter().any(Watched::alive);
-        match decide(&look, &signaled, exiting) {
+        let step = decide(&look, &signaled, exiting);
+        // A router that takes the lock between two looks (a takeover a hook started) is seen on
+        // the second one: nothing is final after one look.
+        if !settled_done(step == Step::Done, &mut seen_done) {
+            std::thread::sleep(POLL_STEP);
+            continue;
+        }
+        match step {
             Step::Signal(pid) => {
-                if let Some(watch) = signal(&paths, pid) {
+                signaled.push(pid);
+                let token = look
+                    .tokens
+                    .iter()
+                    .find_map(|(proved, token)| (*proved == pid).then_some(token.as_str()));
+                if let Some(watch) = token.and_then(|token| signal(&paths, pid, token)) {
                     watched.push(watch);
                 }
                 since = Instant::now();
@@ -176,8 +220,17 @@ pub fn run(_args: &[String], env: &Env) -> i32 {
             Step::Unproven => {
                 let _ = writeln!(
                     std::io::stderr(),
-                    "huddle-router: {} is held by a process huddle cannot prove is its router; nothing was stopped",
+                    "huddle-router: a router holds {} or answers on port {port}, and huddle cannot prove which process is its router; nothing was signalled",
                     lock.display()
+                );
+                return 1;
+            }
+            Step::GiveUp => {
+                let _ = writeln!(
+                    std::io::stderr(),
+                    "huddle-router: still running after {}s ({})",
+                    OVERALL_DEADLINE.as_secs(),
+                    still_running(&watched, &look)
                 );
                 return 1;
             }
@@ -185,36 +238,91 @@ pub fn run(_args: &[String], env: &Env) -> i32 {
     }
 }
 
-/// Looks once at the lock, the record and the port.
-fn look(paths: &Paths, lock: &Path, port: u16, waited: Duration) -> Look {
-    let record = read_record(paths)
-        .filter(|record| record.pid > 0 && is_alive(record.pid) && record.port == port)
-        .map(|record| record.pid);
-    Look {
-        lock_held: holder(lock).is_some(),
-        proven_holder: proven_holder(lock),
-        record,
-        answers: health(port, HEALTH_WAIT).is_some(),
-        waited,
+/// Whether a look that decided `done` ends the word: only a second look in a row that finds
+/// nothing left does. Any other decision starts the count again.
+fn settled_done(done: bool, seen_done: &mut bool) -> bool {
+    let settled = done && *seen_done;
+    *seen_done = done && !*seen_done;
+    settled || !done
+}
+
+/// What is still running, for the line that gives up.
+fn still_running(watched: &[Watched], look: &Look) -> String {
+    let mut names: Vec<String> = watched
+        .iter()
+        .filter(|watch| watch.alive())
+        .map(Watched::name)
+        .collect();
+    if look.lock_held {
+        names.push("the router lock is held".to_string());
+    }
+    if look.answers {
+        names.push("the port answers".to_string());
+    }
+    if names.is_empty() {
+        "unknown".to_string()
+    } else {
+        names.join("; ")
     }
 }
 
-/// Sends SIGTERM to `pid` and answers what to wait for: the pid with its start token and, when
-/// the record names it, its worker. A pid already gone is nothing to wait for.
-fn signal(paths: &Paths, pid: u32) -> Option<Watched> {
-    let token = start_token(pid)?;
+/// Looks once at the lock, the record and the port.
+fn look(paths: &Paths, lock: &Path, port: u16, waited: Duration, total: Duration) -> Look {
+    let live = read_record(paths)
+        .filter(|record| record.pid > 0 && is_alive(record.pid) && record.port == port);
+    let proved_record = live
+        .as_ref()
+        .filter(|record| process_alive(record.pid, &record.start));
+    let record = proved_record.map(|record| record.pid);
+    let proved_holder = proven_holder_token(lock);
+    let mut tokens: Vec<(u32, String)> = proved_record
+        .map(|record| (record.pid, record.start.clone()))
+        .into_iter()
+        .collect();
+    tokens.extend(proved_holder.clone());
+    Look {
+        lock_held: holder(lock).is_some(),
+        proven_holder: proved_holder.map(|(pid, _)| pid),
+        record,
+        record_unproven: live.is_some() && record.is_none(),
+        answers: health(port, HEALTH_WAIT).is_some(),
+        waited,
+        total,
+        tokens,
+    }
+}
+
+/// Calls `send` for `pid` only while it is still the process `token` proved, as the last step
+/// before the signal; answers whether it did.
+fn send_if_proven(pid: u32, token: &str, send: impl FnOnce(u32)) -> bool {
+    let proven = process_alive(pid, token);
+    if proven {
+        send(pid);
+    }
+    proven
+}
+
+/// Sends SIGTERM to `pid` when it is still the process `token` proved, and answers what to wait
+/// for: the pid with that token and, when the record names it, its worker. A pid that no
+/// longer matches is gone and is nothing to wait for.
+fn signal(paths: &Paths, pid: u32, token: &str) -> Option<Watched> {
     let worker = read_record(paths)
         .filter(|record| record.pid == pid && record.worker > 0)
         .and_then(|record| start_token(record.worker).map(|token| (record.worker, token)));
     // The daemon's own exit line names the signal; this line names who sent it.
     let log = huddle_router::crashlog::router_logs(&paths.state_dir);
     log(format!("huddle-router: the stop word signals pid={pid}"));
-    // SAFETY: `kill` is a plain syscall wrapper; it reads no memory and only sets errno on
-    // failure. A failed signal changes nothing: the next look decides the outcome.
-    let _ = unsafe { libc::kill(pid as libc::pid_t, libc::SIGTERM) };
+    let sent = send_if_proven(pid, token, |pid| {
+        // SAFETY: `kill` is a plain syscall wrapper; it reads no memory and only sets errno on
+        // failure. A failed signal changes nothing: the next look decides the outcome.
+        let _ = unsafe { libc::kill(pid as libc::pid_t, libc::SIGTERM) };
+    });
+    if !sent {
+        return None;
+    }
     Some(Watched {
         pid,
-        token,
+        token: token.to_string(),
         worker,
         deadline: Instant::now() + STOP_DEADLINE + EXIT_MARGIN,
     })
@@ -239,8 +347,11 @@ mod tests {
             lock_held,
             proven_holder,
             record,
+            record_unproven: false,
             answers,
             waited: Duration::ZERO,
+            total: Duration::ZERO,
+            tokens: Vec::new(),
         }
     }
 
@@ -377,5 +488,78 @@ mod tests {
         assert_eq!(decide(&between, &[], false), Step::Wait);
         between.waited = HANDOVER_WAIT;
         assert_eq!(decide(&between, &[], false), Step::Done);
+    }
+
+    #[test]
+    fn l73_a_port_that_answers_with_an_unproven_record_pid_is_never_signalled() {
+        let mut unproven = look(false, None, None, true);
+        unproven.record_unproven = true;
+        assert_eq!(decide(&unproven, &[], false), Step::Wait);
+        unproven.waited = HANDOVER_WAIT;
+        assert_eq!(decide(&unproven, &[], false), Step::Unproven);
+        unproven.answers = false;
+        assert_eq!(
+            decide(&unproven, &[], false),
+            Step::Done,
+            "a silent port is no router"
+        );
+        unproven.waited = Duration::ZERO;
+        assert_eq!(
+            decide(&unproven, &[], false),
+            Step::Wait,
+            "a slow answer is waited for"
+        );
+    }
+
+    #[test]
+    fn l73_a_port_that_answers_with_no_readable_record_and_no_holder_is_not_signalled() {
+        let mut between = look(false, None, None, true);
+        between.waited = HANDOVER_WAIT;
+        assert!(!matches!(decide(&between, &[], false), Step::Signal(_)));
+    }
+
+    #[test]
+    fn l73_the_overall_deadline_gives_up_whatever_the_look_says() {
+        let mut stuck = look(true, Some(7), Some(7), true);
+        stuck.total = OVERALL_DEADLINE;
+        assert_eq!(decide(&stuck, &[], false), Step::GiveUp);
+        assert_eq!(decide(&stuck, &[7], true), Step::GiveUp);
+        stuck.total = OVERALL_DEADLINE - POLL_STEP;
+        assert_eq!(decide(&stuck, &[7], true), Step::Wait);
+    }
+
+    #[test]
+    fn l73_a_pid_whose_start_time_cannot_be_read_is_not_signalled_twice() {
+        // The first signal found no process to watch; the next look must not ask again.
+        assert_eq!(
+            decide(&look(false, None, Some(7), true), &[7], false),
+            Step::Wait
+        );
+    }
+
+    #[test]
+    fn l73_nothing_left_ends_the_word_only_on_a_second_look() {
+        let mut seen = false;
+        assert!(!settled_done(true, &mut seen), "one look is not final");
+        assert!(settled_done(true, &mut seen), "two looks in a row are");
+        let mut seen = false;
+        assert!(!settled_done(true, &mut seen));
+        assert!(
+            settled_done(false, &mut seen),
+            "another decision acts at once"
+        );
+        assert!(!settled_done(true, &mut seen), "and the count starts again");
+    }
+
+    #[test]
+    fn l73_a_pid_whose_start_time_no_longer_matches_gets_no_signal() {
+        let own = std::process::id();
+        let token = start_token(own).expect("own start time");
+        let mut sent = Vec::new();
+        assert!(!send_if_proven(own, "1.1", |pid| sent.push(pid)));
+        assert!(!send_if_proven(own, "", |pid| sent.push(pid)));
+        assert!(sent.is_empty());
+        assert!(send_if_proven(own, &token, |pid| sent.push(pid)));
+        assert_eq!(sent, vec![own]);
     }
 }

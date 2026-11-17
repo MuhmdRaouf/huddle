@@ -409,8 +409,16 @@ Each incident, its cause, and the test that now stops it. A guard named here mus
   crates/huddle/src/words/router/stop.rs:l67_after_a_handover_the_taker_and_then_the_draining_holder_are_signalled,
   crates/huddle/src/words/router/stop.rs:l67_a_reused_record_pid_with_another_holder_is_never_signalled,
   crates/huddle-daemon/src/singleton.rs:l67_a_held_lock_that_names_no_live_token_proves_nobody,
-  crates/huddle-daemon/tests/l67_install_mark.rs:l67_a_router_without_the_install_mark_leaves_nothing_after_taking_the_lock
+  crates/huddle-daemon/tests/l67_install_mark.rs:l67_a_router_without_the_install_mark_leaves_nothing_after_taking_the_lock,
+  crates/huddle-daemon/tests/l67_install_mark.rs:l73_a_router_without_the_mark_leaves_before_it_binds_or_logs,
+  crates/huddle/tests/uninstall_word.rs:l73_stop_never_signals_an_unproven_pid,
+  crates/huddle/tests/uninstall_word.rs:l73_stop_ends_when_a_start_time_cannot_be_read,
+  crates/huddle/src/words/router/stop.rs:l73_the_overall_deadline_gives_up_whatever_the_look_says,
+  crates/huddle/src/words/router/stop.rs:l73_nothing_left_ends_the_word_only_on_a_second_look
 - **Rule:** uninstall removes the install mark first, and a router without the mark writes nothing.
   `huddle router stop` returns 0 or 6 only when no process of this install holds the router lock or answers
   on its port; it signals only a pid the record (answering on the port) or the lock file (pid and start
-  token of a live process) proves, and exits 1 when it cannot prove one.
+  token of a live process) proves, and exits 1 when it cannot prove one. Both proofs are a pid with the start
+  time of the live process, so a reused pid is never signalled; the word ends within 44 s and confirms
+  "nothing left" with a second look; a router started with a missing install mark binds, logs and makes
+  nothing.
